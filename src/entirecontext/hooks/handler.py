@@ -18,12 +18,13 @@ def read_stdin_json() -> dict[str, Any]:
         return {}
 
 
-def handle_hook(hook_type: str | None = None) -> int:
+def handle_hook(hook_type: str | None = None, *, data: dict[str, Any] | None = None) -> int:
     """Main entry point: read stdin JSON, dispatch to handler.
 
     Returns exit code: 0=success, 2=block.
     """
-    data = read_stdin_json()
+    if data is None:
+        data = read_stdin_json()
 
     if hook_type is None:
         hook_type = data.get("hook_type", "")

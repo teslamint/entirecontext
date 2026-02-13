@@ -13,25 +13,30 @@ app.add_typer(hook_app, name="hook")
 
 
 @hook_app.command("handle")
-def hook_handle():
+def hook_handle(
+    hook_type_arg: str = typer.Option(None, "--type", "-t", help="Hook type (e.g. SessionStart)"),
+):
     """Read stdin JSON and dispatch to appropriate hook handler."""
-    from ..hooks.handler import handle_hook
-
-    hook_type = None
+    import io
     import json
 
+    from ..hooks.handler import handle_hook
+
+    raw = ""
+    data = {}
     try:
         raw = sys.stdin.read()
         if raw.strip():
             data = json.loads(raw)
-            hook_type = data.get("hook_type") or data.get("type")
     except (json.JSONDecodeError, OSError):
         pass
 
-    if hook_type:
-        import io
+    resolved_type = hook_type_arg
+    if not resolved_type:
+        resolved_type = data.get("hook_type") or data.get("type")
 
-        sys.stdin = io.StringIO(raw if "raw" in dir() else "")
+    if raw.strip():
+        sys.stdin = io.StringIO(raw)
 
-    exit_code = handle_hook(hook_type)
+    exit_code = handle_hook(resolved_type, data=data if data else None)
     raise typer.Exit(exit_code)

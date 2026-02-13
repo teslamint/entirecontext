@@ -112,6 +112,62 @@ class TestHandlerDispatch:
         result = handle_hook(None)
         assert result == 0
 
+    def test_handle_hook_with_explicit_data(self):
+        from entirecontext.hooks.handler import handle_hook
+
+        result = handle_hook("UnknownHookType", data={"session_id": "s1"})
+        assert result == 0
+
+    def test_handle_hook_infers_type_from_data(self):
+        from entirecontext.hooks.handler import handle_hook
+
+        with patch("entirecontext.hooks.handler._handle_session_end") as mock_handler:
+            mock_handler.return_value = 0
+            result = handle_hook(None, data={"hook_type": "SessionEnd", "session_id": "s1"})
+            assert result == 0
+            mock_handler.assert_called_once()
+
+    def test_handle_hook_explicit_type_overrides_data(self):
+        from entirecontext.hooks.handler import handle_hook
+
+        result = handle_hook("UnknownHookType", data={"hook_type": "SessionEnd"})
+        assert result == 0
+
+
+class TestHookCmdDispatch:
+    def test_hook_handle_with_type_arg(self):
+        from typer.testing import CliRunner
+
+        from entirecontext.cli import app
+
+        runner = CliRunner()
+        stdin_data = json.dumps({"session_id": "s1", "cwd": "/tmp/test"})
+        result = runner.invoke(app, ["hook", "handle", "--type", "UnknownType"], input=stdin_data)
+        assert result.exit_code == 0
+
+    def test_hook_handle_without_type_falls_back_to_field(self):
+        from typer.testing import CliRunner
+
+        from entirecontext.cli import app
+
+        runner = CliRunner()
+        stdin_data = json.dumps({"hook_type": "UnknownType", "session_id": "s1"})
+        result = runner.invoke(app, ["hook", "handle"], input=stdin_data)
+        assert result.exit_code == 0
+
+    def test_hook_handle_type_arg_takes_priority(self):
+        from typer.testing import CliRunner
+
+        from entirecontext.cli import app
+
+        runner = CliRunner()
+        stdin_data = json.dumps({"hook_type": "SessionEnd", "session_id": "s1"})
+        with patch("entirecontext.hooks.handler._handle_session_end") as mock_end:
+            mock_end.return_value = 0
+            result = runner.invoke(app, ["hook", "handle", "--type", "UnknownType"], input=stdin_data)
+            assert result.exit_code == 0
+            mock_end.assert_not_called()
+
 
 class TestSessionLifecycle:
     @patch("entirecontext.hooks.session_lifecycle._find_git_root")

@@ -16,20 +16,23 @@ from . import app
 console = Console()
 
 
-def _resolve_ec_command() -> str:
-    ec = shutil.which("ec")
-    if ec:
-        return f"{Path(ec).resolve()} hook handle"
-    return f"{sys.executable} -m entirecontext.cli hook handle"
+def _resolve_ec_command(hook_type: str | None = None) -> str:
+    if shutil.which("ec"):
+        base = f"{Path(shutil.which('ec')).resolve()} hook handle"
+    else:
+        base = f"{sys.executable} -m entirecontext.cli hook handle"
+    if hook_type:
+        base += f" --type {hook_type}"
+    return base
 
 
 def _is_ec_hook(entry: dict) -> bool:
     for h in entry.get("hooks", []):
         cmd = h.get("command", "")
-        if cmd.endswith("ec hook handle") or "entirecontext.cli hook handle" in cmd:
+        if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
             return True
     cmd = entry.get("command", "")
-    return cmd.endswith("ec hook handle") or "entirecontext.cli hook handle" in cmd
+    return "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd
 
 
 @app.command()
@@ -65,13 +68,16 @@ def enable():
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
 
     hooks = settings.setdefault("hooks", {})
-    ec_command = _resolve_ec_command()
+    hook_timeouts = {
+        "SessionStart": 5,
+        "UserPromptSubmit": 5,
+        "Stop": 10,
+        "PostToolUse": 3,
+        "SessionEnd": 5,
+    }
     ec_hooks = {
-        "SessionStart": [{"hooks": [{"type": "command", "command": ec_command, "timeout": 5}]}],
-        "UserPromptSubmit": [{"hooks": [{"type": "command", "command": ec_command, "timeout": 5}]}],
-        "Stop": [{"hooks": [{"type": "command", "command": ec_command, "timeout": 10}]}],
-        "PostToolUse": [{"hooks": [{"type": "command", "command": ec_command, "timeout": 3}]}],
-        "SessionEnd": [{"hooks": [{"type": "command", "command": ec_command, "timeout": 5}]}],
+        name: [{"hooks": [{"type": "command", "command": _resolve_ec_command(name), "timeout": timeout}]}]
+        for name, timeout in hook_timeouts.items()
     }
 
     for hook_name, hook_configs in ec_hooks.items():
@@ -154,11 +160,11 @@ def status():
 
 @app.command()
 def config(
-    key: str = typer.Argument(None, help="Config key (dotted notation, e.g. capture.auto_capture)"),
-    value: str = typer.Argument(None, help="Value to set"),
+    key: str | None = typer.Argument(None, help="Config key (dotted notation, e.g. capture.auto_capture)"),
+    value: str | None = typer.Argument(None, help="Value to set"),
 ):
     """Get or set configuration."""
-    from ..core.config import load_config, save_config, get_config_value
+    from ..core.config import get_config_value, load_config, save_config
     from ..core.project import find_git_root
 
     repo_path = find_git_root()
@@ -202,7 +208,7 @@ def doctor():
         if not db_path.exists():
             issues.append("Database missing. Run 'ec init'.")
         else:
-            from ..db import get_db, get_current_version, SCHEMA_VERSION
+            from ..db import SCHEMA_VERSION, get_current_version, get_db
 
             conn = get_db(repo_path)
             v = get_current_version(conn)
