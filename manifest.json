@@ -1,5 +1,22 @@
 {
   "version": 1,
   "checkpoints": {},
-  "sessions": {}
+  "sessions": {
+    "test-session-001": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T01:56:32.655092+00:00",
+      "total_turns": 1
+    },
+    "5babb485-2b64-4298-9806-ae3790463fe0": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T02:05:41.737484+00:00",
+      "total_turns": 1
+    },
+    "b9870eda-58ba-48e3-9f6d-cfd90a6737c2": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T02:10:38.431021+00:00",
+      "total_turns": 0
+    }
+  },
+  "updated_at": "2026-02-13T02:15:01.415419+00:00"
 }
