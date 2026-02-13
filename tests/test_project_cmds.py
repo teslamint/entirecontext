@@ -15,10 +15,10 @@ runner = CliRunner()
 
 
 class TestHookTimeoutUnits:
-    """Gap 5: Timeouts must be in milliseconds."""
+    """Timeouts must be in seconds (matcher-based format)."""
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_generates_millisecond_timeouts(self, mock_git_root, tmp_path):
+    def test_enable_generates_correct_timeouts(self, mock_git_root, tmp_path):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
@@ -30,14 +30,14 @@ class TestHookTimeoutUnits:
         settings = json.loads((repo / ".claude" / "settings.json").read_text())
         hooks = settings["hooks"]
 
-        assert hooks["SessionStart"][0]["timeout"] == 5000
-        assert hooks["UserPromptSubmit"][0]["timeout"] == 5000
-        assert hooks["Stop"][0]["timeout"] == 10000
-        assert hooks["PostToolUse"][0]["timeout"] == 3000
-        assert hooks["SessionEnd"][0]["timeout"] == 5000
+        assert hooks["SessionStart"][0]["hooks"][0]["timeout"] == 5
+        assert hooks["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
+        assert hooks["Stop"][0]["hooks"][0]["timeout"] == 10
+        assert hooks["PostToolUse"][0]["hooks"][0]["timeout"] == 3
+        assert hooks["SessionEnd"][0]["hooks"][0]["timeout"] == 5
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_no_timeout_below_1000(self, mock_git_root, tmp_path):
+    def test_timeouts_are_positive_seconds(self, mock_git_root, tmp_path):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
@@ -49,14 +49,15 @@ class TestHookTimeoutUnits:
 
         for hook_name, entries in hooks.items():
             for entry in entries:
-                assert entry["timeout"] >= 1000, f"{hook_name} timeout {entry['timeout']} is not in ms"
+                for h in entry.get("hooks", []):
+                    assert h["timeout"] > 0, f"{hook_name} timeout must be positive"
 
 
 class TestHookConfigStructure:
-    """Gap 6: Flat format per Claude Code spec."""
+    """Matcher-based format per Claude Code spec."""
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_generates_flat_format(self, mock_git_root, tmp_path):
+    def test_enable_generates_matcher_format(self, mock_git_root, tmp_path):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
@@ -68,10 +69,13 @@ class TestHookConfigStructure:
 
         for hook_name, entries in hooks.items():
             for entry in entries:
-                assert "command" in entry, f"{hook_name}: missing 'command' at top level"
-                assert "timeout" in entry, f"{hook_name}: missing 'timeout' at top level"
-                assert "hooks" not in entry, f"{hook_name}: should not have nested 'hooks' key"
-                assert "type" not in entry, f"{hook_name}: should not have 'type' key"
+                assert "matcher" in entry, f"{hook_name}: missing 'matcher'"
+                assert "hooks" in entry, f"{hook_name}: missing 'hooks' array"
+                inner = entry["hooks"]
+                assert len(inner) == 1, f"{hook_name}: expected 1 inner hook"
+                assert inner[0]["type"] == "command", f"{hook_name}: inner hook type must be 'command'"
+                assert "command" in inner[0], f"{hook_name}: inner hook missing 'command'"
+                assert "timeout" in inner[0], f"{hook_name}: inner hook missing 'timeout'"
 
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_command_contains_hook_type(self, mock_git_root, tmp_path):
@@ -84,12 +88,12 @@ class TestHookConfigStructure:
         settings = json.loads((repo / ".claude" / "settings.json").read_text())
 
         for hook_name in ["SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "SessionEnd"]:
-            cmd = settings["hooks"][hook_name][0]["command"]
+            cmd = settings["hooks"][hook_name][0]["hooks"][0]["command"]
             assert f"--type {hook_name}" in cmd
 
 
 class TestIsEcHook:
-    """_is_ec_hook must handle both flat and nested (legacy) formats."""
+    """_is_ec_hook must handle both matcher-based and flat (legacy) formats."""
 
     def test_flat_format_ec(self):
         assert _is_ec_hook({"command": "/usr/bin/ec hook handle --type Stop", "timeout": 10000})
@@ -97,8 +101,8 @@ class TestIsEcHook:
     def test_flat_format_module(self):
         assert _is_ec_hook({"command": "python -m entirecontext.cli hook handle --type Stop", "timeout": 10000})
 
-    def test_nested_legacy_format(self):
-        entry = {"hooks": [{"type": "command", "command": "ec hook handle --type Stop", "timeout": 5}]}
+    def test_matcher_format(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": "ec hook handle --type Stop", "timeout": 5}]}
         assert _is_ec_hook(entry)
 
     def test_non_ec_hook(self):
@@ -322,4 +326,4 @@ class TestEnableDisableRoundTrip:
         session_start_hooks = settings["hooks"]["SessionStart"]
         assert len(session_start_hooks) == 2
         assert any("other-tool" in h.get("command", "") for h in session_start_hooks)
-        assert any("ec hook handle" in h.get("command", "") for h in session_start_hooks)
+        assert any(_is_ec_hook(h) for h in session_start_hooks)

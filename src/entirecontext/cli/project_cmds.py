@@ -123,14 +123,15 @@ def enable(
 
     hooks = settings.setdefault("hooks", {})
     hook_timeouts = {
-        "SessionStart": 5000,
-        "UserPromptSubmit": 5000,
-        "Stop": 10000,
-        "PostToolUse": 3000,
-        "SessionEnd": 5000,
+        "SessionStart": 5,
+        "UserPromptSubmit": 5,
+        "Stop": 10,
+        "PostToolUse": 3,
+        "SessionEnd": 5,
     }
     ec_hooks = {
-        name: [{"command": _resolve_ec_command(name), "timeout": timeout}] for name, timeout in hook_timeouts.items()
+        name: [{"matcher": "", "hooks": [{"type": "command", "command": _resolve_ec_command(name), "timeout": timeout}]}]
+        for name, timeout in hook_timeouts.items()
     }
 
     for hook_name, hook_configs in ec_hooks.items():
