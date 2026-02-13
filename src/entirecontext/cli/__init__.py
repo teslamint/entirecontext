@@ -13,3 +13,7 @@ from . import checkpoint_cmds  # noqa: F401, E402
 from . import sync_cmds  # noqa: F401, E402
 from . import rewind_cmds  # noqa: F401, E402
 from . import repo_cmds  # noqa: F401, E402
+from . import event_cmds  # noqa: F401, E402
+from . import blame_cmds  # noqa: F401, E402
+from . import index_cmds  # noqa: F401, E402
+from . import mcp_cmds  # noqa: F401, E402

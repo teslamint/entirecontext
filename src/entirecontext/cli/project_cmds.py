@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import stat
 import sys
 from pathlib import Path
 
@@ -27,12 +28,14 @@ def _resolve_ec_command(hook_type: str | None = None) -> str:
 
 
 def _is_ec_hook(entry: dict) -> bool:
+    cmd = entry.get("command", "")
+    if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
+        return True
     for h in entry.get("hooks", []):
         cmd = h.get("command", "")
         if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
             return True
-    cmd = entry.get("command", "")
-    return "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd
+    return False
 
 
 @app.command()
@@ -50,8 +53,59 @@ def init():
         raise typer.Exit(1)
 
 
+def _install_git_hooks(repo_path: str) -> list[str]:
+    """Install git hooks (post-commit, pre-push). Returns list of installed hook names."""
+    hooks_dir = Path(repo_path) / ".git" / "hooks"
+    if not hooks_dir.exists():
+        return []
+
+    installed = []
+    ec_cmd = _resolve_ec_command()
+
+    post_commit_script = f"""#!/bin/sh
+# EntireContext: create checkpoint on commit if active session
+{ec_cmd.replace("hook handle", "hook handle --type PostCommit")}
+"""
+    pre_push_script = f"""#!/bin/sh
+# EntireContext: sync on push if auto_sync_on_push is enabled
+{ec_cmd.replace("hook handle", "sync")}
+"""
+
+    for name, script in [("post-commit", post_commit_script), ("pre-push", pre_push_script)]:
+        hook_path = hooks_dir / name
+        if hook_path.exists():
+            content = hook_path.read_text(encoding="utf-8")
+            if "EntireContext" in content:
+                continue
+        hook_path.write_text(script, encoding="utf-8")
+        hook_path.chmod(hook_path.stat().st_mode | stat.S_IEXEC)
+        installed.append(name)
+
+    return installed
+
+
+def _remove_git_hooks(repo_path: str) -> list[str]:
+    """Remove EntireContext git hooks. Returns list of removed hook names."""
+    hooks_dir = Path(repo_path) / ".git" / "hooks"
+    if not hooks_dir.exists():
+        return []
+
+    removed = []
+    for name in ("post-commit", "pre-push"):
+        hook_path = hooks_dir / name
+        if hook_path.exists():
+            content = hook_path.read_text(encoding="utf-8")
+            if "EntireContext" in content:
+                hook_path.unlink()
+                removed.append(name)
+
+    return removed
+
+
 @app.command()
-def enable():
+def enable(
+    no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
+):
     """Enable auto-capture by installing Claude Code hooks."""
     from ..core.project import find_git_root
 
@@ -69,15 +123,14 @@ def enable():
 
     hooks = settings.setdefault("hooks", {})
     hook_timeouts = {
-        "SessionStart": 5,
-        "UserPromptSubmit": 5,
-        "Stop": 10,
-        "PostToolUse": 3,
-        "SessionEnd": 5,
+        "SessionStart": 5000,
+        "UserPromptSubmit": 5000,
+        "Stop": 10000,
+        "PostToolUse": 3000,
+        "SessionEnd": 5000,
     }
     ec_hooks = {
-        name: [{"hooks": [{"type": "command", "command": _resolve_ec_command(name), "timeout": timeout}]}]
-        for name, timeout in hook_timeouts.items()
+        name: [{"command": _resolve_ec_command(name), "timeout": timeout}] for name, timeout in hook_timeouts.items()
     }
 
     for hook_name, hook_configs in ec_hooks.items():
@@ -88,6 +141,11 @@ def enable():
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     console.print("[green]Hooks installed[/green] in .claude/settings.json")
+
+    if not no_git_hooks:
+        installed = _install_git_hooks(repo_path)
+        if installed:
+            console.print(f"[green]Git hooks installed:[/green] {', '.join(installed)}")
 
 
 @app.command()
@@ -124,6 +182,10 @@ def disable():
         console.print("[yellow]Hooks removed[/yellow] from .claude/settings.json")
     else:
         console.print("No EntireContext hooks found.")
+
+    removed = _remove_git_hooks(repo_path)
+    if removed:
+        console.print(f"[yellow]Git hooks removed:[/yellow] {', '.join(removed)}")
 
 
 @app.command()
@@ -216,7 +278,11 @@ def doctor():
                 warnings.append(f"Schema version {v} < {SCHEMA_VERSION}. Migration needed.")
 
             unsynced = conn.execute(
-                "SELECT COUNT(*) FROM checkpoints WHERE id NOT IN (SELECT checkpoint_id FROM event_checkpoints)"
+                """SELECT COUNT(*) FROM checkpoints
+                WHERE created_at > COALESCE(
+                    (SELECT last_export_at FROM sync_metadata WHERE id = 1),
+                    '1970-01-01'
+                )"""
             ).fetchone()[0]
             if unsynced > 0:
                 warnings.append(f"{unsynced} checkpoints not synced to shadow branch.")

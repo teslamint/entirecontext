@@ -88,6 +88,46 @@ def on_session_start(data: dict[str, Any]) -> None:
     conn.close()
 
 
+def _populate_session_summary(conn, session_id: str) -> None:
+    """Generate session title/summary from turns if not already set."""
+    session = conn.execute(
+        "SELECT session_title, session_summary FROM sessions WHERE id = ?",
+        (session_id,),
+    ).fetchone()
+    if not session:
+        return
+
+    needs_title = session["session_title"] is None
+    needs_summary = session["session_summary"] is None
+    if not needs_title and not needs_summary:
+        return
+
+    turns = conn.execute(
+        "SELECT user_message, assistant_summary FROM turns WHERE session_id = ? ORDER BY turn_number ASC LIMIT 3",
+        (session_id,),
+    ).fetchall()
+    if not turns:
+        return
+
+    updates = {}
+    if needs_title:
+        first_msg = turns[0]["user_message"] or ""
+        if first_msg:
+            updates["session_title"] = first_msg[:100]
+
+    if needs_summary:
+        summaries = [t["assistant_summary"] for t in turns if t["assistant_summary"]]
+        if summaries:
+            combined = " | ".join(summaries)
+            updates["session_summary"] = combined[:500]
+
+    if updates:
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        values = list(updates.values()) + [session_id]
+        conn.execute(f"UPDATE sessions SET {set_clause} WHERE id = ?", values)
+        conn.commit()
+
+
 def on_session_end(data: dict[str, Any]) -> None:
     """Handle SessionEnd hook — mark session as ended and update global counts."""
     session_id = data.get("session_id")
@@ -104,6 +144,9 @@ def on_session_end(data: dict[str, Any]) -> None:
 
     conn = get_db(repo_path)
     now = _now_iso()
+
+    _populate_session_summary(conn, session_id)
+
     conn.execute(
         "UPDATE sessions SET ended_at = ?, updated_at = ? WHERE id = ?",
         (now, now, session_id),

@@ -63,28 +63,42 @@ class TestSearchCommand:
                 assert "Phase 3" in result.output
 
 
-class TestPhase2Stubs:
-    def test_checkpoint_list(self):
-        result = runner.invoke(app, ["checkpoint", "list"])
-        assert "Phase 2" in result.output
+class TestCheckpointCommands:
+    def test_checkpoint_list_not_in_repo(self):
+        with patch("entirecontext.core.project.find_git_root", return_value=None):
+            result = runner.invoke(app, ["checkpoint", "list"])
+            assert result.exit_code != 0
 
-    def test_sync(self):
-        result = runner.invoke(app, ["sync"])
-        assert "Phase 2" in result.output
+    def test_sync_not_in_repo(self):
+        with patch("entirecontext.core.project.find_git_root", return_value=None):
+            result = runner.invoke(app, ["sync"])
+            assert result.exit_code != 0
 
-    def test_pull(self):
-        result = runner.invoke(app, ["pull"])
-        assert "Phase 2" in result.output
+    def test_pull_not_in_repo(self):
+        with patch("entirecontext.core.project.find_git_root", return_value=None):
+            result = runner.invoke(app, ["pull"])
+            assert result.exit_code != 0
 
-    def test_rewind(self):
-        result = runner.invoke(app, ["rewind", "some-id"])
-        assert "Phase 2" in result.output
+    def test_rewind_not_in_repo(self):
+        with patch("entirecontext.core.project.find_git_root", return_value=None):
+            result = runner.invoke(app, ["rewind", "some-id"])
+            assert result.exit_code != 0
 
 
 class TestRewindSafety:
-    def test_rewind_restore_dirty_tree(self):
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = type("Result", (), {"stdout": "M src/main.py", "returncode": 0})()
-            result = runner.invoke(app, ["rewind", "some-id", "--restore"])
-            assert result.exit_code == 1
-            assert "uncommitted" in result.output.lower() or "stash" in result.output.lower()
+    def test_rewind_restore_dirty_tree(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.checkpoint import create_checkpoint
+        from entirecontext.core.session import create_session
+
+        project_row = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()
+        create_session(ec_db, project_row["id"], session_id="rw-s1")
+        create_checkpoint(ec_db, "rw-s1", "abc123", checkpoint_id="rw-cp1")
+
+        monkeypatch.setattr("entirecontext.core.project.find_git_root", lambda *a, **kw: str(ec_repo))
+
+        dirty_file = ec_repo / "dirty.txt"
+        dirty_file.write_text("uncommitted")
+
+        result = runner.invoke(app, ["rewind", "rw-cp1", "--restore"])
+        assert result.exit_code == 1
+        assert "uncommitted" in result.output.lower() or "stash" in result.output.lower()
