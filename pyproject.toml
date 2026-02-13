@@ -1,0 +1,40 @@
+[project]
+name = "entirecontext"
+version = "0.1.0"
+description = "Time-travel searchable agent memory anchored to your codebase"
+readme = "README.md"
+authors = [
+    { name = "Jaehoon You", email = "teslamint@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.15.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+semantic = [
+    "sentence-transformers>=3.0.0",
+]
+mcp = [
+    "mcp>=1.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.9.0",
+]
+
+[project.scripts]
+ec = "entirecontext.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.10.2,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
