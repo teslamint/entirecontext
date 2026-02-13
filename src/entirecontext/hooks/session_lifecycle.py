@@ -174,3 +174,20 @@ def on_session_end(data: dict[str, Any]) -> None:
             conn.close()
         except Exception:
             pass
+
+    _maybe_trigger_auto_sync(repo_path)
+
+
+def _maybe_trigger_auto_sync(repo_path: str) -> None:
+    """Trigger background sync if auto_sync is enabled. Never crashes the hook."""
+    try:
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        if not config.get("sync", {}).get("auto_sync", False):
+            return
+        from ..sync.auto_sync import trigger_background_sync
+
+        trigger_background_sync(repo_path)
+    except Exception:
+        pass

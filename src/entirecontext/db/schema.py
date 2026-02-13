@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -187,7 +187,10 @@ CREATE TABLE IF NOT EXISTS sync_metadata (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_export_at TEXT,
     last_import_at TEXT,
-    sync_status TEXT DEFAULT 'idle'
+    sync_status TEXT DEFAULT 'idle',
+    last_sync_error TEXT,
+    last_sync_duration_ms INTEGER,
+    sync_pid INTEGER
 );
 """,
 }

@@ -69,4 +69,10 @@ def _get_migrations() -> dict[int, list[str]]:
     Add new entries as schema evolves:
         2: ["ALTER TABLE ...", "CREATE INDEX ..."],
     """
-    return {}
+    return {
+        2: [
+            "ALTER TABLE sync_metadata ADD COLUMN last_sync_error TEXT;",
+            "ALTER TABLE sync_metadata ADD COLUMN last_sync_duration_ms INTEGER;",
+            "ALTER TABLE sync_metadata ADD COLUMN sync_pid INTEGER;",
+        ],
+    }

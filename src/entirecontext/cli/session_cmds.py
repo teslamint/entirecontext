@@ -98,8 +98,49 @@ def session_list(
 
 
 @session_app.command("show")
-def session_show(session_id: str = typer.Argument(..., help="Session ID")):
+def session_show(
+    session_id: str = typer.Argument(..., help="Session ID"),
+    global_search: bool = typer.Option(False, "--global", "-g", help="Search across all registered repos"),
+    repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
+):
     """Show session details and turn summaries."""
+    is_cross_repo = global_search or repo
+
+    if is_cross_repo:
+        from ..core.cross_repo import cross_repo_session_detail
+
+        result, warnings = cross_repo_session_detail(session_id, repos=repo, include_warnings=True)
+
+        if not result:
+            console.print(f"[red]Session not found:[/red] {session_id}")
+            raise typer.Exit(1)
+
+        session = result
+        console.print(f"\n[bold]Session:[/bold] {session['id']}")
+        console.print(f"  Repo: {session.get('repo_name', '')}")
+        console.print(f"  Type: {session.get('session_type', '')}")
+        console.print(f"  Started: {session.get('started_at', '')}")
+        console.print(f"  Ended: {session.get('ended_at') or 'active'}")
+        console.print(f"  Turns: {session.get('total_turns', 0)}")
+        if session.get("session_title"):
+            console.print(f"  Title: {session['session_title']}")
+        if session.get("session_summary"):
+            console.print(f"  Summary: {session['session_summary']}")
+
+        turns = session.get("turns", [])
+        if turns:
+            console.print(f"\n[bold]Turns ({len(turns)}):[/bold]")
+            for t in turns:
+                msg = (t.get("user_message") or "")[:80]
+                summary = (t.get("assistant_summary") or "")[:80]
+                console.print(f"  #{t['turn_number']}: {msg}")
+                if summary:
+                    console.print(f"      → {summary}")
+
+        for w in warnings:
+            console.print(f"[dim]{w}[/dim]")
+        return
+
     from ..core.project import find_git_root
     from ..core.session import get_session
     from ..core.turn import list_turns

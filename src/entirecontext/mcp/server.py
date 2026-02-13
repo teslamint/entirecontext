@@ -135,6 +135,7 @@ if mcp:
         session_id: str | None = None,
         limit: int = 20,
         since: str | None = None,
+        repos: list[str] | None = None,
     ) -> str:
         """List checkpoints for current session or repo.
 
@@ -142,8 +143,31 @@ if mcp:
             session_id: Filter by session ID (optional)
             limit: Maximum number of results (default 20)
             since: Only checkpoints after this ISO8601 timestamp
+            repos: Repo filter — None=current repo, ["*"]=all repos, ["name"]=specific repos
         """
         import json
+
+        if repos is not None:
+            from ..core.cross_repo import cross_repo_checkpoints
+
+            repo_names = None if repos == ["*"] else repos
+            results, warnings = cross_repo_checkpoints(
+                repos=repo_names, session_id=session_id, since=since, limit=limit, include_warnings=True
+            )
+            checkpoints = []
+            for r in results:
+                checkpoints.append(
+                    {
+                        "id": r.get("id", ""),
+                        "commit_hash": r.get("git_commit_hash", ""),
+                        "branch": r.get("git_branch", ""),
+                        "created_at": r.get("created_at", ""),
+                        "diff_summary": r.get("diff_summary", ""),
+                        "repo_name": r.get("repo_name", ""),
+                        "repo_path": r.get("repo_path", ""),
+                    }
+                )
+            return json.dumps({"checkpoints": checkpoints, "count": len(checkpoints), "warnings": warnings})
 
         conn, _ = _get_repo_db()
         if not conn:
@@ -182,6 +206,7 @@ if mcp:
     @mcp.tool()
     async def ec_session_context(
         session_id: str | None = None,
+        repos: list[str] | None = None,
     ) -> str:
         """Get session context with summary and recent turns.
 
@@ -190,8 +215,45 @@ if mcp:
 
         Args:
             session_id: Session ID (optional, auto-detects current session)
+            repos: Repo filter — None=current repo, ["*"]=all repos, ["name"]=specific repos
         """
         import json
+
+        if repos is not None:
+            from ..core.cross_repo import cross_repo_session_detail
+
+            if not session_id:
+                return json.dumps({"error": "session_id is required for cross-repo session context"})
+
+            repo_names = None if repos == ["*"] else repos
+            result, warnings = cross_repo_session_detail(session_id, repos=repo_names, include_warnings=True)
+            if not result:
+                return json.dumps({"error": f"Session not found: {session_id}", "warnings": warnings})
+
+            turns = result.get("turns", [])
+            return json.dumps(
+                {
+                    "session_id": result.get("id", ""),
+                    "session_title": result.get("session_title", ""),
+                    "session_summary": result.get("session_summary", ""),
+                    "started_at": result.get("started_at", ""),
+                    "ended_at": result.get("ended_at"),
+                    "total_turns": result.get("total_turns", 0),
+                    "repo_name": result.get("repo_name", ""),
+                    "repo_path": result.get("repo_path", ""),
+                    "recent_turns": [
+                        {
+                            "id": t.get("id", ""),
+                            "turn_number": t.get("turn_number", 0),
+                            "user_message": t.get("user_message", ""),
+                            "assistant_summary": t.get("assistant_summary", ""),
+                            "timestamp": t.get("timestamp", ""),
+                        }
+                        for t in turns
+                    ],
+                    "warnings": warnings,
+                }
+            )
 
         conn, _ = _get_repo_db()
         if not conn:
@@ -243,6 +305,7 @@ if mcp:
         file_path: str,
         start_line: int | None = None,
         end_line: int | None = None,
+        repos: list[str] | None = None,
     ) -> str:
         """Get human/agent attribution for a file.
 
@@ -250,8 +313,33 @@ if mcp:
             file_path: Path to the file
             start_line: Start line number (optional)
             end_line: End line number (optional)
+            repos: Repo filter — None=current repo, ["*"]=all repos, ["name"]=specific repos
         """
         import json
+
+        if repos is not None:
+            from ..core.cross_repo import cross_repo_attribution
+
+            repo_names = None if repos == ["*"] else repos
+            results, warnings = cross_repo_attribution(
+                file_path, start_line, end_line, repos=repo_names, include_warnings=True
+            )
+            attributions = []
+            for r in results:
+                attributions.append(
+                    {
+                        "start_line": r.get("start_line"),
+                        "end_line": r.get("end_line"),
+                        "type": r.get("attribution_type", ""),
+                        "agent_name": r.get("agent_name"),
+                        "session_id": r.get("session_id", ""),
+                        "turn_id": r.get("turn_id", ""),
+                        "confidence": r.get("confidence"),
+                        "repo_name": r.get("repo_name", ""),
+                        "repo_path": r.get("repo_path", ""),
+                    }
+                )
+            return json.dumps({"file_path": file_path, "attributions": attributions, "warnings": warnings})
 
         conn, _ = _get_repo_db()
         if not conn:
@@ -298,13 +386,38 @@ if mcp:
             conn.close()
 
     @mcp.tool()
-    async def ec_rewind(checkpoint_id: str) -> str:
+    async def ec_rewind(
+        checkpoint_id: str,
+        repos: list[str] | None = None,
+    ) -> str:
         """Show state at a checkpoint.
 
         Args:
             checkpoint_id: The checkpoint ID to examine
+            repos: Repo filter — None=current repo, ["*"]=all repos, ["name"]=specific repos
         """
         import json
+
+        if repos is not None:
+            from ..core.cross_repo import cross_repo_rewind
+
+            repo_names = None if repos == ["*"] else repos
+            result, warnings = cross_repo_rewind(checkpoint_id, repos=repo_names, include_warnings=True)
+            if not result:
+                return json.dumps({"error": f"Checkpoint not found: {checkpoint_id}", "warnings": warnings})
+            return json.dumps(
+                {
+                    "checkpoint_id": result.get("id", ""),
+                    "commit_hash": result.get("git_commit_hash", ""),
+                    "branch": result.get("git_branch", ""),
+                    "files_snapshot": result.get("files_snapshot"),
+                    "diff_summary": result.get("diff_summary", ""),
+                    "session_id": result.get("session_id", ""),
+                    "repo_name": result.get("repo_name", ""),
+                    "repo_path": result.get("repo_path", ""),
+                    "warnings": warnings,
+                }
+            )
 
         conn, _ = _get_repo_db()
         if not conn:
@@ -344,14 +457,40 @@ if mcp:
     async def ec_related(
         query: str | None = None,
         files: list[str] | None = None,
+        limit: int = 20,
+        repos: list[str] | None = None,
     ) -> str:
         """Find related sessions and turns to current work.
 
         Args:
             query: Search query (optional)
             files: List of file paths to find related sessions (optional)
+            limit: Maximum number of results (default 20)
+            repos: Repo filter — None=current repo, ["*"]=all repos, ["name"]=specific repos
         """
         import json
+
+        if repos is not None:
+            from ..core.cross_repo import cross_repo_related
+
+            repo_names = None if repos == ["*"] else repos
+            results, warnings = cross_repo_related(
+                query=query, files=files, repos=repo_names, limit=limit, include_warnings=True
+            )
+            related = []
+            for r in results:
+                related.append(
+                    {
+                        "type": "turn",
+                        "id": r.get("id", ""),
+                        "session_id": r.get("session_id", ""),
+                        "summary": r.get("assistant_summary") or r.get("user_message", ""),
+                        "timestamp": r.get("timestamp", ""),
+                        "repo_name": r.get("repo_name", ""),
+                        "repo_path": r.get("repo_path", ""),
+                    }
+                )
+            return json.dumps({"related": related, "count": len(related), "warnings": warnings})
 
         conn, _ = _get_repo_db()
         if not conn:
@@ -401,7 +540,81 @@ if mcp:
                     seen.add(r["id"])
                     unique_results.append(r)
 
-            return json.dumps({"related": unique_results[:20], "count": len(unique_results[:20])})
+            return json.dumps({"related": unique_results[:limit], "count": len(unique_results[:limit])})
+        finally:
+            conn.close()
+
+    @mcp.tool()
+    async def ec_turn_content(
+        turn_id: str,
+        repos: list[str] | None = None,
+    ) -> str:
+        """Get full content for a specific turn.
+
+        Args:
+            turn_id: The turn ID to retrieve content for
+            repos: Repo filter — None=current repo, ["*"]=all repos, ["name"]=specific repos
+        """
+        import json
+
+        if repos is not None:
+            from ..core.cross_repo import cross_repo_turn_content
+
+            repo_names = None if repos == ["*"] else repos
+            result, warnings = cross_repo_turn_content(turn_id, repos=repo_names, include_warnings=True)
+            if not result:
+                return json.dumps({"error": f"Turn not found: {turn_id}", "warnings": warnings})
+            return json.dumps(
+                {
+                    "turn_id": result.get("id", ""),
+                    "session_id": result.get("session_id", ""),
+                    "turn_number": result.get("turn_number", 0),
+                    "user_message": result.get("user_message", ""),
+                    "assistant_summary": result.get("assistant_summary", ""),
+                    "timestamp": result.get("timestamp", ""),
+                    "content": result.get("content"),
+                    "content_path": result.get("content_path"),
+                    "repo_name": result.get("repo_name", ""),
+                    "repo_path": result.get("repo_path", ""),
+                    "warnings": warnings,
+                }
+            )
+
+        conn, repo_path = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.turn import get_turn
+
+            turn = get_turn(conn, turn_id)
+            if not turn:
+                return json.dumps({"error": f"Turn not found: {turn_id}"})
+
+            content_row = conn.execute("SELECT content_path FROM turn_content WHERE turn_id = ?", (turn_id,)).fetchone()
+
+            content = None
+            content_path = None
+            if content_row:
+                content_path = content_row["content_path"]
+                from ..core.cross_repo import resolve_content_path
+
+                full_path = resolve_content_path(str(repo_path), content_path)
+                if full_path.exists():
+                    content = full_path.read_text(encoding="utf-8")
+
+            return json.dumps(
+                {
+                    "turn_id": turn["id"],
+                    "session_id": turn["session_id"],
+                    "turn_number": turn.get("turn_number", 0),
+                    "user_message": turn.get("user_message", ""),
+                    "assistant_summary": turn.get("assistant_summary", ""),
+                    "timestamp": turn.get("timestamp", ""),
+                    "content": content,
+                    "content_path": content_path,
+                }
+            )
         finally:
             conn.close()
 

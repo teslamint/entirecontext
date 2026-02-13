@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import List, Optional
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -17,8 +19,46 @@ app.add_typer(checkpoint_app, name="checkpoint")
 def checkpoint_list(
     session: str | None = typer.Option(None, "--session", "-s", help="Filter by session ID"),
     limit: int = typer.Option(20, "--limit", "-n"),
+    global_search: bool = typer.Option(False, "--global", "-g", help="List checkpoints across all registered repos"),
+    repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
 ):
     """List checkpoints."""
+    is_cross_repo = global_search or repo
+
+    if is_cross_repo:
+        from ..core.cross_repo import cross_repo_checkpoints
+
+        checkpoints, warnings = cross_repo_checkpoints(
+            repos=repo, session_id=session, limit=limit, include_warnings=True
+        )
+
+        if not checkpoints:
+            console.print("[dim]No checkpoints found.[/dim]")
+            return
+
+        table = Table(title=f"Checkpoints ({len(checkpoints)})")
+        table.add_column("Repo", style="cyan", max_width=15)
+        table.add_column("ID", style="dim", max_width=12)
+        table.add_column("Commit", style="cyan", max_width=10)
+        table.add_column("Branch")
+        table.add_column("Created")
+        table.add_column("Diff Summary", max_width=40)
+
+        for cp in checkpoints:
+            table.add_row(
+                cp.get("repo_name", ""),
+                cp["id"][:12],
+                (cp.get("git_commit_hash") or "")[:10],
+                cp.get("git_branch") or "",
+                cp.get("created_at") or "",
+                (cp.get("diff_summary") or "")[:40],
+            )
+
+        console.print(table)
+        for w in warnings:
+            console.print(f"[dim]{w}[/dim]")
+        return
+
     from ..core.checkpoint import list_checkpoints
     from ..core.project import find_git_root
     from ..db import get_db
@@ -56,8 +96,53 @@ def checkpoint_list(
 
 
 @checkpoint_app.command("show")
-def checkpoint_show(checkpoint_id: str = typer.Argument(...)):
+def checkpoint_show(
+    checkpoint_id: str = typer.Argument(...),
+    global_search: bool = typer.Option(False, "--global", "-g", help="Search across all registered repos"),
+    repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
+):
     """Show checkpoint details."""
+    is_cross_repo = global_search or repo
+
+    if is_cross_repo:
+        from ..core.cross_repo import cross_repo_rewind
+
+        result, warnings = cross_repo_rewind(checkpoint_id, repos=repo, include_warnings=True)
+
+        if not result:
+            console.print(f"[red]Checkpoint not found:[/red] {checkpoint_id}")
+            raise typer.Exit(1)
+
+        cp = result
+        console.print(f"\n[bold]Checkpoint:[/bold] {cp['id']}")
+        console.print(f"  Repo: {cp.get('repo_name', '')}")
+        console.print(f"  Commit: {cp.get('git_commit_hash', '')}")
+        console.print(f"  Branch: {cp.get('git_branch') or 'N/A'}")
+        console.print(f"  Created: {cp.get('created_at', '')}")
+        if cp.get("diff_summary"):
+            console.print(f"  Diff Summary: {cp['diff_summary']}")
+        if cp.get("parent_checkpoint_id"):
+            console.print(f"  Parent: {cp['parent_checkpoint_id'][:12]}")
+
+        if cp.get("files_snapshot"):
+            snapshot = cp["files_snapshot"]
+            if isinstance(snapshot, dict):
+                console.print(f"\n[bold]Files Snapshot ({len(snapshot)} files):[/bold]")
+                for path in sorted(snapshot.keys())[:50]:
+                    console.print(f"  {path}")
+                if len(snapshot) > 50:
+                    console.print(f"  ... and {len(snapshot) - 50} more")
+            elif isinstance(snapshot, list):
+                console.print(f"\n[bold]Files Snapshot ({len(snapshot)} files):[/bold]")
+                for path in sorted(snapshot)[:50]:
+                    console.print(f"  {path}")
+                if len(snapshot) > 50:
+                    console.print(f"  ... and {len(snapshot) - 50} more")
+
+        for w in warnings:
+            console.print(f"[dim]{w}[/dim]")
+        return
+
     from ..core.checkpoint import get_checkpoint
     from ..core.project import find_git_root
     from ..core.session import get_session

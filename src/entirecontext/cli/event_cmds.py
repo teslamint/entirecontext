@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.console import Console
@@ -20,8 +20,47 @@ def event_list(
     status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status (active/frozen/archived)"),
     event_type: Optional[str] = typer.Option(None, "--type", "-t", help="Filter by type (task/temporal/milestone)"),
     limit: int = typer.Option(20, "--limit", "-n"),
+    global_search: bool = typer.Option(False, "--global", "-g", help="List events across all registered repos"),
+    repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
 ):
     """List events."""
+    is_cross_repo = global_search or repo
+
+    if is_cross_repo:
+        from ..core.cross_repo import cross_repo_events
+
+        events, warnings = cross_repo_events(
+            repos=repo, status=status, event_type=event_type, limit=limit, include_warnings=True
+        )
+
+        if not events:
+            console.print("[dim]No events found.[/dim]")
+            return
+
+        table = Table(title=f"Events ({len(events)})")
+        table.add_column("Repo", style="cyan", max_width=15)
+        table.add_column("ID", style="dim", max_width=12)
+        table.add_column("Title")
+        table.add_column("Type")
+        table.add_column("Status")
+        table.add_column("Created")
+
+        for e in events:
+            status_str = "[green]active[/green]" if e["status"] == "active" else e["status"]
+            table.add_row(
+                e.get("repo_name", ""),
+                e["id"][:12],
+                e.get("title", ""),
+                e.get("event_type", ""),
+                status_str,
+                e.get("created_at", ""),
+            )
+
+        console.print(table)
+        for w in warnings:
+            console.print(f"[dim]{w}[/dim]")
+        return
+
     from ..core.event import list_events
     from ..core.project import find_git_root
     from ..db import get_db

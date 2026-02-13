@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import List, Optional
+
 import typer
 from rich.console import Console
 
@@ -14,11 +16,57 @@ console = Console()
 def rewind(
     checkpoint_id: str = typer.Argument(..., help="Checkpoint ID to rewind to"),
     restore: bool = typer.Option(False, "--restore", help="Restore working tree to checkpoint state"),
+    global_search: bool = typer.Option(False, "--global", "-g", help="Search across all registered repos"),
+    repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
 ):
     """Show or restore code state at a checkpoint.
 
     With --restore: requires clean working tree. Aborts if uncommitted changes exist.
     """
+    is_cross_repo = global_search or repo
+
+    if is_cross_repo:
+        if restore:
+            console.print("[red]--restore is not supported with --global or --repo.[/red]")
+            raise typer.Exit(1)
+
+        from ..core.cross_repo import cross_repo_rewind
+
+        result, warnings = cross_repo_rewind(checkpoint_id, repos=repo, include_warnings=True)
+
+        if not result:
+            console.print(f"[red]Checkpoint not found:[/red] {checkpoint_id}")
+            raise typer.Exit(1)
+
+        cp = result
+        console.print(f"\n[bold]Checkpoint:[/bold] {cp['id'][:12]}")
+        console.print(f"  Repo: {cp.get('repo_name', '')}")
+        console.print(f"  Commit: {cp.get('git_commit_hash', '')}")
+        console.print(f"  Branch: {cp.get('git_branch') or 'N/A'}")
+        console.print(f"  Created: {cp.get('created_at', '')}")
+
+        if cp.get("diff_summary"):
+            console.print(f"  Diff Summary: {cp['diff_summary']}")
+
+        if cp.get("files_snapshot"):
+            snapshot = cp["files_snapshot"]
+            if isinstance(snapshot, dict):
+                console.print(f"\n[bold]Files Snapshot ({len(snapshot)} files):[/bold]")
+                for path in sorted(snapshot.keys())[:20]:
+                    console.print(f"  {path}")
+                if len(snapshot) > 20:
+                    console.print(f"  ... and {len(snapshot) - 20} more")
+            elif isinstance(snapshot, list):
+                console.print(f"\n[bold]Files Snapshot ({len(snapshot)} files):[/bold]")
+                for path in sorted(snapshot)[:20]:
+                    console.print(f"  {path}")
+                if len(snapshot) > 20:
+                    console.print(f"  ... and {len(snapshot) - 20} more")
+
+        for w in warnings:
+            console.print(f"[dim]{w}[/dim]")
+        return
+
     import subprocess
 
     from ..core.checkpoint import get_checkpoint

@@ -19,8 +19,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "sync": {
         "auto_sync": False,
-        "auto_sync_on_push": False,
-        "shadow_branch": "entirecontext/checkpoints/v1",
+        "auto_pull": False,
+        "cooldown_seconds": 300,
+        "pull_staleness_seconds": 600,
+        "push_on_sync": True,
+        "quiet": True,
     },
     "display": {
         "max_results": 20,
