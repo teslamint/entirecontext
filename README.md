@@ -114,13 +114,20 @@ ec checkpoint list
 
 ## MCP Server
 
-Start the MCP server for AI agent integration:
+### Automatic Setup
+
+`ec enable` automatically registers the MCP server in `~/.claude/settings.json` (user-level):
 
 ```bash
-ec mcp serve
+ec enable    # installs hooks AND configures MCP server
+ec doctor    # verify MCP config is present
 ```
 
-Add to your Claude Code MCP configuration (`.claude/settings.json` or equivalent):
+This is idempotent — running `ec enable` again skips the MCP entry if it already exists. `ec disable` removes hooks but preserves the MCP config (other repos may use it).
+
+### Manual Setup
+
+To configure manually, add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -132,6 +139,23 @@ Add to your Claude Code MCP configuration (`.claude/settings.json` or equivalent
     }
   }
 }
+```
+
+### Manual Removal
+
+To remove the MCP server, delete the `entirecontext` key from `~/.claude/settings.json`:
+
+```bash
+# Remove MCP config (use jq or edit manually)
+jq 'del(.mcpServers.entirecontext)' ~/.claude/settings.json > tmp.json && mv tmp.json ~/.claude/settings.json
+```
+
+### Standalone Server
+
+To run the MCP server directly (e.g. for debugging):
+
+```bash
+ec mcp serve
 ```
 
 ### Available Tools
