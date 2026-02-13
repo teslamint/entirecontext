@@ -18,11 +18,12 @@ class TestHookTimeoutUnits:
     """Timeouts must be in seconds (matcher-based format)."""
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_generates_correct_timeouts(self, mock_git_root, tmp_path):
+    def test_enable_generates_correct_timeouts(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         result = runner.invoke(app, ["enable", "--no-git-hooks"])
         assert result.exit_code == 0
@@ -37,11 +38,12 @@ class TestHookTimeoutUnits:
         assert hooks["SessionEnd"][0]["hooks"][0]["timeout"] == 5
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_timeouts_are_positive_seconds(self, mock_git_root, tmp_path):
+    def test_timeouts_are_positive_seconds(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         runner.invoke(app, ["enable", "--no-git-hooks"])
         settings = json.loads((repo / ".claude" / "settings.json").read_text())
@@ -57,11 +59,12 @@ class TestHookConfigStructure:
     """Matcher-based format per Claude Code spec."""
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_generates_matcher_format(self, mock_git_root, tmp_path):
+    def test_enable_generates_matcher_format(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         runner.invoke(app, ["enable", "--no-git-hooks"])
         settings = json.loads((repo / ".claude" / "settings.json").read_text())
@@ -78,11 +81,12 @@ class TestHookConfigStructure:
                 assert "timeout" in inner[0], f"{hook_name}: inner hook missing 'timeout'"
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_command_contains_hook_type(self, mock_git_root, tmp_path):
+    def test_enable_command_contains_hook_type(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         runner.invoke(app, ["enable", "--no-git-hooks"])
         settings = json.loads((repo / ".claude" / "settings.json").read_text())
@@ -116,11 +120,12 @@ class TestGitHooksInstallation:
     """Gap 7: Git hook installation in enable/disable."""
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_installs_git_hooks(self, mock_git_root, tmp_path):
+    def test_enable_installs_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         result = runner.invoke(app, ["enable"])
         assert result.exit_code == 0
@@ -134,11 +139,12 @@ class TestGitHooksInstallation:
         assert pre_push.stat().st_mode & stat.S_IEXEC
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_no_git_hooks_flag(self, mock_git_root, tmp_path):
+    def test_enable_no_git_hooks_flag(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         result = runner.invoke(app, ["enable", "--no-git-hooks"])
         assert result.exit_code == 0
@@ -148,11 +154,12 @@ class TestGitHooksInstallation:
         assert not (repo / ".git" / "hooks" / "pre-push").exists()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_disable_removes_git_hooks(self, mock_git_root, tmp_path):
+    def test_disable_removes_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         runner.invoke(app, ["enable"])
         assert (repo / ".git" / "hooks" / "post-commit").exists()
@@ -217,12 +224,26 @@ class TestGitHooksInstallation:
         assert "sync" in content
 
 
+def _setup_fake_home_with_mcp(ec_repo, monkeypatch):
+    """Set up a fake HOME with MCP config for doctor tests."""
+    fake_home = ec_repo.parent / "fakehome"
+    fake_home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    user_claude = fake_home / ".claude"
+    user_claude.mkdir(parents=True, exist_ok=True)
+    (user_claude / "settings.json").write_text(
+        json.dumps({"mcpServers": {"entirecontext": {"command": "ec", "args": ["mcp", "serve"], "type": "stdio"}}})
+    )
+    return fake_home
+
+
 class TestDoctorUnsyncedCheck:
     """Gap 8: Doctor uses sync_metadata.last_export_at."""
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_doctor_detects_unsynced_checkpoints(self, mock_git_root, ec_repo, ec_db):
+    def test_doctor_detects_unsynced_checkpoints(self, mock_git_root, ec_repo, ec_db, monkeypatch):
         mock_git_root.return_value = str(ec_repo)
+        _setup_fake_home_with_mcp(ec_repo, monkeypatch)
 
         (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
         settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
@@ -242,8 +263,9 @@ class TestDoctorUnsyncedCheck:
         assert "not synced" in result.output.lower()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_doctor_no_warning_when_synced(self, mock_git_root, ec_repo, ec_db):
+    def test_doctor_no_warning_when_synced(self, mock_git_root, ec_repo, ec_db, monkeypatch):
         mock_git_root.return_value = str(ec_repo)
+        _setup_fake_home_with_mcp(ec_repo, monkeypatch)
 
         (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
         settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
@@ -264,9 +286,10 @@ class TestDoctorUnsyncedCheck:
         assert "not synced" not in result.output.lower()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_doctor_no_sync_metadata_row(self, mock_git_root, ec_repo, ec_db):
+    def test_doctor_no_sync_metadata_row(self, mock_git_root, ec_repo, ec_db, monkeypatch):
         """When sync_metadata has no rows, all checkpoints are unsynced."""
         mock_git_root.return_value = str(ec_repo)
+        _setup_fake_home_with_mcp(ec_repo, monkeypatch)
 
         (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
         settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
@@ -289,15 +312,48 @@ class TestDoctorUnsyncedCheck:
         assert "not synced" in result.output.lower()
 
 
+class TestDoctorMCPCheck:
+    """Doctor warns when MCP server is not configured in user settings."""
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_warns_missing_mcp(self, mock_git_root, ec_repo, ec_db, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        fake_home = ec_repo.parent / "fakehome_nomcp"
+        fake_home.mkdir(exist_ok=True)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
+        settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
+        (ec_repo / ".claude" / "settings.json").write_text(json.dumps(settings))
+
+        result = runner.invoke(app, ["doctor"])
+        assert "mcp" in result.output.lower()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_no_mcp_warning_when_configured(self, mock_git_root, ec_repo, ec_db, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        _setup_fake_home_with_mcp(ec_repo, monkeypatch)
+
+        (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
+        settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
+        (ec_repo / ".claude" / "settings.json").write_text(json.dumps(settings))
+
+        result = runner.invoke(app, ["doctor"])
+        assert "mcp server not configured" not in result.output.lower()
+
+
 class TestEnableDisableRoundTrip:
     """Enable then disable should cleanly remove all EC hooks."""
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_disable_cleans_up(self, mock_git_root, tmp_path):
+    def test_enable_disable_cleans_up(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
 
         runner.invoke(app, ["enable"])
         settings = json.loads((repo / ".claude" / "settings.json").read_text())
@@ -310,11 +366,14 @@ class TestEnableDisableRoundTrip:
         assert not (repo / ".git" / "hooks" / "pre-push").exists()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_preserves_existing_hooks(self, mock_git_root, tmp_path):
+    def test_enable_preserves_existing_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git" / "hooks").mkdir(parents=True)
         mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
 
         (repo / ".claude").mkdir(parents=True)
         settings = {"hooks": {"SessionStart": [{"command": "other-tool run", "timeout": 1000}]}}

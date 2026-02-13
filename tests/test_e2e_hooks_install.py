@@ -15,6 +15,9 @@ runner = CliRunner()
 class TestHookInstall:
     def test_enable_creates_settings(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
+        fake_home = ec_repo.parent / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
         result = runner.invoke(app, ["enable"])
         assert result.exit_code == 0
 
@@ -43,8 +46,20 @@ class TestHookInstall:
                     assert isinstance(inner[0]["timeout"], int)
                     assert inner[0]["timeout"] <= 10
 
+        user_settings_path = fake_home / ".claude" / "settings.json"
+        assert user_settings_path.exists()
+        user_settings = json.loads(user_settings_path.read_text())
+        assert "mcpServers" in user_settings
+        mcp_ec = user_settings["mcpServers"]["entirecontext"]
+        assert mcp_ec["type"] == "stdio"
+        assert "mcp" in mcp_ec["args"]
+        assert "serve" in mcp_ec["args"]
+
     def test_enable_idempotent(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
+        fake_home = ec_repo.parent / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
         runner.invoke(app, ["enable"])
         runner.invoke(app, ["enable"])
 
@@ -53,8 +68,14 @@ class TestHookInstall:
             ec_entries = [h for h in entries if _is_ec_hook(h)]
             assert len(ec_entries) == 1, f"Duplicate hooks for {hook_name}"
 
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
+        assert "entirecontext" in user_settings["mcpServers"]
+
     def test_disable_removes_hooks(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
+        fake_home = ec_repo.parent / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
         runner.invoke(app, ["enable"])
         result = runner.invoke(app, ["disable"])
         assert result.exit_code == 0
@@ -64,8 +85,14 @@ class TestHookInstall:
         for entries in hooks.values():
             assert not any(_is_ec_hook(h) for h in entries)
 
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
+        assert "entirecontext" in user_settings["mcpServers"]
+
     def test_doctor_healthy(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
+        fake_home = ec_repo.parent / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
         runner.invoke(app, ["enable"])
         result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0

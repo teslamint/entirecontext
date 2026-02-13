@@ -148,6 +148,22 @@ def enable(
         if installed:
             console.print(f"[green]Git hooks installed:[/green] {', '.join(installed)}")
 
+    user_settings_path = Path.home() / ".claude" / "settings.json"
+    user_settings_path.parent.mkdir(parents=True, exist_ok=True)
+    user_settings: dict = {}
+    if user_settings_path.exists():
+        user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+    mcp_servers = user_settings.setdefault("mcpServers", {})
+    if "entirecontext" not in mcp_servers:
+        ec_bin = shutil.which("ec")
+        mcp_servers["entirecontext"] = {
+            "command": str(Path(ec_bin).resolve()) if ec_bin else sys.executable,
+            "args": ["mcp", "serve"] if ec_bin else ["-m", "entirecontext.cli", "mcp", "serve"],
+            "type": "stdio",
+        }
+        user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
+        console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
+
 
 @app.command()
 def disable():
@@ -301,6 +317,14 @@ def doctor():
         )
         if not ec_hooks_found:
             warnings.append("EntireContext hooks not installed. Run 'ec enable'.")
+
+    user_settings_path = Path.home() / ".claude" / "settings.json"
+    if user_settings_path.exists():
+        user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+        if "entirecontext" not in user_settings.get("mcpServers", {}):
+            warnings.append("MCP server not configured. Run 'ec enable' to add MCP support.")
+    else:
+        warnings.append("MCP server not configured. Run 'ec enable' to add MCP support.")
 
     if issues:
         for issue in issues:
