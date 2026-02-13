@@ -135,3 +135,77 @@ class TestSearchCLI:
         result = runner.invoke(app, ["search", "nonexistent_xyz"])
         assert result.exit_code == 0
         assert "no results" in result.output.lower()
+
+
+class TestSemanticSearch:
+    @pytest.fixture
+    def seeded_with_embeddings(self, seeded_repo):
+        """Seeded repo with fake embeddings for semantic search."""
+        import struct
+
+        conn = get_db(str(seeded_repo))
+        turns = conn.execute("SELECT id FROM turns ORDER BY turn_number").fetchall()
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        for turn in turns:
+            conn.execute(
+                "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+                "VALUES (?, 'turn', ?, 'all-MiniLM-L6-v2', ?, 3, 'hash')",
+                (f"emb-{turn['id']}", turn["id"], fake_vec),
+            )
+        conn.commit()
+        conn.close()
+        return seeded_repo
+
+    def test_semantic_search_returns_results(self, seeded_with_embeddings):
+        import struct
+        from unittest.mock import patch
+
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        conn = get_db(str(seeded_with_embeddings))
+        with patch("entirecontext.core.embedding.embed_text", return_value=fake_vec):
+            from entirecontext.core.embedding import semantic_search
+
+            results = semantic_search(conn, "auth bug")
+        conn.close()
+        assert len(results) >= 1
+        assert all(r.get("score", 0) > 0 for r in results)
+
+    def test_semantic_search_with_file_filter(self, seeded_with_embeddings):
+        import struct
+        from unittest.mock import patch
+
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        conn = get_db(str(seeded_with_embeddings))
+        with patch("entirecontext.core.embedding.embed_text", return_value=fake_vec):
+            from entirecontext.core.embedding import semantic_search
+
+            results = semantic_search(conn, "auth", file_filter="src/auth.py")
+        conn.close()
+        assert len(results) >= 1
+        for r in results:
+            if r.get("source_type") == "turn":
+                assert "src/auth.py" in (r.get("files_touched") or "")
+
+    def test_semantic_search_with_since_filter(self, seeded_with_embeddings):
+        import struct
+        from unittest.mock import patch
+
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        conn = get_db(str(seeded_with_embeddings))
+        with patch("entirecontext.core.embedding.embed_text", return_value=fake_vec):
+            from entirecontext.core.embedding import semantic_search
+
+            results = semantic_search(conn, "auth", since="2099-01-01")
+        conn.close()
+        assert len(results) == 0
+
+    def test_semantic_search_import_error(self, seeded_with_embeddings):
+        from unittest.mock import patch
+
+        conn = get_db(str(seeded_with_embeddings))
+        with patch.dict("sys.modules", {"sentence_transformers": None}):
+            from entirecontext.core.embedding import semantic_search
+
+            with pytest.raises(ImportError, match="sentence-transformers"):
+                semantic_search(conn, "auth")
+        conn.close()

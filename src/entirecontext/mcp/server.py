@@ -64,9 +64,6 @@ if mcp:
         """
         import json
 
-        if search_type == "semantic":
-            return json.dumps({"error": "Semantic search not yet available (Phase 3)"})
-
         is_cross_repo = repos is not None
         repo_names = None if not repos else (None if repos == ["*"] else repos)
 
@@ -89,7 +86,22 @@ if mcp:
                 return json.dumps({"error": "Not in an EntireContext-initialized repo"})
 
             try:
-                if search_type == "fts":
+                if search_type == "semantic":
+                    try:
+                        from ..core.embedding import semantic_search
+
+                        results = semantic_search(
+                            conn,
+                            query,
+                            file_filter=file_filter,
+                            commit_filter=commit_filter,
+                            agent_filter=agent_filter,
+                            since=since,
+                            limit=limit,
+                        )
+                    except ImportError as e:
+                        return json.dumps({"error": f"sentence-transformers is required: {e}"})
+                elif search_type == "fts":
                     from ..core.search import fts_search
 
                     results = fts_search(

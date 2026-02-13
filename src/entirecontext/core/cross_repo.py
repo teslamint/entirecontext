@@ -128,7 +128,19 @@ def cross_repo_search(
 
     def fn(conn: sqlite3.Connection, repo: dict) -> list[dict]:
         per_repo_limit = limit * 2
-        if search_type == "fts":
+        if search_type == "semantic":
+            from ..core.embedding import semantic_search
+
+            return semantic_search(
+                conn,
+                query,
+                file_filter=file_filter,
+                commit_filter=commit_filter,
+                agent_filter=agent_filter,
+                since=since,
+                limit=per_repo_limit,
+            )
+        elif search_type == "fts":
             return fts_search(
                 conn,
                 query,
@@ -151,7 +163,7 @@ def cross_repo_search(
                 limit=per_repo_limit,
             )
 
-    sort_key = _sort_key_for_target(target)
+    sort_key = "score" if search_type == "semantic" else _sort_key_for_target(target)
     results, warnings = _for_each_repo(fn, repos=repos, sort_key=sort_key, limit=limit)
     return _return_with_warnings(results, warnings, include_warnings)
 

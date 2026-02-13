@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
@@ -56,11 +56,39 @@ class TestSearchCommand:
         result = runner.invoke(app, ["search", "test"])
         assert result.exit_code == 1
 
-    def test_search_semantic_phase3(self):
+    def test_search_semantic_calls_semantic_search(self):
+        mock_conn = MagicMock()
         with patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"):
-            with patch("entirecontext.db.connection.get_db"):
-                result = runner.invoke(app, ["search", "test", "--semantic"])
-                assert "Phase 3" in result.output
+            with patch("entirecontext.db.get_db", return_value=mock_conn):
+                with patch(
+                    "entirecontext.core.embedding.semantic_search",
+                    return_value=[
+                        {
+                            "id": "t1",
+                            "source_type": "turn",
+                            "session_id": "s1",
+                            "user_message": "test query",
+                            "assistant_summary": "result",
+                            "timestamp": "2025-01-01",
+                            "score": 0.95,
+                        }
+                    ],
+                ) as mock_sem:
+                    result = runner.invoke(app, ["search", "test query", "--semantic"])
+                    assert result.exit_code == 0
+                    mock_sem.assert_called_once()
+
+    def test_search_semantic_import_error_message(self):
+        mock_conn = MagicMock()
+        with patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"):
+            with patch("entirecontext.db.get_db", return_value=mock_conn):
+                with patch(
+                    "entirecontext.core.embedding.semantic_search",
+                    side_effect=ImportError("sentence-transformers is required"),
+                ):
+                    result = runner.invoke(app, ["search", "test", "--semantic"])
+                    assert result.exit_code == 1
+                    assert "sentence-transformers" in result.output
 
 
 class TestCheckpointCommands:

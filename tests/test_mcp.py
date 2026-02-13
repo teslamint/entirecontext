@@ -251,6 +251,37 @@ class TestMCPToolIntegration:
         result = json.loads(asyncio.run(ec_turn_content("nonexistent")))
         assert "error" in result
 
+    def test_ec_search_semantic(self, mock_repo_db):
+        import struct
+        from unittest.mock import patch
+
+        from entirecontext.mcp.server import ec_search
+
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        mock_repo_db.execute(
+            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+            "VALUES ('emb1', 'turn', 't1', 'all-MiniLM-L6-v2', ?, 3, 'hash')",
+            (fake_vec,),
+        )
+        mock_repo_db.commit()
+
+        with patch("entirecontext.core.embedding.embed_text", return_value=fake_vec):
+            result = json.loads(asyncio.run(ec_search("auth", search_type="semantic")))
+        assert result["count"] >= 1
+
+    def test_ec_search_semantic_import_error(self, mock_repo_db):
+        from unittest.mock import patch
+
+        from entirecontext.mcp.server import ec_search
+
+        with patch(
+            "entirecontext.core.embedding.semantic_search",
+            side_effect=ImportError("sentence-transformers is required"),
+        ):
+            result = json.loads(asyncio.run(ec_search("auth", search_type="semantic")))
+        assert "error" in result
+        assert "sentence-transformers" in result["error"]
+
     def test_no_repo_returns_error(self, monkeypatch):
         from entirecontext.mcp.server import ec_search
 

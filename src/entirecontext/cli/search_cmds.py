@@ -28,16 +28,12 @@ def search(
     repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
 ):
     """Search across sessions, turns, and events."""
-    if semantic:
-        console.print("[yellow]Semantic search requires 'entirecontext[semantic]'. Coming in Phase 3.[/yellow]")
-        return
-
     is_cross_repo = global_search or repo
 
     if is_cross_repo:
         from ..core.cross_repo import cross_repo_search
 
-        search_type = "fts" if fts else "regex"
+        search_type = "semantic" if semantic else ("fts" if fts else "regex")
         results = cross_repo_search(
             query,
             search_type=search_type,
@@ -60,7 +56,27 @@ def search(
 
         conn = get_db(repo_path)
 
-        if fts:
+        if semantic:
+            try:
+                from ..core.embedding import semantic_search
+
+                results = semantic_search(
+                    conn,
+                    query,
+                    file_filter=file,
+                    commit_filter=commit,
+                    agent_filter=agent,
+                    since=since,
+                    limit=limit,
+                )
+            except ImportError:
+                conn.close()
+                console.print(
+                    "[red]sentence-transformers is required for semantic search. "
+                    "Install with: pip install 'entirecontext[semantic]'[/red]"
+                )
+                raise typer.Exit(1)
+        elif fts:
             from ..core.search import fts_search
 
             results = fts_search(
