@@ -711,12 +711,12 @@ color = true
 **Goal**: Basic capture and search works.
 
 - [x] Project structure, pyproject.toml, CLI skeleton
-- [ ] SQLite schema (projects, sessions, turns, turn_content)
-- [ ] Claude Code hooks: `UserPromptSubmit` → turn start, `Stop` → turn end
-- [ ] Turn capture: parse Claude Code JSONL, extract user message + assistant summary
-- [ ] Regex search across turns and sessions
-- [ ] FTS5 on turns and sessions
-- [ ] CLI: `ec init`, `ec enable`, `ec disable`, `ec status`, `ec search`, `ec session list/show`
+- [x] SQLite schema (projects, sessions, turns, turn_content)
+- [x] Claude Code hooks: `UserPromptSubmit` → turn start, `Stop` → turn end
+- [x] Turn capture: parse Claude Code JSONL, extract user message + assistant summary
+- [x] Regex search across turns and sessions
+- [x] FTS5 on turns and sessions
+- [x] CLI: `ec init`, `ec enable`, `ec disable`, `ec status`, `ec search`, `ec session list/show`
 
 **Deliverable**: `ec init` in a repo, use Claude Code, `ec search "query"` finds past turns.
 
@@ -724,10 +724,10 @@ color = true
 
 **Goal**: Checkpoints anchored to git commits.
 
-- [ ] Checkpoints table + creation logic
-- [ ] `post-commit` git hook → auto-checkpoint
-- [ ] Shadow branch read/write (orphan branch management)
-- [ ] CLI: `ec checkpoint list/show/diff`, `ec rewind`, `ec sync`, `ec pull`
+- [x] Checkpoints table + creation logic
+- [x] `post-commit` git hook → auto-checkpoint
+- [x] Shadow branch read/write (orphan branch management)
+- [x] CLI: `ec checkpoint list/show/diff`, `ec rewind`, `ec sync`, `ec pull`
 
 **Deliverable**: Every git commit has a linked checkpoint. `ec rewind` shows what the agent was doing at any commit.
 
@@ -735,10 +735,10 @@ color = true
 
 **Goal**: Agents can query their own history.
 
-- [ ] Embedding pipeline (sentence-transformers, background indexing)
-- [ ] Semantic search: query embedding → cosine similarity
-- [ ] MCP server: `ec_search`, `ec_checkpoint_list`, `ec_session_context`, `ec_related`
-- [ ] CLI: `ec search --semantic`, `ec index --semantic`
+- [x] Embedding pipeline (sentence-transformers, background indexing)
+- [x] Semantic search: query embedding → cosine similarity
+- [x] MCP server: `ec_search`, `ec_checkpoint_list`, `ec_session_context`, `ec_related`
+- [x] CLI: `ec search --semantic`, `ec index --semantic`
 
 **Deliverable**: Agent uses MCP tool to search "how did we handle X?" and gets relevant past turns.
 
@@ -748,10 +748,10 @@ color = true
 
 **Goal**: Know who changed what.
 
-- [ ] Agent hierarchy tracking (parent_agent_id)
-- [ ] Hunk-level attribution (git diff → agent/human mapping)
-- [ ] Line-level attribution refinement
-- [ ] CLI: `ec blame`
+- [x] Agent hierarchy tracking (parent_agent_id)
+- [x] Hunk-level attribution (git diff → agent/human mapping)
+- [x] Line-level attribution refinement
+- [x] CLI: `ec blame`
 
 **Deliverable**: `ec blame src/auth.py` shows which lines were written by human vs. agent, with links to the session/turn.
 
@@ -761,10 +761,10 @@ color = true
 
 **Goal**: Context travels across machines and repos.
 
-- [ ] Cross-machine sync workflow (shadow branch push/pull)
-- [ ] Global DB: cross-repo search index
-- [ ] Event sharing between repos
-- [ ] CLI: `ec event create/link`, enhanced `ec sync`
+- [x] Cross-machine sync workflow (shadow branch push/pull)
+- [x] Global DB: cross-repo search index
+- [x] Event sharing between repos
+- [x] CLI: `ec event create/link`, enhanced `ec sync`
 
 **Deliverable**: Search across all repos. Share context between team members via git.
 
