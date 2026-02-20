@@ -1,8 +1,16 @@
 # Lessons Learned
 
-_Generated from 1 assessed changes._
+_Generated from 2 assessed changes._
 
 ## 🟢 Expand (increases future options)
+
+### ✅ This change expands future options by adding both manual and hook-based checkpoint creation with shared git helpers while keeping heavier snapshot capture optional and reversible.
+
+**Roadmap alignment:** It aligns well with the roadmap’s capture automation direction (hook/trigger-based flow for futures/lessons) and partially advances the upcoming lightweight-checkpoint goal by defaulting to git-ref metadata unless `--snapshot` is explicitly requested.
+
+**Suggestion:** Keep the new `core/git_utils.py` extraction, but tidy next by unifying CLI and session-end checkpoint logic behind one shared checkpoint service (including diff-base selection and metadata merge behavior) so future trigger types can be added without duplicating policy or silently diverging.
+
+_Assessment: 84288d4f | 2026-02-20T10:48:16.009213+00:00_ 
 
 ### ✅ Introducing a pluggable LLM backend with a CLI `--backend` option increases reversibility and execution options for futures assessment, though IDE-specific files add minor portability drag.
 
