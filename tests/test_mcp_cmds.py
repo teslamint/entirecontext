@@ -13,7 +13,7 @@ runner = CliRunner()
 
 class TestMcpServe:
     def test_import_error(self):
-        with patch("entirecontext.cli.mcp_cmds.console") as mock_console:
+        with patch("entirecontext.cli.mcp_cmds.console"):
             with patch.dict("sys.modules", {"entirecontext.mcp": None, "entirecontext.mcp.server": None}):
                 result = runner.invoke(app, ["mcp", "serve"])
                 assert result.exit_code == 1

@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -181,6 +181,25 @@ CREATE TABLE IF NOT EXISTS embeddings (
 );
 CREATE INDEX IF NOT EXISTS idx_embeddings_source ON embeddings(source_type, source_id);
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(model_name);
+""",
+    "assessments": """
+CREATE TABLE IF NOT EXISTS assessments (
+    id TEXT PRIMARY KEY,
+    checkpoint_id TEXT,
+    verdict TEXT NOT NULL,
+    impact_summary TEXT,
+    roadmap_alignment TEXT,
+    tidy_suggestion TEXT,
+    diff_summary TEXT,
+    feedback TEXT,
+    feedback_reason TEXT,
+    model_name TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (checkpoint_id) REFERENCES checkpoints(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assessments_verdict ON assessments(verdict);
+CREATE INDEX IF NOT EXISTS idx_assessments_created ON assessments(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_assessments_checkpoint ON assessments(checkpoint_id);
 """,
     "sync_metadata": """
 CREATE TABLE IF NOT EXISTS sync_metadata (

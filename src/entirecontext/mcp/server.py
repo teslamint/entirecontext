@@ -631,6 +631,68 @@ if mcp:
             conn.close()
 
 
+    @mcp.tool()
+    async def ec_assess(
+        assessment_id: str | None = None,
+    ) -> str:
+        """Get a futures assessment. Returns latest if no ID given.
+
+        Args:
+            assessment_id: Assessment ID (optional, returns latest if omitted)
+        """
+        import json
+
+        conn, _ = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            if assessment_id:
+                from ..core.futures import get_assessment
+
+                result = get_assessment(conn, assessment_id)
+                if not result:
+                    # Try prefix match
+                    row = conn.execute(
+                        "SELECT * FROM assessments WHERE id LIKE ?", (f"{assessment_id}%",)
+                    ).fetchone()
+                    result = dict(row) if row else None
+            else:
+                row = conn.execute(
+                    "SELECT * FROM assessments ORDER BY created_at DESC LIMIT 1"
+                ).fetchone()
+                result = dict(row) if row else None
+
+            if not result:
+                return json.dumps({"error": "No assessment found"})
+
+            return json.dumps(result)
+        finally:
+            conn.close()
+
+    @mcp.tool()
+    async def ec_lessons(
+        limit: int = 50,
+    ) -> str:
+        """Get lessons learned from futures assessments with feedback.
+
+        Args:
+            limit: Maximum number of lessons (default 50)
+        """
+        import json
+
+        conn, _ = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.futures import get_lessons
+
+            lessons = get_lessons(conn, limit=limit)
+            return json.dumps({"lessons": lessons, "count": len(lessons)})
+        finally:
+            conn.close()
+
 def run_server():
     """Run the MCP server (stdio transport)."""
     if mcp is None:
