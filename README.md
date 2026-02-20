@@ -24,11 +24,30 @@ EntireContext automatically captures every AI coding session — turns, checkpoi
 
 ## Quick Start
 
+Choose an install path first:
+
+- **Local dependency** (inside a Python/uv project)
+- **Global install (optional)** for using `ec` as a standalone CLI across any repo
+
+Use **global install (optional)** when you want `ec` like an app/tool.
+Use **local dependency** when you want to manage `entirecontext` in a Python project's dependencies.
+
 ```bash
-# 1. Install
+# 1A. Local dependency (Python/uv project)
 uv add entirecontext
 # or: pip install entirecontext
+```
 
+```bash
+# 1B. Global install (optional, recommended for non-Python repos)
+uv tool install entirecontext
+# alternative:
+pipx install entirecontext
+```
+
+Use the same workflow after either install path:
+
+```bash
 # 2. Initialize in your repo
 cd your-project
 ec init
@@ -45,6 +64,18 @@ ec session list
 ec blame src/main.py
 ec checkpoint list
 ```
+
+### Windows Notes
+
+- Install alternative (Python launcher): `py -m pip install entirecontext`
+- PowerShell example:
+  ```powershell
+  ec init
+  ec enable
+  ec search "authentication"
+  ```
+- If `ec` is not recognized, open a new terminal (or sign out/in) so updated PATH is loaded.
+- For `uv tool`/`pipx` installs, ensure the scripts directory is on PATH.
 
 ## CLI Reference
 
