@@ -373,6 +373,7 @@ EntireContext was inspired by:
 
 - [entireio/cli](https://github.com/entireio/cli) — Git-integrated AI agent session capture and context management
 - [TheAgentContextLab/OneContext](https://github.com/TheAgentContextLab/OneContext) — Agent self-managed context layer for unified AI agent memory
+- The **Futures Assessment** feature (`ec futures`) is inspired by Kent Beck's [Earn *And* Learn](https://tidyfirst.substack.com/p/earn-and-learn) and the [Tidy First](https://tidyfirst.substack.com/) philosophy — analyzing whether each change expands or narrows your project's future options.
 
 ## License
 
