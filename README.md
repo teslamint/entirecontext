@@ -51,17 +51,17 @@ ec checkpoint list
 | Command | Description |
 |---------|-------------|
 | `ec init` | Initialize EntireContext in current git repo |
-| `ec enable` | Install Claude Code hooks (add `--no-git-hooks` to skip git hooks) |
+| `ec enable [--no-git-hooks]` | Install Claude Code hooks and git hooks (skip git hooks with `--no-git-hooks`) |
 | `ec disable` | Remove Claude Code hooks |
 | `ec status` | Show capture status (project, sessions, turns, active session) |
 | `ec config [KEY] [VALUE]` | Get or set configuration (dotted keys) |
 | `ec doctor` | Diagnose issues (schema, hooks, unsynced checkpoints) |
 | `ec search QUERY` | Search across sessions, turns, and events |
-| `ec blame FILE` | Show per-line human/agent attribution |
+| `ec blame FILE [-L START,END] [--summary]` | Show per-line human/agent attribution |
 | `ec rewind CHECKPOINT_ID` | Show or restore code state at a checkpoint |
-| `ec sync` | Export to shadow branch and push |
+| `ec sync [--no-filter]` | Export to shadow branch and push (skip secret filtering with `--no-filter`) |
 | `ec pull` | Fetch shadow branch and import |
-| `ec index` | Rebuild FTS5 indexes, optionally generate embeddings |
+| `ec index [--semantic] [--force] [--model NAME]` | Rebuild FTS5 indexes, optionally generate embeddings |
 
 ### `ec session` Subcommands
 
@@ -92,10 +92,20 @@ ec checkpoint list
 
 | Command | Description |
 |---------|-------------|
-| `ec futures assess` | Assess staged diff or checkpoint against roadmap via LLM |
-| `ec futures list` | List assessments (filter by `--verdict`) |
-| `ec futures feedback ID FEEDBACK` | Add agree/disagree feedback to an assessment |
-| `ec futures lessons` | Generate LESSONS.md from assessed changes with feedback |
+| `ec futures assess [-c CHECKPOINT] [-r ROADMAP] [-m MODEL] [-b BACKEND]` | Assess staged diff or checkpoint against roadmap via LLM |
+| `ec futures list [-v VERDICT] [-n LIMIT]` | List assessments (filter by `--verdict`) |
+| `ec futures feedback ID FEEDBACK [-r REASON]` | Add agree/disagree feedback to an assessment |
+| `ec futures lessons [-o OUTPUT] [-s SINCE]` | Generate LESSONS.md from assessed changes with feedback |
+
+### LLM Backends (`ec futures assess`)
+
+| Backend | Flag | Auth | Default Model |
+|---------|------|------|---------------|
+| `openai` | `-b openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| `github` | `-b github` | `GITHUB_TOKEN` | `openai/gpt-4o-mini` |
+| `ollama` | `-b ollama` | None (local) | `llama3` |
+| `codex` | `-b codex` | CLI subprocess | — |
+| `claude` | `-b claude` | CLI subprocess | — |
 
 ### `ec import` Command
 
@@ -195,7 +205,9 @@ All tools accept a `repos` parameter for cross-repo queries: `null` = current re
 
 ## Hook System
 
-`ec enable` installs hooks into `.claude/settings.json` that automatically capture session activity. No manual intervention required.
+`ec enable` installs two kinds of hooks automatically. No manual intervention required.
+
+### Claude Code Hooks (`.claude/settings.local.json`)
 
 | Hook Type | Trigger | Action |
 |-----------|---------|--------|
@@ -206,6 +218,15 @@ All tools accept a `repos` parameter for cross-repo queries: `null` = current re
 | `SessionEnd` | Claude Code session ends | Finalize session, generate summary |
 
 Hook protocol: stdin JSON, exit code 0 = success, 2 = block.
+
+### Git Hooks (`.git/hooks/`)
+
+| Hook | Trigger | Action |
+|------|---------|--------|
+| `post-commit` | `git commit` | Create checkpoint tied to the new commit if a session is active |
+| `pre-push` | `git push` | Run `ec sync` if `auto_sync_on_push` is enabled |
+
+Skip git hook installation with `ec enable --no-git-hooks`. Both hooks are removed by `ec disable`.
 
 ## Configuration
 
@@ -341,6 +362,10 @@ uv run ruff check . --fix              # lint + autofix
 | `mcp` | mcp | MCP server for AI agent integration |
 
 Install extras: `uv sync --extra dev --extra semantic --extra mcp`
+
+## Development Context
+This project's entire AI development history is available
+on the `entirecontext/checkpoints/v1` branch.
 
 ## Acknowledgments
 
