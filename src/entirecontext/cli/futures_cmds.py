@@ -222,7 +222,7 @@ def futures_feedback(
     reason: Optional[str] = typer.Option(None, "--reason", "-r", help="Feedback reason"),
 ):
     """Add feedback to an assessment."""
-    from ..core.futures import add_feedback
+    from ..core.futures import add_feedback, auto_distill_lessons
     from ..core.project import find_git_root
     from ..db import get_db
 
@@ -241,6 +241,13 @@ def futures_feedback(
     conn.close()
 
     console.print(f"[green]Feedback recorded:[/green] {feedback} on {assessment_id[:12]}")
+
+    from ..core.config import load_config
+
+    config = load_config(repo_path)
+    if auto_distill_lessons(repo_path):
+        output = config.get("futures", {}).get("lessons_output", "LESSONS.md")
+        console.print(f"[dim]Auto-updated {output}[/dim]")
 
 
 @futures_app.command("lessons")

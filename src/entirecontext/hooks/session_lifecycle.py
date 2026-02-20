@@ -176,6 +176,17 @@ def on_session_end(data: dict[str, Any]) -> None:
             pass
 
     _maybe_trigger_auto_sync(repo_path)
+    _maybe_trigger_auto_distill(repo_path)
+
+
+def _maybe_trigger_auto_distill(repo_path: str) -> None:
+    """Auto-distill lessons if enabled. Never crashes the hook."""
+    try:
+        from ..core.futures import auto_distill_lessons
+
+        auto_distill_lessons(repo_path)
+    except Exception:
+        pass
 
 
 def _maybe_trigger_auto_sync(repo_path: str) -> None:

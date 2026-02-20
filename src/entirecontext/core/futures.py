@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -157,3 +158,25 @@ def distill_lessons(assessments: list[dict]) -> str:
             lines.append("")
 
     return "\n".join(lines) + "\n"
+
+
+def auto_distill_lessons(repo_path: str | Path) -> bool:
+    """Auto-distill lessons to file if futures.auto_distill is enabled. Returns True if file was written."""
+    from .config import load_config
+    from ..db import get_db
+
+    config = load_config(repo_path)
+    if not config.get("futures", {}).get("auto_distill", False):
+        return False
+
+    conn = get_db(str(repo_path))
+    try:
+        lessons = get_lessons(conn)
+    finally:
+        conn.close()
+
+    text = distill_lessons(lessons)
+    output_name = config.get("futures", {}).get("lessons_output", "LESSONS.md")
+    output_path = Path(repo_path) / output_name
+    output_path.write_text(text, encoding="utf-8")
+    return True

@@ -311,6 +311,11 @@ semantic = [
     { name = "sentence-transformers" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "entirecontext" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0" },
@@ -322,6 +327,9 @@ requires-dist = [
     { name = "typer", specifier = ">=0.15.0" },
 ]
 provides-extras = ["semantic", "mcp", "dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "entirecontext", editable = "." }]
 
 [[package]]
 name = "filelock"

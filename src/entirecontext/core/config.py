@@ -38,6 +38,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             r"sk-[a-zA-Z0-9]{48}",
         ],
     },
+    "futures": {
+        "auto_distill": False,
+        "lessons_output": "LESSONS.md",
+    },
 }
 
 

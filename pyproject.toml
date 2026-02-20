@@ -39,3 +39,11 @@ line-length = 120
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.uv.sources]
+entirecontext = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "entirecontext",
+]

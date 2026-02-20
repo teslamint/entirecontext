@@ -6,6 +6,7 @@ import pytest
 
 from entirecontext.core.futures import (
     add_feedback,
+    auto_distill_lessons,
     create_assessment,
     distill_lessons,
     get_assessment,
@@ -134,3 +135,63 @@ def test_feedback_with_prefix(ec_db):
 
     fetched = get_assessment(ec_db, result["id"])
     assert fetched["feedback"] == "disagree"
+
+
+def test_auto_distill_lessons_enabled(ec_repo, monkeypatch):
+    """Test that auto_distill=True writes LESSONS.md."""
+    from entirecontext.core.config import load_config
+    from entirecontext.db import get_db
+
+    monkeypatch.setattr(
+        "entirecontext.core.config.load_config",
+        lambda repo_path=None: {**load_config(repo_path), "futures": {"auto_distill": True, "lessons_output": "LESSONS.md"}},
+    )
+
+    conn = get_db(str(ec_repo))
+    a = create_assessment(conn, verdict="expand", impact_summary="Auto distill test")
+    add_feedback(conn, a["id"], "agree", feedback_reason="Good")
+    conn.close()
+
+    result = auto_distill_lessons(str(ec_repo))
+    assert result is True
+    output = ec_repo / "LESSONS.md"
+    assert output.exists()
+    assert "Auto distill test" in output.read_text(encoding="utf-8")
+
+
+def test_auto_distill_lessons_disabled(ec_repo, monkeypatch):
+    """Test that auto_distill=False does not write LESSONS.md."""
+    from entirecontext.core.config import load_config
+
+    monkeypatch.setattr(
+        "entirecontext.core.config.load_config",
+        lambda repo_path=None: {**load_config(repo_path), "futures": {"auto_distill": False, "lessons_output": "LESSONS.md"}},
+    )
+
+    result = auto_distill_lessons(str(ec_repo))
+    assert result is False
+    assert not (ec_repo / "LESSONS.md").exists()
+
+
+def test_auto_distill_custom_output(ec_repo, monkeypatch):
+    """Test that lessons_output config controls the output path."""
+    from entirecontext.core.config import load_config
+    from entirecontext.db import get_db
+
+    custom_path = "docs/custom-lessons.md"
+    monkeypatch.setattr(
+        "entirecontext.core.config.load_config",
+        lambda repo_path=None: {**load_config(repo_path), "futures": {"auto_distill": True, "lessons_output": custom_path}},
+    )
+
+    conn = get_db(str(ec_repo))
+    a = create_assessment(conn, verdict="neutral", impact_summary="Custom output test")
+    add_feedback(conn, a["id"], "disagree")
+    conn.close()
+
+    (ec_repo / "docs").mkdir(exist_ok=True)
+    result = auto_distill_lessons(str(ec_repo))
+    assert result is True
+    output = ec_repo / custom_path
+    assert output.exists()
+    assert "Custom output test" in output.read_text(encoding="utf-8")
