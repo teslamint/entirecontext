@@ -2,7 +2,9 @@
 
 **Time-travel searchable agent memory anchored to your codebase.**
 
-![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue) ![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-green) ![License MIT](https://img.shields.io/badge/license-MIT-lightgrey)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue) ![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-green) ![Status Experimental](https://img.shields.io/badge/status-experimental-orange) ![License MIT](https://img.shields.io/badge/license-MIT-lightgrey)
+
+> ⚠️ **Experimental** — API and data format may change without notice.
 
 EntireContext automatically captures every AI coding session — turns, checkpoints, tool calls — and anchors them to your git history. Search, rewind, blame, and sync your agent memory across repos and machines.
 
