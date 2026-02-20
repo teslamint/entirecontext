@@ -1,0 +1,61 @@
+name: Tidy Pilot
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install entirecontext
+        run: uv sync
+
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr diff ${{ github.event.pull_request.number }} > /tmp/pr.diff
+          echo "diff_size=$(wc -c < /tmp/pr.diff | tr -d ' ')" >> $GITHUB_OUTPUT
+
+      - name: Assess futures impact
+        if: steps.diff.outputs.diff_size != '0'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TIDY_PILOT_BACKEND: github
+        run: |
+          # Run assessment on the diff
+          DIFF=$(cat /tmp/pr.diff)
+          ROADMAP=""
+          if [ -f ROADMAP.md ]; then
+            ROADMAP=$(cat ROADMAP.md)
+          fi
+          LESSONS=""
+          if [ -f LESSONS.md ]; then
+            LESSONS=$(cat LESSONS.md)
+          fi
+
+          # Use Python script for the LLM call + PR comment
+          python3 .github/tidy-pilot/assess_pr.py \
+            --pr-number ${{ github.event.pull_request.number }} \
+            --pr-title "${{ github.event.pull_request.title }}" \
+            --repo ${{ github.repository }}
