@@ -1,0 +1,10 @@
+{
+  "id": "f2fb64b7-62de-496c-a777-47ff6a54a5e4",
+  "project_id": "df50aa1f-994c-4261-a8e4-0a7b6dee3498",
+  "session_type": "claude",
+  "started_at": "2026-02-13T10:24:36.005340+00:00",
+  "ended_at": "2026-02-13T10:42:36.791796+00:00",
+  "session_title": "Implement the following plan:\n\n# MCP \uc11c\ubc84 \ub3d9\uc791 \ud655\uc778 \u2014 ec_rewind \ud14c\uc2a4\ud2b8\n\n## Context\nMCP \uc11c\ubc84 7\uac1c \ub3c4\uad6c \uc911 6\uac1c\ub294 \ud655\uc778 \uc644\ub8cc. ",
+  "session_summary": null,
+  "total_turns": 93
+}

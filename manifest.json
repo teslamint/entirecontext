@@ -15,8 +15,78 @@
     "b9870eda-58ba-48e3-9f6d-cfd90a6737c2": {
       "session_type": "claude",
       "started_at": "2026-02-13T02:10:38.431021+00:00",
+      "total_turns": 1
+    },
+    "f074acfd-6920-4188-acfc-94de1ef30e2c": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T07:04:35.457019+00:00",
+      "total_turns": 1
+    },
+    "22deadc9-1a7a-4cb3-b37c-d2aa96982cda": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T07:14:03.226558+00:00",
+      "total_turns": 1
+    },
+    "3fcad027-b348-47d4-b26f-db4efe59ed14": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T07:35:04.247103+00:00",
+      "total_turns": 1
+    },
+    "993f7c22-0323-4007-b3d0-20c1b0a1ae84": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T07:50:11.283626+00:00",
+      "total_turns": 3
+    },
+    "c4705e7f-0b1f-4f8e-8dec-1b914f9c2da5": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T09:21:06.977936+00:00",
+      "total_turns": 2
+    },
+    "6b584972-77bb-46d2-a0c7-e13faa26b5d4": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T09:46:43.390805+00:00",
+      "total_turns": 4
+    },
+    "f364c4a4-210a-4c6a-9d84-432d655a1285": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T10:07:47.195505+00:00",
+      "total_turns": 2
+    },
+    "f2fb64b7-62de-496c-a777-47ff6a54a5e4": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T10:24:36.005340+00:00",
+      "total_turns": 93
+    },
+    "469c46fe-2d18-40a4-8b2e-4f723fdb5da7": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T10:42:36.880280+00:00",
+      "total_turns": 1
+    },
+    "d9c8f2c6-8706-42aa-83cb-01efd5744c17": {
+      "session_type": "claude",
+      "started_at": "2026-02-13T11:27:39.901623+00:00",
+      "total_turns": 1
+    },
+    "fa3164d6-ff96-4757-87bc-05b935ca0049": {
+      "session_type": "claude",
+      "started_at": "2026-02-14T04:56:33.798053+00:00",
+      "total_turns": 5
+    },
+    "e2690122-7899-4629-ab34-3190c4662f2d": {
+      "session_type": "claude",
+      "started_at": "2026-02-14T17:09:57.714500+00:00",
+      "total_turns": 0
+    },
+    "a29845ab-6dbc-4505-a027-6ba88ec8bb74": {
+      "session_type": "claude",
+      "started_at": "2026-02-20T08:35:23.158638+00:00",
+      "total_turns": 2
+    },
+    "8cebe108-9e47-41ff-a9ec-4035d736e1c7": {
+      "session_type": "claude",
+      "started_at": "2026-02-20T08:43:27.168057+00:00",
       "total_turns": 0
     }
   },
-  "updated_at": "2026-02-13T02:16:54.243009+00:00"
+  "updated_at": "2026-02-20T08:43:30.525357+00:00"
 }
