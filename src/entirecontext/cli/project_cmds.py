@@ -114,7 +114,7 @@ def enable(
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
 
-    settings_path = Path(repo_path) / ".claude" / "settings.json"
+    settings_path = Path(repo_path) / ".claude" / "settings.local.json"
     settings_path.parent.mkdir(parents=True, exist_ok=True)
 
     settings: dict = {}
@@ -141,7 +141,7 @@ def enable(
         hooks[hook_name] = existing
 
     settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-    console.print("[green]Hooks installed[/green] in .claude/settings.json")
+    console.print("[green]Hooks installed[/green] in .claude/settings.local.json")
 
     if not no_git_hooks:
         installed = _install_git_hooks(repo_path)
@@ -175,28 +175,31 @@ def disable():
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
 
+    local_settings_path = Path(repo_path) / ".claude" / "settings.local.json"
     settings_path = Path(repo_path) / ".claude" / "settings.json"
-    if not settings_path.exists():
-        console.print("No hooks configured.")
-        return
-
-    settings = json.loads(settings_path.read_text(encoding="utf-8"))
-    hooks = settings.get("hooks", {})
     changed = False
 
-    for hook_name in list(hooks.keys()):
-        original = hooks[hook_name]
-        filtered = [h for h in original if not _is_ec_hook(h)]
-        if len(filtered) != len(original):
-            changed = True
-        if filtered:
-            hooks[hook_name] = filtered
-        else:
-            del hooks[hook_name]
+    for path in [local_settings_path, settings_path]:
+        if not path.exists():
+            continue
+        settings = json.loads(path.read_text(encoding="utf-8"))
+        hooks = settings.get("hooks", {})
+        path_changed = False
+        for hook_name in list(hooks.keys()):
+            original = hooks[hook_name]
+            filtered = [h for h in original if not _is_ec_hook(h)]
+            if len(filtered) != len(original):
+                path_changed = True
+                changed = True
+            if filtered:
+                hooks[hook_name] = filtered
+            else:
+                del hooks[hook_name]
+        if path_changed:
+            path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
     if changed:
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-        console.print("[yellow]Hooks removed[/yellow] from .claude/settings.json")
+        console.print("[yellow]Hooks removed[/yellow] from .claude/settings.local.json")
     else:
         console.print("No EntireContext hooks found.")
 
@@ -305,11 +308,13 @@ def doctor():
                 warnings.append(f"{unsynced} checkpoints not synced to shadow branch.")
             conn.close()
 
+    local_settings_path = Path(repo_path) / ".claude" / "settings.local.json"
     settings_path = Path(repo_path) / ".claude" / "settings.json"
-    if not settings_path.exists():
-        warnings.append("No .claude/settings.json found. Run 'ec enable'.")
+    active_settings_path = local_settings_path if local_settings_path.exists() else settings_path
+    if not active_settings_path.exists():
+        warnings.append("No .claude/settings.local.json found. Run 'ec enable'.")
     else:
-        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        settings = json.loads(active_settings_path.read_text(encoding="utf-8"))
         hooks = settings.get("hooks", {})
         ec_hooks_found = any(
             any(_is_ec_hook(h) for h in hooks.get(k, []))

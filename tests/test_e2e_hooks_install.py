@@ -21,7 +21,7 @@ class TestHookInstall:
         result = runner.invoke(app, ["enable"])
         assert result.exit_code == 0
 
-        settings_path = ec_repo / ".claude" / "settings.json"
+        settings_path = ec_repo / ".claude" / "settings.local.json"
         assert settings_path.exists()
         settings = json.loads(settings_path.read_text())
         hooks = settings["hooks"]
@@ -63,7 +63,7 @@ class TestHookInstall:
         runner.invoke(app, ["enable"])
         runner.invoke(app, ["enable"])
 
-        settings = json.loads((ec_repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((ec_repo / ".claude" / "settings.local.json").read_text())
         for hook_name, entries in settings["hooks"].items():
             ec_entries = [h for h in entries if _is_ec_hook(h)]
             assert len(ec_entries) == 1, f"Duplicate hooks for {hook_name}"
@@ -80,7 +80,7 @@ class TestHookInstall:
         result = runner.invoke(app, ["disable"])
         assert result.exit_code == 0
 
-        settings = json.loads((ec_repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((ec_repo / ".claude" / "settings.local.json").read_text())
         hooks = settings.get("hooks", {})
         for entries in hooks.values():
             assert not any(_is_ec_hook(h) for h in entries)

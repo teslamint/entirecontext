@@ -28,7 +28,7 @@ class TestHookTimeoutUnits:
         result = runner.invoke(app, ["enable", "--no-git-hooks"])
         assert result.exit_code == 0
 
-        settings = json.loads((repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
         hooks = settings["hooks"]
 
         assert hooks["SessionStart"][0]["hooks"][0]["timeout"] == 5
@@ -46,7 +46,7 @@ class TestHookTimeoutUnits:
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         runner.invoke(app, ["enable", "--no-git-hooks"])
-        settings = json.loads((repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
         hooks = settings["hooks"]
 
         for hook_name, entries in hooks.items():
@@ -67,7 +67,7 @@ class TestHookConfigStructure:
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         runner.invoke(app, ["enable", "--no-git-hooks"])
-        settings = json.loads((repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
         hooks = settings["hooks"]
 
         for hook_name, entries in hooks.items():
@@ -89,7 +89,7 @@ class TestHookConfigStructure:
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
         runner.invoke(app, ["enable", "--no-git-hooks"])
-        settings = json.loads((repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
 
         for hook_name in ["SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "SessionEnd"]:
             cmd = settings["hooks"][hook_name][0]["hooks"][0]["command"]
@@ -247,7 +247,7 @@ class TestDoctorUnsyncedCheck:
 
         (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
         settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
-        (ec_repo / ".claude" / "settings.json").write_text(json.dumps(settings))
+        (ec_repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
 
         ec_db.execute(
             "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
@@ -269,7 +269,7 @@ class TestDoctorUnsyncedCheck:
 
         (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
         settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
-        (ec_repo / ".claude" / "settings.json").write_text(json.dumps(settings))
+        (ec_repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
 
         ec_db.execute(
             "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
@@ -293,7 +293,7 @@ class TestDoctorUnsyncedCheck:
 
         (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
         settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
-        (ec_repo / ".claude" / "settings.json").write_text(json.dumps(settings))
+        (ec_repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
 
         ec_db.execute(
             "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
@@ -324,7 +324,7 @@ class TestDoctorMCPCheck:
 
         (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
         settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
-        (ec_repo / ".claude" / "settings.json").write_text(json.dumps(settings))
+        (ec_repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
 
         result = runner.invoke(app, ["doctor"])
         assert "mcp" in result.output.lower()
@@ -336,7 +336,7 @@ class TestDoctorMCPCheck:
 
         (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
         settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
-        (ec_repo / ".claude" / "settings.json").write_text(json.dumps(settings))
+        (ec_repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
 
         result = runner.invoke(app, ["doctor"])
         assert "mcp server not configured" not in result.output.lower()
@@ -356,11 +356,11 @@ class TestEnableDisableRoundTrip:
         monkeypatch.setenv("HOME", str(fake_home))
 
         runner.invoke(app, ["enable"])
-        settings = json.loads((repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
         assert len(settings["hooks"]) > 0
 
         runner.invoke(app, ["disable"])
-        settings = json.loads((repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
         assert len(settings.get("hooks", {})) == 0
         assert not (repo / ".git" / "hooks" / "post-commit").exists()
         assert not (repo / ".git" / "hooks" / "pre-push").exists()
@@ -377,10 +377,10 @@ class TestEnableDisableRoundTrip:
 
         (repo / ".claude").mkdir(parents=True)
         settings = {"hooks": {"SessionStart": [{"command": "other-tool run", "timeout": 1000}]}}
-        (repo / ".claude" / "settings.json").write_text(json.dumps(settings))
+        (repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
 
         runner.invoke(app, ["enable", "--no-git-hooks"])
-        settings = json.loads((repo / ".claude" / "settings.json").read_text())
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
 
         session_start_hooks = settings["hooks"]["SessionStart"]
         assert len(session_start_hooks) == 2
