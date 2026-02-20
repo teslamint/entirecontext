@@ -113,11 +113,44 @@ class OllamaBackend(LLMBackend):
         return data["message"]["content"]
 
 
+
+class GitHubModelsBackend(LLMBackend):
+    """GitHub Models backend. Uses GITHUB_TOKEN env var."""
+
+    def __init__(self, model: str | None = None):
+        super().__init__(model or "openai/gpt-4o-mini")
+        self.api_key = os.environ.get("GITHUB_TOKEN", "")
+
+    def complete(self, system: str, user: str) -> str:
+        if not self.api_key:
+            raise RuntimeError("GITHUB_TOKEN environment variable not set")
+        payload = json.dumps({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.3,
+        }).encode()
+        req = Request(
+            "https://models.github.ai/inference/chat/completions",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}",
+            },
+        )
+        with urlopen(req) as resp:
+            data = json.loads(resp.read())
+        return data["choices"][0]["message"]["content"]
+
+
 BACKENDS = {
     "openai": OpenAIBackend,
     "codex": lambda model=None: CLIBackend("codex", model),
     "claude": lambda model=None: CLIBackend("claude", model),
     "ollama": OllamaBackend,
+    "github": GitHubModelsBackend,
 }
 
 
