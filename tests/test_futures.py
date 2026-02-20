@@ -100,3 +100,37 @@ def test_distill_lessons_empty():
     """Test empty lessons formatting."""
     text = distill_lessons([])
     assert "No lessons recorded yet" in text
+
+
+def test_get_assessment_prefix_match(ec_db):
+    """Test that get_assessment supports prefix matching (regression: dd6184a2-c16 not found)."""
+    result = create_assessment(ec_db, verdict="expand", impact_summary="Prefix test")
+    full_id = result["id"]
+
+    # Full ID should work
+    assert get_assessment(ec_db, full_id) is not None
+
+    # Prefix (first 12 chars, as displayed in CLI) should also work
+    prefix = full_id[:12]
+    fetched = get_assessment(ec_db, prefix)
+    assert fetched is not None
+    assert fetched["id"] == full_id
+    assert fetched["impact_summary"] == "Prefix test"
+
+    # Short prefix should also work
+    short = full_id[:8]
+    fetched2 = get_assessment(ec_db, short)
+    assert fetched2 is not None
+    assert fetched2["id"] == full_id
+
+
+def test_feedback_with_prefix(ec_db):
+    """Test that feedback works with prefix ID (regression)."""
+    result = create_assessment(ec_db, verdict="narrow", impact_summary="Feedback prefix test")
+    prefix = result["id"][:12]
+
+    # Should not raise
+    add_feedback(ec_db, prefix, "disagree", feedback_reason="Testing prefix")
+
+    fetched = get_assessment(ec_db, result["id"])
+    assert fetched["feedback"] == "disagree"

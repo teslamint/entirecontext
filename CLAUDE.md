@@ -52,7 +52,7 @@ cli/             business    SQLite     Claude Code   shadow branch
 **Per-repo DB**: `.entirecontext/db/local.db`
 **Global DB**: `~/.entirecontext/db/ec.db`
 
-Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `attributions`, `embeddings`, `sync_metadata`
+Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `attributions`, `embeddings`, `sync_metadata`
 
 FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions` (auto-synced via triggers)
 

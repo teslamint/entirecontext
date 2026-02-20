@@ -51,20 +51,12 @@ def _get_checkpoint_diff(conn, checkpoint_id: str) -> str | None:
     return row["diff_summary"] if row else None
 
 
-def _call_llm(model: str, system: str, user: str) -> dict:
-    """Call OpenAI API for assessment."""
-    import openai
+def _call_llm(backend_name: str, model: str, system: str, user: str) -> dict:
+    """Call LLM backend for assessment."""
+    from ..core.llm import get_backend
 
-    client = openai.OpenAI()
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        temperature=0.3,
-    )
-    content = response.choices[0].message.content or "{}"
+    backend = get_backend(backend_name, model=model)
+    content = backend.complete(system, user)
     # Strip markdown fences if present
     if content.startswith("```"):
         content = content.split("\n", 1)[1] if "\n" in content else content
@@ -99,6 +91,7 @@ def futures_assess(
     checkpoint: Optional[str] = typer.Option(None, "--checkpoint", "-c", help="Checkpoint ID to assess"),
     roadmap: str = typer.Option("ROADMAP.md", "--roadmap", "-r", help="Path to roadmap file"),
     model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="LLM model name"),
+    backend: str = typer.Option("openai", "--backend", "-b", help="LLM backend (openai|codex|claude|ollama)"),
 ):
     """Assess current staged diff or a checkpoint against project roadmap."""
     from ..core.futures import create_assessment
@@ -149,7 +142,7 @@ def futures_assess(
     # Call LLM
     console.print("[dim]Analyzing with LLM...[/dim]")
     try:
-        result = _call_llm(model, SYSTEM_PROMPT, user_prompt)
+        result = _call_llm(backend, model, SYSTEM_PROMPT, user_prompt)
     except Exception as e:
         console.print(f"[red]LLM call failed: {e}[/red]")
         conn.close()

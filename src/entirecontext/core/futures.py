@@ -61,8 +61,10 @@ def create_assessment(
 
 
 def get_assessment(conn, assessment_id: str) -> dict | None:
-    """Get an assessment by ID."""
+    """Get an assessment by ID (supports prefix match)."""
     row = conn.execute("SELECT * FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
+    if row is None:
+        row = conn.execute("SELECT * FROM assessments WHERE id LIKE ?", (f"{assessment_id}%",)).fetchone()
     return dict(row) if row else None
 
 
@@ -97,9 +99,11 @@ def add_feedback(conn, assessment_id: str, feedback: str, feedback_reason: str |
     if existing is None:
         raise ValueError(f"Assessment '{assessment_id}' not found")
 
+    # Use the full ID from the resolved assessment (supports prefix match)
+    full_id = existing["id"]
     conn.execute(
         "UPDATE assessments SET feedback = ?, feedback_reason = ? WHERE id = ?",
-        (feedback, feedback_reason, assessment_id),
+        (feedback, feedback_reason, full_id),
     )
     conn.commit()
 

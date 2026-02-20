@@ -15,7 +15,9 @@ EntireContext automatically captures every AI coding session — turns, checkpoi
 - **Cross-repo search** — query across all registered repos with `-g`/`-r` flags
 - **Shadow branch sync** — portable export/import via orphan git branch
 - **Secret filtering** — configurable patterns strip credentials on export
-- **MCP server** — 7 tools for AI agents to query context programmatically
+- **MCP server** — 9 tools for AI agents to query context programmatically
+- **Futures assessment** — LLM-powered code change evaluation based on "Tidy First?" philosophy
+- **Data import** — migrate sessions from Aline databases
 - **Event system** — group sessions by task, temporal period, or milestone
 
 ## Quick Start
@@ -85,6 +87,23 @@ ec checkpoint list
 | `ec event show EVENT_ID` | Show event details and linked sessions |
 | `ec event create TITLE` | Create event (`--type task\|temporal\|milestone`) |
 | `ec event link EVENT_ID SESSION_ID` | Link a session to an event |
+
+### `ec futures` Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `ec futures assess` | Assess staged diff or checkpoint against roadmap via LLM |
+| `ec futures list` | List assessments (filter by `--verdict`) |
+| `ec futures feedback ID FEEDBACK` | Add agree/disagree feedback to an assessment |
+| `ec futures lessons` | Generate LESSONS.md from assessed changes with feedback |
+
+### `ec import` Command
+
+| Command | Description |
+|---------|-------------|
+| `ec import --from-aline [PATH]` | Import sessions/turns/checkpoints from Aline DB |
+
+Options: `--workspace`, `--dry-run`, `--skip-content`
 
 ### `ec repo` Subcommands
 
@@ -169,6 +188,8 @@ ec mcp serve
 | `ec_rewind` | Show state at a specific checkpoint |
 | `ec_related` | Find related sessions/turns by query text or file paths |
 | `ec_turn_content` | Get full content for a specific turn (including JSONL content files) |
+| `ec_assess` | Assess staged diff or checkpoint against roadmap via LLM |
+| `ec_lessons` | Generate LESSONS.md from assessed changes with feedback |
 
 All tools accept a `repos` parameter for cross-repo queries: `null` = current repo, `["*"]` = all repos, `["name"]` = specific repos.
 
@@ -247,10 +268,12 @@ cli/             business    SQLite     Claude Code   shadow branch
   sync_cmds      event
   rewind_cmds    indexing
   repo_cmds      search
-  event_cmds
-  blame_cmds
-  index_cmds
+  event_cmds     futures
+  blame_cmds     llm
+  index_cmds     import_aline
   mcp_cmds
+  futures_cmds
+  import_cmds
 
 mcp/server.py — MCP server interface (optional dependency)
 ```
@@ -267,6 +290,8 @@ mcp/server.py — MCP server interface (optional dependency)
 | `agents` | Agent identities (type, role, parent agent) |
 | `events` | Grouping mechanism (task / temporal / milestone) |
 | `event_sessions` | Many-to-many link between events and sessions |
+| `event_checkpoints` | Many-to-many link between events and checkpoints |
+| `assessments` | Futures assessment results (verdict, impact, feedback) |
 | `attributions` | Per-line human/agent file attribution |
 | `embeddings` | Semantic search vectors |
 | `sync_metadata` | Shadow branch sync state |
