@@ -342,6 +342,13 @@ uv run ruff check . --fix              # lint + autofix
 
 Install extras: `uv sync --extra dev --extra semantic --extra mcp`
 
+## Acknowledgments
+
+EntireContext was inspired by:
+
+- [entireio/cli](https://github.com/entireio/cli) — Git-integrated AI agent session capture and context management
+- [TheAgentContextLab/OneContext](https://github.com/TheAgentContextLab/OneContext) — Agent self-managed context layer for unified AI agent memory
+
 ## License
 
 [MIT](LICENSE)
