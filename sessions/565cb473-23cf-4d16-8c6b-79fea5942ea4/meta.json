@@ -3,8 +3,8 @@
   "project_id": "df50aa1f-994c-4261-a8e4-0a7b6dee3498",
   "session_type": "claude",
   "started_at": "2026-02-20T09:45:38.892091+00:00",
-  "ended_at": null,
-  "session_title": null,
+  "ended_at": "2026-02-20T09:49:56.036051+00:00",
+  "session_title": "/commit ",
   "session_summary": null,
-  "total_turns": 1
+  "total_turns": 3
 }

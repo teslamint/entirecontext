@@ -115,8 +115,13 @@
     "565cb473-23cf-4d16-8c6b-79fea5942ea4": {
       "session_type": "claude",
       "started_at": "2026-02-20T09:45:38.892091+00:00",
+      "total_turns": 3
+    },
+    "c3447987-a85d-4375-9f69-1fd9fc90bd56": {
+      "session_type": "claude",
+      "started_at": "2026-02-20T09:49:56.145409+00:00",
       "total_turns": 1
     }
   },
-  "updated_at": "2026-02-20T09:48:51.442764+00:00"
+  "updated_at": "2026-02-20T09:53:23.500663+00:00"
 }
