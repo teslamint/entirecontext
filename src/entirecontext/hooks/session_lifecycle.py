@@ -85,6 +85,28 @@ def on_session_start(data: dict[str, Any]) -> None:
         (session_id, project_id, "claude", cwd, now, now),
     )
     conn.commit()
+
+    try:
+        import json
+
+        git_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if git_result.returncode == 0:
+            start_git_commit = git_result.stdout.strip()
+            metadata = json.dumps({"start_git_commit": start_git_commit})
+            conn.execute(
+                "UPDATE sessions SET metadata = ? WHERE id = ? AND metadata IS NULL",
+                (metadata, session_id),
+            )
+            conn.commit()
+    except Exception:
+        pass
+
     conn.close()
 
 
@@ -175,8 +197,59 @@ def on_session_end(data: dict[str, Any]) -> None:
         except Exception:
             pass
 
+    _maybe_create_auto_checkpoint(repo_path, session_id)
     _maybe_trigger_auto_sync(repo_path)
     _maybe_trigger_auto_distill(repo_path)
+
+
+def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
+    """Auto-create checkpoint on session end if enabled. Never crashes the hook."""
+    try:
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        if not config.get("capture", {}).get("checkpoint_on_session_end", False):
+            return
+
+        import json
+
+        from ..core.checkpoint import create_checkpoint, list_checkpoints
+        from ..core.git_utils import get_current_branch, get_current_commit, get_diff_stat
+        from ..db import get_db
+
+        git_commit = get_current_commit(repo_path)
+        if not git_commit:
+            return
+
+        git_branch = get_current_branch(repo_path)
+        conn = get_db(repo_path)
+
+        prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
+        if prev_checkpoints:
+            from_commit = prev_checkpoints[0]["git_commit_hash"]
+        else:
+            from_commit = None
+            session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            if session_row and session_row["metadata"]:
+                try:
+                    meta = json.loads(session_row["metadata"])
+                    from_commit = meta.get("start_git_commit")
+                except Exception:
+                    pass
+
+        diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
+
+        create_checkpoint(
+            conn,
+            session_id=session_id,
+            git_commit_hash=git_commit,
+            git_branch=git_branch,
+            diff_summary=diff_summary,
+            metadata={"source": "auto_session_end"},
+        )
+        conn.close()
+    except Exception:
+        pass
 
 
 def _maybe_trigger_auto_distill(repo_path: str) -> None:
