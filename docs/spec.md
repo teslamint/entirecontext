@@ -1,848 +1,391 @@
-# EntireContext — Specification
+# EntireContext Specification
 
 > Time-travel searchable agent memory anchored to your codebase.
 
-**Version**: 0.1.0-draft
-**Status**: Design phase
+**Version**: 0.1.0
+**Status**: Implementation-aligned specification (as of 2026-02-20)
 
 ---
 
-## 1. Vision
+## 1. Scope and Source of Truth
 
-Every agent context is anchored to git state. Every git state is enriched with searchable agent context. EntireContext provides a **code-connected, time-travelable, searchable agent memory**.
+This document describes the behavior implemented in the current codebase.
 
-### Core Value Proposition
+- Primary source of truth (runtime behavior):
+  - `src/entirecontext/`
+- Supporting docs (user-facing):
+  - `README.md`
 
-| Without EntireContext | With EntireContext |
-|---|---|
-| Agent sessions are ephemeral | Every session persists and is searchable |
-| Git commits lack context on *why* | Every commit links to the agent conversation that produced it |
-| Past debugging sessions are lost | Search "how did we fix the auth bug?" across all history |
-| Multi-agent work is opaque | Full attribution: who (human/agent) changed what and why |
-| Context resets every session | Agents can query their own history via MCP |
+### Status tags used in this spec
+
+- `[Implemented]`: behavior is present in code now.
+- `[Partial]`: partially implemented or implemented with known caveats.
+- `[Planned]`: intentionally not implemented yet.
 
 ---
 
 ## 2. Architecture
 
-### 2.1 System Layers
+### 2.1 System Layers `[Implemented]`
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   User / Agent                   │
-├─────────────┬───────────────────┬───────────────┤
-│  CLI (ec)   │   Agent Hooks     │  MCP Server   │
-│  (Typer)    │   (Claude Code)   │  (stdio)      │
-├─────────────┴───────────────────┴───────────────┤
-│                  Core Engine                      │
-│  ┌──────────┬───────────┬──────────┬──────────┐ │
-│  │ Capture  │ Checkpoint│  Search  │Attribution│ │
-│  └──────────┴───────────┴──────────┴──────────┘ │
-├─────────────────────────────────────────────────┤
-│              Storage Layer                       │
-│  ┌────────────────┐  ┌────────────────────────┐ │
-│  │ SQLite (local + │  │ Git Shadow Branch      │ │
-│  │ global DB)      │  │ (portable artifacts)   │ │
-│  └────────────────┘  └────────────────────────┘ │
-└─────────────────────────────────────────────────┘
+User / Agent
+  ├─ CLI (ec, Typer)
+  ├─ Claude Code Hooks
+  └─ MCP Server (stdio, FastMCP)
+
+Core Engine
+  ├─ Capture (sessions/turns)
+  ├─ Checkpoint
+  ├─ Search (regex/FTS/semantic)
+  ├─ Attribution
+  ├─ Futures assessment
+  └─ Cross-repo orchestration
+
+Storage
+  ├─ Per-repo SQLite (.entirecontext/db/local.db)
+  ├─ Global SQLite (~/.entirecontext/db/ec.db)
+  ├─ External turn content files (.entirecontext/content/...)
+  └─ Git shadow branch (entirecontext/checkpoints/v1)
 ```
 
-### 2.2 Dual Interface
+### 2.2 Data flow `[Implemented]`
 
-- **CLI (`ec`)**: Human-facing. Typer-based. Commands for search, checkpoint management, blame, sync.
-- **MCP Server**: Agent-facing. stdio transport. Tools for search, context retrieval, checkpoint listing.
-
-### 2.3 Storage Strategy
-
-**SQLite is the authoritative store.** Git shadow branch is the portable sync artifact.
-
-| Store | Role | Location |
-|---|---|---|
-| Per-repo DB | Session/turn/checkpoint data for one repo | `.entirecontext/db/local.db` |
-| Global DB | Cross-repo reference index | `~/.entirecontext/db/ec.db` |
-| Shadow branch | Checkpoint manifests + session transcripts (JSONL) | `entirecontext/checkpoints/v1` (orphan branch) |
-
-**Data flow**: Capture → SQLite (authoritative) → Shadow branch (export for sync). On `ec pull`, shadow branch → SQLite (import).
-
-Turn content uses hybrid storage: metadata and summaries in SQLite, full JSONL content in external files under `.entirecontext/content/`.
+- Capture: hooks write sessions/turns into per-repo SQLite.
+- Search: runs against per-repo DB or cross-repo index + per-repo DB fanout.
+- Sync export (`ec sync`): DB data exported to shadow branch artifacts.
+- Sync import (`ec pull`): shadow branch artifacts imported back into DB.
 
 ---
 
 ## 3. Data Model
 
-### 3.1 Entity Relationship
+Schema version: **3**.
+Minimum SQLite version: **3.38.0+**.
 
-```
-Project ──1:N──> Session ──1:N──> Turn
-                   │                │
-                   │                └── TurnContent (1:1, separated)
-                   │
-                   ├──1:N──> Checkpoint ──> git commit binding
-                   │
-                   └──N:1──> Agent (self-ref parent_agent_id)
+Reference:
+- `src/entirecontext/db/schema.py`
+- `src/entirecontext/db/migration.py`
 
-Event ──M:N──> Session   (semantic grouping)
-Event ──M:N──> Checkpoint (event-checkpoint link)
+### 3.1 Core tables `[Implemented]`
 
-Embedding ──> source_type + source_id (polymorphic ref)
-Attribution ──> file + line range + agent/human origin
-```
+- `projects`, `agents`, `sessions`, `turns`, `turn_content`
+- `checkpoints`, `events`, `event_sessions`, `event_checkpoints`
+- `attributions`, `embeddings`
+- `assessments` (futures)
+- `sync_metadata` (`last_sync_error`, `last_sync_duration_ms`, `sync_pid` included)
 
-### 3.2 Schema (V1)
+### 3.2 Search indexes `[Implemented]`
 
-> **Requires SQLite 3.38.0+** (for JSON functions and generated columns).
+- FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`
+- Trigger-based synchronization for insert/update/delete
 
-#### `schema_version`
+### 3.3 Global DB `[Implemented]`
 
-```sql
-CREATE TABLE schema_version (
-    version INTEGER PRIMARY KEY,
-    applied_at TEXT DEFAULT (datetime('now')),
-    description TEXT
-);
-```
-
-> **Migration strategy**: On startup, check current version → apply pending migrations sequentially via ALTER TABLE. Forward-only (no downgrade support).
-
-#### `projects`
-
-```sql
-CREATE TABLE projects (
-    id TEXT PRIMARY KEY,                -- UUID
-    name TEXT NOT NULL,
-    repo_path TEXT NOT NULL UNIQUE,     -- Absolute path to git repo root
-    remote_url TEXT,                    -- Git remote origin URL
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    config TEXT                         -- JSON: project-level settings
-);
-```
-
-#### `agents`
-
-```sql
-CREATE TABLE agents (
-    id TEXT PRIMARY KEY,                -- UUID
-    parent_agent_id TEXT,               -- Self-ref for hierarchy (NULL = top-level)
-    agent_type TEXT NOT NULL,           -- 'claude', 'codex', 'gemini', 'custom'
-    role TEXT,                          -- 'main', 'subagent', 'reviewer', etc.
-    name TEXT,                          -- Human-readable name
-    spawn_context TEXT,                 -- JSON: why/how this agent was spawned
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (parent_agent_id) REFERENCES agents(id)
-);
-CREATE INDEX idx_agents_parent ON agents(parent_agent_id);
-CREATE INDEX idx_agents_type ON agents(agent_type);
-```
-
-#### `sessions`
-
-```sql
-CREATE TABLE sessions (
-    id TEXT PRIMARY KEY,                -- UUID (or session file stem)
-    project_id TEXT NOT NULL,           -- FK → projects
-    agent_id TEXT,                      -- FK → agents (which agent ran this session)
-    session_type TEXT NOT NULL,         -- 'claude', 'codex', etc.
-    workspace_path TEXT,                -- Working directory
-    started_at TEXT NOT NULL,
-    ended_at TEXT,
-    last_activity_at TEXT NOT NULL,
-    session_title TEXT,                 -- LLM-generated
-    session_summary TEXT,               -- LLM-generated
-    summary_updated_at TEXT,
-    total_turns INTEGER DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    metadata TEXT,                      -- JSON
-    FOREIGN KEY (project_id) REFERENCES projects(id),
-    FOREIGN KEY (agent_id) REFERENCES agents(id)
-);
-CREATE INDEX idx_sessions_project ON sessions(project_id);
-CREATE INDEX idx_sessions_agent ON sessions(agent_id);
-CREATE INDEX idx_sessions_activity ON sessions(last_activity_at DESC);
-```
-
-#### `turns`
-
-```sql
-CREATE TABLE turns (
-    id TEXT PRIMARY KEY,                -- UUID
-    session_id TEXT NOT NULL,           -- FK → sessions
-    turn_number INTEGER NOT NULL,
-    user_message TEXT,
-    assistant_summary TEXT,             -- LLM-generated summary
-    turn_status TEXT,                   -- 'completed', 'interrupted', 'error'
-    model_name TEXT,
-    git_commit_hash TEXT,               -- Commit created during/after this turn
-    files_touched TEXT,                 -- JSON array of file paths
-    tools_used TEXT,                    -- JSON array of tool names
-    content_hash TEXT NOT NULL,         -- For deduplication
-    timestamp TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now')),
-    UNIQUE(session_id, turn_number),
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-);
-CREATE INDEX idx_turns_session ON turns(session_id);
-CREATE INDEX idx_turns_timestamp ON turns(timestamp DESC);
-CREATE INDEX idx_turns_commit ON turns(git_commit_hash);
-```
-
-> **`content_hash` calculation**: MD5 hex digest of `f"{user_message}{assistant_summary}"`. Used for deduplication.
-
-#### `turn_content`
-
-```sql
-CREATE TABLE turn_content (
-    turn_id TEXT PRIMARY KEY,           -- FK → turns
-    content_path TEXT NOT NULL,         -- Relative path to external JSONL file
-    content_size INTEGER NOT NULL,
-    content_hash TEXT NOT NULL,         -- MD5 for integrity verification
-    FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE CASCADE
-);
-```
-
-#### `checkpoints`
-
-```sql
-CREATE TABLE checkpoints (
-    id TEXT PRIMARY KEY,                -- UUID
-    session_id TEXT NOT NULL,           -- FK → sessions
-    git_commit_hash TEXT NOT NULL,      -- The anchoring commit
-    git_branch TEXT,                    -- Branch name at checkpoint time
-    parent_checkpoint_id TEXT,          -- Previous checkpoint in session
-    files_snapshot TEXT,                -- JSON: {path: hash} of tracked files
-    diff_summary TEXT,                  -- Human-readable diff summary
-    agent_state TEXT,                   -- JSON: agent context at checkpoint time
-    created_at TEXT DEFAULT (datetime('now')),
-    metadata TEXT,                      -- JSON
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-    FOREIGN KEY (parent_checkpoint_id) REFERENCES checkpoints(id) ON DELETE SET NULL
-);
-CREATE INDEX idx_checkpoints_session ON checkpoints(session_id);
-CREATE INDEX idx_checkpoints_commit ON checkpoints(git_commit_hash);
-CREATE INDEX idx_checkpoints_created ON checkpoints(created_at DESC);
-```
-
-#### `events`
-
-```sql
-CREATE TABLE events (
-    id TEXT PRIMARY KEY,                -- UUID
-    title TEXT NOT NULL,
-    description TEXT,
-    event_type TEXT NOT NULL,           -- 'task', 'temporal', 'milestone'
-    status TEXT NOT NULL DEFAULT 'active', -- 'active', 'frozen', 'archived'
-    start_timestamp TEXT,
-    end_timestamp TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    metadata TEXT                       -- JSON
-);
-```
-
-#### `event_sessions` (M:N)
-
-```sql
-CREATE TABLE event_sessions (
-    event_id TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    added_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (event_id, session_id),
-    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
-);
-```
-
-#### `event_checkpoints` (M:N)
-
-```sql
-CREATE TABLE event_checkpoints (
-    event_id TEXT NOT NULL,
-    checkpoint_id TEXT NOT NULL,
-    added_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (event_id, checkpoint_id),
-    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
-    FOREIGN KEY (checkpoint_id) REFERENCES checkpoints(id) ON DELETE CASCADE
-);
-```
-
-#### `attributions`
-
-```sql
-CREATE TABLE attributions (
-    id TEXT PRIMARY KEY,                -- UUID
-    checkpoint_id TEXT NOT NULL,        -- FK → checkpoints
-    file_path TEXT NOT NULL,
-    start_line INTEGER NOT NULL,
-    end_line INTEGER NOT NULL,
-    attribution_type TEXT NOT NULL,     -- 'human', 'agent'
-    agent_id TEXT,                      -- FK → agents (NULL if human)
-    session_id TEXT,                    -- FK → sessions
-    turn_id TEXT,                       -- FK → turns (specific turn that made the change)
-    confidence REAL DEFAULT 1.0,        -- 0.0-1.0
-    created_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (checkpoint_id) REFERENCES checkpoints(id) ON DELETE CASCADE,
-    FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL,
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
-    FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE SET NULL
-);
-CREATE INDEX idx_attributions_checkpoint ON attributions(checkpoint_id);
-CREATE INDEX idx_attributions_file ON attributions(file_path);
-CREATE INDEX idx_attributions_agent ON attributions(agent_id);
-```
-
-#### `embeddings`
-
-```sql
-CREATE TABLE embeddings (
-    id TEXT PRIMARY KEY,                -- UUID
-    source_type TEXT NOT NULL,          -- 'turn', 'session', 'checkpoint', 'event'
-    source_id TEXT NOT NULL,            -- FK to source table
-    model_name TEXT NOT NULL,           -- Embedding model identifier
-    vector BLOB NOT NULL,              -- Raw embedding bytes (float32 array)
-    dimensions INTEGER NOT NULL,
-    text_hash TEXT NOT NULL,            -- Hash of source text (for staleness check)
-    created_at TEXT DEFAULT (datetime('now'))
-);
-CREATE INDEX idx_embeddings_source ON embeddings(source_type, source_id);
-CREATE INDEX idx_embeddings_model ON embeddings(model_name);
-```
-
-#### `sync_metadata`
-
-```sql
-CREATE TABLE sync_metadata (
-    id INTEGER PRIMARY KEY CHECK (id = 1),  -- Singleton row
-    last_export_at TEXT,
-    last_import_at TEXT,
-    sync_status TEXT DEFAULT 'idle'     -- 'idle', 'exporting', 'importing', 'error'
-);
-```
-
-#### FTS5 Virtual Tables
-
-```sql
-CREATE VIRTUAL TABLE fts_turns USING fts5(
-    user_message,
-    assistant_summary,
-    content='turns',
-    content_rowid='rowid'
-);
-
-CREATE VIRTUAL TABLE fts_events USING fts5(
-    title,
-    description,
-    content='events',
-    content_rowid='rowid'
-);
-
-CREATE VIRTUAL TABLE fts_sessions USING fts5(
-    session_title,
-    session_summary,
-    content='sessions',
-    content_rowid='rowid'
-);
-```
-
-#### FTS5 Sync Triggers
-
-```sql
--- fts_turns triggers
-CREATE TRIGGER fts_turns_ai AFTER INSERT ON turns BEGIN
-  INSERT INTO fts_turns(rowid, user_message, assistant_summary)
-  VALUES (new.rowid, new.user_message, new.assistant_summary);
-END;
-CREATE TRIGGER fts_turns_ad AFTER DELETE ON turns BEGIN
-  INSERT INTO fts_turns(fts_turns, rowid, user_message, assistant_summary)
-  VALUES ('delete', old.rowid, old.user_message, old.assistant_summary);
-END;
-CREATE TRIGGER fts_turns_au AFTER UPDATE ON turns BEGIN
-  INSERT INTO fts_turns(fts_turns, rowid, user_message, assistant_summary)
-  VALUES ('delete', old.rowid, old.user_message, old.assistant_summary);
-  INSERT INTO fts_turns(rowid, user_message, assistant_summary)
-  VALUES (new.rowid, new.user_message, new.assistant_summary);
-END;
-
--- fts_events triggers
-CREATE TRIGGER fts_events_ai AFTER INSERT ON events BEGIN
-  INSERT INTO fts_events(rowid, title, description)
-  VALUES (new.rowid, new.title, new.description);
-END;
-CREATE TRIGGER fts_events_ad AFTER DELETE ON events BEGIN
-  INSERT INTO fts_events(fts_events, rowid, title, description)
-  VALUES ('delete', old.rowid, old.title, old.description);
-END;
-CREATE TRIGGER fts_events_au AFTER UPDATE ON events BEGIN
-  INSERT INTO fts_events(fts_events, rowid, title, description)
-  VALUES ('delete', old.rowid, old.title, old.description);
-  INSERT INTO fts_events(rowid, title, description)
-  VALUES (new.rowid, new.title, new.description);
-END;
-
--- fts_sessions triggers
-CREATE TRIGGER fts_sessions_ai AFTER INSERT ON sessions BEGIN
-  INSERT INTO fts_sessions(rowid, session_title, session_summary)
-  VALUES (new.rowid, new.session_title, new.session_summary);
-END;
-CREATE TRIGGER fts_sessions_ad AFTER DELETE ON sessions BEGIN
-  INSERT INTO fts_sessions(fts_sessions, rowid, session_title, session_summary)
-  VALUES ('delete', old.rowid, old.session_title, old.session_summary);
-END;
-CREATE TRIGGER fts_sessions_au AFTER UPDATE ON sessions BEGIN
-  INSERT INTO fts_sessions(fts_sessions, rowid, session_title, session_summary)
-  VALUES ('delete', old.rowid, old.session_title, old.session_summary);
-  INSERT INTO fts_sessions(rowid, session_title, session_summary)
-  VALUES (new.rowid, new.session_title, new.session_summary);
-END;
-```
-
-#### Global DB Schema (`~/.entirecontext/db/ec.db`)
-
-```sql
-CREATE TABLE repo_index (
-    repo_path TEXT PRIMARY KEY,
-    repo_name TEXT,
-    db_path TEXT NOT NULL,              -- Per-repo DB path
-    last_indexed_at TEXT,
-    session_count INTEGER DEFAULT 0,
-    turn_count INTEGER DEFAULT 0
-);
-```
+- `repo_index` in `~/.entirecontext/db/ec.db` for cross-repo lookup
 
 ---
 
-## 4. Agent Integration
+## 4. Public Interfaces
 
-### 4.1 Claude Code Hooks
+## 4.1 CLI interface `[Implemented]`
 
-EntireContext integrates with Claude Code via its hook system. Hook data is received via **stdin JSON protocol**.
+Validated command set (from `ec --help`):
 
-| Hook | Trigger | stdin JSON Fields | Action |
-|---|---|---|---|
-| `SessionStart` | Session begins | `session_id`, `cwd`, `source` (startup/resume/clear/compact) | Create/resume session |
-| `UserPromptSubmit` | User sends message | `session_id`, `transcript_path`, `cwd`, `prompt` | Record turn start |
-| `Stop` | Agent completes | `session_id`, `transcript_path`, `cwd`, `stop_hook_active` | Record turn end, capture summary |
-| `PostToolUse` | Tool executed | `session_id`, `transcript_path`, `tool_name`, `tool_input`, `tool_response` | Track tool usage |
-| `SessionEnd` | Session ends | `session_id`, `cwd` | Set ended_at |
+- Top-level: `init`, `enable`, `disable`, `status`, `config`, `doctor`, `search`, `sync`, `pull`, `rewind`, `blame`, `index`, `import`
+- Groups: `session`, `hook`, `checkpoint`, `repo`, `event`, `mcp`, `futures`
 
-Hook configuration (`.claude/settings.json`):
+### Key command groups
 
-```json
-{
-  "hooks": {
-    "SessionStart": [{"command": "ec hook handle", "timeout": 5000}],
-    "UserPromptSubmit": [{"command": "ec hook handle", "timeout": 5000}],
-    "Stop": [{"command": "ec hook handle", "timeout": 10000}],
-    "PostToolUse": [{"command": "ec hook handle", "timeout": 3000}],
-    "SessionEnd": [{"command": "ec hook handle", "timeout": 5000}]
-  }
-}
-```
+- `ec checkpoint`: `create`, `list`, `show`, `diff`
+- `ec futures`: `assess`, `list`, `feedback`, `lessons`
+- `ec sync`: supports `--no-filter` (see Known Gaps for runtime caveat)
 
-> **Exit codes**: `0` = success, `2` = block action (PreToolUse only). Non-zero exits are logged but don't block by default.
+## 4.2 MCP interface `[Implemented]`
 
-### 4.2 Git Hooks
+Transport: stdio.
 
-| Hook | Action |
-|---|---|
-| `post-commit` | Create checkpoint anchored to new commit |
-| `pre-push` | Optional: sync checkpoints to shadow branch before push |
+Implemented tools (9):
 
-Installed via `ec init --hooks` or `ec enable`.
+1. `ec_search`
+2. `ec_checkpoint_list`
+3. `ec_session_context`
+4. `ec_attribution`
+5. `ec_rewind`
+6. `ec_related`
+7. `ec_turn_content`
+8. `ec_assess`
+9. `ec_lessons`
 
-> Checkpoint creation only occurs when an active session exists. If no active session, `post-commit` hook is a no-op.
+Cross-repo support:
 
-### 4.3 MCP Server
+- tools support `repos` parameter (`null` current repo, `["*"]` all repos, `["name"]` selected repos)
 
-Transport: stdio. Registered in Claude Code MCP config. Implemented using Python FastMCP.
+## 4.3 Hook contract `[Implemented]`
 
-#### Tools
+Hook dispatcher handles:
 
-| Tool | Required Params | Optional Params | Returns |
-|---|---|---|---|
-| `ec_search` | `query: str` | `search_type: "regex"\|"fts"\|"semantic"`, `file_filter`, `commit_filter`, `agent_filter`, `since: ISO8601`, `limit: int=20` | Matching turns/sessions (id, summary, timestamp, relevance) |
-| `ec_checkpoint_list` | — | `session_id`, `limit: int=20`, `since: ISO8601` | Checkpoint list (id, commit_hash, branch, created_at, diff_summary) |
-| `ec_session_context` | — | `session_id` | Session summary + recent 10 turns. Returns session_id for subsequent calls |
-| `ec_attribution` | `file_path: str` | `start_line: int`, `end_line: int` | Per-line attribution (type, agent_name, session_id, turn_id, confidence) |
-| `ec_rewind` | `checkpoint_id: str` | — | Checkpoint files_snapshot + diff_summary + session context |
-| `ec_related` | — | `query: str`, `files: list[str]` | Related sessions/turns sorted by relevance |
+- `SessionStart`
+- `UserPromptSubmit`
+- `Stop`
+- `PostToolUse`
+- `SessionEnd`
 
-> Current session detection: if `session_id` is omitted, the server queries `sessions ORDER BY last_activity_at DESC LIMIT 1`.
+Runtime entrypoint:
+
+- `ec hook handle [--type HOOK_TYPE]` reads JSON stdin
+
+Install location and format:
+
+- Installed by `ec enable` into `.claude/settings.local.json`
+- Uses Claude hook object format with `matcher` + nested `hooks`
+
+Exit codes:
+
+- `0` success
+- `2` reserved for block semantics (framework-level), not actively used by current handlers
+
+## 4.4 Git hooks `[Partial]`
+
+Installed by `ec enable`:
+
+- `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
+- `.git/hooks/pre-push` -> invokes `ec sync`
+
+Current caveat:
+
+- `PostCommit` is not dispatched in hook handler today (see Known Gaps).
 
 ---
 
 ## 5. Search
 
-### 5.1 Search Modes
+### 5.1 Modes `[Implemented]`
 
-#### Regex Search (Default)
+- Regex (default)
+- FTS5 (`--fts`)
+- Semantic (`--semantic`, `sentence-transformers` extra required)
 
-Pattern matching on turn content, session summaries, event descriptions. Follows Aline's proven hierarchical model.
+### 5.2 Filters `[Implemented]`
 
-```bash
-ec search "authentication.*fix"
-ec search "TODO" -t content        # Search in full turn content
-ec search "login" -t session       # Search in session summaries
-```
+- `--file`, `--commit`, `--agent`, `--since`, `-t/--target`, `-n/--limit`
+- cross-repo: `-g/--global`, `-r/--repo`
 
-#### FTS5 Search
+### 5.3 Targets `[Implemented]`
 
-SQLite full-text search for fast keyword matching:
-
-```bash
-ec search "password reset flow" --fts
-```
-
-#### Semantic Search
-
-Embedding-based similarity search using local models:
-
-```bash
-ec search "how did we handle rate limiting?" --semantic
-```
-
-Requires `entirecontext[semantic]` extra. Uses `sentence-transformers` (default model: `all-MiniLM-L6-v2`).
-
-#### Structured Filters
-
-Combine with any search mode:
-
-```bash
-ec search "bug" --file src/auth.py    # Only turns touching this file
-ec search "refactor" --commit abc123  # Only turns near this commit
-ec search "test" --agent claude       # Only Claude agent sessions
-ec search "deploy" --since 2025-01-01 # Date range
-```
-
-### 5.2 Search Pipeline
-
-```
-Query → Parse filters → Route to search mode(s)
-  ├── Regex  → scan turns/sessions/events
-  ├── FTS5   → query virtual tables
-  └── Semantic → embed query → cosine similarity on embeddings table
-       ↓
-  Merge + rank results → Format output
-```
+- `turn`, `session`, `event`, `content`
 
 ---
 
-## 6. Git Shadow Branch
+## 6. Sync and Shadow Branch
 
-### 6.1 Branch Structure
+Shadow branch:
 
-Orphan branch: `entirecontext/checkpoints/v1`
+- `entirecontext/checkpoints/v1`
 
-```
-entirecontext/checkpoints/v1
-├── manifest.json                     # Index of all checkpoints
-├── sessions/
-│   ├── <session-id>/
-│   │   ├── meta.json                 # Session metadata
-│   │   └── transcript.jsonl          # Full turn transcript
-│   └── ...
-└── checkpoints/
-    ├── <checkpoint-id>.json          # Checkpoint manifest
-    └── ...
-```
+Artifacts:
 
-### 6.2 Conflict Avoidance
+- `manifest.json`
+- `sessions/<session-id>/meta.json`
+- `sessions/<session-id>/transcript.jsonl`
+- `checkpoints/<checkpoint-id>.json`
 
-- **Append-only**: Each checkpoint is a separate file (no shared mutable state)
-- **Manifest merge**: `manifest.json` uses checkpoint-ID-keyed entries; merge = union
-- **Session transcripts**: Append-only JSONL; merge = concatenate + deduplicate by turn ID
+### 6.1 `ec sync` current workflow `[Implemented]`
 
-### 6.3 Sync Workflow
+1. Ensure shadow branch exists (create orphan branch if absent)
+2. Create temporary git worktree on shadow branch
+3. Export sessions/checkpoints since `sync_metadata.last_export_at`
+4. Update `manifest.json`
+5. Commit changes when present
+6. Push when enabled by runtime config path (see caveat below)
+7. Update `sync_metadata.last_export_at` and duration fields
 
-```bash
-ec sync          # Export local DB → shadow branch, push
-ec pull          # Fetch shadow branch, import → local DB
-```
+### 6.2 `ec pull` current workflow `[Implemented]`
 
-```
-ec sync workflow:
-1. git fetch origin entirecontext/checkpoints/v1
-2. App-level merge (NOT git 3-way merge):
-   - manifest.json: JSON key union (checkpoint ID based)
-   - sessions/*.jsonl: line append + turn_id dedup
-   - checkpoints/*.json: file-level (same ID → skip, idempotent)
-3. git add + commit on shadow branch
-4. git push (fail → retry from step 1, max 3 attempts)
-```
+1. Fetch shadow branch
+2. Create temporary git worktree
+3. Import missing sessions/checkpoints (idempotent-by-ID)
+4. Update `sync_metadata.last_import_at`
+
+### 6.3 Merge strategy status `[Partial]`
+
+- App-level merge helpers exist (`sync/merge.py`) for manifest/transcript/checkpoint artifacts
+- Current `perform_sync`/`perform_pull` path does not execute an explicit multi-remote merge/retry orchestration loop
 
 ---
 
-## 7. CLI Commands
+## 7. Futures Assessment
 
-### 7.1 Project Management
+## 7.1 Data and CLI `[Implemented]`
 
-```bash
-ec init              # Initialize EntireContext in current git repo
-ec enable            # Enable auto-capture (install hooks)
-ec disable           # Disable auto-capture (remove hooks)
-ec status            # Show capture status, session info, DB stats
-ec config [key] [val]  # Get/set configuration
-ec doctor            # Diagnose issues (DB integrity, hook status, etc.)
-                     # Includes warning for unsynced checkpoints:
-                     #   'N checkpoints not synced to shadow branch.'
-```
+- `assessments` table stores verdict/feedback metadata
+- CLI:
+  - `ec futures assess`
+  - `ec futures list`
+  - `ec futures feedback`
+  - `ec futures lessons`
 
-### 7.2 Search
+## 7.2 MCP exposure `[Implemented]`
 
-```bash
-ec search "query"              # Regex search (default)
-ec search "query" --semantic   # Semantic search
-ec search "query" --fts        # FTS5 search
-ec search "query" --file PATH  # Filter by file
-ec search "query" --commit HASH  # Filter by commit
-ec search "query" --agent TYPE # Filter by agent type
-ec search "query" -t TYPE      # Search target: turn|session|event|content
-```
+- `ec_assess` (read assessment)
+- `ec_lessons` (read distilled lessons inputs)
 
-### 7.3 Checkpoints
+## 7.3 Auto-distill behavior `[Implemented]`
 
-```bash
-ec checkpoint list             # List checkpoints (current session or all)
-ec checkpoint show <id>        # Show checkpoint details
-ec checkpoint diff <id1> <id2> # Diff between checkpoints
-```
-
-### 7.4 Rewind
-
-```bash
-ec rewind <checkpoint>         # Show code state at checkpoint
-ec rewind <checkpoint> --restore  # Restore working tree to checkpoint state
-```
-
-> `ec rewind --restore` requires a clean working tree. If uncommitted changes exist, the command aborts with: 'Commit or stash your changes first.'
-
-### 7.5 Sessions
-
-```bash
-ec session list                # List sessions
-ec session show <id>           # Show session details + turn summaries
-ec session current             # Show current active session
-```
-
-### 7.6 Events
-
-```bash
-ec event list                  # List events
-ec event show <id>             # Show event details + linked sessions
-ec event create "title"        # Create a new event
-ec event link <event> <session>  # Link session to event
-```
-
-### 7.7 Attribution
-
-```bash
-ec blame <file>                # Show human/agent attribution per line
-ec blame <file> --summary      # Aggregated attribution stats
-ec blame <file> -L 10,20       # Specific line range
-```
-
-### 7.8 Sync
-
-```bash
-ec sync                        # Export to shadow branch + push
-ec sync --no-filter            # Skip secret filtering
-ec pull                        # Fetch shadow branch + import
-```
-
-### 7.9 Maintenance
-
-```bash
-ec index                       # Build/rebuild search indexes
-ec index --semantic            # Generate embeddings for semantic search
-```
+- `futures feedback` triggers auto-distill check
+- session end lifecycle also triggers auto-distill check
+- gated by config: `futures.auto_distill`
 
 ---
 
-## 8. Configuration
+## 8. Configuration (defaults)
 
-### 8.1 File Locations
+Source:
 
-| Path | Purpose |
-|---|---|
-| `~/.entirecontext/config.toml` | Global configuration |
-| `~/.entirecontext/db/ec.db` | Global cross-repo index |
-| `.entirecontext/config.toml` | Per-repo configuration |
-| `.entirecontext/db/local.db` | Per-repo database |
-| `.entirecontext/content/<session-id>/<turn-id>.jsonl` | Turn full content (external files) |
-
-### 8.2 Configuration Keys
+- `src/entirecontext/core/config.py`
 
 ```toml
-# ~/.entirecontext/config.toml
-
 [capture]
-auto_capture = true          # Auto-capture turns via hooks
-checkpoint_on_commit = true  # Auto-checkpoint on git commit
+auto_capture = true
+checkpoint_on_commit = true
+checkpoint_on_session_end = false
 
 [search]
-default_mode = "regex"       # "regex" | "fts" | "semantic"
+default_mode = "regex"
 semantic_model = "all-MiniLM-L6-v2"
 
 [sync]
-auto_sync = false               # Auto-sync on push (disabled by default)
-auto_sync_on_push = false       # Alias
-shadow_branch = "entirecontext/checkpoints/v1"
-
-[security]
-filter_secrets = true
-patterns = [
-    '(?i)(api[_-]?key|secret|password|token)\s*[=:]\s*[''"]?[\w-]+',
-    '(?i)bearer\s+[\w.-]+',
-    'ghp_[a-zA-Z0-9]{36}',
-    'sk-[a-zA-Z0-9]{48}'
-]
+auto_sync = false
+auto_pull = false
+cooldown_seconds = 300
+pull_staleness_seconds = 600
+push_on_sync = true
+quiet = true
 
 [display]
 max_results = 20
 color = true
+
+[security]
+filter_secrets = true
+patterns = [
+  "(?i)(api[_-]?key|secret|password|token)\\s*[=:]\\s*[\\'\"]?[\\w-]+",
+  "(?i)bearer\\s+[\\w.-]+",
+  "ghp_[a-zA-Z0-9]{36}",
+  "sk-[a-zA-Z0-9]{48}",
+]
+
+[futures]
+auto_distill = false
+lessons_output = "LESSONS.md"
 ```
 
 ---
 
-## 9. Implementation Phases
+## 9. Implementation Status by Phase
 
-### Phase 1: Foundation (MVP)
+## Phase 1: Foundation
 
-**Goal**: Basic capture and search works.
+- `[Implemented]` Core CLI + DB + hooks + regex/FTS search
 
-- [x] Project structure, pyproject.toml, CLI skeleton
-- [x] SQLite schema (projects, sessions, turns, turn_content)
-- [x] Claude Code hooks: `UserPromptSubmit` → turn start, `Stop` → turn end
-- [x] Turn capture: parse Claude Code JSONL, extract user message + assistant summary
-- [x] Regex search across turns and sessions
-- [x] FTS5 on turns and sessions
-- [x] CLI: `ec init`, `ec enable`, `ec disable`, `ec status`, `ec search`, `ec session list/show`
+## Phase 2: Git integration
 
-**Deliverable**: `ec init` in a repo, use Claude Code, `ec search "query"` finds past turns.
+- `[Partial]` Checkpoint + sync/pull + rewind are present
+- `[Partial]` post-commit automation path has handler gap (Known Gap #1)
 
-### Phase 2: Git Integration
+## Phase 3: Semantic + MCP
 
-**Goal**: Checkpoints anchored to git commits.
+- `[Implemented]` semantic indexing/search and MCP tools
+- `[Implemented]` MCP toolset expanded beyond initial draft (9 tools)
 
-- [x] Checkpoints table + creation logic
-- [x] `post-commit` git hook → auto-checkpoint
-- [x] Shadow branch read/write (orphan branch management)
-- [x] CLI: `ec checkpoint list/show/diff`, `ec rewind`, `ec sync`, `ec pull`
+## Phase 4: Attribution + Multi-agent
 
-**Deliverable**: Every git commit has a linked checkpoint. `ec rewind` shows what the agent was doing at any commit.
+- `[Implemented]` line attribution CLI/API and agent hierarchy fields
 
-### Phase 3: Semantic Search & MCP
+## Phase 5: Sharing + Cross-repo
 
-**Goal**: Agents can query their own history.
+- `[Implemented]` global repo index and cross-repo query paths
+- `[Partial]` advanced sync conflict policy described in old draft is not fully wired in runtime path
 
-- [x] Embedding pipeline (sentence-transformers, background indexing)
-- [x] Semantic search: query embedding → cosine similarity
-- [x] MCP server: `ec_search`, `ec_checkpoint_list`, `ec_session_context`, `ec_related`
-- [x] CLI: `ec search --semantic`, `ec index --semantic`
+## Phase 6: Futures (added)
 
-**Deliverable**: Agent uses MCP tool to search "how did we handle X?" and gets relevant past turns.
-
-> Embedding model change: `ec index --semantic --force` for full re-indexing. Model name stored in embeddings table; mismatched model_name entries excluded from queries.
-
-### Phase 4: Attribution & Multi-Agent
-
-**Goal**: Know who changed what.
-
-- [x] Agent hierarchy tracking (parent_agent_id)
-- [x] Hunk-level attribution (git diff → agent/human mapping)
-- [x] Line-level attribution refinement
-- [x] CLI: `ec blame`
-
-**Deliverable**: `ec blame src/auth.py` shows which lines were written by human vs. agent, with links to the session/turn.
-
-> Multi-agent concurrency details to be specified in Phase 4.
-
-### Phase 5: Sharing & Cross-Repo
-
-**Goal**: Context travels across machines and repos.
-
-- [x] Cross-machine sync workflow (shadow branch push/pull)
-- [x] Global DB: cross-repo search index
-- [x] Event sharing between repos
-- [x] CLI: `ec event create/link`, enhanced `ec sync`
-
-**Deliverable**: Search across all repos. Share context between team members via git.
+- `[Implemented]` futures CLI, table, feedback loop, lessons generation
+- `[Implemented]` LLM backend abstraction and MCP read tools (`ec_assess`, `ec_lessons`)
 
 ---
 
-## 10. Tech Stack
+## 10. Known Gaps and Follow-up Backlog
 
-| Component | Choice | Rationale |
-|---|---|---|
-| Language | Python 3.12+ | Primary language, Aline ecosystem compatibility |
-| Package manager | uv | Already in use |
-| CLI framework | Typer + Rich | Consistent with Aline, good DX |
-| Database | SQLite | Local-first, zero server, proven at Aline scale |
-| Embedding storage | SQLite BLOB | Simple, sufficient for agent session scale |
-| Embedding model | sentence-transformers (local) | No API key needed, privacy-preserving |
-| MCP transport | stdio | Claude Code standard |
-| Git integration | Shadow branch (orphan) | Entire.io-proven pattern, portable |
-| Configuration | TOML | Python ecosystem standard |
+The items below are implementation gaps, not documentation errors.
 
----
+## P0
 
-## 11. Open Questions
+1. PostCommit hook dispatch gap
+- Current: git hook emits `PostCommit`, handler has no dispatcher entry
+- Target: `PostCommit` creates checkpoint when policy allows
+- Acceptance criteria:
+  - `post-commit` hook invocation creates checkpoint for active session
+  - no-op behavior remains safe without active session
+- Verification:
+  - integration test for hook dispatch + checkpoint row creation
 
-### 11.1 Embedding Cold-Start
+## P1
 
-**Question**: On first `ec search --semantic`, should we index all history or start lazy?
+2. pre-push optional policy mismatch
+- Current: `pre-push` script always calls `ec sync`
+- Target: behavior gated by explicit config policy (e.g., `sync.auto_sync_on_push` or replacement key)
+- Acceptance criteria:
+  - disabled config -> pre-push does not perform sync
+  - enabled config -> pre-push performs sync
+- Verification:
+  - hook unit/integration tests with both config states
 
-**Recommendation**: Lazy by default. `ec index --semantic` for backfill. New turns are embedded on capture. Rationale: initial embedding of large history can take minutes; users expect search to be fast.
+3. `ec sync --no-filter` runtime wiring
+- Current: CLI exposes option, but sync path does not apply filter toggle to exporter flow
+- Target: `--no-filter` must bypass secret filtering, default path must apply configured filtering
+- Acceptance criteria:
+  - same input transcript yields redacted output by default
+  - same input transcript yields unredacted output with `--no-filter`
+- Verification:
+  - exporter/security integration tests
 
-### 11.2 Shadow Branch Conflicts
+## P2
 
-**Question**: Multi-machine push conflicts on shadow branch?
-
-**Recommendation**: Append-only structure (one file per checkpoint). Manifest uses checkpoint-ID keys for easy merge. JSONL transcripts are append-only. In worst case, `ec pull --force` rebuilds from shadow branch files.
-
-### 11.3 Attribution Granularity
-
-**Question**: Line-level vs hunk-level attribution for MVP?
-
-**Recommendation**: Start with hunk-level (git diff hunks mapped to turns). Refine to line-level in Phase 4. Hunk-level is much simpler and still very useful.
-
-### 11.4 Token Usage Tracking
-
-**Question**: Track token usage per turn?
-
-**Recommendation**: Parse from Claude Code JSONL if available. Store in turn metadata as optional field. Don't block on this — it's a nice-to-have.
-
-### 11.5 Global DB Sync
-
-**Question**: How does the global DB sync across machines?
-
-**Recommendation**: Global DB is local-only (rebuilt from per-repo data). Each repo's shadow branch is the sync unit. On `ec pull`, global DB is updated. No separate global sync mechanism needed.
+4. Sync merge/retry policy alignment
+- Current: merge helpers exist but not orchestrated in sync engine retry loop
+- Target: either implement app-level merge/retry loop or officially narrow policy in docs/README
+- Acceptance criteria:
+  - chosen policy is implemented and tested
+  - docs and runtime are consistent
+- Verification:
+  - conflict scenario tests (simulated divergent shadow branch states)
 
 ---
 
-## Appendix A: Aline Migration Path
+## 11. Validation Checklist (2026-02-20)
 
-EntireContext can import existing Aline data:
+## CLI shape checks
 
-1. Read Aline SQLite DB (`~/.aline/db/aline.db`)
-2. Map: Aline sessions → EC sessions, Aline turns → EC turns, Aline events → EC events
-3. Generate checkpoints retroactively from turns with `git_commit_hash`
-4. Backfill turn_content from Aline JSONL files
+- `ec --help` confirms command groups including `futures`, `mcp`, `import`, `checkpoint`
+- `ec checkpoint --help` confirms `create/list/show/diff`
+- `ec futures --help` confirms `assess/list/feedback/lessons`
+- `ec sync --help` confirms `--no-filter` option exposure
 
-CLI: `ec import --from-aline [path]`
+## MCP checks
 
-## Appendix B: Data Size Estimates
+- Source-level confirmation of 9 tools in `mcp/server.py`
 
-For a typical project with 6 months of AI-assisted development:
+## Config checks
 
-| Data | Estimate |
-|---|---|
-| Sessions | ~200 |
-| Turns | ~5,000 |
-| Checkpoints | ~1,000 (one per commit) |
-| Turn content (JSONL) | ~500MB |
-| SQLite DB (metadata) | ~50MB |
-| Embeddings | ~100MB (5K turns × 384-dim × 4 bytes × 2 for overhead) |
-| Shadow branch | ~200MB (compressed transcripts) |
+- Source-level confirmation against `DEFAULT_CONFIG` in `core/config.py`
 
-All comfortably within single-machine storage limits.
+## Hook checks
+
+- Source-level confirmation of handled hook types and identified `PostCommit` gap
+
+---
+
+## 12. Migration Notes from Previous Draft
+
+- The previous draft emphasized design intent; this document now prioritizes implemented behavior.
+- Where intent and implementation differ, this spec records both explicitly via status tags and backlog items.
