@@ -24,6 +24,20 @@ _Updated against codebase on 2026-02-20._
 ## Next (1-2 weeks)
 - [ ] assessment 기반 자동 tidy PR 제안 (룰 기반 + LLM 제안 초안)
 - [ ] futures 결과 리포트 템플릿/주기 실행 정리 (팀 공유 가능한 형태)
+- [ ] 하이브리드 검색 (FTS5 + semantic embeddings + RRF reranking)
+- [ ] typed relationships for assessments (causes/fixes/contradicts)
 
 ## Later (1-3 months)
 - [ ] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)
+- [ ] 비동기 assessment 워커 (캡처 차단 없는 백그라운드 분석)
+- [ ] knowledge graph 레이어 (git entities → nodes, relations → edges)
+- [ ] memory consolidation/decay (오래된 turn 압축 전략)
+- [ ] 마크다운 export (세션 요약 → git-friendly 공유)
+
+## Exploration
+- [ ] 코드 AST 기반 semantic search
+- [ ] spreading activation (관련 turn 연쇄 탐색)
+- [ ] multi-agent 세션 그래프
+
+## References
+- [Agent Memory Landscape Research](docs/research/agent-memory-landscape.md)
