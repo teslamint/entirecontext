@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23._
+_Updated against codebase on 2026-02-23 (TDD implementation: typed assessment relationships)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -18,6 +18,13 @@ _Updated against codebase on 2026-02-23._
   - `cross_repo_assessment_trends()` — 레포별/전체 verdict 분포 및 feedback 통계
   - `ec futures trend` CLI — 크로스 레포 assessment 트렌드 테이블 출력
   - `ec_assess_trends` MCP 도구 — 에이전트용 트렌드 조회 인터페이스
+- [x] typed relationships for assessments (`causes`/`fixes`/`contradicts`)
+  - `assessment_relationships` 테이블 (DB schema v4, 자기참조 방지 CHECK 제약)
+  - `add_assessment_relationship()`, `get_assessment_relationships()`, `remove_assessment_relationship()` in `core/futures.py`
+  - `ec futures relate <src> <type> <tgt>` — 관계 생성 (prefix ID 지원, `--note` 옵션)
+  - `ec futures relationships <id>` — 관계 목록 (`--direction` outgoing/incoming/both)
+  - `ec futures unrelate <src> <type> <tgt>` — 관계 삭제
+  - 24 TDD 테스트 (prefix ID, 자기참조 방지, 방향 필드 포함)
 
 ## Now
 
@@ -25,7 +32,6 @@ _Updated against codebase on 2026-02-23._
 - [ ] assessment 기반 자동 tidy PR 제안 (룰 기반 + LLM 제안 초안)
 - [ ] futures 결과 리포트 템플릿/주기 실행 정리 (팀 공유 가능한 형태)
 - [ ] 하이브리드 검색 (FTS5 + semantic embeddings + RRF reranking)
-- [ ] typed relationships for assessments (causes/fixes/contradicts)
 
 ## Later (1-3 months)
 - [ ] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)

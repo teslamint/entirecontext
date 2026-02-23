@@ -262,10 +262,133 @@ def futures_lessons(
     console.print(f"[green]Written {len(lessons)} lessons to {output}[/green]")
 
 
+@futures_app.command("relate")
+def futures_relate(
+    source_id: str = typer.Argument(..., help="Source assessment ID (supports prefix)"),
+    relationship_type: str = typer.Argument(..., help="Relationship type: causes, fixes, or contradicts"),
+    target_id: str = typer.Argument(..., help="Target assessment ID (supports prefix)"),
+    note: Optional[str] = typer.Option(None, "--note", "-n", help="Optional explanatory note"),
+):
+    """Add a typed relationship between two assessments.
+
+    Example: ec futures relate abc123 causes def456
+    """
+    from ..core.futures import add_assessment_relationship
+    from ..core.project import find_git_root
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    try:
+        rel = add_assessment_relationship(conn, source_id, target_id, relationship_type, note=note)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        conn.close()
+        raise typer.Exit(1)
+    conn.close()
+
+    type_colors = {"causes": "red", "fixes": "green", "contradicts": "yellow"}
+    color = type_colors.get(relationship_type, "white")
+    console.print(
+        f"[green]Relationship added:[/green] {rel['source_id'][:12]} [{color}]{relationship_type}[/{color}] {rel['target_id'][:12]}"
+    )
+    if note:
+        console.print(f"  [dim]Note: {note}[/dim]")
+
+
+@futures_app.command("relationships")
+def futures_relationships(
+    assessment_id: str = typer.Argument(..., help="Assessment ID to show relationships for (supports prefix)"),
+    direction: str = typer.Option("both", "--direction", "-d", help="Direction: outgoing, incoming, or both"),
+):
+    """List typed relationships for an assessment."""
+    from ..core.futures import get_assessment_relationships
+    from ..core.project import find_git_root
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    rels = get_assessment_relationships(conn, assessment_id, direction=direction)
+    conn.close()
+
+    if not rels:
+        console.print("[dim]No relationships found.[/dim]")
+        return
+
+    type_colors = {"causes": "red", "fixes": "green", "contradicts": "yellow"}
+    type_icons = {"causes": "→", "fixes": "✓", "contradicts": "≠"}
+
+    table = Table(title=f"Relationships for {assessment_id[:12]} ({len(rels)})")
+    table.add_column("Direction", style="dim", max_width=10)
+    table.add_column("Type", max_width=12)
+    table.add_column("Other Assessment", max_width=14)
+    table.add_column("Summary", max_width=50)
+    table.add_column("Note", max_width=30)
+
+    for r in rels:
+        if r.get("direction") == "outgoing":
+            dir_label = "[bold]→ out[/bold]"
+            other_id = r["target_id"][:12]
+            summary = (r.get("target_impact_summary") or "")[:50]
+        else:
+            dir_label = "[dim]← in[/dim]"
+            other_id = r["source_id"][:12]
+            summary = (r.get("source_impact_summary") or "")[:50]
+
+        rtype = r["relationship_type"]
+        color = type_colors.get(rtype, "white")
+        icon = type_icons.get(rtype, "")
+        table.add_row(
+            dir_label,
+            f"[{color}]{icon} {rtype}[/{color}]",
+            other_id,
+            summary,
+            r.get("note") or "",
+        )
+
+    console.print(table)
+
+
+@futures_app.command("unrelate")
+def futures_unrelate(
+    source_id: str = typer.Argument(..., help="Source assessment ID (supports prefix)"),
+    relationship_type: str = typer.Argument(..., help="Relationship type: causes, fixes, or contradicts"),
+    target_id: str = typer.Argument(..., help="Target assessment ID (supports prefix)"),
+):
+    """Remove a typed relationship between two assessments."""
+    from ..core.futures import remove_assessment_relationship
+    from ..core.project import find_git_root
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    removed = remove_assessment_relationship(conn, source_id, target_id, relationship_type)
+    conn.close()
+
+    if removed:
+        console.print(f"[green]Relationship removed:[/green] {source_id[:12]} {relationship_type} {target_id[:12]}")
+    else:
+        console.print(f"[yellow]Relationship not found:[/yellow] {source_id[:12]} {relationship_type} {target_id[:12]}")
+
+
 @futures_app.command("trend")
 def futures_trend(
     repos: Optional[list[str]] = typer.Option(None, "--repo", "-R", help="Filter by repo name (repeat for multiple)"),
-    since: Optional[str] = typer.Option(None, "--since", "-s", help="Only include assessments after this date (YYYY-MM-DD)"),
+    since: Optional[str] = typer.Option(
+        None, "--since", "-s", help="Only include assessments after this date (YYYY-MM-DD)"
+    ),
 ):
     """Show cross-repo assessment trend analysis."""
     from ..core.cross_repo import cross_repo_assessment_trends
