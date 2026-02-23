@@ -56,7 +56,13 @@ _Updated against codebase on 2026-02-23 (TDD implementation: code AST-based sema
   - 26 TDD 테스트 (rrf_fuse unit, hybrid_search integration, CLI assertions including conn passthrough)
 
 ## Later (1-3 months)
-- [ ] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)
+- [x] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)
+  - `get_dashboard_stats(conn, *, since, limit)` in `core/dashboard.py` — single-pass aggregation for all three sections
+  - Sessions: total/active/ended counts + recent list
+  - Checkpoints: total count + recent list
+  - Assessments: verdict distribution, feedback rate, recent list
+  - `ec dashboard [--since DATE] [--limit N]` CLI — Rich tables per section
+  - 25 TDD 테스트 (core aggregation, since filters, empty DB, CLI options)
 - [x] 비동기 assessment 워커 (캡처 차단 없는 백그라운드 분석)
   - `core/async_worker.py`: `launch_worker()`, `stop_worker()`, `is_worker_running()`, `worker_status()`
   - PID file at `.entirecontext/worker.pid`; `start_new_session=True` detaches worker from parent TTY
