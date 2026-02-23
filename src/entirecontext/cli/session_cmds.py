@@ -257,3 +257,50 @@ def session_export(
         console.print(f"[green]Exported to:[/green] {output}")
     else:
         typer.echo(markdown)
+
+
+@session_app.command("consolidate")
+def session_consolidate(
+    before: Optional[str] = typer.Option(
+        None,
+        "--before",
+        help="Consolidate turns older than this date (YYYY-MM-DD). Defaults to 30 days ago.",
+    ),
+    session_id: Optional[str] = typer.Option(None, "--session", "-s", help="Restrict to a single session ID"),
+    limit: int = typer.Option(500, "--limit", "-n", help="Maximum number of turns to consolidate"),
+    execute: bool = typer.Option(False, "--execute", help="Actually delete content files (default is dry-run)"),
+):
+    """Consolidate old turn content files to save storage (preserves metadata).
+
+    By default runs in dry-run mode — use --execute to actually delete content files.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from ..core.consolidation import consolidate_old_turns
+    from ..core.project import find_git_root
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    if before is None:
+        before = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
+
+    conn = get_db(repo_path)
+    stats = consolidate_old_turns(
+        conn,
+        repo_path,
+        before_date=before,
+        session_id=session_id,
+        limit=limit,
+        dry_run=not execute,
+    )
+    conn.close()
+
+    if not execute:
+        console.print(f"[dim]Dry-run:[/dim] {stats['candidates']} turns eligible for consolidation (before {before}).")
+        console.print("[dim]Use --execute to actually consolidate.[/dim]")
+    else:
+        console.print(f"[green]Consolidated {stats['consolidated']} turns[/green] (of {stats['candidates']} eligible).")

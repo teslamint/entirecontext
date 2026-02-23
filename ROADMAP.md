@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: futures report)._
+_Updated against codebase on 2026-02-23 (TDD implementation: memory consolidation/decay)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -30,7 +30,6 @@ _Updated against codebase on 2026-02-23 (TDD implementation: futures report)._
   - YAML 안전 escaping (`_yaml_scalar`), 멀티라인 blockquote (`_blockquote`), inline 정규화 (`_inline_safe`)
   - `ec session export <id> [--output FILE]` CLI 명령 (prefix ID 지원, 파일 미지정 시 stdout)
   - 48 TDD 테스트 (helper 함수, 코어 로직, CLI 커맨드 포함)
-
 - [x] futures 결과 리포트 템플릿/주기 실행 정리 (팀 공유 가능한 형태)
   - `generate_futures_report()` in `core/report.py` — YAML frontmatter + verdict distribution + per-assessment detail + feedback summary
   - YAML-safe scalar quoting, unknown verdict normalisation, consistent 100% totals
@@ -48,8 +47,12 @@ _Updated against codebase on 2026-02-23 (TDD implementation: futures report)._
 - [ ] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)
 - [ ] 비동기 assessment 워커 (캡처 차단 없는 백그라운드 분석)
 - [ ] knowledge graph 레이어 (git entities → nodes, relations → edges)
-- [ ] memory consolidation/decay (오래된 turn 압축 전략)
-- [ ] 마크다운 export (세션 요약 → git-friendly 공유)
+- [x] memory consolidation/decay (오래된 turn 압축 전략)
+  - `core/consolidation.py`: `find_turns_for_consolidation()`, `consolidate_turn_content()`, `consolidate_old_turns()`
+  - DB schema v5: `turns.consolidated_at TEXT` column + index; idempotent migration via callable check
+  - path-traversal protection (`_safe_content_path`), DB-first atomic ordering, per-turn OSError isolation
+  - `ec session consolidate [--before DATE] [--session ID] [--limit N] [--execute]` (dry-run by default)
+  - 28 TDD 테스트 (find, single-turn consolidation, batch, CLI)
 
 ## Exploration
 - [ ] 코드 AST 기반 semantic search

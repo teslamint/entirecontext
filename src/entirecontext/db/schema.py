@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS turns (
     tools_used TEXT,
     content_hash TEXT NOT NULL,
     timestamp TEXT NOT NULL,
+    consolidated_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(session_id, turn_number),
     FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS turns (
 CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id);
 CREATE INDEX IF NOT EXISTS idx_turns_timestamp ON turns(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_turns_commit ON turns(git_commit_hash);
+CREATE INDEX IF NOT EXISTS idx_turns_consolidated ON turns(consolidated_at);
 """,
     "turn_content": """
 CREATE TABLE IF NOT EXISTS turn_content (

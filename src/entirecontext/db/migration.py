@@ -49,13 +49,28 @@ def check_and_migrate(conn: sqlite3.Connection) -> None:
         _apply_migrations(conn, current)
 
 
+def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    """Return True if *column* exists in *table*."""
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row["name"] == column for row in rows)
+
+
 def _apply_migrations(conn: sqlite3.Connection, from_version: int) -> None:
-    """Apply sequential migrations from from_version to SCHEMA_VERSION."""
+    """Apply sequential migrations from from_version to SCHEMA_VERSION.
+
+    Each migration is a list of SQL strings or single-argument callables that
+    receive the connection as their sole argument.  Callables are used when the
+    migration logic requires conditional checks (e.g. ``ALTER TABLE ADD COLUMN``
+    which is not idempotent in SQLite).
+    """
     migrations = _get_migrations()
     for version in range(from_version + 1, SCHEMA_VERSION + 1):
         if version in migrations:
-            for sql in migrations[version]:
-                conn.execute(sql)
+            for step in migrations[version]:
+                if callable(step):
+                    step(conn)
+                else:
+                    conn.execute(step)
             conn.execute(
                 "INSERT INTO schema_version (version, description) VALUES (?, ?)",
                 (version, f"Migration to v{version}"),
@@ -109,5 +124,13 @@ def _get_migrations() -> dict[int, list[str]]:
             )""",
             "CREATE INDEX IF NOT EXISTS idx_assessment_rel_source ON assessment_relationships(source_id)",
             "CREATE INDEX IF NOT EXISTS idx_assessment_rel_target ON assessment_relationships(target_id)",
+        ],
+        5: [
+            lambda c: (
+                None
+                if _column_exists(c, "turns", "consolidated_at")
+                else c.execute("ALTER TABLE turns ADD COLUMN consolidated_at TEXT")
+            ),
+            "CREATE INDEX IF NOT EXISTS idx_turns_consolidated ON turns(consolidated_at);",
         ],
     }
