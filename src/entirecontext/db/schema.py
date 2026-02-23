@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -230,6 +230,28 @@ CREATE TABLE IF NOT EXISTS sync_metadata (
     sync_pid INTEGER
 );
 """,
+    "ast_symbols": """
+CREATE TABLE IF NOT EXISTS ast_symbols (
+    id TEXT PRIMARY KEY,
+    file_path TEXT NOT NULL,
+    symbol_type TEXT NOT NULL,
+    name TEXT NOT NULL,
+    qualified_name TEXT NOT NULL,
+    start_line INTEGER NOT NULL,
+    end_line INTEGER NOT NULL,
+    docstring TEXT,
+    decorators TEXT,
+    parent_name TEXT,
+    turn_id TEXT,
+    git_commit_hash TEXT,
+    indexed_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ast_file ON ast_symbols(file_path);
+CREATE INDEX IF NOT EXISTS idx_ast_name ON ast_symbols(name);
+CREATE INDEX IF NOT EXISTS idx_ast_type ON ast_symbols(symbol_type);
+CREATE INDEX IF NOT EXISTS idx_ast_turn ON ast_symbols(turn_id);
+""",
 }
 
 # FTS5 virtual tables
@@ -255,6 +277,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_sessions USING fts5(
     session_title,
     session_summary,
     content='sessions',
+    content_rowid='rowid'
+);
+""",
+    "fts_ast_symbols": """
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_ast_symbols USING fts5(
+    name,
+    qualified_name,
+    docstring,
+    file_path,
+    content='ast_symbols',
     content_rowid='rowid'
 );
 """,
@@ -320,6 +352,26 @@ CREATE TRIGGER IF NOT EXISTS fts_sessions_au AFTER UPDATE ON sessions BEGIN
   VALUES ('delete', old.rowid, old.session_title, old.session_summary);
   INSERT INTO fts_sessions(rowid, session_title, session_summary)
   VALUES (new.rowid, new.session_title, new.session_summary);
+END;
+""",
+    "fts_ast_symbols_ai": """
+CREATE TRIGGER IF NOT EXISTS fts_ast_symbols_ai AFTER INSERT ON ast_symbols BEGIN
+  INSERT INTO fts_ast_symbols(rowid, name, qualified_name, docstring, file_path)
+  VALUES (new.rowid, new.name, new.qualified_name, new.docstring, new.file_path);
+END;
+""",
+    "fts_ast_symbols_ad": """
+CREATE TRIGGER IF NOT EXISTS fts_ast_symbols_ad AFTER DELETE ON ast_symbols BEGIN
+  INSERT INTO fts_ast_symbols(fts_ast_symbols, rowid, name, qualified_name, docstring, file_path)
+  VALUES ('delete', old.rowid, old.name, old.qualified_name, old.docstring, old.file_path);
+END;
+""",
+    "fts_ast_symbols_au": """
+CREATE TRIGGER IF NOT EXISTS fts_ast_symbols_au AFTER UPDATE ON ast_symbols BEGIN
+  INSERT INTO fts_ast_symbols(fts_ast_symbols, rowid, name, qualified_name, docstring, file_path)
+  VALUES ('delete', old.rowid, old.name, old.qualified_name, old.docstring, old.file_path);
+  INSERT INTO fts_ast_symbols(rowid, name, qualified_name, docstring, file_path)
+  VALUES (new.rowid, new.name, new.qualified_name, new.docstring, new.file_path);
 END;
 """,
 }

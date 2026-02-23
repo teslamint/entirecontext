@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: knowledge graph layer)._
+_Updated against codebase on 2026-02-23 (TDD implementation: code AST-based semantic search)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -74,7 +74,14 @@ _Updated against codebase on 2026-02-23 (TDD implementation: knowledge graph lay
   - 28 TDD 테스트 (find, single-turn consolidation, batch, CLI)
 
 ## Exploration
-- [ ] 코드 AST 기반 semantic search
+- [x] 코드 AST 기반 semantic search
+  - `core/ast_index.py`: `extract_ast_symbols()`, `index_file_ast()`, `get_ast_symbols_for_file()`, `search_ast_symbols()`
+  - Python `ast` module parsing: functions, classes, methods (async included), nested classes (recursive)
+  - Full-qualified names (`ClassName.method`), docstrings, decorator names (module-qualified), line ranges
+  - Schema v6: `ast_symbols` table + `fts_ast_symbols` FTS5 virtual table + 3 sync triggers
+  - `search_ast_symbols()` uses FTS5 JOIN with `symbol_type` and `file_path` filters; phrase-quoted queries
+  - `ec ast-search <query> [--type function|class|method] [--file PATH] [--limit N]` CLI
+  - 46 TDD 테스트 (extract, index, search, filter, nested class, async method, CLI)
 - [x] spreading activation (관련 turn 연쇄 탐색)
   - `core/activation.py`: `spread_activation()` — BFS graph traversal through shared `files_touched`/`git_commit_hash` edges
   - Jaccard similarity weighting for file overlap, fixed 1.0 weight for commit sharing, per-hop decay
