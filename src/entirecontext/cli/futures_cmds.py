@@ -485,6 +485,39 @@ def futures_report(
         typer.echo(report)
 
 
+@futures_app.command("tidy-pr")
+def futures_tidy_pr(
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Write PR draft to file; omit to print to stdout"),
+    since: Optional[str] = typer.Option(
+        None, "--since", "-s", help="Only include assessments after this date (YYYY-MM-DD)"
+    ),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum number of suggestions to include"),
+):
+    """Generate a tidy PR draft from narrow assessment suggestions (rule-based)."""
+    from pathlib import Path
+
+    from ..core.project import find_git_root
+    from ..core.tidy_pr import generate_tidy_pr
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    try:
+        pr_text = generate_tidy_pr(conn, since=since, limit=limit)
+    finally:
+        conn.close()
+
+    if output:
+        Path(output).write_text(pr_text, encoding="utf-8")
+        console.print(f"[green]Tidy PR draft written to:[/green] {output}")
+    else:
+        typer.echo(pr_text)
+
+
 @futures_app.command("worker-status")
 def futures_worker_status():
     """Show background assessment worker status (running / idle / stale)."""

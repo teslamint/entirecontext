@@ -40,7 +40,12 @@ _Updated against codebase on 2026-02-23 (TDD implementation: code AST-based sema
 ## Now
 
 ## Next (1-2 weeks)
-- [ ] assessment 기반 자동 tidy PR 제안 (룰 기반 + LLM 제안 초안)
+- [x] assessment 기반 자동 tidy PR 제안 (룰 기반)
+  - `collect_tidy_suggestions()` — narrow verdict + tidy_suggestion 필터 (since/limit 지원)
+  - `score_tidy_suggestions()` — agree feedback 보정 점수, 내림차순 정렬
+  - `generate_tidy_pr()` in `core/tidy_pr.py` — YAML frontmatter + Markdown PR 초안
+  - `ec futures tidy-pr [--since DATE] [--limit N] [--output FILE]` CLI 명령
+  - 24 TDD 테스트 (collect/score/generate 코어, CLI 명령 포함)
 - [x] 하이브리드 검색 (FTS5 + RRF reranking)
   - `core/hybrid_search.py`: `rrf_fuse()` (Reciprocal Rank Fusion, Cormack 2009), `hybrid_search()`
   - Two-signal fusion: FTS5 relevance rank × recency rank (timestamp DESC) over identical candidate set
