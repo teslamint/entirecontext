@@ -304,3 +304,147 @@ def session_consolidate(
         console.print("[dim]Use --execute to actually consolidate.[/dim]")
     else:
         console.print(f"[green]Consolidated {stats['consolidated']} turns[/green] (of {stats['candidates']} eligible).")
+
+
+@session_app.command("graph")
+def session_graph(
+    agent: Optional[str] = typer.Option(None, "--agent", "-a", help="Root agent ID (prefix supported)"),
+    session_id: Optional[str] = typer.Option(None, "--session", "-s", help="Seed session ID (uses its agent as root)"),
+    depth: int = typer.Option(3, "--depth", "-d", help="Maximum depth of agent hierarchy to traverse (default 3)"),
+):
+    """Visualise the multi-agent session graph rooted at an agent or session.
+
+    Traverses ``agents.parent_agent_id`` edges downward from the root agent,
+    displaying all spawned child agents up to *depth* levels and the number
+    of sessions associated with each agent.
+    """
+    from ..core.agent_graph import build_agent_graph
+    from ..core.project import find_git_root
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    if not agent and not session_id:
+        console.print("[red]Provide --agent or --session to seed the graph.[/red]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    try:
+        graph = build_agent_graph(conn, root_agent_id=agent, session_id=session_id, depth=depth)
+    finally:
+        conn.close()
+
+    nodes = graph["nodes"]
+    edges = graph["edges"]
+
+    if not nodes:
+        console.print("[dim]No agents found.[/dim]")
+        return
+
+    # Build a parent→children map for tree display
+    children_map: dict[str, list[str]] = {n["id"]: [] for n in nodes}
+    for edge in edges:
+        src, tgt = edge["source"], edge["target"]
+        if src in children_map:
+            children_map[src].append(tgt)
+
+    node_map = {n["id"]: n for n in nodes}
+
+    # Determine roots: nodes with no incoming edges within the graph
+    has_parent_in_graph = {e["target"] for e in edges}
+    roots = [n["id"] for n in nodes if n["id"] not in has_parent_in_graph]
+
+    # Display as tree using Rich (iterative BFS to avoid recursion depth issues)
+    from collections import deque
+
+    from rich.tree import Tree
+
+    def _agent_label(nid: str) -> str:
+        n = node_map.get(nid, {})
+        label = n.get("name") or nid[:12]
+        atype = n.get("agent_type") or ""
+        sessions = n.get("session_count", 0)
+        role = f" [{n['role']}]" if n.get("role") else ""
+        return f"{label}{role}  [dim]({atype}, {sessions} sessions)[/dim]"
+
+    def _build_tree(root_id: str) -> Tree:
+        root_tree = Tree(_agent_label(root_id))
+        # Iterative BFS: queue of (tree_node, agent_id)
+        bfs_queue: deque[tuple[object, str]] = deque([(root_tree, root_id)])
+        visited: set[str] = {root_id}
+        while bfs_queue:
+            parent_node, current_id = bfs_queue.popleft()
+            for child_id in children_map.get(current_id, []):
+                if child_id not in visited:
+                    visited.add(child_id)
+                    child_node = parent_node.add(_agent_label(child_id))
+                    bfs_queue.append((child_node, child_id))
+        return root_tree
+
+    for root_id in roots:
+        console.print(_build_tree(root_id))
+
+    console.print(
+        f"\n[dim]{len(nodes)} agents, {len(edges)} edges (depth={depth})[/dim]"
+    )
+
+
+@session_app.command("activate")
+def session_activate(
+    turn: Optional[str] = typer.Option(None, "--turn", "-t", help="Seed turn ID (prefix supported)"),
+    session_id: Optional[str] = typer.Option(None, "--session", "-s", help="Seed all turns in this session"),
+    hops: int = typer.Option(2, "--hops", "-H", help="Maximum traversal hops (default 2)"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Maximum results to return"),
+):
+    """Find related turns via spreading activation (shared files / commits).
+
+    Propagates activation from a seed turn or session through the graph of
+    shared ``files_touched`` and ``git_commit_hash`` edges, returning the most
+    strongly connected turns ranked by activation score.
+    """
+    from ..core.activation import spread_activation
+    from ..core.project import find_git_root
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    if not turn and not session_id:
+        console.print("[red]Provide --turn or --session to seed activation.[/red]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    results = spread_activation(
+        conn,
+        seed_turn_id=turn,
+        seed_session_id=session_id,
+        max_hops=hops,
+        limit=limit,
+    )
+    conn.close()
+
+    if not results:
+        console.print("[dim]No related turns found.[/dim]")
+        return
+
+    from rich.table import Table
+
+    table = Table(title=f"Related Turns via Spreading Activation ({len(results)})")
+    table.add_column("Score", justify="right", style="cyan", max_width=8)
+    table.add_column("ID", style="dim", max_width=12)
+    table.add_column("Session", style="dim", max_width=12)
+    table.add_column("Message", max_width=60)
+    table.add_column("Date", max_width=12)
+
+    for r in results:
+        score = f"{r['activation_score']:.3f}"
+        msg = (r.get("user_message") or "")[:60]
+        date = (r.get("timestamp") or "")[:10]
+        table.add_row(score, r["id"][:12], r["session_id"][:12], msg, date)
+
+    console.print(table)

@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: async assessment worker)._
+_Updated against codebase on 2026-02-23 (TDD implementation: multi-agent session graph)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -76,7 +76,14 @@ _Updated against codebase on 2026-02-23 (TDD implementation: async assessment wo
   - `NOT IN ()` guard for empty `exclude_ids` (avoids SQLite syntax error)
   - `ec session activate [--turn ID] [--session ID] [--hops N] [--limit N]` CLI
   - 20 TDD 테스트 (core traversal, multi-hop, limit, CLI assertions including conn passthrough)
-- [ ] multi-agent 세션 그래프
+- [x] multi-agent 세션 그래프
+  - `core/agent_graph.py`: `create_agent()`, `get_agent()`, `get_agent_sessions()`, `get_session_agent_chain()`, `build_agent_graph()`
+  - BFS downward traversal through `agents.parent_agent_id` edges; depth-limited with cycle guard
+  - `get_agent()` supports exact + prefix lookup with LIKE wildcard escaping
+  - `get_session_agent_chain()` walks agent ancestry leaf→root for a given session
+  - `build_agent_graph()` returns `{nodes, edges}` with `session_count` per node; seeds by `root_agent_id` or `session_id`
+  - `ec session graph [--agent ID] [--session ID] [--depth N]` CLI — Rich Tree display (iterative BFS)
+  - 39 TDD 테스트 (create/get/sessions/chain/graph core, CLI assertions, wildcard-escape edge cases)
 
 ## References
 - [Agent Memory Landscape Research](docs/research/agent-memory-landscape.md)
