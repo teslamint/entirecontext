@@ -93,12 +93,13 @@ Reference:
 Validated command set (from `ec --help`):
 
 - Top-level: `init`, `enable`, `disable`, `status`, `config`, `doctor`, `search`, `sync`, `pull`, `rewind`, `blame`, `index`, `import`
-- Groups: `session`, `hook`, `checkpoint`, `repo`, `event`, `mcp`, `futures`
+- Groups: `session`, `hook`, `checkpoint`, `repo`, `event`, `mcp`, `futures`, `purge`
 
 ### Key command groups
 
 - `ec checkpoint`: `create`, `list`, `show`, `diff`
 - `ec futures`: `assess`, `list`, `feedback`, `lessons`
+- `ec purge`: `session`, `turn`, `match`
 - `ec sync`: supports `--no-filter` (see Known Gaps for runtime caveat)
 
 ## 4.2 MCP interface `[Implemented]`
@@ -238,6 +239,44 @@ Artifacts:
 
 ---
 
+## 7b. Content Filtering and Purge `[Implemented]`
+
+### 7b.1 3-Layer filtering architecture
+
+Source:
+- `src/entirecontext/core/content_filter.py`
+- `src/entirecontext/core/purge.py`
+- `src/entirecontext/cli/purge_cmds.py`
+
+**Layer 1: Capture-time exclusion** (`capture.exclusions`)
+- `content_patterns`: regex list — skip entire turn if user message matches
+- `file_patterns`: glob list — exclude file paths from `files_touched` tracking
+- `tool_names`: exact match list — skip tool usage recording
+- `redact_patterns`: regex list — replace matches with `[FILTERED]` before DB storage
+- `enabled` flag gates all exclusion behavior
+
+**Layer 2: Query-time redaction** (`filtering.query_redaction`)
+- Applied to `regex_search`, `fts_search` results and MCP tool responses (`ec_search`, `ec_session_context`, `ec_turn_content`)
+- `patterns`: regex list — redact matches in returned text fields
+- `replacement`: configurable replacement string (default `[FILTERED]`)
+- `enabled` flag gates redaction
+
+**Layer 3: Post-hoc purge** (`ec purge`)
+- `ec purge session SESSION_ID` — delete session + cascading turns/turn_content/checkpoints
+- `ec purge turn TURN_ID...` — delete specific turns + content files
+- `ec purge match PATTERN` — regex match against `user_message`/`assistant_summary`, delete matched turns
+- All commands default to dry-run; `--execute` performs actual deletion
+- Active sessions (ended_at IS NULL) cannot be purged (raises `ActiveSessionError`)
+- JSONL content files deleted on disk; empty directories cleaned up
+- FTS5 cleanup handled automatically via existing delete triggers
+
+### 7b.2 Selective capture toggle
+
+- Global: `capture.auto_capture = false` skips all turn creation
+- Per-session: session `metadata.capture_disabled = true` skips turns for that session only
+
+---
+
 ## 8. Configuration (defaults)
 
 Source:
@@ -249,6 +288,13 @@ Source:
 auto_capture = true
 checkpoint_on_commit = true
 checkpoint_on_session_end = false
+
+[capture.exclusions]
+enabled = false
+content_patterns = []
+file_patterns = []
+tool_names = []
+redact_patterns = []
 
 [search]
 default_mode = "regex"
@@ -274,6 +320,11 @@ patterns = [
   "ghp_[a-zA-Z0-9]{36}",
   "sk-[a-zA-Z0-9]{48}",
 ]
+
+[filtering.query_redaction]
+enabled = false
+patterns = []
+replacement = "[FILTERED]"
 
 [futures]
 auto_distill = false
@@ -311,6 +362,13 @@ lessons_output = "LESSONS.md"
 
 - `[Implemented]` futures CLI, table, feedback loop, lessons generation
 - `[Implemented]` LLM backend abstraction and MCP read tools (`ec_assess`, `ec_lessons`)
+
+## Phase 7: Content Filtering & Purge (added)
+
+- `[Implemented]` 3-layer content filtering: capture exclusion, query redaction, post-hoc purge
+- `[Implemented]` `ec purge session/turn/match` CLI with dry-run safety
+- `[Implemented]` per-session and global capture toggle
+- `[Implemented]` query-time redaction in search and MCP tools
 
 ---
 
@@ -362,26 +420,30 @@ The items below are implementation gaps, not documentation errors.
 
 ---
 
-## 11. Validation Checklist (2026-02-20)
+## 11. Validation Checklist (2026-02-23)
 
 ## CLI shape checks
 
-- `ec --help` confirms command groups including `futures`, `mcp`, `import`, `checkpoint`
+- `ec --help` confirms command groups including `futures`, `mcp`, `import`, `checkpoint`, `purge`
 - `ec checkpoint --help` confirms `create/list/show/diff`
 - `ec futures --help` confirms `assess/list/feedback/lessons`
+- `ec purge --help` confirms `session/turn/match`
 - `ec sync --help` confirms `--no-filter` option exposure
 
 ## MCP checks
 
 - Source-level confirmation of 9 tools in `mcp/server.py`
+- Query-time redaction applied to `ec_search`, `ec_session_context`, `ec_turn_content`
 
 ## Config checks
 
 - Source-level confirmation against `DEFAULT_CONFIG` in `core/config.py`
+- `capture.exclusions` and `filtering.query_redaction` sections present
 
 ## Hook checks
 
 - Source-level confirmation of handled hook types and identified `PostCommit` gap
+- Content filtering integrated in `on_user_prompt`, `on_stop`, `on_tool_use`
 
 ---
 

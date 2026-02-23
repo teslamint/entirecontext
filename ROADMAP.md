@@ -9,6 +9,9 @@ _Updated against codebase on 2026-02-20._
 - [x] GitHub Action 연동 (PR 트리거, GitHub Models 기반 평가)
 - [x] `ec futures lessons` 자동 증류 (수동 생성 + feedback 시 자동 + session end hook 트리거)
 - [x] 체크포인트 경량화 (기본은 git ref + diff summary, `--snapshot`일 때만 files snapshot)
+- [x] 콘텐츠 필터링 3-layer 시스템 (캡처 차단, 조회 시 redaction, 사후 purge)
+- [x] `ec purge session/turn/match` CLI (dry-run 기본, `--execute`로 삭제)
+- [x] per-session/global 캡처 토글 (`auto_capture`, `metadata.capture_disabled`)
 
 ## Now
 - [ ] MCP 도구로 에이전트 자기 평가 완결

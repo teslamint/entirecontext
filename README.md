@@ -16,6 +16,7 @@ EntireContext automatically captures every AI coding session — turns, checkpoi
 - **Per-line attribution** — `ec blame` shows human vs. agent authorship per file
 - **Cross-repo search** — query across all registered repos with `-g`/`-r` flags
 - **Shadow branch sync** — portable export/import via orphan git branch
+- **Content filtering** — 3-layer system: capture-time exclusion, query-time redaction, post-hoc purge
 - **Secret filtering** — configurable patterns strip credentials on export
 - **MCP server** — 9 tools for AI agents to query context programmatically
 - **Futures assessment** — LLM-powered code change evaluation based on "Tidy First?" philosophy
@@ -139,6 +140,14 @@ ec checkpoint list
 | `ollama` | `-b ollama` | None (local) | `llama3` |
 | `codex` | `-b codex` | CLI subprocess | — |
 | `claude` | `-b claude` | CLI subprocess | — |
+
+### `ec purge` Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `ec purge session SESSION_ID [--execute] [--force]` | Purge a session and all its turns (dry-run by default) |
+| `ec purge turn TURN_ID... [--execute]` | Purge specific turns by ID |
+| `ec purge match PATTERN [--execute] [--force]` | Purge turns matching a regex pattern |
 
 ### `ec import` Command
 
@@ -272,6 +281,13 @@ Config merges in order: **defaults** ← **global** (`~/.entirecontext/config.to
 auto_capture = true
 checkpoint_on_commit = true
 
+[capture.exclusions]
+enabled = false
+content_patterns = []    # regex — skip turns matching these
+file_patterns = []       # glob — exclude files from tracking
+tool_names = []          # exact — skip tool usage recording
+redact_patterns = []     # regex — replace matches with [FILTERED] before storage
+
 [search]
 default_mode = "regex"
 semantic_model = "all-MiniLM-L6-v2"
@@ -296,6 +312,11 @@ patterns = [
     'ghp_[a-zA-Z0-9]{36}',
     'sk-[a-zA-Z0-9]{48}',
 ]
+
+[filtering.query_redaction]
+enabled = false
+patterns = []            # regex — redact matches in search/MCP results
+replacement = "[FILTERED]"
 ```
 
 ### CLI Usage
@@ -325,9 +346,10 @@ cli/             business    SQLite     Claude Code   shadow branch
   event_cmds     futures
   blame_cmds     llm
   index_cmds     import_aline
-  mcp_cmds
-  futures_cmds
+  mcp_cmds       content_filter
+  futures_cmds   purge
   import_cmds
+  purge_cmds
 
 mcp/server.py — MCP server interface (optional dependency)
 ```

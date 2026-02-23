@@ -39,10 +39,11 @@ cli/             business    SQLite     Claude Code   shadow branch
   session_cmds   config      migration  turn capture  merge
   search_cmds    security    connection session lifecycle
   hook_cmds      cross_repo
-  checkpoint_cmds
-  sync_cmds
+  checkpoint_cmds content_filter
+  sync_cmds      purge
   rewind_cmds
   repo_cmds
+  purge_cmds
 ```
 
 `mcp/server.py` — MCP server interface (optional dependency).
@@ -70,7 +71,7 @@ Return codes: 0=success, 2=block.
 
 TOML deep merge: defaults ← `~/.entirecontext/config.toml` (global) ← `.entirecontext/config.toml` (per-repo)
 
-Sections: `capture`, `search`, `sync`, `display`, `security`
+Sections: `capture`, `capture.exclusions`, `search`, `sync`, `display`, `security`, `filtering.query_redaction`
 
 ## Code Conventions
 
