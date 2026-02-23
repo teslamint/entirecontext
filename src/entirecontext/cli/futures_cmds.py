@@ -445,3 +445,41 @@ def futures_trend(
                 str(stats["with_feedback"]),
             )
         console.print(repo_table)
+
+
+@futures_app.command("report")
+def futures_report(
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Write report to file; omit to print to stdout"),
+    since: Optional[str] = typer.Option(
+        None, "--since", "-s", help="Only include assessments after this date (YYYY-MM-DD)"
+    ),
+    limit: int = typer.Option(100, "--limit", "-n", help="Maximum number of assessments to include"),
+):
+    """Generate a Markdown futures report — team-shareable summary of assessment trends."""
+    from pathlib import Path
+
+    from ..core.futures import list_assessments
+    from ..core.project import find_git_root, get_project
+    from ..core.report import generate_futures_report
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    # Pass `since` to SQL so LIMIT is applied after the date filter
+    assessments = list_assessments(conn, limit=limit, since=since)
+    project = get_project(repo_path)
+    conn.close()
+
+    project_name = project.get("name") if project else None
+
+    report = generate_futures_report(assessments, project_name=project_name, since=since)
+
+    if output:
+        Path(output).write_text(report, encoding="utf-8")
+        console.print(f"[green]Report written to:[/green] {output}")
+    else:
+        typer.echo(report)

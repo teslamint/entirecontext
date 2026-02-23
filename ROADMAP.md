@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: markdown export)._
+_Updated against codebase on 2026-02-23 (TDD implementation: futures report)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -31,11 +31,17 @@ _Updated against codebase on 2026-02-23 (TDD implementation: markdown export)._
   - `ec session export <id> [--output FILE]` CLI 명령 (prefix ID 지원, 파일 미지정 시 stdout)
   - 48 TDD 테스트 (helper 함수, 코어 로직, CLI 커맨드 포함)
 
+- [x] futures 결과 리포트 템플릿/주기 실행 정리 (팀 공유 가능한 형태)
+  - `generate_futures_report()` in `core/report.py` — YAML frontmatter + verdict distribution + per-assessment detail + feedback summary
+  - YAML-safe scalar quoting, unknown verdict normalisation, consistent 100% totals
+  - `list_assessments()` 에 `since` SQL 필터 파라미터 추가 (LIMIT 전에 적용)
+  - `ec futures report [--since DATE] [--limit N] [--output FILE]` CLI 명령
+  - 30 TDD 테스트 (core 함수, CLI 명령, 엣지 케이스 포함)
+
 ## Now
 
 ## Next (1-2 weeks)
 - [ ] assessment 기반 자동 tidy PR 제안 (룰 기반 + LLM 제안 초안)
-- [ ] futures 결과 리포트 템플릿/주기 실행 정리 (팀 공유 가능한 형태)
 - [ ] 하이브리드 검색 (FTS5 + semantic embeddings + RRF reranking)
 
 ## Later (1-3 months)

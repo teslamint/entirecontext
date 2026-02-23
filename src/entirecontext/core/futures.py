@@ -87,16 +87,32 @@ def list_assessments(
     conn,
     verdict: str | None = None,
     limit: int = 20,
+    since: str | None = None,
 ) -> list[dict]:
-    """List assessments with optional verdict filter."""
+    """List assessments with optional verdict and date filters.
+
+    Args:
+        conn: DB connection.
+        verdict: Filter by verdict string (expand/narrow/neutral).
+        limit: Maximum rows to return (applied after all filters).
+        since: ISO date/datetime string; only assessments with created_at >= since are returned.
+    """
     query = "SELECT * FROM assessments"
     params: list[Any] = []
+    conditions: list[str] = []
 
     if verdict:
         if verdict not in VALID_VERDICTS:
             raise ValueError(f"Invalid verdict '{verdict}'. Must be one of: {VALID_VERDICTS}")
-        query += " WHERE verdict = ?"
+        conditions.append("verdict = ?")
         params.append(verdict)
+
+    if since:
+        conditions.append("created_at >= ?")
+        params.append(since)
+
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
 
     query += " ORDER BY created_at DESC LIMIT ?"
     params.append(limit)
