@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: code AST-based semantic search)._
+_Updated against codebase on 2026-02-24._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -36,10 +36,6 @@ _Updated against codebase on 2026-02-23 (TDD implementation: code AST-based sema
   - `list_assessments()` 에 `since` SQL 필터 파라미터 추가 (LIMIT 전에 적용)
   - `ec futures report [--since DATE] [--limit N] [--output FILE]` CLI 명령
   - 30 TDD 테스트 (core 함수, CLI 명령, 엣지 케이스 포함)
-
-## Now
-
-## Next (1-2 weeks)
 - [x] assessment 기반 자동 tidy PR 제안 (룰 기반)
   - `collect_tidy_suggestions()` — narrow verdict + tidy_suggestion 필터 (since/limit 지원)
   - `score_tidy_suggestions()` — agree feedback 보정 점수, 내림차순 정렬
@@ -54,8 +50,6 @@ _Updated against codebase on 2026-02-23 (TDD implementation: code AST-based sema
   - `ec search <query> --hybrid [--limit N] [--since DATE] [--file PATH] ...` CLI
   - Cross-repo fallback to FTS5 with explicit warning; mutual-exclusion guard for `--fts/--hybrid/--semantic`
   - 26 TDD 테스트 (rrf_fuse unit, hybrid_search integration, CLI assertions including conn passthrough)
-
-## Later (1-3 months)
 - [x] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)
   - `get_dashboard_stats(conn, *, since, limit)` in `core/dashboard.py` — single-pass aggregation for all three sections
   - Sessions: total/active/ended counts + recent list
@@ -83,8 +77,6 @@ _Updated against codebase on 2026-02-23 (TDD implementation: code AST-based sema
   - path-traversal protection (`_safe_content_path`), DB-first atomic ordering, per-turn OSError isolation
   - `ec session consolidate [--before DATE] [--session ID] [--limit N] [--execute]` (dry-run by default)
   - 28 TDD 테스트 (find, single-turn consolidation, batch, CLI)
-
-## Exploration
 - [x] 코드 AST 기반 semantic search
   - `core/ast_index.py`: `extract_ast_symbols()`, `index_file_ast()`, `get_ast_symbols_for_file()`, `search_ast_symbols()`
   - Python `ast` module parsing: functions, classes, methods (async included), nested classes (recursive)
@@ -108,6 +100,14 @@ _Updated against codebase on 2026-02-23 (TDD implementation: code AST-based sema
   - `build_agent_graph()` returns `{nodes, edges}` with `session_count` per node; seeds by `root_agent_id` or `session_id`
   - `ec session graph [--agent ID] [--session ID] [--depth N]` CLI — Rich Tree display (iterative BFS)
   - 39 TDD 테스트 (create/get/sessions/chain/graph core, CLI assertions, wildcard-escape edge cases)
+
+## Now
+
+## Next (1-2 weeks)
+
+## Later (1-3 months)
+
+## Exploration
 
 ## References
 - [Agent Memory Landscape Research](docs/research/agent-memory-landscape.md)

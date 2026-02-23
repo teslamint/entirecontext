@@ -41,9 +41,18 @@ cli/             business    SQLite     Claude Code   shadow branch
   hook_cmds      cross_repo
   checkpoint_cmds content_filter
   sync_cmds      purge
-  rewind_cmds
-  repo_cmds
-  purge_cmds
+  rewind_cmds    export
+  repo_cmds      report
+  purge_cmds     tidy_pr
+  graph_cmds     dashboard
+  ast_cmds       ast_index
+  dashboard_cmds knowledge_graph
+  futures_cmds   agent_graph
+  blame_cmds     activation
+  index_cmds     consolidation
+  event_cmds     hybrid_search
+  import_cmds    async_worker
+  mcp_cmds
 ```
 
 `mcp/server.py` — MCP server interface (optional dependency).
@@ -52,10 +61,11 @@ cli/             business    SQLite     Claude Code   shadow branch
 
 **Per-repo DB**: `.entirecontext/db/local.db`
 **Global DB**: `~/.entirecontext/db/ec.db`
+**Schema version**: 6
 
-Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `attributions`, `embeddings`, `sync_metadata`
+Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`
 
-FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions` (auto-synced via triggers)
+FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols` (auto-synced via triggers)
 
 Hybrid storage: SQLite for metadata/search, JSONL content files referenced by `turn_content.content_path`.
 

@@ -3,7 +3,7 @@
 > Time-travel searchable agent memory anchored to your codebase.
 
 **Version**: 0.1.0
-**Status**: Implementation-aligned specification (as of 2026-02-20)
+**Status**: Implementation-aligned specification (as of 2026-02-24)
 
 ---
 
@@ -60,7 +60,7 @@ Storage
 
 ## 3. Data Model
 
-Schema version: **3**.
+Schema version: **6**.
 Minimum SQLite version: **3.38.0+**.
 
 Reference:
@@ -72,12 +72,13 @@ Reference:
 - `projects`, `agents`, `sessions`, `turns`, `turn_content`
 - `checkpoints`, `events`, `event_sessions`, `event_checkpoints`
 - `attributions`, `embeddings`
-- `assessments` (futures)
+- `assessments` (futures), `assessment_relationships` (typed links between assessments)
+- `ast_symbols` (Python AST symbol index)
 - `sync_metadata` (`last_sync_error`, `last_sync_duration_ms`, `sync_pid` included)
 
 ### 3.2 Search indexes `[Implemented]`
 
-- FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`
+- FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`
 - Trigger-based synchronization for insert/update/delete
 
 ### 3.3 Global DB `[Implemented]`
@@ -92,13 +93,14 @@ Reference:
 
 Validated command set (from `ec --help`):
 
-- Top-level: `init`, `enable`, `disable`, `status`, `config`, `doctor`, `search`, `sync`, `pull`, `rewind`, `blame`, `index`, `import`
+- Top-level: `init`, `enable`, `disable`, `status`, `config`, `doctor`, `search`, `sync`, `pull`, `rewind`, `blame`, `index`, `import`, `dashboard`, `graph`, `ast-search`
 - Groups: `session`, `hook`, `checkpoint`, `repo`, `event`, `mcp`, `futures`, `purge`
 
 ### Key command groups
 
 - `ec checkpoint`: `create`, `list`, `show`, `diff`
-- `ec futures`: `assess`, `list`, `feedback`, `lessons`
+- `ec futures`: `assess`, `list`, `feedback`, `lessons`, `trend`, `relate`, `relationships`, `unrelate`, `tidy-pr`, `report`, `worker-status`, `worker-stop`, `worker-launch`
+- `ec session`: `list`, `show`, `current`, `export`, `consolidate`, `graph`, `activate`
 - `ec purge`: `session`, `turn`, `match`
 - `ec sync`: supports `--no-filter` (see Known Gaps for runtime caveat)
 
@@ -106,7 +108,7 @@ Validated command set (from `ec --help`):
 
 Transport: stdio.
 
-Implemented tools (9):
+Implemented tools (12):
 
 1. `ec_search`
 2. `ec_checkpoint_list`
@@ -116,7 +118,10 @@ Implemented tools (9):
 6. `ec_related`
 7. `ec_turn_content`
 8. `ec_assess`
-9. `ec_lessons`
+9. `ec_assess_create`
+10. `ec_feedback`
+11. `ec_lessons`
+12. `ec_assess_trends`
 
 Cross-repo support:
 
@@ -166,6 +171,7 @@ Current caveat:
 - Regex (default)
 - FTS5 (`--fts`)
 - Semantic (`--semantic`, `sentence-transformers` extra required)
+- Hybrid (`--hybrid`, FTS5 + recency RRF reranking)
 
 ### 5.2 Filters `[Implemented]`
 
@@ -370,6 +376,22 @@ lessons_output = "LESSONS.md"
 - `[Implemented]` per-session and global capture toggle
 - `[Implemented]` query-time redaction in search and MCP tools
 
+## Phase 8: Dashboard, Graph, AST & Advanced Features (added)
+
+- `[Implemented]` Team dashboard (`ec dashboard`) — session/checkpoint/assessment aggregation
+- `[Implemented]` Knowledge graph (`ec graph`) — git entity traversal (6 node types, 6 edge types)
+- `[Implemented]` Code AST search (`ec ast-search`) — Python AST symbol indexing with FTS5
+- `[Implemented]` Memory consolidation (`ec session consolidate`) — old turn content compression
+- `[Implemented]` Multi-agent session graph (`ec session graph`) — BFS hierarchy traversal
+- `[Implemented]` Spreading activation (`ec session activate`) — related turn discovery via shared files/commits
+- `[Implemented]` Hybrid search (`--hybrid`) — FTS5 + recency RRF reranking
+- `[Implemented]` Assessment relationships (`ec futures relate/relationships/unrelate`) — typed links between assessments
+- `[Implemented]` Tidy PR generation (`ec futures tidy-pr`) — rule-based PR draft from narrow assessments
+- `[Implemented]` Futures report (`ec futures report`) — team-shareable Markdown report
+- `[Implemented]` Async assessment worker (`ec futures worker-*`) — background analysis without capture blocking
+- `[Implemented]` Session export (`ec session export`) — Markdown export with YAML frontmatter
+- `[Implemented]` MCP tools expanded: `ec_assess_create`, `ec_feedback`, `ec_assess_trends` (9 → 12)
+
 ---
 
 ## 10. Known Gaps and Follow-up Backlog
@@ -420,19 +442,20 @@ The items below are implementation gaps, not documentation errors.
 
 ---
 
-## 11. Validation Checklist (2026-02-23)
+## 11. Validation Checklist (2026-02-24)
 
 ## CLI shape checks
 
-- `ec --help` confirms command groups including `futures`, `mcp`, `import`, `checkpoint`, `purge`
+- `ec --help` confirms command groups including `futures`, `mcp`, `import`, `checkpoint`, `purge`, `dashboard`, `graph`, `ast-search`
 - `ec checkpoint --help` confirms `create/list/show/diff`
-- `ec futures --help` confirms `assess/list/feedback/lessons`
+- `ec futures --help` confirms `assess/list/feedback/lessons/trend/relate/relationships/unrelate/tidy-pr/report/worker-status/worker-stop/worker-launch`
+- `ec session --help` confirms `list/show/current/export/consolidate/graph/activate`
 - `ec purge --help` confirms `session/turn/match`
 - `ec sync --help` confirms `--no-filter` option exposure
 
 ## MCP checks
 
-- Source-level confirmation of 9 tools in `mcp/server.py`
+- Source-level confirmation of 12 tools in `mcp/server.py`
 - Query-time redaction applied to `ec_search`, `ec_session_context`, `ec_turn_content`
 
 ## Config checks

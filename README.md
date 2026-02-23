@@ -12,14 +12,25 @@ EntireContext automatically captures every AI coding session — turns, checkpoi
 
 - **Auto session/turn capture** via Claude Code hooks — zero-friction recording
 - **Git-anchored checkpoints** — snapshots tied to specific commits
-- **3 search modes** — regex, FTS5 full-text, and semantic (sentence-transformers)
+- **4 search modes** — regex, FTS5 full-text, semantic (sentence-transformers), and hybrid (FTS5 + recency RRF)
 - **Per-line attribution** — `ec blame` shows human vs. agent authorship per file
 - **Cross-repo search** — query across all registered repos with `-g`/`-r` flags
 - **Shadow branch sync** — portable export/import via orphan git branch
 - **Content filtering** — 3-layer system: capture-time exclusion, query-time redaction, post-hoc purge
 - **Secret filtering** — configurable patterns strip credentials on export
-- **MCP server** — 9 tools for AI agents to query context programmatically
+- **MCP server** — 12 tools for AI agents to query context programmatically
 - **Futures assessment** — LLM-powered code change evaluation based on "Tidy First?" philosophy
+- **Assessment relationships** — typed links (`causes`/`fixes`/`contradicts`) between assessments
+- **Tidy PR generation** — rule-based PR drafts from narrow assessment suggestions
+- **Futures report** — team-shareable Markdown summary of assessment trends
+- **Async assessment worker** — background analysis without blocking capture
+- **Team dashboard** — session, checkpoint, and assessment trend monitoring
+- **Knowledge graph** — git entity traversal (sessions, commits, files, agents)
+- **Code AST search** — Python AST symbol indexing with FTS5 full-text search
+- **Multi-agent session graph** — BFS hierarchy traversal through agent trees
+- **Spreading activation** — discover related turns via shared files/commits
+- **Memory consolidation** — compress old turn content to save storage
+- **Session export** — Markdown export with YAML frontmatter for sharing
 - **Data import** — migrate sessions from Aline databases
 - **Event system** — group sessions by task, temporal period, or milestone
 
@@ -96,6 +107,9 @@ ec checkpoint list
 | `ec sync [--no-filter]` | Export to shadow branch and push (skip secret filtering with `--no-filter`) |
 | `ec pull` | Fetch shadow branch and import |
 | `ec index [--semantic] [--force] [--model NAME]` | Rebuild FTS5 indexes, optionally generate embeddings |
+| `ec dashboard [--since DATE] [--limit N]` | Show team dashboard: sessions, checkpoints, assessment trends |
+| `ec graph [--session ID] [--since DATE] [--limit N]` | Show knowledge graph of git entities |
+| `ec ast-search QUERY [--type TYPE] [--file PATH] [--limit N]` | Search indexed Python AST symbols |
 
 ### `ec session` Subcommands
 
@@ -104,6 +118,10 @@ ec checkpoint list
 | `ec session list` | List sessions (with turn counts and status) |
 | `ec session show SESSION_ID` | Show session details and turn summaries |
 | `ec session current` | Show current active session |
+| `ec session export ID [--output FILE]` | Export session as Markdown (YAML frontmatter + sections) |
+| `ec session graph [--agent ID] [--session ID] [--depth N]` | Visualise multi-agent session graph |
+| `ec session activate [--turn ID] [--session ID] [--hops N] [--limit N]` | Find related turns via spreading activation |
+| `ec session consolidate [--before DATE] [--session ID] [--limit N] [--execute]` | Compress old turn content (dry-run by default) |
 
 ### `ec checkpoint` Subcommands
 
@@ -130,6 +148,15 @@ ec checkpoint list
 | `ec futures list [-v VERDICT] [-n LIMIT]` | List assessments (filter by `--verdict`) |
 | `ec futures feedback ID FEEDBACK [-r REASON]` | Add agree/disagree feedback to an assessment |
 | `ec futures lessons [-o OUTPUT] [-s SINCE]` | Generate LESSONS.md from assessed changes with feedback |
+| `ec futures trend [--since DATE] [--limit N]` | Show cross-repo assessment trend analysis |
+| `ec futures relate SRC TYPE TGT [--note TEXT]` | Add typed relationship between assessments |
+| `ec futures relationships ID [--direction DIR]` | List relationships for an assessment |
+| `ec futures unrelate SRC TYPE TGT` | Remove a typed relationship |
+| `ec futures tidy-pr [--since DATE] [--limit N] [--output FILE]` | Generate tidy PR draft from narrow assessments |
+| `ec futures report [--since DATE] [--limit N] [--output FILE]` | Generate team-shareable Markdown report |
+| `ec futures worker-status` | Show background assessment worker status |
+| `ec futures worker-stop` | Stop background assessment worker |
+| `ec futures worker-launch [--diff TEXT]` | Launch background assessment worker |
 
 ### LLM Backends (`ec futures assess`)
 
@@ -177,6 +204,7 @@ Options: `--workspace`, `--dry-run`, `--skip-content`
 |------|-------------|
 | `--fts` | Use FTS5 full-text search |
 | `--semantic` | Use semantic search (requires `entirecontext[semantic]`) |
+| `--hybrid` | Use hybrid search (FTS5 + recency RRF reranking) |
 | `--file PATH` | Filter by file path |
 | `--commit HASH` | Filter by commit hash |
 | `--agent TYPE` | Filter by agent type |
@@ -241,7 +269,10 @@ ec mcp serve
 | `ec_related` | Find related sessions/turns by query text or file paths |
 | `ec_turn_content` | Get full content for a specific turn (including JSONL content files) |
 | `ec_assess` | Assess staged diff or checkpoint against roadmap via LLM |
+| `ec_assess_create` | Create an assessment programmatically (verdict, impact, suggestion) |
+| `ec_feedback` | Add agree/disagree feedback to an assessment |
 | `ec_lessons` | Generate LESSONS.md from assessed changes with feedback |
+| `ec_assess_trends` | Cross-repo assessment trend analysis (verdict distribution, feedback stats) |
 
 All tools accept a `repos` parameter for cross-repo queries: `null` = current repo, `["*"]` = all repos, `["name"]` = specific repos.
 
@@ -348,8 +379,17 @@ cli/             business    SQLite     Claude Code   shadow branch
   index_cmds     import_aline
   mcp_cmds       content_filter
   futures_cmds   purge
-  import_cmds
-  purge_cmds
+  import_cmds    export
+  purge_cmds     report
+  graph_cmds     tidy_pr
+  ast_cmds       dashboard
+  dashboard_cmds ast_index
+               knowledge_graph
+               agent_graph
+               activation
+               consolidation
+               hybrid_search
+               async_worker
 
 mcp/server.py — MCP server interface (optional dependency)
 ```
@@ -368,11 +408,13 @@ mcp/server.py — MCP server interface (optional dependency)
 | `event_sessions` | Many-to-many link between events and sessions |
 | `event_checkpoints` | Many-to-many link between events and checkpoints |
 | `assessments` | Futures assessment results (verdict, impact, feedback) |
+| `assessment_relationships` | Typed links between assessments (causes/fixes/contradicts) |
 | `attributions` | Per-line human/agent file attribution |
 | `embeddings` | Semantic search vectors |
+| `ast_symbols` | Python AST symbol index (functions, classes, methods) |
 | `sync_metadata` | Shadow branch sync state |
 
-FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions` — auto-synced via triggers.
+FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols` — auto-synced via triggers.
 
 ### Data Locations
 
