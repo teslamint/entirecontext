@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-20._
+_Updated against codebase on 2026-02-23._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -12,14 +12,14 @@ _Updated against codebase on 2026-02-20._
 - [x] 콘텐츠 필터링 3-layer 시스템 (캡처 차단, 조회 시 redaction, 사후 purge)
 - [x] `ec purge session/turn/match` CLI (dry-run 기본, `--execute`로 삭제)
 - [x] per-session/global 캡처 토글 (`auto_capture`, `metadata.capture_disabled`)
+- [x] MCP 도구로 에이전트 자기 평가 완결 (`ec_assess_create`, `ec_assess`, `ec_lessons`, `ec_feedback`)
+- [x] 크로스 레포 futures 트렌드 분석 기반 마련
+  - `cross_repo_assessments()` — 레포 전체 assessment 집계 (verdict/since/limit 필터)
+  - `cross_repo_assessment_trends()` — 레포별/전체 verdict 분포 및 feedback 통계
+  - `ec futures trend` CLI — 크로스 레포 assessment 트렌드 테이블 출력
+  - `ec_assess_trends` MCP 도구 — 에이전트용 트렌드 조회 인터페이스
 
 ## Now
-- [ ] MCP 도구로 에이전트 자기 평가 완결
-  - 현재: `ec_assess`, `ec_lessons` 조회는 가능
-  - 필요: MCP에서 "평가 생성(assess 실행)" 트리거 도구
-- [ ] 크로스 레포 futures 트렌드 분석 기반 마련
-  - 현재: cross-repo 검색/체크포인트/rewind는 가능
-  - 필요: assessment 집계/비교용 API 및 CLI
 
 ## Next (1-2 weeks)
 - [ ] assessment 기반 자동 tidy PR 제안 (룰 기반 + LLM 제안 초안)

@@ -260,3 +260,65 @@ def futures_lessons(
     text = distill_lessons(lessons)
     Path(output).write_text(text, encoding="utf-8")
     console.print(f"[green]Written {len(lessons)} lessons to {output}[/green]")
+
+
+@futures_app.command("trend")
+def futures_trend(
+    repos: Optional[list[str]] = typer.Option(None, "--repo", "-R", help="Filter by repo name (repeat for multiple)"),
+    since: Optional[str] = typer.Option(None, "--since", "-s", help="Only include assessments after this date (YYYY-MM-DD)"),
+):
+    """Show cross-repo assessment trend analysis."""
+    from ..core.cross_repo import cross_repo_assessment_trends
+
+    trends, warnings = cross_repo_assessment_trends(repos=repos, since=since, include_warnings=True)
+
+    for w in warnings:
+        console.print(f"[yellow]Warning:[/yellow] {w}")
+
+    total = trends["total_count"]
+    if total == 0:
+        console.print("[dim]No assessments found across repos.[/dim]")
+        return
+
+    overall = trends["overall"]
+    console.print(f"\n[bold]Cross-Repo Assessment Trends[/bold] — {total} total\n")
+
+    overall_table = Table(title="Overall Distribution")
+    overall_table.add_column("Verdict")
+    overall_table.add_column("Count", justify="right")
+    overall_table.add_column("Pct", justify="right")
+
+    verdict_colors = {"expand": "green", "narrow": "red", "neutral": "yellow"}
+    verdict_icons = {"expand": "🟢", "narrow": "🔴", "neutral": "🟡"}
+    for v in ("expand", "narrow", "neutral"):
+        count = overall.get(v, 0)
+        pct = f"{100 * count / total:.0f}%" if total else "0%"
+        color = verdict_colors.get(v, "white")
+        icon = verdict_icons.get(v, "")
+        overall_table.add_row(f"[{color}]{icon} {v}[/{color}]", str(count), pct)
+
+    console.print(overall_table)
+
+    with_fb = trends["with_feedback"]
+    console.print(f"\nWith feedback: {with_fb}/{total} ({100 * with_fb // total if total else 0}%)\n")
+
+    by_repo = trends["by_repo"]
+    if len(by_repo) > 1:
+        repo_table = Table(title="Per-Repo Breakdown")
+        repo_table.add_column("Repo")
+        repo_table.add_column("Total", justify="right")
+        repo_table.add_column("🟢 Expand", justify="right")
+        repo_table.add_column("🔴 Narrow", justify="right")
+        repo_table.add_column("🟡 Neutral", justify="right")
+        repo_table.add_column("Feedback", justify="right")
+
+        for repo_name, stats in sorted(by_repo.items()):
+            repo_table.add_row(
+                repo_name,
+                str(stats["total"]),
+                str(stats["expand"]),
+                str(stats["narrow"]),
+                str(stats["neutral"]),
+                str(stats["with_feedback"]),
+            )
+        console.print(repo_table)

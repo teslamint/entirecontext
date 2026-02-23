@@ -865,6 +865,28 @@ if mcp:
             conn.close()
 
 
+    @mcp.tool()
+    async def ec_assess_trends(
+        repos: list[str] | None = None,
+        since: str | None = None,
+    ) -> str:
+        """Get cross-repo assessment verdict distribution and trend stats.
+
+        Returns overall verdict counts (expand/narrow/neutral), per-repo breakdown,
+        and feedback statistics aggregated across all accessible repos.
+
+        Args:
+            repos: Repo filter — None=all repos, ["name"]=specific repos
+            since: Only include assessments after this ISO8601 timestamp
+        """
+        import json
+
+        from ..core.cross_repo import cross_repo_assessment_trends
+
+        repo_names = None if not repos else repos
+        trends, warnings = cross_repo_assessment_trends(repos=repo_names, since=since, include_warnings=True)
+        return json.dumps({**trends, "warnings": warnings})
+
 def run_server():
     """Run the MCP server (stdio transport)."""
     if mcp is None:

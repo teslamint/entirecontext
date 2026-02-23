@@ -384,6 +384,100 @@ def resolve_content_path(repo_path: str, content_path: str) -> Path:
     return Path(repo_path) / ".entirecontext" / content_path
 
 
+def cross_repo_assessments(
+    repos: list[str] | None = None,
+    verdict: str | None = None,
+    since: str | None = None,
+    limit: int = 50,
+    include_warnings: bool = False,
+) -> list[dict] | tuple[list[dict], list[str]]:
+    """List assessments across multiple repos, sorted by created_at DESC."""
+    from ..core.futures import list_assessments, VALID_VERDICTS
+
+    if verdict and verdict not in VALID_VERDICTS:
+        raise ValueError(f"Invalid verdict '{verdict}'. Must be one of: {VALID_VERDICTS}")
+
+    def fn(conn: sqlite3.Connection, repo: dict) -> list[dict]:
+        results = list_assessments(conn, verdict=verdict, limit=limit * 2)
+        if since:
+            results = [r for r in results if r.get("created_at", "") >= since]
+        return results
+
+    results, warnings = _for_each_repo(fn, repos=repos, sort_key="created_at", limit=limit)
+    return _return_with_warnings(results, warnings, include_warnings)
+
+
+def cross_repo_assessment_trends(
+    repos: list[str] | None = None,
+    since: str | None = None,
+    include_warnings: bool = False,
+) -> dict | tuple[dict, list[str]]:
+    """Compute assessment verdict distribution and feedback stats across repos."""
+    from ..db.connection import _configure_connection
+    from ..db.migration import check_and_migrate
+    from ..core.futures import list_assessments
+
+    repo_list = list_repos(repos)
+    _lazy_pull_repos(repo_list)
+
+    warnings: list[str] = []
+    by_repo: dict[str, dict] = {}
+    overall: dict[str, int] = {"expand": 0, "narrow": 0, "neutral": 0}
+    total_count = 0
+    with_feedback = 0
+
+    for repo in repo_list:
+        try:
+            conn = sqlite3.connect(repo["db_path"])
+            _configure_connection(conn)
+            check_and_migrate(conn)
+
+            assessments = list_assessments(conn, limit=10000)
+            conn.close()
+
+            if since:
+                assessments = [a for a in assessments if a.get("created_at", "") >= since]
+
+            counts: dict[str, int] = {"expand": 0, "narrow": 0, "neutral": 0}
+            repo_with_feedback = 0
+
+            for a in assessments:
+                v = a.get("verdict", "neutral")
+                if v in counts:
+                    counts[v] += 1
+                    overall[v] = overall.get(v, 0) + 1
+                if a.get("feedback"):
+                    repo_with_feedback += 1
+                    with_feedback += 1
+
+            repo_total = sum(counts.values())
+            total_count += repo_total
+
+            by_repo[repo["repo_name"]] = {
+                "total": repo_total,
+                "expand": counts["expand"],
+                "narrow": counts["narrow"],
+                "neutral": counts["neutral"],
+                "with_feedback": repo_with_feedback,
+                "repo_path": repo["repo_path"],
+            }
+        except Exception as exc:
+            warnings.append(f"Repo '{repo.get('repo_name', repo.get('repo_path', '?'))}': {exc}")
+            logger.debug("Skipping repo %s: trends error", repo.get("repo_path"), exc_info=True)
+            continue
+
+    result = {
+        "total_count": total_count,
+        "with_feedback": with_feedback,
+        "overall": overall,
+        "by_repo": by_repo,
+    }
+
+    if include_warnings:
+        return result, warnings
+    return result
+
+
 def _sort_key_for_target(target: str) -> str:
     if target == "turn":
         return "timestamp"
