@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: spreading activation)._
+_Updated against codebase on 2026-02-23 (TDD implementation: hybrid search)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -41,7 +41,14 @@ _Updated against codebase on 2026-02-23 (TDD implementation: spreading activatio
 
 ## Next (1-2 weeks)
 - [ ] assessment 기반 자동 tidy PR 제안 (룰 기반 + LLM 제안 초안)
-- [ ] 하이브리드 검색 (FTS5 + semantic embeddings + RRF reranking)
+- [x] 하이브리드 검색 (FTS5 + RRF reranking)
+  - `core/hybrid_search.py`: `rrf_fuse()` (Reciprocal Rank Fusion, Cormack 2009), `hybrid_search()`
+  - Two-signal fusion: FTS5 relevance rank × recency rank (timestamp DESC) over identical candidate set
+  - `_apply_query_redaction` re-uses shared helper from `search.py` (no duplication)
+  - File-filter multiplier (10×) compensates for post-SQL Python-side trimming in `_fts_search_turns`
+  - `ec search <query> --hybrid [--limit N] [--since DATE] [--file PATH] ...` CLI
+  - Cross-repo fallback to FTS5 with explicit warning; mutual-exclusion guard for `--fts/--hybrid/--semantic`
+  - 26 TDD 테스트 (rrf_fuse unit, hybrid_search integration, CLI assertions including conn passthrough)
 
 ## Later (1-3 months)
 - [ ] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)

@@ -17,6 +17,7 @@ console = Console()
 def search(
     query: str = typer.Argument(..., help="Search query"),
     fts: bool = typer.Option(False, "--fts", help="Use FTS5 full-text search"),
+    hybrid: bool = typer.Option(False, "--hybrid", help="Hybrid search: FTS5 relevance + recency via RRF"),
     semantic: bool = typer.Option(False, "--semantic", help="Use semantic search"),
     file: Optional[str] = typer.Option(None, "--file", help="Filter by file path"),
     commit: Optional[str] = typer.Option(None, "--commit", help="Filter by commit hash"),
@@ -28,12 +29,18 @@ def search(
     repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
 ):
     """Search across sessions, turns, and events."""
+    if sum([bool(semantic), bool(hybrid), bool(fts)]) > 1:
+        console.print("[red]--semantic, --hybrid, and --fts are mutually exclusive.[/red]")
+        raise typer.Exit(1)
+
     is_cross_repo = global_search or repo
 
     if is_cross_repo:
         from ..core.cross_repo import cross_repo_search
 
-        search_type = "semantic" if semantic else ("fts" if fts else "regex")
+        if hybrid:
+            console.print("[yellow]--hybrid is not supported for cross-repo search; falling back to FTS5.[/yellow]")
+        search_type = "semantic" if semantic else ("fts" if fts or hybrid else "regex")
         results = cross_repo_search(
             query,
             search_type=search_type,
@@ -76,6 +83,19 @@ def search(
                     "Install with: pip install 'entirecontext[semantic]'[/red]"
                 )
                 raise typer.Exit(1)
+        elif hybrid:
+            from ..core.hybrid_search import hybrid_search as _hybrid_search
+
+            results = _hybrid_search(
+                conn,
+                query,
+                target=target,
+                file_filter=file,
+                commit_filter=commit,
+                agent_filter=agent,
+                since=since,
+                limit=limit,
+            )
         elif fts:
             from ..core.search import fts_search
 
