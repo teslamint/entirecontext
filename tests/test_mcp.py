@@ -289,3 +289,44 @@ class TestMCPToolIntegration:
         result = json.loads(asyncio.run(ec_search("test")))
         assert "error" in result
         assert "Not in an EntireContext-initialized repo" in result["error"]
+
+
+class TestMcpQueryRedaction:
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db_with_secret(self, db, monkeypatch):
+        db.execute(
+            "UPDATE turns SET user_message = 'fix password=secret123', assistant_summary = 'Fixed token=abc123' WHERE id = 't1'"
+        )
+        db.commit()
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        redaction_config = {
+            "filtering": {
+                "query_redaction": {
+                    "enabled": True,
+                    "patterns": [r"password\s*=\s*\S+", r"token\s*=\s*\S+"],
+                    "replacement": "[FILTERED]",
+                }
+            },
+            "capture": {"exclusions": {"enabled": False}},
+        }
+        monkeypatch.setattr("entirecontext.core.config.load_config", lambda *a, **kw: redaction_config)
+        return db
+
+    def test_ec_search_applies_redaction(self, mock_repo_db_with_secret):
+        from entirecontext.mcp.server import ec_search
+
+        result = json.loads(asyncio.run(ec_search("password")))
+        assert result["count"] >= 1
+        for r in result["results"]:
+            assert "secret123" not in r.get("summary", "")
+
+    def test_ec_turn_content_applies_redaction(self, mock_repo_db_with_secret):
+        from entirecontext.mcp.server import ec_turn_content
+
+        result = json.loads(asyncio.run(ec_turn_content("t1")))
+        assert "secret123" not in result.get("user_message", "")
+        assert "abc123" not in result.get("assistant_summary", "")

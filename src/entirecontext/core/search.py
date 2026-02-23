@@ -8,6 +8,22 @@ from pathlib import Path
 from typing import Any
 
 
+def _apply_query_redaction(results: list[dict], config: dict[str, Any] | None) -> list[dict]:
+    """Apply query-time redaction to search results."""
+    if not config:
+        return results
+    from .content_filter import redact_for_query
+
+    redacted = []
+    for r in results:
+        r = dict(r)
+        for field in ("user_message", "assistant_summary", "session_title", "session_summary", "title", "description"):
+            if field in r and r[field]:
+                r[field] = redact_for_query(r[field], config)
+        redacted.append(r)
+    return redacted
+
+
 def regex_search(
     conn,
     pattern: str,
@@ -17,17 +33,20 @@ def regex_search(
     agent_filter: str | None = None,
     since: str | None = None,
     limit: int = 20,
+    config: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Regex search across turns/sessions/events."""
     if target == "turn":
-        return _regex_search_turns(conn, pattern, file_filter, commit_filter, agent_filter, since, limit)
+        results = _regex_search_turns(conn, pattern, file_filter, commit_filter, agent_filter, since, limit)
     elif target == "session":
-        return _regex_search_sessions(conn, pattern, since, limit)
+        results = _regex_search_sessions(conn, pattern, since, limit)
     elif target == "event":
-        return _regex_search_events(conn, pattern, since, limit)
+        results = _regex_search_events(conn, pattern, since, limit)
     elif target == "content":
-        return _regex_search_content(conn, pattern, limit)
-    return []
+        results = _regex_search_content(conn, pattern, limit)
+    else:
+        results = []
+    return _apply_query_redaction(results, config)
 
 
 def _regex_search_turns(conn, pattern: str, file_filter, commit_filter, agent_filter, since, limit) -> list[dict]:
@@ -163,15 +182,18 @@ def fts_search(
     agent_filter: str | None = None,
     since: str | None = None,
     limit: int = 20,
+    config: dict[str, Any] | None = None,
 ) -> list[dict]:
     """FTS5 full-text search."""
     if target == "turn":
-        return _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit)
+        results = _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit)
     elif target == "session":
-        return _fts_search_sessions(conn, query, since, limit)
+        results = _fts_search_sessions(conn, query, since, limit)
     elif target == "event":
-        return _fts_search_events(conn, query, since, limit)
-    return []
+        results = _fts_search_events(conn, query, since, limit)
+    else:
+        results = []
+    return _apply_query_redaction(results, config)
 
 
 def _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit) -> list[dict]:

@@ -19,3 +19,4 @@ from . import index_cmds  # noqa: F401, E402
 from . import mcp_cmds  # noqa: F401, E402
 from . import import_cmds  # noqa: F401, E402
 from . import futures_cmds  # noqa: F401, E402
+from . import purge_cmds  # noqa: F401, E402

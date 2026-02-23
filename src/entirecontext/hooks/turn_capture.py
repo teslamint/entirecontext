@@ -52,9 +52,33 @@ def on_user_prompt(data: dict[str, Any]) -> None:
     if not repo_path:
         return
 
+    from ..core.config import load_config
+    from ..core.content_filter import redact_content, should_skip_turn
+
+    config = load_config(repo_path)
+
+    if not config.get("capture", {}).get("auto_capture", True):
+        return
+
+    if should_skip_turn(prompt, config):
+        return
+
+    prompt = redact_content(prompt, config)
+
     from ..db import get_db
+    import json as _json
 
     conn = get_db(repo_path)
+
+    session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    if session_row and session_row["metadata"]:
+        try:
+            meta = _json.loads(session_row["metadata"])
+            if meta.get("capture_disabled"):
+                conn.close()
+                return
+        except (ValueError, TypeError):
+            pass
     now = _now_iso()
     turn_id = str(uuid4())
     turn_number = _get_next_turn_number(conn, session_id)
@@ -111,6 +135,14 @@ def on_stop(data: dict[str, Any]) -> None:
         summary = extract_last_response(transcript_path)
         content = extract_transcript_content(transcript_path)
 
+    from ..core.config import load_config
+    from ..core.content_filter import redact_content
+
+    config = load_config(repo_path)
+    summary = redact_content(summary, config)
+    if content:
+        content = redact_content(content, config)
+
     c_hash = _content_hash(user_message, summary)
     conn.execute(
         "UPDATE turns SET assistant_summary = ?, content_hash = ?, turn_status = 'completed' WHERE id = ?",
@@ -165,13 +197,26 @@ def on_tool_use(data: dict[str, Any]) -> None:
     tools = json.loads(row["tools_used"]) if row["tools_used"] else []
     files = json.loads(row["files_touched"]) if row["files_touched"] else []
 
+    from ..core.config import load_config
+    from ..core.content_filter import should_skip_file, should_skip_tool
+
+    config = load_config(repo_path)
+
+    if should_skip_tool(tool_name, config):
+        conn.close()
+        return
+
     if tool_name not in tools:
         tools.append(tool_name)
 
     if isinstance(tool_input, dict):
         for key in ("file_path", "path"):
-            if key in tool_input and tool_input[key] not in files:
-                files.append(tool_input[key])
+            if key in tool_input:
+                fpath = tool_input[key]
+                if should_skip_file(fpath, config):
+                    continue
+                if fpath not in files:
+                    files.append(fpath)
 
     conn.execute(
         "UPDATE turns SET tools_used = ?, files_touched = ? WHERE id = ?",

@@ -81,11 +81,15 @@ if mcp:
                 limit=limit,
             )
         else:
-            conn, _ = _get_repo_db()
+            conn, repo_path_str = _get_repo_db()
             if not conn:
                 return json.dumps({"error": "Not in an EntireContext-initialized repo"})
 
             try:
+                from ..core.config import load_config
+
+                _config = load_config(repo_path_str)
+
                 if search_type == "semantic":
                     try:
                         from ..core.embedding import semantic_search
@@ -99,6 +103,9 @@ if mcp:
                             since=since,
                             limit=limit,
                         )
+                        from ..core.search import _apply_query_redaction
+
+                        results = _apply_query_redaction(results, _config)
                     except ImportError as e:
                         return json.dumps({"error": f"sentence-transformers is required: {e}"})
                 elif search_type == "fts":
@@ -112,6 +119,7 @@ if mcp:
                         agent_filter=agent_filter,
                         since=since,
                         limit=limit,
+                        config=_config,
                     )
                 else:
                     from ..core.search import regex_search
@@ -124,6 +132,7 @@ if mcp:
                         agent_filter=agent_filter,
                         since=since,
                         limit=limit,
+                        config=_config,
                     )
             finally:
                 conn.close()
@@ -267,7 +276,7 @@ if mcp:
                 }
             )
 
-        conn, _ = _get_repo_db()
+        conn, _repo_path = _get_repo_db()
         if not conn:
             return json.dumps({"error": "Not in an EntireContext-initialized repo"})
 
@@ -289,6 +298,11 @@ if mcp:
                 (session_id,),
             ).fetchall()
 
+            from ..core.config import load_config
+            from ..core.content_filter import redact_for_query
+
+            _config = load_config(_repo_path)
+
             return json.dumps(
                 {
                     "session_id": session["id"],
@@ -301,8 +315,8 @@ if mcp:
                         {
                             "id": t["id"],
                             "turn_number": t["turn_number"],
-                            "user_message": t["user_message"],
-                            "assistant_summary": t["assistant_summary"],
+                            "user_message": redact_for_query(t["user_message"] or "", _config),
+                            "assistant_summary": redact_for_query(t["assistant_summary"] or "", _config),
                             "timestamp": t["timestamp"],
                         }
                         for t in turns
@@ -615,21 +629,25 @@ if mcp:
                 if full_path.exists():
                     content = full_path.read_text(encoding="utf-8")
 
+            from ..core.config import load_config
+            from ..core.content_filter import redact_for_query
+
+            _config = load_config(repo_path)
+
             return json.dumps(
                 {
                     "turn_id": turn["id"],
                     "session_id": turn["session_id"],
                     "turn_number": turn.get("turn_number", 0),
-                    "user_message": turn.get("user_message", ""),
-                    "assistant_summary": turn.get("assistant_summary", ""),
+                    "user_message": redact_for_query(turn.get("user_message") or "", _config),
+                    "assistant_summary": redact_for_query(turn.get("assistant_summary") or "", _config),
                     "timestamp": turn.get("timestamp", ""),
-                    "content": content,
+                    "content": redact_for_query(content, _config) if content else content,
                     "content_path": content_path,
                 }
             )
         finally:
             conn.close()
-
 
     @mcp.tool()
     async def ec_assess(
@@ -653,14 +671,10 @@ if mcp:
                 result = get_assessment(conn, assessment_id)
                 if not result:
                     # Try prefix match
-                    row = conn.execute(
-                        "SELECT * FROM assessments WHERE id LIKE ?", (f"{assessment_id}%",)
-                    ).fetchone()
+                    row = conn.execute("SELECT * FROM assessments WHERE id LIKE ?", (f"{assessment_id}%",)).fetchone()
                     result = dict(row) if row else None
             else:
-                row = conn.execute(
-                    "SELECT * FROM assessments ORDER BY created_at DESC LIMIT 1"
-                ).fetchone()
+                row = conn.execute("SELECT * FROM assessments ORDER BY created_at DESC LIMIT 1").fetchone()
                 result = dict(row) if row else None
 
             if not result:
@@ -692,6 +706,7 @@ if mcp:
             return json.dumps({"lessons": lessons, "count": len(lessons)})
         finally:
             conn.close()
+
 
 def run_server():
     """Run the MCP server (stdio transport)."""

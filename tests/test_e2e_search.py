@@ -209,3 +209,54 @@ class TestSemanticSearch:
             with pytest.raises(ImportError, match="sentence-transformers"):
                 semantic_search(conn, "auth")
         conn.close()
+
+
+class TestSearchWithQueryRedaction:
+    @pytest.fixture
+    def seeded_with_secret(self, ec_repo, transcript_file):
+        cwd = str(ec_repo)
+        sid = "redact-session"
+        on_session_start({"session_id": sid, "cwd": cwd, "source": "startup"})
+        on_user_prompt({"session_id": sid, "cwd": cwd, "prompt": "fix password=secret123 in config"})
+        t1 = transcript_file(
+            [
+                {"role": "user", "content": "fix password=secret123"},
+                {"role": "assistant", "content": "Fixed token=abc123 in the config"},
+            ],
+            name="redact_t1.jsonl",
+        )
+        on_stop({"session_id": sid, "cwd": cwd, "transcript_path": t1})
+        on_session_end({"session_id": sid, "cwd": cwd})
+        return ec_repo
+
+    def test_search_results_redacted(self, seeded_with_secret):
+        config = {
+            "filtering": {
+                "query_redaction": {
+                    "enabled": True,
+                    "patterns": [r"password\s*=\s*\S+", r"token\s*=\s*\S+"],
+                    "replacement": "[FILTERED]",
+                }
+            }
+        }
+        conn = get_db(str(seeded_with_secret))
+        results = regex_search(conn, "config", config=config)
+        conn.close()
+        assert len(results) >= 1
+        for r in results:
+            assert "secret123" not in (r.get("user_message") or "")
+            assert "abc123" not in (r.get("assistant_summary") or "")
+
+    def test_search_unredacted_when_disabled(self, seeded_with_secret):
+        config = {
+            "filtering": {
+                "query_redaction": {
+                    "enabled": False,
+                    "patterns": [r"password\s*=\s*\S+"],
+                }
+            }
+        }
+        conn = get_db(str(seeded_with_secret))
+        results = regex_search(conn, "config", config=config)
+        conn.close()
+        assert len(results) >= 1

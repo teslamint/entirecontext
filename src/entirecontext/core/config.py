@@ -13,6 +13,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_capture": True,
         "checkpoint_on_commit": True,
         "checkpoint_on_session_end": False,
+        "exclusions": {
+            "enabled": False,
+            "content_patterns": [],
+            "file_patterns": [],
+            "tool_names": [],
+            "redact_patterns": [],
+        },
     },
     "search": {
         "default_mode": "regex",
@@ -38,6 +45,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
             r"ghp_[a-zA-Z0-9]{36}",
             r"sk-[a-zA-Z0-9]{48}",
         ],
+    },
+    "filtering": {
+        "query_redaction": {
+            "enabled": False,
+            "patterns": [],
+            "replacement": "[FILTERED]",
+        },
     },
     "futures": {
         "auto_distill": False,

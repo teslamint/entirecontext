@@ -219,6 +219,179 @@ class TestSessionLifecycle:
         assert session["ended_at"] is not None
 
 
+class TestTurnCaptureFiltering:
+    @patch("entirecontext.hooks.turn_capture._find_git_root")
+    @patch("entirecontext.db.get_db")
+    @patch("entirecontext.core.config.load_config")
+    def test_skip_turn_by_content_pattern(self, mock_config, mock_get_db, mock_git_root):
+        conn = _non_closing_db()
+        init_schema(conn)
+        conn.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', '/tmp/test')")
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        conn.commit()
+
+        mock_git_root.return_value = "/tmp/test"
+        mock_get_db.return_value = conn
+        mock_config.return_value = {
+            "capture": {
+                "auto_capture": True,
+                "exclusions": {"enabled": True, "content_patterns": [r"password\s*="], "redact_patterns": []},
+            }
+        }
+
+        from entirecontext.hooks.turn_capture import on_user_prompt
+
+        on_user_prompt({"session_id": "s1", "cwd": "/tmp/test", "prompt": "password=secret123"})
+
+        turn = conn.execute("SELECT * FROM turns WHERE session_id = 's1'").fetchone()
+        assert turn is None
+
+    @patch("entirecontext.hooks.turn_capture._find_git_root")
+    @patch("entirecontext.db.get_db")
+    @patch("entirecontext.core.config.load_config")
+    def test_redact_prompt_before_storage(self, mock_config, mock_get_db, mock_git_root):
+        conn = _non_closing_db()
+        init_schema(conn)
+        conn.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', '/tmp/test')")
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        conn.commit()
+
+        mock_git_root.return_value = "/tmp/test"
+        mock_get_db.return_value = conn
+        mock_config.return_value = {
+            "capture": {
+                "auto_capture": True,
+                "exclusions": {
+                    "enabled": True,
+                    "content_patterns": [],
+                    "redact_patterns": [r"password\s*=\s*\S+"],
+                },
+            }
+        }
+
+        from entirecontext.hooks.turn_capture import on_user_prompt
+
+        on_user_prompt({"session_id": "s1", "cwd": "/tmp/test", "prompt": "fix password=secret123 issue"})
+
+        turn = conn.execute("SELECT * FROM turns WHERE session_id = 's1'").fetchone()
+        assert turn is not None
+        assert "secret123" not in turn["user_message"]
+        assert "[FILTERED]" in turn["user_message"]
+
+    @patch("entirecontext.hooks.turn_capture._find_git_root")
+    @patch("entirecontext.db.get_db")
+    @patch("entirecontext.core.config.load_config")
+    def test_skip_tool_by_name(self, mock_config, mock_get_db, mock_git_root):
+        conn = _non_closing_db()
+        init_schema(conn)
+        conn.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', '/tmp/test')")
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        conn.execute(
+            "INSERT INTO turns (id, session_id, turn_number, content_hash, timestamp, turn_status) "
+            "VALUES ('t1', 's1', 1, 'hash', '2025-01-01', 'in_progress')"
+        )
+        conn.commit()
+
+        mock_git_root.return_value = "/tmp/test"
+        mock_get_db.return_value = conn
+        mock_config.return_value = {
+            "capture": {"exclusions": {"enabled": True, "tool_names": ["Bash"], "file_patterns": []}},
+        }
+
+        from entirecontext.hooks.turn_capture import on_tool_use
+
+        on_tool_use({"session_id": "s1", "cwd": "/tmp/test", "tool_name": "Bash", "tool_input": {}})
+
+        turn = conn.execute("SELECT * FROM turns WHERE id = 't1'").fetchone()
+        tools = json.loads(turn["tools_used"]) if turn["tools_used"] else []
+        assert "Bash" not in tools
+
+    @patch("entirecontext.hooks.turn_capture._find_git_root")
+    @patch("entirecontext.db.get_db")
+    @patch("entirecontext.core.config.load_config")
+    def test_skip_file_tracking(self, mock_config, mock_get_db, mock_git_root):
+        conn = _non_closing_db()
+        init_schema(conn)
+        conn.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', '/tmp/test')")
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        conn.execute(
+            "INSERT INTO turns (id, session_id, turn_number, content_hash, timestamp, turn_status) "
+            "VALUES ('t1', 's1', 1, 'hash', '2025-01-01', 'in_progress')"
+        )
+        conn.commit()
+
+        mock_git_root.return_value = "/tmp/test"
+        mock_get_db.return_value = conn
+        mock_config.return_value = {
+            "capture": {"exclusions": {"enabled": True, "tool_names": [], "file_patterns": [".env"]}},
+        }
+
+        from entirecontext.hooks.turn_capture import on_tool_use
+
+        on_tool_use({"session_id": "s1", "cwd": "/tmp/test", "tool_name": "Read", "tool_input": {"file_path": ".env"}})
+
+        turn = conn.execute("SELECT * FROM turns WHERE id = 't1'").fetchone()
+        files = json.loads(turn["files_touched"]) if turn["files_touched"] else []
+        assert ".env" not in files
+        tools = json.loads(turn["tools_used"]) if turn["tools_used"] else []
+        assert "Read" in tools
+
+    @patch("entirecontext.hooks.turn_capture._find_git_root")
+    @patch("entirecontext.db.get_db")
+    @patch("entirecontext.core.config.load_config")
+    def test_redact_assistant_summary(self, mock_config, mock_get_db, mock_git_root, tmp_path):
+        conn = _non_closing_db()
+        init_schema(conn)
+        conn.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', '/tmp/test')")
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        conn.execute(
+            "INSERT INTO turns (id, session_id, turn_number, user_message, content_hash, timestamp, turn_status) "
+            "VALUES ('t1', 's1', 1, 'fix it', 'hash', '2025-01-01', 'in_progress')"
+        )
+        conn.commit()
+
+        mock_git_root.return_value = "/tmp/test"
+        mock_get_db.return_value = conn
+        mock_config.return_value = {
+            "capture": {
+                "exclusions": {
+                    "enabled": True,
+                    "content_patterns": [],
+                    "redact_patterns": [r"password\s*=\s*\S+"],
+                },
+            }
+        }
+
+        transcript = tmp_path / "transcript.jsonl"
+        transcript.write_text(
+            json.dumps({"role": "assistant", "content": "Fixed password=secret123 in config"}),
+            encoding="utf-8",
+        )
+
+        from entirecontext.hooks.turn_capture import on_stop
+
+        on_stop({"session_id": "s1", "cwd": "/tmp/test", "transcript_path": str(transcript)})
+
+        turn = conn.execute("SELECT * FROM turns WHERE id = 't1'").fetchone()
+        assert turn["assistant_summary"] is not None
+        assert "secret123" not in (turn["assistant_summary"] or "")
+
+
 class TestTurnCapture:
     @patch("entirecontext.hooks.turn_capture._find_git_root")
     @patch("entirecontext.db.get_db")
