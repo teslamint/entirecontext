@@ -210,3 +210,50 @@ def session_current():
     console.print(f"[bold]Active Session:[/bold] {session['id']}")
     console.print(f"  Started: {session.get('started_at', '')}")
     console.print(f"  Turns: {session.get('total_turns', 0)}")
+
+
+@session_app.command("export")
+def session_export(
+    session_id: str = typer.Argument(..., help="Session ID (prefix supported)"),
+    output: Optional[str] = typer.Option(None, "--output", "-o", help="Write to file; omit to print to stdout"),
+):
+    """Export a session as a Markdown document (git-friendly sharing format)."""
+    from pathlib import Path
+
+    from ..core.export import export_session_markdown
+    from ..core.project import find_git_root, get_project
+    from ..core.session import get_session
+    from ..core.turn import list_turns
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+
+    session = get_session(conn, session_id)
+    if not session:
+        row = conn.execute("SELECT * FROM sessions WHERE id LIKE ?", (f"{session_id}%",)).fetchone()
+        if row:
+            session = dict(row)
+
+    if not session:
+        console.print(f"[red]Session not found:[/red] {session_id}")
+        conn.close()
+        raise typer.Exit(1)
+
+    project = get_project(repo_path)
+    project_name = project.get("name") if project else None
+
+    turns = list_turns(conn, session["id"])
+    conn.close()
+
+    markdown = export_session_markdown(session, turns, project_name=project_name)
+
+    if output:
+        Path(output).write_text(markdown, encoding="utf-8")
+        console.print(f"[green]Exported to:[/green] {output}")
+    else:
+        typer.echo(markdown)

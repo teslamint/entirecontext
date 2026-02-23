@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: typed assessment relationships)._
+_Updated against codebase on 2026-02-23 (TDD implementation: markdown export)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -25,6 +25,11 @@ _Updated against codebase on 2026-02-23 (TDD implementation: typed assessment re
   - `ec futures relationships <id>` — 관계 목록 (`--direction` outgoing/incoming/both)
   - `ec futures unrelate <src> <type> <tgt>` — 관계 삭제
   - 24 TDD 테스트 (prefix ID, 자기참조 방지, 방향 필드 포함)
+- [x] 마크다운 export (세션 요약 → git-friendly 공유)
+  - `export_session_markdown()` in `core/export.py` — YAML frontmatter + Markdown 섹션 생성
+  - YAML 안전 escaping (`_yaml_scalar`), 멀티라인 blockquote (`_blockquote`), inline 정규화 (`_inline_safe`)
+  - `ec session export <id> [--output FILE]` CLI 명령 (prefix ID 지원, 파일 미지정 시 stdout)
+  - 48 TDD 테스트 (helper 함수, 코어 로직, CLI 커맨드 포함)
 
 ## Now
 
