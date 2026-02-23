@@ -103,9 +103,31 @@ _Updated against codebase on 2026-02-24._
 
 ## Now
 
+- [ ] **PostCommit hook → checkpoint 생성** (P0, spec §10 #1)
+  - `hooks/handler.py`: `PostCommit` dispatcher 엔트리 추가 → active session 있으면 checkpoint 생성
+  - `core/checkpoint.py`: hook context에서 호출 가능하도록 진입점 확인
+  - 영향 파일: `hooks/handler.py`, `core/checkpoint.py`
+  - 테스트: active session 시 checkpoint 생성 확인, session 없을 때 no-op 확인
+
 ## Next (1-2 weeks)
 
+- [ ] **pre-push config 게이팅** (P1, spec §10 #2)
+  - `.git/hooks/pre-push`가 항상 `ec sync` 호출 → config 키(`sync.auto_sync_on_push` 등)로 게이팅
+  - 영향 파일: `hooks/handler.py` (또는 pre-push hook script), config schema
+  - 테스트: config disabled → sync 미실행, config enabled → sync 실행
+
+- [ ] **`--no-filter` 런타임 연결** (P1, spec §10 #3)
+  - CLI에서 `--no-filter` 수용하지만 exporter 경로에 미전달 → filtering bypass 실제 적용
+  - 영향 파일: `cli/sync_cmds.py`, `core/export.py`, `core/security.py`
+  - 테스트: 동일 입력에서 기본=redacted, `--no-filter`=unredacted 출력 검증
+
 ## Later (1-3 months)
+
+- [ ] **Sync merge/retry 정책 정비** (P2, spec §10 #4)
+  - `sync/merge.py`에 merge helpers 존재하지만 `sync/engine.py`에서 미사용
+  - 선택지: app-level merge/retry 루프 구현 또는 docs/README에 정책 축소 명문화
+  - 영향 파일: `sync/engine.py`, `sync/merge.py`, docs
+  - 테스트: 선택한 정책의 구현/문서 일관성 검증
 
 ## Exploration
 
