@@ -19,18 +19,7 @@ futures_app = typer.Typer(help="Futures assessment (Tidy First)")
 app.add_typer(futures_app, name="futures")
 
 
-SYSTEM_PROMPT = """You are a futures analyst grounded in Kent Beck's "Tidy First?" philosophy.
-You evaluate code changes through the lens of software design options:
-- **expand**: the change increases future options (good structure, reversibility, new capabilities)
-- **narrow**: the change reduces future options (tight coupling, irreversible decisions, tech debt)
-- **neutral**: the change neither significantly expands nor narrows future options
-
-Analyze the given diff against the project roadmap and provide your assessment.
-Respond with a JSON object (no markdown fences) with these fields:
-- verdict: "expand" | "narrow" | "neutral"
-- impact_summary: one-sentence summary of the change's impact on future options
-- roadmap_alignment: how this change aligns with the roadmap
-- tidy_suggestion: actionable suggestion (what to tidy, what to keep, what to reconsider)"""
+from ..core.futures import ASSESS_SYSTEM_PROMPT as SYSTEM_PROMPT
 
 
 def _get_staged_diff() -> str:
@@ -53,17 +42,11 @@ def _get_checkpoint_diff(conn, checkpoint_id: str) -> str | None:
 
 def _call_llm(backend_name: str, model: str, system: str, user: str) -> dict:
     """Call LLM backend for assessment."""
-    from ..core.llm import get_backend
+    from ..core.llm import get_backend, strip_markdown_fences
 
     backend = get_backend(backend_name, model=model)
     content = backend.complete(system, user)
-    # Strip markdown fences if present
-    if content.startswith("```"):
-        content = content.split("\n", 1)[1] if "\n" in content else content
-        if content.endswith("```"):
-            content = content[:-3]
-        content = content.strip()
-    return json.loads(content)
+    return json.loads(strip_markdown_fences(content))
 
 
 def _render_assessment(assessment: dict) -> None:

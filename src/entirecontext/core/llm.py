@@ -8,6 +8,16 @@ import subprocess
 from urllib.request import Request, urlopen
 
 
+def strip_markdown_fences(content: str) -> str:
+    """Strip markdown code fences from LLM response content."""
+    if content.startswith("```"):
+        content = content.split("\n", 1)[1] if "\n" in content else content
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+    return content
+
+
 class LLMBackend:
     """Base class for LLM backends."""
 

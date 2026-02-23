@@ -10,6 +10,19 @@ from uuid import uuid4
 VALID_VERDICTS = ("expand", "narrow", "neutral")
 VALID_FEEDBACKS = ("agree", "disagree")
 
+ASSESS_SYSTEM_PROMPT = """You are a futures analyst grounded in Kent Beck's "Tidy First?" philosophy.
+You evaluate code changes through the lens of software design options:
+- **expand**: the change increases future options (good structure, reversibility, new capabilities)
+- **narrow**: the change reduces future options (tight coupling, irreversible decisions, tech debt)
+- **neutral**: the change neither significantly expands nor narrows future options
+
+Analyze the given diff against the project roadmap and provide your assessment.
+Respond with a JSON object (no markdown fences) with these fields:
+- verdict: "expand" | "narrow" | "neutral"
+- impact_summary: one-sentence summary of the change's impact on future options
+- roadmap_alignment: how this change aligns with the roadmap
+- tidy_suggestion: actionable suggestion (what to tidy, what to keep, what to reconsider)"""
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

@@ -685,6 +685,163 @@ if mcp:
             conn.close()
 
     @mcp.tool()
+    async def ec_assess_create(
+        verdict: str | None = None,
+        impact_summary: str | None = None,
+        roadmap_alignment: str | None = None,
+        tidy_suggestion: str | None = None,
+        checkpoint_id: str | None = None,
+        diff_summary: str | None = None,
+        diff: str | None = None,
+        roadmap: str | None = None,
+        backend: str | None = None,
+        model: str | None = None,
+    ) -> str:
+        """Create a futures assessment.
+
+        Two modes:
+        - Direct mode: provide verdict + impact_summary etc. The calling agent supplies analysis directly.
+        - LLM mode: omit verdict. An external LLM analyzes the diff against the roadmap.
+
+        For LLM mode, a diff is required via checkpoint_id, diff_summary, or diff parameter.
+
+        Args:
+            verdict: "expand"|"narrow"|"neutral" — if provided, uses direct mode
+            impact_summary: One-sentence impact summary (direct mode)
+            roadmap_alignment: Roadmap alignment note (direct mode)
+            tidy_suggestion: Actionable suggestion (direct mode)
+            checkpoint_id: Checkpoint ID to get diff from DB (both modes)
+            diff_summary: Diff text to store (direct mode)
+            diff: Diff text for LLM analysis (LLM mode)
+            roadmap: Roadmap text override (LLM mode, falls back to ROADMAP.md)
+            backend: LLM backend name (LLM mode, falls back to config)
+            model: LLM model name (LLM mode, falls back to config)
+        """
+        import json
+
+        conn, repo_path = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.futures import create_assessment
+
+            resolved_checkpoint_id = None
+            if checkpoint_id:
+                row = conn.execute(
+                    "SELECT id, diff_summary FROM checkpoints WHERE id = ? OR id LIKE ?",
+                    (checkpoint_id, f"{checkpoint_id}%"),
+                ).fetchone()
+                if row:
+                    resolved_checkpoint_id = row["id"]
+                    if not diff and not diff_summary:
+                        diff_summary = row["diff_summary"]
+                        diff = row["diff_summary"]
+
+            if verdict:
+                assessment = create_assessment(
+                    conn,
+                    checkpoint_id=resolved_checkpoint_id,
+                    verdict=verdict,
+                    impact_summary=impact_summary,
+                    roadmap_alignment=roadmap_alignment,
+                    tidy_suggestion=tidy_suggestion,
+                    diff_summary=diff_summary,
+                    model_name="mcp-agent",
+                )
+                return json.dumps(assessment)
+
+            diff_text = diff or diff_summary
+            if not diff_text:
+                return json.dumps({"error": "LLM mode requires diff text via 'diff', 'diff_summary', or 'checkpoint_id'"})
+
+            from ..core.config import load_config
+
+            config = load_config(repo_path)
+
+            roadmap_text = (roadmap or "")[:8000]
+            if not roadmap_text and repo_path:
+                from pathlib import Path
+
+                roadmap_path = Path(repo_path) / "ROADMAP.md"
+                if roadmap_path.exists():
+                    roadmap_text = roadmap_path.read_text(encoding="utf-8")[:8000]
+
+            user_prompt = ""
+            if roadmap_text:
+                user_prompt += f"## ROADMAP\n\n{roadmap_text}\n\n"
+            user_prompt += f"## DIFF\n\n```diff\n{diff_text[:8000]}\n```"
+
+            futures_config = config.get("futures", {})
+            llm_backend = backend or futures_config.get("default_backend", "openai")
+            llm_model = model or futures_config.get("default_model", "gpt-4o-mini")
+
+            from ..core.futures import ASSESS_SYSTEM_PROMPT
+            from ..core.llm import get_backend, strip_markdown_fences
+
+            try:
+                llm = get_backend(llm_backend, model=llm_model)
+                content = llm.complete(ASSESS_SYSTEM_PROMPT, user_prompt)
+                result = json.loads(strip_markdown_fences(content))
+            except Exception as e:
+                return json.dumps({"error": f"LLM analysis failed: {e}"})
+
+            assessment = create_assessment(
+                conn,
+                checkpoint_id=resolved_checkpoint_id,
+                verdict=result.get("verdict", "neutral"),
+                impact_summary=result.get("impact_summary"),
+                roadmap_alignment=result.get("roadmap_alignment"),
+                tidy_suggestion=result.get("tidy_suggestion"),
+                diff_summary=diff_text[:2000],
+                model_name=llm_model,
+            )
+            return json.dumps(assessment)
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        finally:
+            conn.close()
+
+    @mcp.tool()
+    async def ec_feedback(
+        assessment_id: str,
+        feedback: str,
+        reason: str | None = None,
+    ) -> str:
+        """Add feedback to an assessment and optionally trigger auto-distill.
+
+        Args:
+            assessment_id: Assessment ID (supports prefix match)
+            feedback: "agree" or "disagree"
+            reason: Optional reason for feedback
+        """
+        import json
+
+        conn, repo_path = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.futures import add_feedback, auto_distill_lessons
+
+            add_feedback(conn, assessment_id, feedback, feedback_reason=reason)
+
+            distilled = False
+            if repo_path:
+                distilled = auto_distill_lessons(repo_path)
+
+            return json.dumps({
+                "status": "ok",
+                "assessment_id": assessment_id,
+                "feedback": feedback,
+                "auto_distilled": distilled,
+            })
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        finally:
+            conn.close()
+
+    @mcp.tool()
     async def ec_lessons(
         limit: int = 50,
     ) -> str:

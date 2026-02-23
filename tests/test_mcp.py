@@ -291,6 +291,194 @@ class TestMCPToolIntegration:
         assert "Not in an EntireContext-initialized repo" in result["error"]
 
 
+class TestMCPAssessAndFeedback:
+    """Tests for ec_assess_create and ec_feedback MCP tools."""
+
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        return db
+
+    def test_ec_assess_create_direct(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_assess_create
+
+        result = json.loads(
+            asyncio.run(
+                ec_assess_create(
+                    verdict="expand",
+                    impact_summary="Adds modular API surface",
+                    roadmap_alignment="Aligned with Q1",
+                    tidy_suggestion="Extract interface",
+                    diff_summary="+ added new module",
+                )
+            )
+        )
+        assert result["verdict"] == "expand"
+        assert result["impact_summary"] == "Adds modular API surface"
+        assert result["model_name"] == "mcp-agent"
+        assert result["id"]
+
+    def test_ec_assess_create_llm(self, mock_repo_db, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from entirecontext.mcp.server import ec_assess_create
+
+        fake_backend = MagicMock()
+        fake_backend.complete.return_value = json.dumps({
+            "verdict": "narrow",
+            "impact_summary": "Tight coupling introduced",
+            "roadmap_alignment": "Misaligned",
+            "tidy_suggestion": "Decouple modules",
+        })
+        monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: fake_backend)
+
+        result = json.loads(
+            asyncio.run(
+                ec_assess_create(
+                    diff="+ tightly coupled code",
+                    backend="openai",
+                    model="gpt-4o-mini",
+                )
+            )
+        )
+        assert result["verdict"] == "narrow"
+        assert result["impact_summary"] == "Tight coupling introduced"
+        assert result["model_name"] == "gpt-4o-mini"
+        fake_backend.complete.assert_called_once()
+
+    def test_ec_assess_create_no_diff_error(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_assess_create
+
+        result = json.loads(asyncio.run(ec_assess_create()))
+        assert "error" in result
+        assert "diff" in result["error"].lower()
+
+    def test_ec_feedback_agree(self, mock_repo_db):
+        from entirecontext.core.futures import create_assessment
+        from entirecontext.mcp.server import ec_feedback
+
+        assessment = create_assessment(mock_repo_db, verdict="expand", impact_summary="Test")
+        result = json.loads(asyncio.run(ec_feedback(assessment["id"], "agree", reason="Looks good")))
+        assert result["status"] == "ok"
+        assert result["feedback"] == "agree"
+        assert result["assessment_id"] == assessment["id"]
+
+    def test_ec_feedback_invalid(self, mock_repo_db):
+        from entirecontext.core.futures import create_assessment
+        from entirecontext.mcp.server import ec_feedback
+
+        assessment = create_assessment(mock_repo_db, verdict="neutral", impact_summary="Test")
+        result = json.loads(asyncio.run(ec_feedback(assessment["id"], "maybe")))
+        assert "error" in result
+        assert "Invalid feedback" in result["error"]
+
+    def test_ec_feedback_auto_distill(self, mock_repo_db, monkeypatch, tmp_path):
+        from entirecontext.core.futures import create_assessment
+        from entirecontext.mcp.server import ec_feedback
+
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (mock_repo_db, str(tmp_path)))
+
+        distill_calls = []
+
+        def mock_auto_distill(repo_path):
+            distill_calls.append(str(repo_path))
+            return True
+
+        monkeypatch.setattr("entirecontext.core.futures.auto_distill_lessons", mock_auto_distill)
+
+        assessment = create_assessment(mock_repo_db, verdict="expand", impact_summary="Auto distill MCP test")
+        result = json.loads(asyncio.run(ec_feedback(assessment["id"], "agree")))
+        assert result["status"] == "ok"
+        assert result["auto_distilled"] is True
+        assert len(distill_calls) == 1
+        assert distill_calls[0] == str(tmp_path)
+
+    def test_ec_assess_create_invalid_verdict(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_assess_create
+
+        result = json.loads(asyncio.run(ec_assess_create(verdict="invalid_verdict", impact_summary="Test")))
+        assert "error" in result
+        assert "Invalid verdict" in result["error"]
+
+    def test_ec_assess_create_with_checkpoint_id(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_assess_create
+
+        mock_repo_db.execute(
+            "INSERT INTO checkpoints (id, session_id, git_commit_hash, git_branch, created_at, diff_summary) "
+            "VALUES ('cp-assess1', 's1', 'def456', 'main', '2025-01-01', 'Refactored auth module')"
+        )
+        mock_repo_db.commit()
+        result = json.loads(
+            asyncio.run(
+                ec_assess_create(
+                    verdict="expand",
+                    impact_summary="Auth refactor",
+                    checkpoint_id="cp-assess1",
+                )
+            )
+        )
+        assert result["verdict"] == "expand"
+        assert result["checkpoint_id"] == "cp-assess1"
+        assert result["diff_summary"] == "Refactored auth module"
+
+    def test_ec_assess_create_reads_roadmap(self, mock_repo_db, monkeypatch, tmp_path):
+        from unittest.mock import MagicMock
+
+        from entirecontext.mcp.server import ec_assess_create
+
+        roadmap_file = tmp_path / "ROADMAP.md"
+        roadmap_file.write_text("# Roadmap\n- Phase 1: Auth\n- Phase 2: API", encoding="utf-8")
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (mock_repo_db, str(tmp_path)))
+
+        fake_backend = MagicMock()
+        fake_backend.complete.return_value = json.dumps({
+            "verdict": "expand",
+            "impact_summary": "Aligned with roadmap",
+            "roadmap_alignment": "Phase 1",
+            "tidy_suggestion": "Continue",
+        })
+        monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: fake_backend)
+
+        result = json.loads(
+            asyncio.run(
+                ec_assess_create(
+                    diff="+ new auth code",
+                    backend="openai",
+                    model="gpt-4o-mini",
+                )
+            )
+        )
+        assert result["verdict"] == "expand"
+        call_args = fake_backend.complete.call_args
+        user_prompt = call_args[0][1]
+        assert "# Roadmap" in user_prompt
+        assert "Phase 1: Auth" in user_prompt
+
+    def test_ec_feedback_nonexistent_assessment(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_feedback
+
+        result = json.loads(asyncio.run(ec_feedback("nonexistent-id-12345", "agree")))
+        assert "error" in result
+        assert "not found" in result["error"].lower()
+
+    def test_ec_assess_create_llm_bad_json(self, mock_repo_db, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from entirecontext.mcp.server import ec_assess_create
+
+        fake_backend = MagicMock()
+        fake_backend.complete.return_value = "not valid json {{"
+        monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: fake_backend)
+
+        result = json.loads(asyncio.run(ec_assess_create(diff="+ some code", backend="openai", model="gpt-4o-mini")))
+        assert "error" in result
+        assert "LLM analysis failed" in result["error"]
+
+
 class TestMcpQueryRedaction:
     @pytest.fixture(autouse=True)
     def _require_mcp(self):
