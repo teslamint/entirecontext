@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: hybrid search)._
+_Updated against codebase on 2026-02-23 (TDD implementation: async assessment worker)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -52,7 +52,13 @@ _Updated against codebase on 2026-02-23 (TDD implementation: hybrid search)._
 
 ## Later (1-3 months)
 - [ ] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)
-- [ ] 비동기 assessment 워커 (캡처 차단 없는 백그라운드 분석)
+- [x] 비동기 assessment 워커 (캡처 차단 없는 백그라운드 분석)
+  - `core/async_worker.py`: `launch_worker()`, `stop_worker()`, `is_worker_running()`, `worker_status()`
+  - PID file at `.entirecontext/worker.pid`; `start_new_session=True` detaches worker from parent TTY
+  - `stop_worker()` returns `"killed"` / `"stale"` / `"none"` — accurate status distinguishes SIGTERM-sent from stale-cleanup
+  - `PermissionError` propagates from `stop_worker` so caller knows signal was blocked
+  - `ec futures worker-status` / `worker-stop` / `worker-launch [--diff TEXT]` CLI commands
+  - 33 TDD 테스트 (PID file, process checks, launch, stop, status, CLI commands)
 - [ ] knowledge graph 레이어 (git entities → nodes, relations → edges)
 - [x] memory consolidation/decay (오래된 turn 압축 전략)
   - `core/consolidation.py`: `find_turns_for_consolidation()`, `consolidate_turn_content()`, `consolidate_old_turns()`

@@ -19,7 +19,7 @@ futures_app = typer.Typer(help="Futures assessment (Tidy First)")
 app.add_typer(futures_app, name="futures")
 
 
-from ..core.futures import ASSESS_SYSTEM_PROMPT as SYSTEM_PROMPT
+from ..core.futures import ASSESS_SYSTEM_PROMPT as SYSTEM_PROMPT  # noqa: E402
 
 
 def _get_staged_diff() -> str:
@@ -483,3 +483,80 @@ def futures_report(
         console.print(f"[green]Report written to:[/green] {output}")
     else:
         typer.echo(report)
+
+
+@futures_app.command("worker-status")
+def futures_worker_status():
+    """Show background assessment worker status (running / idle / stale)."""
+    from ..core.async_worker import worker_status
+    from ..core.project import find_git_root
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    status = worker_status(repo_path)
+    if status["running"]:
+        console.print(f"[green]Worker running[/green] (PID {status['pid']})")
+    elif status.get("stale"):
+        console.print(
+            f"[yellow]Stale PID file found[/yellow] (PID {status['pid']} no longer running). Run 'ec futures worker-stop' to clean up."
+        )
+    else:
+        console.print("[dim]No active worker (idle).[/dim]")
+
+
+@futures_app.command("worker-stop")
+def futures_worker_stop():
+    """Stop the background assessment worker (sends SIGTERM)."""
+    from ..core.async_worker import stop_worker
+    from ..core.project import find_git_root
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        outcome = stop_worker(repo_path)
+    except PermissionError:
+        console.print("[red]Cannot stop worker: permission denied (process owned by another user).[/red]")
+        raise typer.Exit(1)
+
+    if outcome == "killed":
+        console.print("[green]Worker stopped (SIGTERM sent).[/green]")
+    elif outcome == "stale":
+        console.print("[yellow]Stale PID file removed (worker was not running).[/yellow]")
+    else:
+        console.print("[dim]No worker running.[/dim]")
+
+
+@futures_app.command("worker-launch")
+def futures_worker_launch(
+    diff: Optional[str] = typer.Option(None, "--diff", "-d", help="Diff text to assess (reads stdin if omitted)"),
+):
+    """Launch a background assessment worker for the current repo.
+
+    The worker runs ``ec futures assess`` asynchronously so it does not block
+    the calling process (e.g. a Claude Code hook).  Its PID is stored in
+    ``.entirecontext/worker.pid``.
+    """
+    import sys
+
+    from ..core.async_worker import launch_worker
+    from ..core.project import find_git_root
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    # Build the command: use the same Python executable that's running now
+    # so the worker picks up the correct virtualenv/installation.
+    cmd = [sys.executable, "-m", "entirecontext.cli", "futures", "assess"]
+    if diff:
+        cmd.extend(["--diff", diff])
+
+    pid = launch_worker(repo_path, cmd)
+    console.print(f"[green]Worker launched[/green] (PID {pid})")
