@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: memory consolidation/decay)._
+_Updated against codebase on 2026-02-23 (TDD implementation: spreading activation)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -56,7 +56,13 @@ _Updated against codebase on 2026-02-23 (TDD implementation: memory consolidatio
 
 ## Exploration
 - [ ] 코드 AST 기반 semantic search
-- [ ] spreading activation (관련 turn 연쇄 탐색)
+- [x] spreading activation (관련 turn 연쇄 탐색)
+  - `core/activation.py`: `spread_activation()` — BFS graph traversal through shared `files_touched`/`git_commit_hash` edges
+  - Jaccard similarity weighting for file overlap, fixed 1.0 weight for commit sharing, per-hop decay
+  - Atomic BFS: `visited` merges only after full frontier pass (prevents same-hop neighbour underscoring)
+  - `NOT IN ()` guard for empty `exclude_ids` (avoids SQLite syntax error)
+  - `ec session activate [--turn ID] [--session ID] [--hops N] [--limit N]` CLI
+  - 20 TDD 테스트 (core traversal, multi-hop, limit, CLI assertions including conn passthrough)
 - [ ] multi-agent 세션 그래프
 
 ## References
