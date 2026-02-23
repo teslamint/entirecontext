@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-23 (TDD implementation: multi-agent session graph)._
+_Updated against codebase on 2026-02-23 (TDD implementation: knowledge graph layer)._
 
 ## Done
 - [x] Futures assessment 기능 (`ec futures assess`)
@@ -59,7 +59,13 @@ _Updated against codebase on 2026-02-23 (TDD implementation: multi-agent session
   - `PermissionError` propagates from `stop_worker` so caller knows signal was blocked
   - `ec futures worker-status` / `worker-stop` / `worker-launch [--diff TEXT]` CLI commands
   - 33 TDD 테스트 (PID file, process checks, launch, stop, status, CLI commands)
-- [ ] knowledge graph 레이어 (git entities → nodes, relations → edges)
+- [x] knowledge graph 레이어 (git entities → nodes, relations → edges)
+  - `core/knowledge_graph.py`: `build_knowledge_graph()`, `get_graph_stats()`
+  - 6 node types: `session`, `turn`, `commit`, `file`, `agent`, `checkpoint` — all derived from existing DB tables (no new subprocess calls)
+  - 6 edge relations: `contains`, `committed_via`, `touched`, `ran_session`, `anchors_commit`, `has_checkpoint`
+  - Edge deduplication via set; `since` (inclusive) and `session_id` filters; `limit` on turns
+  - `ec graph [--session ID] [--since DATE] [--limit N]` CLI — Rich tables for nodes/edges by type
+  - 34 TDD 테스트 (node types, edge types, deduplication, filters, stats, CLI)
 - [x] memory consolidation/decay (오래된 turn 압축 전략)
   - `core/consolidation.py`: `find_turns_for_consolidation()`, `consolidate_turn_content()`, `consolidate_old_turns()`
   - DB schema v5: `turns.consolidated_at TEXT` column + index; idempotent migration via callable check
