@@ -35,6 +35,7 @@ def handle_hook(hook_type: str | None = None, *, data: dict[str, Any] | None = N
         "Stop": _handle_stop,
         "PostToolUse": _handle_tool_use,
         "SessionEnd": _handle_session_end,
+        "PostCommit": _handle_post_commit,
     }
 
     handler = handlers.get(hook_type)
@@ -80,4 +81,11 @@ def _handle_session_end(data: dict[str, Any]) -> int:
     from .session_lifecycle import on_session_end
 
     on_session_end(data)
+    return 0
+
+
+def _handle_post_commit(data: dict[str, Any]) -> int:
+    from .session_lifecycle import on_post_commit
+
+    on_post_commit(data)
     return 0

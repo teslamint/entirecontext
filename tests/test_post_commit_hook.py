@@ -90,3 +90,17 @@ class TestOnPostCommit:
             mock_diff.assert_called_once()
             call_kwargs = mock_diff.call_args
             assert call_kwargs[1].get("from_commit") == "abc123prior" or call_kwargs[0][1] == "abc123prior"
+
+
+class TestPostCommitDispatch:
+    def test_dispatch_routes_post_commit(self):
+        from entirecontext.hooks.handler import handle_hook
+
+        with patch("entirecontext.hooks.session_lifecycle.on_post_commit") as mock:
+            handle_hook("PostCommit", data={"cwd": "/tmp/test"})
+            mock.assert_called_once()
+
+    def test_unknown_hook_still_returns_zero(self):
+        from entirecontext.hooks.handler import handle_hook
+
+        assert handle_hook("NonExistent", data={}) == 0
