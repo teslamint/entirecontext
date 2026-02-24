@@ -40,3 +40,19 @@ class TestHookHandle:
         with patch("entirecontext.hooks.handler.handle_hook", return_value=2):
             result = runner.invoke(app, ["hook", "handle", "--type", "UserPromptSubmit"], input="{}")
             assert result.exit_code == 2
+
+
+class TestCodexNotify:
+    def test_codex_notify_argv_payload(self):
+        with patch("entirecontext.hooks.codex_ingest.ingest_codex_notify_event") as mock_ingest:
+            result = runner.invoke(app, ["hook", "codex-notify", '{"thread_id":"t1","cwd":"/tmp"}'])
+            assert result.exit_code == 0
+            mock_ingest.assert_called_once()
+            payload = mock_ingest.call_args.kwargs.get("payload", mock_ingest.call_args.args[0])
+            assert payload["thread_id"] == "t1"
+
+    def test_codex_notify_stdin_payload(self):
+        with patch("entirecontext.hooks.codex_ingest.ingest_codex_notify_event") as mock_ingest:
+            result = runner.invoke(app, ["hook", "codex-notify"], input='{"thread_id":"t2"}')
+            assert result.exit_code == 0
+            mock_ingest.assert_called_once()

@@ -386,3 +386,59 @@ class TestEnableDisableRoundTrip:
         assert len(session_start_hooks) == 2
         assert any("other-tool" in h.get("command", "") for h in session_start_hooks)
         assert any(_is_ec_hook(h) for h in session_start_hooks)
+
+
+class TestCodexIntegration:
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_writes_project_notify(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        assert result.exit_code == 0
+        content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "codex-notify" in content
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_preserves_upstream_notify(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".codex").mkdir()
+        (repo / ".codex" / "config.toml").write_text('notify = ["python", "hook.py"]\n', encoding="utf-8")
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        assert result.exit_code == 0
+        state = json.loads((repo / ".entirecontext" / "state" / "codex_notify.json").read_text(encoding="utf-8"))
+        assert state["upstream_notify"] == ["python", "hook.py"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_codex_restores_upstream_notify(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".codex").mkdir()
+        (repo / ".codex" / "config.toml").write_text('notify = ["python", "old-hook.py"]\n', encoding="utf-8")
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        result = runner.invoke(app, ["disable", "--agent", "codex"])
+        assert result.exit_code == 0
+        content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "old-hook.py" in content
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_codex_warns_when_missing(self, mock_git_root, ec_repo, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        fake_home = ec_repo.parent / "fakehome_codex"
+        fake_home.mkdir(exist_ok=True)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["doctor", "--agent", "codex"])
+        assert "codex" in result.output.lower()

@@ -40,3 +40,32 @@ def hook_handle(
 
     exit_code = handle_hook(resolved_type, data=data if data else None)
     raise typer.Exit(exit_code)
+
+
+@hook_app.command("codex-notify")
+def codex_notify(
+    payload_arg: str | None = typer.Argument(None, help="Raw Codex notify payload JSON"),
+):
+    """Handle Codex notify event and ingest session data."""
+    import json
+
+    from ..hooks.codex_ingest import ingest_codex_notify_event
+
+    raw_arg = payload_arg or ""
+    raw_stdin = ""
+    try:
+        raw_stdin = sys.stdin.read()
+    except OSError:
+        raw_stdin = ""
+
+    payload_text = raw_arg if raw_arg.strip() else raw_stdin
+    payload: dict = {}
+    if payload_text.strip():
+        try:
+            loaded = json.loads(payload_text)
+            if isinstance(loaded, dict):
+                payload = loaded
+        except json.JSONDecodeError:
+            payload = {}
+
+    ingest_codex_notify_event(payload, payload_text=payload_text)
