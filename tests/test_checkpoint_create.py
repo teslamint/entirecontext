@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
@@ -144,7 +143,6 @@ class TestAutoCheckpointHook:
             mock_create.assert_not_called()
 
     def test_enabled_creates_checkpoint(self, ec_repo, ec_db):
-        from entirecontext.core.project import find_git_root
         from entirecontext.core.session import create_session
         from entirecontext.db import get_db
         from entirecontext.hooks.session_lifecycle import _maybe_create_auto_checkpoint
@@ -185,7 +183,6 @@ class TestAutoCheckpointHook:
             patch("entirecontext.core.config.load_config", return_value={"capture": {"checkpoint_on_session_end": True}}),
             patch("entirecontext.core.git_utils.get_current_commit", return_value=None),
         ):
-            from entirecontext.db import get_db as _get_db
             with patch("entirecontext.core.checkpoint.create_checkpoint") as mock_create:
                 _maybe_create_auto_checkpoint(str(ec_repo), session_id)
                 mock_create.assert_not_called()
@@ -194,7 +191,6 @@ class TestAutoCheckpointHook:
 class TestSessionStartMetadata:
     def test_stores_start_git_commit(self, ec_repo, isolated_global_db):
         import json
-        import subprocess
 
         from entirecontext.db import get_db
         from entirecontext.hooks.session_lifecycle import on_session_start
