@@ -18,4 +18,5 @@ build/
 .mypy_cache/
 htmlcov/
 .coverage
+coverage.json
 .claude
