@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import subprocess
 
-import pytest
 
 from entirecontext.core.git_utils import (
     get_current_branch,

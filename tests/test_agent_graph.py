@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
@@ -112,7 +111,7 @@ class TestCreateAgent:
         assert agent["id"] == "custom-id-001"
 
     def test_parent_agent_id(self, ec_repo, ec_db):
-        parent = create_agent(ec_db, "orchestrator", agent_id="parent-001")
+        create_agent(ec_db, "orchestrator", agent_id="parent-001")
         child = create_agent(ec_db, "claude", agent_id="child-001", parent_agent_id="parent-001")
         row = ec_db.execute("SELECT parent_agent_id FROM agents WHERE id=?", (child["id"],)).fetchone()
         assert row["parent_agent_id"] == "parent-001"
@@ -233,7 +232,7 @@ class TestGetSessionAgentChain:
         from entirecontext.core.session import create_session
 
         project = get_project(str(ec_repo))
-        s = create_session(ec_db, project["id"], session_id="sess-no-agent")
+        create_session(ec_db, project["id"], session_id="sess-no-agent")
         chain = get_session_agent_chain(ec_db, "sess-no-agent")
         assert chain == []
 

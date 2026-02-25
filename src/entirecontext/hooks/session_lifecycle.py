@@ -252,6 +252,62 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
         pass
 
 
+def on_post_commit(data: dict[str, Any]) -> None:
+    """Handle PostCommit hook — create checkpoint for active session. Never crashes."""
+    try:
+        cwd = data.get("cwd", ".")
+        repo_path = _find_git_root(cwd)
+        if not repo_path:
+            return
+
+        import json
+
+        from ..core.checkpoint import create_checkpoint, list_checkpoints
+        from ..core.git_utils import get_current_branch, get_current_commit, get_diff_stat
+        from ..core.session import get_current_session
+        from ..db import get_db
+
+        git_commit = get_current_commit(repo_path)
+        if not git_commit:
+            return
+
+        conn = get_db(repo_path)
+        session = get_current_session(conn)
+        if not session:
+            conn.close()
+            return
+
+        session_id = session["id"]
+        git_branch = get_current_branch(repo_path)
+
+        prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
+        if prev_checkpoints:
+            from_commit = prev_checkpoints[0]["git_commit_hash"]
+        else:
+            from_commit = None
+            session_meta = session.get("metadata")
+            if session_meta:
+                try:
+                    meta = json.loads(session_meta) if isinstance(session_meta, str) else session_meta
+                    from_commit = meta.get("start_git_commit")
+                except Exception:
+                    pass
+
+        diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
+
+        create_checkpoint(
+            conn,
+            session_id=session_id,
+            git_commit_hash=git_commit,
+            git_branch=git_branch,
+            diff_summary=diff_summary,
+            metadata={"source": "post_commit"},
+        )
+        conn.close()
+    except Exception:
+        pass
+
+
 def _maybe_trigger_auto_distill(repo_path: str) -> None:
     """Auto-distill lessons if enabled. Never crashes the hook."""
     try:

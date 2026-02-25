@@ -119,7 +119,7 @@ def main():
 
     # Skip comment on neutral (configurable)
     if verdict == "neutral" and os.environ.get("COMMENT_ON_NEUTRAL", "false") != "true":
-        print(f"Verdict: neutral — skipping comment.")
+        print("Verdict: neutral — skipping comment.")
         return
 
     # Build comment
