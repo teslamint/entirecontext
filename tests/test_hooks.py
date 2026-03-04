@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -217,6 +217,134 @@ class TestSessionLifecycle:
 
         session = conn.execute("SELECT * FROM sessions WHERE id = 's1'").fetchone()
         assert session["ended_at"] is not None
+
+
+class TestIntentSummary:
+    def test_intent_summary_calls_llm_when_enabled(self, db):
+        db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        for i in range(3):
+            db.execute(
+                "INSERT INTO turns (id, session_id, turn_number, user_message, assistant_summary, content_hash, timestamp, turn_status) "
+                "VALUES (?, 's1', ?, ?, ?, 'hash', '2025-01-01', 'completed')",
+                (f"t{i}", i + 1, f"user msg {i}", f"assistant summary {i}"),
+            )
+        db.commit()
+
+        from entirecontext.hooks.session_lifecycle import _maybe_generate_intent_summary
+
+        mock_backend = MagicMock()
+        mock_backend.complete.return_value = "User was implementing authentication"
+
+        with (
+            patch(
+                "entirecontext.core.config.load_config",
+                return_value={
+                    "capture": {"intent_summary": True},
+                    "futures": {"default_backend": "openai", "default_model": "gpt-4o-mini"},
+                },
+            ),
+            patch("entirecontext.core.llm.get_backend", return_value=mock_backend),
+        ):
+            _maybe_generate_intent_summary(db, "s1")
+
+        session = db.execute("SELECT session_summary FROM sessions WHERE id = 's1'").fetchone()
+        assert session["session_summary"] == "User was implementing authentication"
+        mock_backend.complete.assert_called_once()
+
+    def test_intent_summary_skips_when_disabled(self, db):
+        db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        for i in range(3):
+            db.execute(
+                "INSERT INTO turns (id, session_id, turn_number, user_message, content_hash, timestamp, turn_status) "
+                "VALUES (?, 's1', ?, ?, 'hash', '2025-01-01', 'completed')",
+                (f"t{i}", i + 1, f"user msg {i}"),
+            )
+        db.commit()
+
+        from entirecontext.hooks.session_lifecycle import _maybe_generate_intent_summary
+
+        with patch("entirecontext.core.config.load_config", return_value={"capture": {"intent_summary": False}}):
+            _maybe_generate_intent_summary(db, "s1")
+
+        session = db.execute("SELECT session_summary FROM sessions WHERE id = 's1'").fetchone()
+        assert session["session_summary"] is None
+
+    def test_intent_summary_skips_under_3_turns(self, db):
+        db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        for i in range(2):
+            db.execute(
+                "INSERT INTO turns (id, session_id, turn_number, user_message, content_hash, timestamp, turn_status) "
+                "VALUES (?, 's1', ?, ?, 'hash', '2025-01-01', 'completed')",
+                (f"t{i}", i + 1, f"user msg {i}"),
+            )
+        db.commit()
+
+        from entirecontext.hooks.session_lifecycle import _maybe_generate_intent_summary
+
+        with (
+            patch(
+                "entirecontext.core.config.load_config",
+                return_value={
+                    "capture": {"intent_summary": True},
+                    "futures": {"default_backend": "openai"},
+                },
+            ),
+            patch("entirecontext.core.llm.get_backend") as mock_get_backend,
+        ):
+            _maybe_generate_intent_summary(db, "s1")
+            mock_get_backend.assert_not_called()
+
+
+class TestAutoEmbed:
+    def test_auto_embed_triggers_worker_when_enabled(self):
+        from entirecontext.hooks.session_lifecycle import _maybe_trigger_auto_embed
+
+        with (
+            patch("entirecontext.core.config.load_config", return_value={"index": {"auto_embed": True}}),
+            patch("entirecontext.core.async_worker.launch_worker") as mock_launch,
+        ):
+            _maybe_trigger_auto_embed("/tmp/test")
+            mock_launch.assert_called_once()
+            args = mock_launch.call_args[0]
+            assert args[0] == "/tmp/test"
+            assert "index" in args[1]
+            assert "--semantic" in args[1]
+
+    def test_auto_embed_skips_when_disabled(self):
+        from entirecontext.hooks.session_lifecycle import _maybe_trigger_auto_embed
+
+        with (
+            patch("entirecontext.core.config.load_config", return_value={"index": {"auto_embed": False}}),
+            patch("entirecontext.core.async_worker.launch_worker") as mock_launch,
+        ):
+            _maybe_trigger_auto_embed("/tmp/test")
+            mock_launch.assert_not_called()
+
+    def test_auto_embed_skips_when_worker_running(self):
+        from entirecontext.hooks.session_lifecycle import _maybe_trigger_auto_embed
+
+        with (
+            patch("entirecontext.core.config.load_config", return_value={"index": {"auto_embed": True}}),
+            patch("entirecontext.core.async_worker.worker_status", return_value={"running": True, "pid": 12345}),
+            patch("entirecontext.core.async_worker.launch_worker") as mock_launch,
+        ):
+            _maybe_trigger_auto_embed("/tmp/test")
+            mock_launch.assert_not_called()
+
+    def test_auto_embed_never_crashes(self):
+        from entirecontext.hooks.session_lifecycle import _maybe_trigger_auto_embed
+
+        with patch("entirecontext.core.config.load_config", side_effect=Exception("boom")):
+            _maybe_trigger_auto_embed("/tmp/test")
 
 
 class TestTurnCaptureFiltering:

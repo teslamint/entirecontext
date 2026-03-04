@@ -149,6 +149,57 @@ def _populate_session_summary(conn, session_id: str) -> None:
         conn.execute(f"UPDATE sessions SET {set_clause} WHERE id = ?", values)
         conn.commit()
 
+    _maybe_generate_intent_summary(conn, session_id)
+
+
+def _maybe_generate_intent_summary(conn, session_id: str) -> None:
+    """Generate intent summary via LLM if enabled. No-op on config disabled or LLM failure."""
+    try:
+        from ..core.config import load_config
+
+        session = conn.execute("SELECT project_id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if not session:
+            return
+        project = conn.execute("SELECT repo_path FROM projects WHERE id = ?", (session["project_id"],)).fetchone()
+        if not project:
+            return
+        config = load_config(project["repo_path"])
+        if not config.get("capture", {}).get("intent_summary", False):
+            return
+
+        turn_count = conn.execute("SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)).fetchone()[0]
+        if turn_count < 3:
+            return
+
+        turns = conn.execute(
+            "SELECT user_message, assistant_summary FROM turns WHERE session_id = ? ORDER BY turn_number ASC",
+            (session_id,),
+        ).fetchall()
+
+        from ..core.llm import get_backend
+        from ..core.security import filter_secrets
+
+        backend_name = config.get("futures", {}).get("default_backend", "openai")
+        model = config.get("futures", {}).get("default_model", None)
+        backend = get_backend(backend_name, model=model)
+
+        sec_patterns = config.get("security", {}).get("patterns", None)
+        context = "\n".join(
+            f"User: {filter_secrets(t['user_message'] or '', sec_patterns)}\n"
+            f"Assistant: {filter_secrets(t['assistant_summary'] or '', sec_patterns)}"
+            for t in turns[:10]
+        )
+        system = (
+            "Summarize the user's intent and goals from this coding session in 1-2 sentences. "
+            "Be specific about what they were trying to accomplish."
+        )
+        summary = backend.complete(system, context)
+
+        conn.execute("UPDATE sessions SET session_summary = ? WHERE id = ?", (summary[:500], session_id))
+        conn.commit()
+    except Exception:
+        pass
+
 
 def on_session_end(data: dict[str, Any]) -> None:
     """Handle SessionEnd hook — mark session as ended and update global counts."""
@@ -200,6 +251,7 @@ def on_session_end(data: dict[str, Any]) -> None:
     _maybe_create_auto_checkpoint(repo_path, session_id)
     _maybe_trigger_auto_sync(repo_path)
     _maybe_trigger_auto_distill(repo_path)
+    _maybe_trigger_auto_embed(repo_path)
 
 
 def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
@@ -304,6 +356,26 @@ def on_post_commit(data: dict[str, Any]) -> None:
             metadata={"source": "post_commit"},
         )
         conn.close()
+    except Exception:
+        pass
+
+
+def _maybe_trigger_auto_embed(repo_path: str) -> None:
+    """Trigger background embedding indexing if auto_embed is enabled. Never crashes the hook."""
+    try:
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        if not config.get("index", {}).get("auto_embed", False):
+            return
+
+        import sys
+
+        from ..core.async_worker import launch_worker, worker_status
+
+        if worker_status(repo_path).get("running"):
+            return
+        launch_worker(repo_path, [sys.executable, "-m", "entirecontext.cli", "index", "rebuild", "--semantic"])
     except Exception:
         pass
 
