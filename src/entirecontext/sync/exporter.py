@@ -12,7 +12,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def export_sessions(conn, repo_path: str, worktree_path: str, since: str | None = None) -> int:
+def export_sessions(
+    conn,
+    repo_path: str,
+    worktree_path: str,
+    since: str | None = None,
+    filter_enabled: bool = True,
+    filter_patterns: list[str] | None = None,
+) -> int:
     """Export sessions to shadow branch worktree. Returns count of exported sessions."""
     query = "SELECT * FROM sessions"
     params: list[Any] = []
@@ -46,9 +53,16 @@ def export_sessions(conn, repo_path: str, worktree_path: str, since: str | None 
             (session_id,),
         ).fetchall()
 
+        if filter_enabled:
+            from .security import filter_export_data
+
         transcript_lines = []
         for turn in turns:
             turn_dict = dict(turn)
+            if filter_enabled:
+                for field in ("user_message", "assistant_summary"):
+                    if turn_dict.get(field):
+                        turn_dict[field] = filter_export_data(turn_dict[field], filter_patterns, filter_enabled)
             transcript_lines.append(json.dumps(turn_dict))
 
         (session_dir / "transcript.jsonl").write_text(

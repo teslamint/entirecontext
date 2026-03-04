@@ -169,6 +169,40 @@ class TestPerformSync:
         assert len(push_calls) == 1
         assert result["pushed"] is True
 
+    def test_security_config_propagated_to_exporter(self, sync_db, ec_repo, tmp_path):
+        worktree = str(tmp_path / "worktree")
+        config = {"push_on_sync": False, "security": {"filter_secrets": False}}
+
+        with (
+            patch("entirecontext.sync.engine.shadow_branch_exists", return_value=True),
+            patch("entirecontext.sync.engine.subprocess.run", side_effect=_make_run_side_effect(worktree)),
+            patch("entirecontext.sync.engine.tempfile.mkdtemp", return_value=worktree),
+            patch("entirecontext.sync.engine.export_sessions", return_value=1) as mock_export,
+            patch("entirecontext.sync.engine.export_checkpoints", return_value=0),
+            patch("entirecontext.sync.engine.update_manifest"),
+        ):
+            perform_sync(sync_db, str(ec_repo), config)
+
+        call_kwargs = mock_export.call_args
+        assert call_kwargs.kwargs.get("filter_enabled") is False
+
+    def test_security_config_defaults_to_enabled(self, sync_db, ec_repo, tmp_path):
+        worktree = str(tmp_path / "worktree")
+        config = {"push_on_sync": False}
+
+        with (
+            patch("entirecontext.sync.engine.shadow_branch_exists", return_value=True),
+            patch("entirecontext.sync.engine.subprocess.run", side_effect=_make_run_side_effect(worktree)),
+            patch("entirecontext.sync.engine.tempfile.mkdtemp", return_value=worktree),
+            patch("entirecontext.sync.engine.export_sessions", return_value=1) as mock_export,
+            patch("entirecontext.sync.engine.export_checkpoints", return_value=0),
+            patch("entirecontext.sync.engine.update_manifest"),
+        ):
+            perform_sync(sync_db, str(ec_repo), config)
+
+        call_kwargs = mock_export.call_args
+        assert call_kwargs.kwargs.get("filter_enabled") is True
+
 
 class TestPerformPull:
     def test_error_when_no_shadow_branch(self, sync_db, ec_repo):

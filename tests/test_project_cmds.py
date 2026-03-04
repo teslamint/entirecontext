@@ -221,7 +221,7 @@ class TestGitHooksInstallation:
 
         content = (repo / ".git" / "hooks" / "pre-push").read_text()
         assert "EntireContext" in content
-        assert "sync" in content
+        assert "sync --if-enabled" in content
 
 
 def _setup_fake_home_with_mcp(ec_repo, monkeypatch):

@@ -13,6 +13,7 @@ console = Console()
 @app.command("sync")
 def sync(
     no_filter: bool = typer.Option(False, "--no-filter", help="Skip secret filtering"),
+    if_enabled: bool = typer.Option(False, "--if-enabled", help="Only run if auto_sync_on_push is enabled in config"),
 ):
     """Export to shadow branch and push."""
     from ..core.project import find_git_root, get_project
@@ -23,6 +24,13 @@ def sync(
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+
+    if if_enabled:
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        if not config.get("sync", {}).get("auto_sync_on_push", False):
+            return
 
     project = get_project(repo_path)
     if not project:

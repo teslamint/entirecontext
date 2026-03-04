@@ -13,6 +13,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_capture": True,
         "checkpoint_on_commit": True,
         "checkpoint_on_session_end": False,
+        "intent_summary": False,
         "exclusions": {
             "enabled": False,
             "content_patterns": [],
@@ -27,6 +28,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "sync": {
         "auto_sync": False,
+        "auto_sync_on_push": False,
         "auto_pull": False,
         "cooldown_seconds": 300,
         "pull_staleness_seconds": 600,
@@ -52,6 +54,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "patterns": [],
             "replacement": "[FILTERED]",
         },
+    },
+    "index": {
+        "auto_embed": False,
+        "embed_model": "all-MiniLM-L6-v2",
     },
     "futures": {
         "auto_distill": False,

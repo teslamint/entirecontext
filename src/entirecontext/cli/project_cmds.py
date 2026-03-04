@@ -190,7 +190,7 @@ def _install_git_hooks(repo_path: str) -> list[str]:
 """
     pre_push_script = f"""#!/bin/sh
 # EntireContext: sync on push if auto_sync_on_push is enabled
-{ec_cmd.replace("hook handle", "sync")}
+{ec_cmd.replace("hook handle", "sync --if-enabled")}
 """
 
     for name, script in [("post-commit", post_commit_script), ("pre-push", pre_push_script)]:
@@ -255,7 +255,12 @@ def enable(
             "SessionEnd": 5,
         }
         ec_hooks = {
-            name: [{"matcher": "", "hooks": [{"type": "command", "command": _resolve_ec_command(name), "timeout": timeout}]}]
+            name: [
+                {
+                    "matcher": "",
+                    "hooks": [{"type": "command", "command": _resolve_ec_command(name), "timeout": timeout}],
+                }
+            ]
             for name, timeout in hook_timeouts.items()
         }
 

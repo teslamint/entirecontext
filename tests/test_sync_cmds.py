@@ -131,6 +131,41 @@ class TestSync:
                 "default sync must keep secret filtering enabled in runtime config"
             )
 
+    def test_sync_if_enabled_not_in_repo(self):
+        with patch("entirecontext.core.project.find_git_root", return_value=None):
+            result = runner.invoke(app, ["sync", "--if-enabled"])
+            assert result.exit_code == 1
+
+    def test_sync_if_enabled_skips_when_disabled(self):
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.core.config.load_config", return_value={"sync": {"auto_sync_on_push": False}}),
+            patch("entirecontext.sync.engine.perform_sync") as mock_sync,
+        ):
+            result = runner.invoke(app, ["sync", "--if-enabled"])
+            assert result.exit_code == 0
+            mock_sync.assert_not_called()
+
+    def test_sync_if_enabled_runs_when_enabled(self):
+        mock_conn = MagicMock()
+        sync_result = {
+            "error": None,
+            "exported_sessions": 1,
+            "exported_checkpoints": 0,
+            "committed": False,
+            "pushed": False,
+        }
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.core.config.load_config", return_value={"sync": {"auto_sync_on_push": True}}),
+            patch("entirecontext.core.project.get_project", return_value={"id": "proj-1"}),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.sync.engine.perform_sync", return_value=sync_result) as mock_sync,
+        ):
+            result = runner.invoke(app, ["sync", "--if-enabled"])
+            assert result.exit_code == 0
+            mock_sync.assert_called_once()
+
 
 class TestPull:
     def test_not_in_repo(self):

@@ -12,6 +12,7 @@ from pathlib import Path
 from entirecontext.core.checkpoint import create_checkpoint, get_checkpoint
 from entirecontext.core.session import create_session, get_session
 from entirecontext.sync.exporter import export_checkpoints, export_sessions, update_manifest
+from entirecontext.sync.security import get_security_config
 from entirecontext.sync.shadow_branch import SHADOW_BRANCH, init_shadow_branch, shadow_branch_exists
 
 
@@ -47,7 +48,15 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
             check=True,
         )
 
-        session_count = export_sessions(conn, repo_path, worktree_path, since=last_export)
+        filter_enabled, filter_patterns = get_security_config(config)
+        session_count = export_sessions(
+            conn,
+            repo_path,
+            worktree_path,
+            since=last_export,
+            filter_enabled=filter_enabled,
+            filter_patterns=filter_patterns,
+        )
         result["exported_sessions"] = session_count
 
         cp_count = export_checkpoints(conn, worktree_path, since=last_export)
