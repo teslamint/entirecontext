@@ -85,6 +85,52 @@ class TestSync:
             assert result.exit_code == 0
             assert "No changes to commit" in result.output
 
+    def test_sync_no_filter_option_disables_filtering_in_runtime_config(self):
+        mock_conn = MagicMock()
+        sync_result = {
+            "error": None,
+            "exported_sessions": 1,
+            "exported_checkpoints": 1,
+            "committed": False,
+            "pushed": False,
+        }
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.core.project.get_project", return_value={"id": "proj-1"}),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.sync.engine.perform_sync", return_value=sync_result) as mock_sync,
+        ):
+            result = runner.invoke(app, ["sync", "--no-filter"])
+            assert result.exit_code == 0
+
+            runtime_config = mock_sync.call_args.kwargs["config"]
+            assert runtime_config.get("security", {}).get("filter_secrets") is False, (
+                "--no-filter must propagate to runtime sync config"
+            )
+
+    def test_sync_default_keeps_filtering_enabled(self):
+        mock_conn = MagicMock()
+        sync_result = {
+            "error": None,
+            "exported_sessions": 1,
+            "exported_checkpoints": 1,
+            "committed": False,
+            "pushed": False,
+        }
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.core.project.get_project", return_value={"id": "proj-1"}),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.sync.engine.perform_sync", return_value=sync_result) as mock_sync,
+        ):
+            result = runner.invoke(app, ["sync"])
+            assert result.exit_code == 0
+
+            runtime_config = mock_sync.call_args.kwargs["config"]
+            assert runtime_config.get("security", {}).get("filter_secrets") is True, (
+                "default sync must keep secret filtering enabled in runtime config"
+            )
+
 
 class TestPull:
     def test_not_in_repo(self):

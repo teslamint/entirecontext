@@ -33,7 +33,8 @@ def sync(
 
     conn = get_db(repo_path)
     try:
-        result = perform_sync(conn, repo_path, config={})
+        config = {"security": {"filter_secrets": not no_filter}}
+        result = perform_sync(conn, repo_path, config=config)
 
         if result["error"]:
             console.print(f"[red]Sync failed: {result['error']}[/red]")
