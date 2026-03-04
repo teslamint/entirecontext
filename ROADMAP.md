@@ -22,6 +22,30 @@ _Updated against codebase on 2026-02-24._
   - 영향 파일: `cli/sync_cmds.py`, `core/export.py`, `core/security.py`
   - 테스트: 동일 입력에서 기본=redacted, `--no-filter`=unredacted 출력 검증
 
+- [ ] **세션별 요약 — 사용자 의도 도출** (P1)
+  - 현재 `_populate_session_summary()`는 첫 3개 turn의 `assistant_summary` 단순 결합 (max 500자)
+  - 세션 종료 시 LLM으로 전체 turn 분석 → 사용자 의도(intent) 추출하여 `session_summary` 갱신
+  - 기존 LLM 백엔드 추상화(`openai/codex/claude/ollama/github`) 활용
+  - 영향 파일: `hooks/session_lifecycle.py` (`_populate_session_summary`), `core/session.py`
+  - config 키: `capture.intent_summary` (opt-in)
+  - 테스트: LLM 호출 mock → intent 포함 summary 갱신 확인, config disabled → 기존 동작 유지
+
+- [ ] **코드 변경 없는 세션 자동 정리** (P2)
+  - 세션 종료 시 `files_touched`, `git_commit_hash`, checkpoint 유무 검사
+  - 코드 변경 없으면 자동 consolidate (메타데이터 보존, content 파일 삭제)
+  - 영향 파일: `hooks/session_lifecycle.py` (`on_session_end`), `core/purge.py` 또는 `core/consolidation.py`
+  - config 키: `capture.auto_cleanup_no_changes` (default: false)
+  - 안전장치: ended session만 대상, active session 보호
+  - 테스트: 변경 없는 세션 → content 파일 삭제 확인, 변경 있는 세션 → 미삭제 확인, active session → no-op 확인
+
+- [ ] **세션 종료 시 자동 임베딩 인덱싱** (P1)
+  - 현재: `ec index embed` 수동 실행 필요
+  - 목표: 세션 종료 hook → async_worker로 턴 데이터 자동 임베딩 + FTS 인덱스 갱신
+  - `hooks/session_lifecycle.py` → 인덱싱 이벤트 발행
+  - `core/async_worker.py` → 임베딩 태스크 처리
+  - config 키: `index.auto_embed` (default: true)
+  - 참고: "Grep Is Dead" (QMD hybrid search) — BM25+semantic 자동화가 검색 품질 핵심
+
 - [ ] **MCP hybrid search 지원** — `ec_search` 도구의 `search_type`에 `"hybrid"` 옵션 추가
 - [ ] **MCP AST search 도구** — `ec_ast_search` 도구 노출 (symbol_type, file_path 필터)
 - [ ] **MCP knowledge graph 도구** — `ec_graph` 도구 노출 (session/since 필터)
@@ -66,6 +90,7 @@ _Updated against codebase on 2026-02-24._
 - **Proactive checkpoint** — 코드 변경 패턴 기반 자동 체크포인트 시점 결정
 - **NL feedback loop** — 자연어 피드백으로 assessment 품질 자동 개선
 - **Pluggable graph backend** — SQLite knowledge graph → Neo4j 등 외부 그래프 DB 선택적 교체
+- **Temporal/meta query** — "지난 주에 뭐 했지?", "실행 안 한 아이디어" 같은 자연어 시간/메타 쿼리 지원
 
 ## References
 - [Agent Memory Landscape Research](docs/research/agent-memory-landscape.md)
