@@ -753,7 +753,9 @@ if mcp:
 
             diff_text = diff or diff_summary
             if not diff_text:
-                return json.dumps({"error": "LLM mode requires diff text via 'diff', 'diff_summary', or 'checkpoint_id'"})
+                return json.dumps(
+                    {"error": "LLM mode requires diff text via 'diff', 'diff_summary', or 'checkpoint_id'"}
+                )
 
             from ..core.config import load_config
 
@@ -830,12 +832,14 @@ if mcp:
             if repo_path:
                 distilled = auto_distill_lessons(repo_path)
 
-            return json.dumps({
-                "status": "ok",
-                "assessment_id": assessment_id,
-                "feedback": feedback,
-                "auto_distilled": distilled,
-            })
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "assessment_id": assessment_id,
+                    "feedback": feedback,
+                    "auto_distilled": distilled,
+                }
+            )
         except ValueError as e:
             return json.dumps({"error": str(e)})
         finally:
@@ -864,7 +868,6 @@ if mcp:
         finally:
             conn.close()
 
-
     @mcp.tool()
     async def ec_assess_trends(
         repos: list[str] | None = None,
@@ -886,6 +889,7 @@ if mcp:
         repo_names = None if not repos else repos
         trends, warnings = cross_repo_assessment_trends(repos=repo_names, since=since, include_warnings=True)
         return json.dumps({**trends, "warnings": warnings})
+
 
 def run_server():
     """Run the MCP server (stdio transport)."""

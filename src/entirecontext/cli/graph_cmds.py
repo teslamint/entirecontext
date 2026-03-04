@@ -13,15 +13,9 @@ console = Console()
 
 @app.command("graph")
 def graph_cmd(
-    session_id: str | None = typer.Option(
-        None, "--session", "-s", help="Restrict graph to a single session ID"
-    ),
-    since: str | None = typer.Option(
-        None, "--since", help="Only include turns on or after this date (YYYY-MM-DD)"
-    ),
-    limit: int = typer.Option(
-        200, "--limit", "-n", help="Maximum number of turns to include (default 200)"
-    ),
+    session_id: str | None = typer.Option(None, "--session", "-s", help="Restrict graph to a single session ID"),
+    since: str | None = typer.Option(None, "--since", help="Only include turns on or after this date (YYYY-MM-DD)"),
+    limit: int = typer.Option(200, "--limit", "-n", help="Maximum number of turns to include (default 200)"),
 ):
     """Show the knowledge graph of git entities (commits, files, sessions, agents).
 

@@ -277,7 +277,9 @@ class TestBuildKnowledgeGraphFilters:
 
         # Create a turn and then manually set its timestamp to a known old date
         t_old = create_turn(
-            ec_db, "sess-since-test", 1,
+            ec_db,
+            "sess-since-test",
+            1,
             user_message="old turn",
             assistant_summary="old",
         )
@@ -285,7 +287,9 @@ class TestBuildKnowledgeGraphFilters:
         ec_db.commit()
 
         t_new = create_turn(
-            ec_db, "sess-since-test", 2,
+            ec_db,
+            "sess-since-test",
+            2,
             user_message="new turn",
             assistant_summary="new",
         )
@@ -373,9 +377,7 @@ class TestGraphCLI:
                 {"id": "s1", "type": "session", "label": "sess-1"},
                 {"id": "abc123", "type": "commit", "label": "abc123"},
             ],
-            "edges": [
-                {"source": "s1", "relation": "has_checkpoint", "target": "abc123"}
-            ],
+            "edges": [{"source": "s1", "relation": "has_checkpoint", "target": "abc123"}],
         }
         stats = {
             "total_nodes": 2,
@@ -414,9 +416,7 @@ class TestGraphCLI:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch(
-                "entirecontext.core.knowledge_graph.build_knowledge_graph", return_value=graph
-            ) as mock_build,
+            patch("entirecontext.core.knowledge_graph.build_knowledge_graph", return_value=graph) as mock_build,
             patch("entirecontext.core.knowledge_graph.get_graph_stats", return_value=stats),
         ):
             runner.invoke(app, ["graph", "--session", "sess-001"])
@@ -430,9 +430,7 @@ class TestGraphCLI:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch(
-                "entirecontext.core.knowledge_graph.build_knowledge_graph", return_value=graph
-            ) as mock_build,
+            patch("entirecontext.core.knowledge_graph.build_knowledge_graph", return_value=graph) as mock_build,
             patch("entirecontext.core.knowledge_graph.get_graph_stats", return_value=stats),
         ):
             runner.invoke(app, ["graph", "--limit", "50"])

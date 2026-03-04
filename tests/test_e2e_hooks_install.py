@@ -42,7 +42,10 @@ class TestHookInstall:
                     inner = entry["hooks"]
                     assert len(inner) == 1
                     assert inner[0]["type"] == "command"
-                    assert "ec hook handle" in inner[0]["command"] or "entirecontext.cli hook handle" in inner[0]["command"]
+                    assert (
+                        "ec hook handle" in inner[0]["command"]
+                        or "entirecontext.cli hook handle" in inner[0]["command"]
+                    )
                     assert isinstance(inner[0]["timeout"], int)
                     assert inner[0]["timeout"] <= 10
 

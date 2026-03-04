@@ -56,6 +56,7 @@ class TestGetCurrentBranch:
 
         def mock_run(cmd, *args, **kwargs):
             if cmd == ["git", "rev-parse", "--abbrev-ref", "HEAD"]:
+
                 class FakeResult:
                     returncode = 0
                     stdout = "HEAD\n"

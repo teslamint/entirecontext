@@ -38,14 +38,16 @@ class OpenAIBackend(LLMBackend):
     def complete(self, system: str, user: str) -> str:
         if not self.api_key:
             raise RuntimeError("OPENAI_API_KEY environment variable not set")
-        payload = json.dumps({
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": 0.3,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": 0.3,
+            }
+        ).encode()
         req = Request(
             "https://api.openai.com/v1/chat/completions",
             data=payload,
@@ -105,14 +107,16 @@ class OllamaBackend(LLMBackend):
         self.base_url = base_url
 
     def complete(self, system: str, user: str) -> str:
-        payload = json.dumps({
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "stream": False,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "stream": False,
+            }
+        ).encode()
         req = Request(
             f"{self.base_url}/api/chat",
             data=payload,
@@ -121,7 +125,6 @@ class OllamaBackend(LLMBackend):
         with urlopen(req) as resp:
             data = json.loads(resp.read())
         return data["message"]["content"]
-
 
 
 class GitHubModelsBackend(LLMBackend):
@@ -134,14 +137,16 @@ class GitHubModelsBackend(LLMBackend):
     def complete(self, system: str, user: str) -> str:
         if not self.api_key:
             raise RuntimeError("GITHUB_TOKEN environment variable not set")
-        payload = json.dumps({
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            "temperature": 0.3,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": self.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "temperature": 0.3,
+            }
+        ).encode()
         req = Request(
             "https://models.github.ai/inference/chat/completions",
             data=payload,

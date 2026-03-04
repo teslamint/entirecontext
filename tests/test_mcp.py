@@ -328,12 +328,14 @@ class TestMCPAssessAndFeedback:
         from entirecontext.mcp.server import ec_assess_create
 
         fake_backend = MagicMock()
-        fake_backend.complete.return_value = json.dumps({
-            "verdict": "narrow",
-            "impact_summary": "Tight coupling introduced",
-            "roadmap_alignment": "Misaligned",
-            "tidy_suggestion": "Decouple modules",
-        })
+        fake_backend.complete.return_value = json.dumps(
+            {
+                "verdict": "narrow",
+                "impact_summary": "Tight coupling introduced",
+                "roadmap_alignment": "Misaligned",
+                "tidy_suggestion": "Decouple modules",
+            }
+        )
         monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: fake_backend)
 
         result = json.loads(
@@ -435,12 +437,14 @@ class TestMCPAssessAndFeedback:
         monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (mock_repo_db, str(tmp_path)))
 
         fake_backend = MagicMock()
-        fake_backend.complete.return_value = json.dumps({
-            "verdict": "expand",
-            "impact_summary": "Aligned with roadmap",
-            "roadmap_alignment": "Phase 1",
-            "tidy_suggestion": "Continue",
-        })
+        fake_backend.complete.return_value = json.dumps(
+            {
+                "verdict": "expand",
+                "impact_summary": "Aligned with roadmap",
+                "roadmap_alignment": "Phase 1",
+                "tidy_suggestion": "Continue",
+            }
+        )
         monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: fake_backend)
 
         result = json.loads(

@@ -35,14 +35,16 @@ def call_llm(system: str, user: str) -> dict:
         model = os.environ.get("TIDY_PILOT_MODEL", "gpt-4o-mini")
     if not api_key:
         raise RuntimeError(f"API key not set for backend '{backend}'")
-    payload = json.dumps({
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-        "temperature": 0.3,
-    }).encode()
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.3,
+        }
+    ).encode()
     req = Request(
         base_url,
         data=payload,
@@ -127,11 +129,11 @@ def main():
 
 **{icon} {verdict.upper()}**
 
-**Impact:** {result.get('impact_summary', 'N/A')}
+**Impact:** {result.get("impact_summary", "N/A")}
 
-**Roadmap alignment:** {result.get('roadmap_alignment', 'N/A')}
+**Roadmap alignment:** {result.get("roadmap_alignment", "N/A")}
 
-**Suggestion:** {result.get('tidy_suggestion', 'N/A')}
+**Suggestion:** {result.get("tidy_suggestion", "N/A")}
 
 ---
 <sub>Powered by Tidy Pilot — analyzing futures, not just features</sub>"""

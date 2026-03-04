@@ -97,7 +97,7 @@ _EMPTY_MODULE = ""
 _SYNTAX_ERROR_MODULE = "def broken(:\n    pass"
 
 _NO_DOCSTRING_MODULE = textwrap.dedent(
-    '''\
+    """\
     def no_doc():
         return 42
 
@@ -105,7 +105,7 @@ _NO_DOCSTRING_MODULE = textwrap.dedent(
     class NoDocs:
         def method(self):
             x = 1
-    '''
+    """
 )
 
 
@@ -271,8 +271,7 @@ class TestIndexFileAst:
     def test_stored_name_matches(self, ec_repo, ec_db):
         index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE)
         names = [
-            r["name"]
-            for r in ec_db.execute("SELECT name FROM ast_symbols WHERE file_path = 'auth.py'").fetchall()
+            r["name"] for r in ec_db.execute("SELECT name FROM ast_symbols WHERE file_path = 'auth.py'").fetchall()
         ]
         assert "simple_function" in names
         assert "MyClass" in names
@@ -290,10 +289,7 @@ class TestIndexFileAst:
         index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE)
         new_content = "def brand_new(): pass\n"
         index_file_ast(ec_db, "auth.py", new_content)
-        names = [
-            r["name"]
-            for r in ec_db.execute("SELECT name FROM ast_symbols WHERE file_path='auth.py'").fetchall()
-        ]
+        names = [r["name"] for r in ec_db.execute("SELECT name FROM ast_symbols WHERE file_path='auth.py'").fetchall()]
         assert "brand_new" in names
         assert "simple_function" not in names
 
@@ -307,9 +303,7 @@ class TestIndexFileAst:
         t = create_turn(ec_db, "ast-sess-1", 1, user_message="add auth")
 
         index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE, turn_id=t["id"])
-        row = ec_db.execute(
-            "SELECT turn_id FROM ast_symbols WHERE file_path='auth.py' LIMIT 1"
-        ).fetchone()
+        row = ec_db.execute("SELECT turn_id FROM ast_symbols WHERE file_path='auth.py' LIMIT 1").fetchone()
         assert row["turn_id"] == t["id"]
 
     def test_empty_source_clears_symbols(self, ec_repo, ec_db):

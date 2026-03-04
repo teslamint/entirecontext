@@ -80,9 +80,7 @@ def build_knowledge_graph(
     # 1. Sessions
     # ------------------------------------------------------------------
     if session_id:
-        session_rows = conn.execute(
-            "SELECT * FROM sessions WHERE id = ?", (session_id,)
-        ).fetchall()
+        session_rows = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchall()
     else:
         session_rows = conn.execute("SELECT * FROM sessions").fetchall()
 

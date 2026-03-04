@@ -59,9 +59,7 @@ class TestCheckpointList:
                 "diff_summary": "Added 3 files",
             },
         ]
-        with patch(
-            "entirecontext.core.cross_repo.cross_repo_checkpoints", return_value=(checkpoints, [])
-        ):
+        with patch("entirecontext.core.cross_repo.cross_repo_checkpoints", return_value=(checkpoints, [])):
             result = runner.invoke(app, ["checkpoint", "list", "--global"])
             assert result.exit_code == 0
             assert "Checkpoints" in result.output

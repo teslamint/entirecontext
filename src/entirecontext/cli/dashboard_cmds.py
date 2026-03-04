@@ -45,7 +45,9 @@ def _render_dashboard(stats: dict) -> None:
     # Sessions
     # ------------------------------------------------------------------
     s = stats["sessions"]
-    console.print(f"\n[bold]Sessions[/bold] — {s['total']} total  active: {s['active']}  ended: {s['ended']}{since_label}")
+    console.print(
+        f"\n[bold]Sessions[/bold] — {s['total']} total  active: {s['active']}  ended: {s['ended']}{since_label}"
+    )
 
     if s["recent"]:
         tbl = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
@@ -102,7 +104,9 @@ def _render_dashboard(stats: dict) -> None:
     total = a["total"]
     feedback_pct = f"{a['feedback_rate'] * 100:.0f}%" if total > 0 else "0%"
 
-    console.print(f"\n[bold]Assessments[/bold] — {total} total  feedback: {a['with_feedback']} ({feedback_pct}){since_label}")
+    console.print(
+        f"\n[bold]Assessments[/bold] — {total} total  feedback: {a['with_feedback']} ({feedback_pct}){since_label}"
+    )
 
     verdict_table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
     verdict_table.add_column("Verdict", max_width=12)

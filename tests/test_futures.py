@@ -144,7 +144,10 @@ def test_auto_distill_lessons_enabled(ec_repo, monkeypatch):
 
     monkeypatch.setattr(
         "entirecontext.core.config.load_config",
-        lambda repo_path=None: {**load_config(repo_path), "futures": {"auto_distill": True, "lessons_output": "LESSONS.md"}},
+        lambda repo_path=None: {
+            **load_config(repo_path),
+            "futures": {"auto_distill": True, "lessons_output": "LESSONS.md"},
+        },
     )
 
     conn = get_db(str(ec_repo))
@@ -165,7 +168,10 @@ def test_auto_distill_lessons_disabled(ec_repo, monkeypatch):
 
     monkeypatch.setattr(
         "entirecontext.core.config.load_config",
-        lambda repo_path=None: {**load_config(repo_path), "futures": {"auto_distill": False, "lessons_output": "LESSONS.md"}},
+        lambda repo_path=None: {
+            **load_config(repo_path),
+            "futures": {"auto_distill": False, "lessons_output": "LESSONS.md"},
+        },
     )
 
     result = auto_distill_lessons(str(ec_repo))
@@ -181,7 +187,10 @@ def test_auto_distill_custom_output(ec_repo, monkeypatch):
     custom_path = "docs/custom-lessons.md"
     monkeypatch.setattr(
         "entirecontext.core.config.load_config",
-        lambda repo_path=None: {**load_config(repo_path), "futures": {"auto_distill": True, "lessons_output": custom_path}},
+        lambda repo_path=None: {
+            **load_config(repo_path),
+            "futures": {"auto_distill": True, "lessons_output": custom_path},
+        },
     )
 
     conn = get_db(str(ec_repo))

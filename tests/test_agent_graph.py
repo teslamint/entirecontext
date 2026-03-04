@@ -118,9 +118,7 @@ class TestCreateAgent:
 
     def test_optional_fields_stored(self, ec_repo, ec_db):
         agent = create_agent(ec_db, "claude", role="coder", name="My Agent", spawn_context="test context")
-        row = ec_db.execute(
-            "SELECT role, name, spawn_context FROM agents WHERE id=?", (agent["id"],)
-        ).fetchone()
+        row = ec_db.execute("SELECT role, name, spawn_context FROM agents WHERE id=?", (agent["id"],)).fetchone()
         assert row["role"] == "coder"
         assert row["name"] == "My Agent"
         assert row["spawn_context"] == "test context"

@@ -220,9 +220,7 @@ def _resolve_assessment_id(conn, assessment_id: str) -> str | None:
     row = conn.execute("SELECT id FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
     if row is None:
         escaped = assessment_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        row = conn.execute(
-            "SELECT id FROM assessments WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM assessments WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
     return row["id"] if row else None
 
 

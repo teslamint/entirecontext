@@ -229,7 +229,9 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
 
     _run_upstream_notify(repo_path, payload_text)
 
-    codex_home = Path(payload.get("codex_home")) if isinstance(payload.get("codex_home"), str) else Path.home() / ".codex"
+    codex_home = (
+        Path(payload.get("codex_home")) if isinstance(payload.get("codex_home"), str) else Path.home() / ".codex"
+    )
     session_file = _find_session_file(codex_home, thread_id=thread_id, cwd=cwd)
     if not session_file:
         return

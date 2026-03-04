@@ -155,10 +155,20 @@ class TestScoreTidySuggestions:
     def test_agreed_feedback_boosts_score(self):
         """Suggestions with 'agree' feedback should score higher than those without."""
         suggestions = [
-            {"assessment_id": "x1", "tidy_suggestion": "Extract fn", "impact_summary": "...",
-             "verdict": "narrow", "feedback": "agree"},
-            {"assessment_id": "x2", "tidy_suggestion": "Move class", "impact_summary": "...",
-             "verdict": "narrow", "feedback": None},
+            {
+                "assessment_id": "x1",
+                "tidy_suggestion": "Extract fn",
+                "impact_summary": "...",
+                "verdict": "narrow",
+                "feedback": "agree",
+            },
+            {
+                "assessment_id": "x2",
+                "tidy_suggestion": "Move class",
+                "impact_summary": "...",
+                "verdict": "narrow",
+                "feedback": None,
+            },
         ]
         scored = score_tidy_suggestions(suggestions)
         score_map = {s["assessment_id"]: s["score"] for s in scored}
@@ -242,6 +252,7 @@ class TestFuturesTidyPrCLI:
             result = runner.invoke(app, ["futures", "tidy-pr", "--output", out_file])
         assert result.exit_code == 0
         import pathlib
+
         assert pathlib.Path(out_file).read_text() == pr_text
 
     def test_since_option_passed(self):

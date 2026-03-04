@@ -387,9 +387,7 @@ def session_graph(
     for root_id in roots:
         console.print(_build_tree(root_id))
 
-    console.print(
-        f"\n[dim]{len(nodes)} agents, {len(edges)} edges (depth={depth})[/dim]"
-    )
+    console.print(f"\n[dim]{len(nodes)} agents, {len(edges)} edges (depth={depth})[/dim]")
 
 
 @session_app.command("activate")

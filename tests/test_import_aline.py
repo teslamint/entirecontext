@@ -51,29 +51,93 @@ def aline_db(tmp_path):
 
     conn.execute(
         "INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (sid1, "/tmp/s1.jsonl", "claude", "/workspace/project-a", "2024-01-01T10:00:00", "2024-01-01T11:00:00",
-         "Fix auth bug", "Fixed authentication issue", "completed", 2, None, None, None, None),
+        (
+            sid1,
+            "/tmp/s1.jsonl",
+            "claude",
+            "/workspace/project-a",
+            "2024-01-01T10:00:00",
+            "2024-01-01T11:00:00",
+            "Fix auth bug",
+            "Fixed authentication issue",
+            "completed",
+            2,
+            None,
+            None,
+            None,
+            None,
+        ),
     )
     conn.execute(
         "INSERT INTO sessions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (sid2, "/tmp/s2.jsonl", "claude", "/workspace/project-b", "2024-01-02T10:00:00", "2024-01-02T11:00:00",
-         "Add tests", "Added test suite", "completed", 1, None, None, None, None),
+        (
+            sid2,
+            "/tmp/s2.jsonl",
+            "claude",
+            "/workspace/project-b",
+            "2024-01-02T10:00:00",
+            "2024-01-02T11:00:00",
+            "Add tests",
+            "Added test suite",
+            "completed",
+            1,
+            None,
+            None,
+            None,
+            None,
+        ),
     )
 
     conn.execute(
         "INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (tid1, sid1, 1, "fix the auth bug", "Fixed auth validation", "Auth fix", "Fixed auth", "claude-3",
-         "hash1", "abc123", None, "2024-01-01T10:01:00"),
+        (
+            tid1,
+            sid1,
+            1,
+            "fix the auth bug",
+            "Fixed auth validation",
+            "Auth fix",
+            "Fixed auth",
+            "claude-3",
+            "hash1",
+            "abc123",
+            None,
+            "2024-01-01T10:01:00",
+        ),
     )
     conn.execute(
         "INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (tid2, sid1, 2, "add error handling", "Added error handling", "Error handling", "Errors", "claude-3",
-         "hash2", None, None, "2024-01-01T10:30:00"),
+        (
+            tid2,
+            sid1,
+            2,
+            "add error handling",
+            "Added error handling",
+            "Error handling",
+            "Errors",
+            "claude-3",
+            "hash2",
+            None,
+            None,
+            "2024-01-01T10:30:00",
+        ),
     )
     conn.execute(
         "INSERT INTO turns VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-        (tid3, sid2, 1, "write tests", "Created test suite", "Tests", "Testing", "claude-3",
-         "hash3", "def456", None, "2024-01-02T10:01:00"),
+        (
+            tid3,
+            sid2,
+            1,
+            "write tests",
+            "Created test suite",
+            "Tests",
+            "Testing",
+            "claude-3",
+            "hash3",
+            "def456",
+            None,
+            "2024-01-02T10:01:00",
+        ),
     )
 
     content1 = '{"role":"user","content":"fix the auth bug"}\n{"role":"assistant","content":"Done"}\n'
@@ -83,8 +147,22 @@ def aline_db(tmp_path):
 
     conn.execute(
         "INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (eid1, "Auth Sprint", "Fix all auth issues", "task", "active", "2024-01-01T09:00:00",
-         None, None, None, None, None, None, None, None),
+        (
+            eid1,
+            "Auth Sprint",
+            "Fix all auth issues",
+            "task",
+            "active",
+            "2024-01-01T09:00:00",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ),
     )
     conn.execute("INSERT INTO event_sessions VALUES (?,?)", (eid1, sid1))
 
@@ -161,9 +239,7 @@ class TestImportFromAline:
         from entirecontext.core.import_aline import import_from_aline
 
         project_id = ec_db.execute("SELECT id FROM projects").fetchone()["id"]
-        result = import_from_aline(
-            ec_db, aline_db["path"], project_id, str(ec_repo), workspace_filter="project-a"
-        )
+        result = import_from_aline(ec_db, aline_db["path"], project_id, str(ec_repo), workspace_filter="project-a")
 
         assert result.sessions == 1
         assert result.turns == 2

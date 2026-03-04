@@ -185,18 +185,14 @@ def build_agent_graph(
             continue
 
         # Count sessions for this agent
-        session_count = conn.execute(
-            "SELECT COUNT(*) FROM sessions WHERE agent_id = ?", (current_id,)
-        ).fetchone()[0]
+        session_count = conn.execute("SELECT COUNT(*) FROM sessions WHERE agent_id = ?", (current_id,)).fetchone()[0]
 
         node = dict(agent_row)
         node["session_count"] = session_count
         nodes[current_id] = node
 
         if current_depth < depth:
-            children = conn.execute(
-                "SELECT id FROM agents WHERE parent_agent_id = ?", (current_id,)
-            ).fetchall()
+            children = conn.execute("SELECT id FROM agents WHERE parent_agent_id = ?", (current_id,)).fetchall()
             for child_row in children:
                 child_id = child_row["id"]
                 if child_id not in visited:

@@ -152,7 +152,9 @@ class TestAutoCheckpointHook:
         session_id = session["id"]
         ec_db.close()
 
-        with patch("entirecontext.core.config.load_config", return_value={"capture": {"checkpoint_on_session_end": True}}):
+        with patch(
+            "entirecontext.core.config.load_config", return_value={"capture": {"checkpoint_on_session_end": True}}
+        ):
             _maybe_create_auto_checkpoint(str(ec_repo), session_id)
 
         conn = get_db(str(ec_repo))
@@ -161,6 +163,7 @@ class TestAutoCheckpointHook:
         assert len(checkpoints) == 1
         assert checkpoints[0]["metadata"] is not None
         import json
+
         meta = json.loads(checkpoints[0]["metadata"])
         assert meta["source"] == "auto_session_end"
 
@@ -180,7 +183,9 @@ class TestAutoCheckpointHook:
         ec_db.close()
 
         with (
-            patch("entirecontext.core.config.load_config", return_value={"capture": {"checkpoint_on_session_end": True}}),
+            patch(
+                "entirecontext.core.config.load_config", return_value={"capture": {"checkpoint_on_session_end": True}}
+            ),
             patch("entirecontext.core.git_utils.get_current_commit", return_value=None),
         ):
             with patch("entirecontext.core.checkpoint.create_checkpoint") as mock_create:

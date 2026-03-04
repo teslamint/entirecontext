@@ -487,7 +487,9 @@ def futures_report(
 
 @futures_app.command("tidy-pr")
 def futures_tidy_pr(
-    output: Optional[str] = typer.Option(None, "--output", "-o", help="Write PR draft to file; omit to print to stdout"),
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o", help="Write PR draft to file; omit to print to stdout"
+    ),
     since: Optional[str] = typer.Option(
         None, "--since", "-s", help="Only include assessments after this date (YYYY-MM-DD)"
     ),

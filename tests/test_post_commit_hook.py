@@ -6,7 +6,6 @@ import json
 from unittest.mock import patch
 
 
-
 class TestOnPostCommit:
     def test_active_session_creates_checkpoint(self, ec_repo, ec_db):
         from entirecontext.core.session import create_session
