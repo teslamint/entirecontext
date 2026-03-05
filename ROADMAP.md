@@ -1,34 +1,8 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-02-24._
+_Updated against codebase on 2026-03-05._
 
 ## Now
-
-- [ ] **PostCommit hook → checkpoint 생성** (P0, spec §10 #1)
-  - `hooks/handler.py`: `PostCommit` dispatcher 엔트리 추가 → active session 있으면 checkpoint 생성
-  - `core/checkpoint.py`: hook context에서 호출 가능하도록 진입점 확인
-  - 영향 파일: `hooks/handler.py`, `core/checkpoint.py`
-  - 테스트: active session 시 checkpoint 생성 확인, session 없을 때 no-op 확인
-
-## Next (1-2 weeks)
-
-- [ ] **pre-push config 게이팅** (P1, spec §10 #2)
-  - `.git/hooks/pre-push`가 항상 `ec sync` 호출 → config 키(`sync.auto_sync_on_push` 등)로 게이팅
-  - 영향 파일: `hooks/handler.py` (또는 pre-push hook script), config schema
-  - 테스트: config disabled → sync 미실행, config enabled → sync 실행
-
-- [ ] **`--no-filter` 런타임 연결** (P1, spec §10 #3)
-  - CLI에서 `--no-filter` 수용하지만 exporter 경로에 미전달 → filtering bypass 실제 적용
-  - 영향 파일: `cli/sync_cmds.py`, `core/export.py`, `core/security.py`
-  - 테스트: 동일 입력에서 기본=redacted, `--no-filter`=unredacted 출력 검증
-
-- [ ] **세션별 요약 — 사용자 의도 도출** (P1)
-  - 현재 `_populate_session_summary()`는 첫 3개 turn의 `assistant_summary` 단순 결합 (max 500자)
-  - 세션 종료 시 LLM으로 전체 turn 분석 → 사용자 의도(intent) 추출하여 `session_summary` 갱신
-  - 기존 LLM 백엔드 추상화(`openai/codex/claude/ollama/github`) 활용
-  - 영향 파일: `hooks/session_lifecycle.py` (`_populate_session_summary`), `core/session.py`
-  - config 키: `capture.intent_summary` (opt-in)
-  - 테스트: LLM 호출 mock → intent 포함 summary 갱신 확인, config disabled → 기존 동작 유지
 
 - [ ] **코드 변경 없는 세션 자동 정리** (P2)
   - 세션 종료 시 `files_touched`, `git_commit_hash`, checkpoint 유무 검사
@@ -38,13 +12,7 @@ _Updated against codebase on 2026-02-24._
   - 안전장치: ended session만 대상, active session 보호
   - 테스트: 변경 없는 세션 → content 파일 삭제 확인, 변경 있는 세션 → 미삭제 확인, active session → no-op 확인
 
-- [ ] **세션 종료 시 자동 임베딩 인덱싱** (P1)
-  - 현재: `ec index embed` 수동 실행 필요
-  - 목표: 세션 종료 hook → async_worker로 턴 데이터 자동 임베딩 + FTS 인덱스 갱신
-  - `hooks/session_lifecycle.py` → 인덱싱 이벤트 발행
-  - `core/async_worker.py` → 임베딩 태스크 처리
-  - config 키: `index.auto_embed` (default: true)
-  - 참고: "Grep Is Dead" (QMD hybrid search) — BM25+semantic 자동화가 검색 품질 핵심
+## Next (1-2 weeks)
 
 - [ ] **MCP hybrid search 지원** — `ec_search` 도구의 `search_type`에 `"hybrid"` 옵션 추가
 - [ ] **MCP AST search 도구** — `ec_ast_search` 도구 노출 (symbol_type, file_path 필터)
@@ -61,6 +29,11 @@ _Updated against codebase on 2026-02-24._
   - 테스트: 선택한 정책의 구현/문서 일관성 검증
 
 ## Done
+- [x] **PostCommit hook → checkpoint 생성** (P0) — `on_post_commit` in `session_lifecycle.py`, git hook via `_install_git_hooks`
+- [x] **pre-push config 게이팅** (P1) — `sync --if-enabled` CLI option, `sync.auto_sync_on_push` config key
+- [x] **`--no-filter` 런타임 연결** (P1) — `engine.py` → `get_security_config` → `export_sessions(filter_enabled, filter_patterns)`
+- [x] **세션별 요약 — 사용자 의도 도출** (P1) — `_maybe_generate_intent_summary` LLM 호출, `capture.intent_summary` config
+- [x] **세션 종료 시 자동 임베딩 인덱싱** (P1) — `_maybe_trigger_auto_embed` via `async_worker`, `index.auto_embed` config
 - [x] Futures assessment 기능 (`ec futures assess`)
 - [x] Assessment 피드백 루프 (`ec futures feedback`)
 - [x] LLM 백엔드 추상화 (`openai/codex/claude/ollama/github`)
