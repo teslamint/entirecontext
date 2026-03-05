@@ -81,7 +81,7 @@ Return codes: 0=success, 2=block.
 
 TOML deep merge: defaults ← `~/.entirecontext/config.toml` (global) ← `.entirecontext/config.toml` (per-repo)
 
-Sections: `capture`, `capture.exclusions`, `search`, `sync`, `display`, `security`, `filtering.query_redaction`
+Sections: `capture`, `capture.exclusions`, `search`, `sync`, `display`, `security`, `filtering.query_redaction`, `index`, `futures`
 
 ## Code Conventions
 
