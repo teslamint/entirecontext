@@ -13,6 +13,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_capture": True,
         "checkpoint_on_commit": True,
         "checkpoint_on_session_end": False,
+        "auto_cleanup_no_changes": False,
         "intent_summary": False,
         "exclusions": {
             "enabled": False,

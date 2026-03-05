@@ -219,6 +219,151 @@ class TestSessionLifecycle:
         assert session["ended_at"] is not None
 
 
+class TestAutoCleanupNoChanges:
+    def _setup_session_with_content(
+        self,
+        tmp_path,
+        *,
+        files_touched: str | None = None,
+        git_commit_hash: str | None = None,
+        with_checkpoint: bool = False,
+        ended: bool = False,
+    ):
+        from pathlib import Path
+
+        from entirecontext.core.turn import create_turn, save_turn_content
+
+        repo_path = str(tmp_path / "repo")
+        conn = _non_closing_db()
+        init_schema(conn)
+
+        conn.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', ?)", (repo_path,))
+        if ended:
+            conn.execute(
+                "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at, ended_at) "
+                "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01', '2025-01-01T01:00:00')"
+            )
+        else:
+            conn.execute(
+                "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+                "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+            )
+        conn.commit()
+
+        turn = create_turn(
+            conn,
+            "s1",
+            turn_number=1,
+            user_message="hello",
+            assistant_summary="world",
+            files_touched=files_touched,
+            git_commit_hash=git_commit_hash,
+        )
+        save_turn_content(repo_path, conn, turn["id"], "s1", '{"role":"assistant","content":"ok"}\n')
+
+        if with_checkpoint:
+            conn.execute("INSERT INTO checkpoints (id, session_id, git_commit_hash) VALUES ('cp1', 's1', 'abc123')")
+            conn.commit()
+
+        content_file = Path(repo_path) / ".entirecontext" / "content" / "s1" / f"{turn['id']}.jsonl"
+        return conn, repo_path, turn["id"], content_file
+
+    @patch("entirecontext.hooks.session_lifecycle._find_git_root")
+    @patch("entirecontext.db.get_db")
+    def test_session_end_auto_cleanup_no_changes_deletes_content_when_enabled(self, mock_get_db, mock_git_root, tmp_path):
+        conn, repo_path, turn_id, content_file = self._setup_session_with_content(tmp_path)
+        mock_git_root.return_value = repo_path
+        mock_get_db.return_value = conn
+
+        global_conn = MagicMock()
+        global_conn.execute.return_value = None
+
+        from entirecontext.hooks.session_lifecycle import on_session_end
+
+        with (
+            patch("entirecontext.core.config.load_config", return_value={"capture": {"auto_cleanup_no_changes": True}}),
+            patch("entirecontext.db.get_global_db", return_value=global_conn),
+            patch("entirecontext.db.global_schema.init_global_schema"),
+            patch("entirecontext.hooks.session_lifecycle._maybe_create_auto_checkpoint"),
+            patch("entirecontext.hooks.session_lifecycle._maybe_trigger_auto_sync"),
+            patch("entirecontext.hooks.session_lifecycle._maybe_trigger_auto_distill"),
+            patch("entirecontext.hooks.session_lifecycle._maybe_trigger_auto_embed"),
+        ):
+            on_session_end({"session_id": "s1", "cwd": repo_path})
+
+        assert content_file.exists() is False
+        row = conn.execute("SELECT * FROM turn_content WHERE turn_id = ?", (turn_id,)).fetchone()
+        assert row is None
+        turn = conn.execute("SELECT consolidated_at FROM turns WHERE id = ?", (turn_id,)).fetchone()
+        assert turn["consolidated_at"] is not None
+
+    @pytest.mark.parametrize(
+        ("files_touched", "git_commit_hash", "with_checkpoint"),
+        [
+            ('["src/main.py"]', None, False),
+            (None, "abc123", False),
+            (None, None, True),
+        ],
+    )
+    @patch("entirecontext.hooks.session_lifecycle._find_git_root")
+    @patch("entirecontext.db.get_db")
+    def test_session_end_auto_cleanup_skips_when_change_signal_exists(
+        self,
+        mock_get_db,
+        mock_git_root,
+        tmp_path,
+        files_touched,
+        git_commit_hash,
+        with_checkpoint,
+    ):
+        conn, repo_path, turn_id, content_file = self._setup_session_with_content(
+            tmp_path,
+            files_touched=files_touched,
+            git_commit_hash=git_commit_hash,
+            with_checkpoint=with_checkpoint,
+        )
+        mock_git_root.return_value = repo_path
+        mock_get_db.return_value = conn
+
+        global_conn = MagicMock()
+        global_conn.execute.return_value = None
+
+        from entirecontext.hooks.session_lifecycle import on_session_end
+
+        with (
+            patch("entirecontext.core.config.load_config", return_value={"capture": {"auto_cleanup_no_changes": True}}),
+            patch("entirecontext.db.get_global_db", return_value=global_conn),
+            patch("entirecontext.db.global_schema.init_global_schema"),
+            patch("entirecontext.hooks.session_lifecycle._maybe_create_auto_checkpoint"),
+            patch("entirecontext.hooks.session_lifecycle._maybe_trigger_auto_sync"),
+            patch("entirecontext.hooks.session_lifecycle._maybe_trigger_auto_distill"),
+            patch("entirecontext.hooks.session_lifecycle._maybe_trigger_auto_embed"),
+        ):
+            on_session_end({"session_id": "s1", "cwd": repo_path})
+
+        assert content_file.exists() is True
+        row = conn.execute("SELECT * FROM turn_content WHERE turn_id = ?", (turn_id,)).fetchone()
+        assert row is not None
+        turn = conn.execute("SELECT consolidated_at FROM turns WHERE id = ?", (turn_id,)).fetchone()
+        assert turn["consolidated_at"] is None
+
+    @patch("entirecontext.db.get_db")
+    def test_auto_cleanup_noop_for_active_session_guard(self, mock_get_db, tmp_path):
+        conn, repo_path, turn_id, content_file = self._setup_session_with_content(tmp_path, ended=False)
+        mock_get_db.return_value = conn
+
+        from entirecontext.hooks.session_lifecycle import _maybe_auto_cleanup_no_changes
+
+        with patch("entirecontext.core.config.load_config", return_value={"capture": {"auto_cleanup_no_changes": True}}):
+            _maybe_auto_cleanup_no_changes(repo_path, "s1")
+
+        assert content_file.exists() is True
+        row = conn.execute("SELECT * FROM turn_content WHERE turn_id = ?", (turn_id,)).fetchone()
+        assert row is not None
+        turn = conn.execute("SELECT consolidated_at FROM turns WHERE id = ?", (turn_id,)).fetchone()
+        assert turn["consolidated_at"] is None
+
+
 class TestIntentSummary:
     def test_intent_summary_calls_llm_when_enabled(self, db):
         db.execute(

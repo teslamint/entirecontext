@@ -248,10 +248,68 @@ def on_session_end(data: dict[str, Any]) -> None:
         except Exception:
             pass
 
+    _maybe_auto_cleanup_no_changes(repo_path, session_id)
     _maybe_create_auto_checkpoint(repo_path, session_id)
     _maybe_trigger_auto_sync(repo_path)
     _maybe_trigger_auto_distill(repo_path)
     _maybe_trigger_auto_embed(repo_path)
+
+
+def _session_has_change_signals(conn, session_id: str) -> bool:
+    """Return True when session has any signal that implies code changes."""
+    files_touched = conn.execute(
+        """
+        SELECT 1 FROM turns
+        WHERE session_id = ?
+          AND files_touched IS NOT NULL
+          AND TRIM(files_touched) NOT IN ('', '[]')
+        LIMIT 1
+        """,
+        (session_id,),
+    ).fetchone()
+    if files_touched:
+        return True
+
+    commit_hash = conn.execute(
+        """
+        SELECT 1 FROM turns
+        WHERE session_id = ?
+          AND git_commit_hash IS NOT NULL
+          AND TRIM(git_commit_hash) != ''
+        LIMIT 1
+        """,
+        (session_id,),
+    ).fetchone()
+    if commit_hash:
+        return True
+
+    checkpoint = conn.execute("SELECT 1 FROM checkpoints WHERE session_id = ? LIMIT 1", (session_id,)).fetchone()
+    return checkpoint is not None
+
+
+def _maybe_auto_cleanup_no_changes(repo_path: str, session_id: str) -> None:
+    """Consolidate turn content for ended sessions that have no code-change signals."""
+    try:
+        from ..core.config import load_config
+        from ..core.consolidation import consolidate_old_turns
+        from ..db import get_db
+
+        config = load_config(repo_path)
+        if not config.get("capture", {}).get("auto_cleanup_no_changes", False):
+            return
+
+        conn = get_db(repo_path)
+        try:
+            session = conn.execute("SELECT ended_at FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            if not session or session["ended_at"] is None:
+                return
+            if _session_has_change_signals(conn, session_id):
+                return
+            consolidate_old_turns(conn, repo_path, before_date="9999-12-31", session_id=session_id, dry_run=False)
+        finally:
+            conn.close()
+    except Exception:
+        pass
 
 
 def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:

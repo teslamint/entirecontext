@@ -4,7 +4,7 @@ _Updated against codebase on 2026-03-05._
 
 ## Now
 
-- [ ] **코드 변경 없는 세션 자동 정리** (P2)
+- [x] **코드 변경 없는 세션 자동 정리** (P2)
   - 세션 종료 시 `files_touched`, `git_commit_hash`, checkpoint 유무 검사
   - 코드 변경 없으면 자동 consolidate (메타데이터 보존, content 파일 삭제)
   - 영향 파일: `hooks/session_lifecycle.py` (`on_session_end`), `core/purge.py` 또는 `core/consolidation.py`
