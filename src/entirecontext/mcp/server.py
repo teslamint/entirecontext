@@ -54,7 +54,7 @@ if mcp:
 
         Args:
             query: Search query string
-            search_type: Search mode - "regex" (default), "fts", or "semantic"
+            search_type: Search mode - "regex" (default), "fts", "semantic", or "hybrid"
             file_filter: Only include turns touching this file path
             commit_filter: Only include turns near this commit hash
             agent_filter: Only include sessions by this agent type
@@ -121,6 +121,19 @@ if mcp:
                         limit=limit,
                         config=_config,
                     )
+                elif search_type == "hybrid":
+                    from ..core.hybrid_search import hybrid_search
+
+                    results = hybrid_search(
+                        conn,
+                        query,
+                        file_filter=file_filter,
+                        commit_filter=commit_filter,
+                        agent_filter=agent_filter,
+                        since=since,
+                        limit=limit,
+                        config=_config,
+                    )
                 else:
                     from ..core.search import regex_search
 
@@ -145,6 +158,8 @@ if mcp:
                 "summary": r.get("assistant_summary") or r.get("user_message", ""),
                 "timestamp": r.get("timestamp", ""),
             }
+            if "hybrid_score" in r:
+                entry["hybrid_score"] = r["hybrid_score"]
             if is_cross_repo:
                 entry["repo_name"] = r.get("repo_name", "")
                 entry["repo_path"] = r.get("repo_path", "")
@@ -889,6 +904,132 @@ if mcp:
         repo_names = None if not repos else repos
         trends, warnings = cross_repo_assessment_trends(repos=repo_names, since=since, include_warnings=True)
         return json.dumps({**trends, "warnings": warnings})
+
+    @mcp.tool()
+    async def ec_ast_search(
+        query: str,
+        symbol_type: str | None = None,
+        file_filter: str | None = None,
+        limit: int = 20,
+    ) -> str:
+        """Search AST symbols (functions, classes, methods) indexed from the codebase.
+
+        Args:
+            query: Search query string (FTS5 syntax supported)
+            symbol_type: Filter by symbol type (e.g. "function", "class", "method")
+            file_filter: Filter by file path
+            limit: Maximum number of results (default 20)
+        """
+        import json
+
+        conn, _ = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.ast_index import search_ast_symbols
+
+            results = search_ast_symbols(conn, query, symbol_type=symbol_type, file_filter=file_filter, limit=limit)
+            return json.dumps({"results": results, "count": len(results)})
+        finally:
+            conn.close()
+
+    @mcp.tool()
+    async def ec_graph(
+        session_id: str | None = None,
+        since: str | None = None,
+        limit: int = 200,
+    ) -> str:
+        """Build a knowledge graph from sessions, turns, files, and commits.
+
+        Args:
+            session_id: Restrict graph to a single session (optional)
+            since: Only include turns after this ISO8601 timestamp
+            limit: Maximum number of turns to include (default 200)
+        """
+        import json
+
+        conn, _ = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.knowledge_graph import build_knowledge_graph, get_graph_stats
+
+            graph = build_knowledge_graph(conn, session_id=session_id, since=since, limit=limit)
+            stats = get_graph_stats(graph)
+            return json.dumps({"nodes": graph["nodes"], "edges": graph["edges"], "stats": stats})
+        finally:
+            conn.close()
+
+    @mcp.tool()
+    async def ec_dashboard(
+        since: str | None = None,
+        limit: int = 10,
+    ) -> str:
+        """Get aggregate dashboard stats across sessions, checkpoints, and assessments.
+
+        Args:
+            since: Only include records after this ISO8601 timestamp
+            limit: Maximum number of recent rows per section (default 10)
+        """
+        import json
+
+        conn, _ = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.dashboard import get_dashboard_stats
+
+            stats = get_dashboard_stats(conn, since=since, limit=limit)
+            return json.dumps(stats)
+        finally:
+            conn.close()
+
+    @mcp.tool()
+    async def ec_activate(
+        seed_turn_id: str | None = None,
+        seed_session_id: str | None = None,
+        max_hops: int = 2,
+        limit: int = 20,
+        decay: float = 0.5,
+    ) -> str:
+        """Find related turns by spreading activation from a seed turn or session.
+
+        Activation propagates along edges formed by shared files_touched or
+        git_commit_hash. Each hop multiplies the score by decay.
+
+        Args:
+            seed_turn_id: Starting turn ID for activation spread
+            seed_session_id: Starting session ID (uses all turns in session)
+            max_hops: Maximum propagation depth (default 2)
+            limit: Maximum number of results (default 20)
+            decay: Score decay per hop (default 0.5)
+        """
+        import json
+
+        if not seed_turn_id and not seed_session_id:
+            return json.dumps({"error": "Either seed_turn_id or seed_session_id is required"})
+
+        conn, _ = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.activation import spread_activation
+
+            results = spread_activation(
+                conn,
+                seed_turn_id=seed_turn_id,
+                seed_session_id=seed_session_id,
+                max_hops=max_hops,
+                limit=limit,
+                decay=decay,
+            )
+            return json.dumps({"results": results, "count": len(results)})
+        finally:
+            conn.close()
 
 
 def run_server():

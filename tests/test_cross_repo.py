@@ -60,6 +60,14 @@ class TestCrossRepoSearch:
         assert "frontend" in repo_names
         assert "backend" in repo_names
 
+    def test_hybrid_merges_results(self, multi_ec_repos):
+        results = cross_repo_search("auth", search_type="hybrid")
+        assert len(results) >= 2
+        repo_names = {r["repo_name"] for r in results}
+        assert "frontend" in repo_names
+        assert "backend" in repo_names
+        assert all("hybrid_score" in r for r in results)
+
     def test_results_contain_repo_name(self, multi_ec_repos):
         results = cross_repo_search("auth")
         for r in results:

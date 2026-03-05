@@ -14,11 +14,11 @@ _Updated against codebase on 2026-03-05._
 
 ## Next (1-2 weeks)
 
-- [ ] **MCP hybrid search 지원** — `ec_search` 도구의 `search_type`에 `"hybrid"` 옵션 추가
-- [ ] **MCP AST search 도구** — `ec_ast_search` 도구 노출 (symbol_type, file_path 필터)
-- [ ] **MCP knowledge graph 도구** — `ec_graph` 도구 노출 (session/since 필터)
-- [ ] **MCP dashboard 도구** — `ec_dashboard` 도구 노출 (since/limit 필터)
-- [ ] **MCP spreading activation 도구** — `ec_activate` 도구 노출 (turn/session/hops 파라미터)
+- [x] **MCP hybrid search 지원** — `ec_search` 도구의 `search_type`에 `"hybrid"` 옵션 추가
+- [x] **MCP AST search 도구** — `ec_ast_search` 도구 노출 (symbol_type, file_path 필터)
+- [x] **MCP knowledge graph 도구** — `ec_graph` 도구 노출 (session/since 필터)
+- [x] **MCP dashboard 도구** — `ec_dashboard` 도구 노출 (since/limit 필터)
+- [x] **MCP spreading activation 도구** — `ec_activate` 도구 노출 (turn/session/hops 파라미터)
 
 ## Later (1-3 months)
 

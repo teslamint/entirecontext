@@ -151,6 +151,19 @@ def cross_repo_search(
                 since=since,
                 limit=per_repo_limit,
             )
+        elif search_type == "hybrid":
+            from ..core.hybrid_search import hybrid_search
+
+            return hybrid_search(
+                conn,
+                query,
+                target=target,
+                file_filter=file_filter,
+                commit_filter=commit_filter,
+                agent_filter=agent_filter,
+                since=since,
+                limit=per_repo_limit,
+            )
         else:
             return regex_search(
                 conn,
@@ -163,7 +176,7 @@ def cross_repo_search(
                 limit=per_repo_limit,
             )
 
-    sort_key = "score" if search_type == "semantic" else _sort_key_for_target(target)
+    sort_key = "hybrid_score" if search_type == "hybrid" else ("score" if search_type == "semantic" else _sort_key_for_target(target))
     results, warnings = _for_each_repo(fn, repos=repos, sort_key=sort_key, limit=limit)
     return _return_with_warnings(results, warnings, include_warnings)
 

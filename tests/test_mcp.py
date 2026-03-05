@@ -483,6 +483,217 @@ class TestMCPAssessAndFeedback:
         assert "LLM analysis failed" in result["error"]
 
 
+class TestMCPHybridSearch:
+    """Tests for ec_search with search_type='hybrid'."""
+
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        return db
+
+    def test_search_hybrid_hit(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_search
+
+        result = json.loads(asyncio.run(ec_search("auth", search_type="hybrid")))
+        assert result["count"] >= 1
+        assert any("auth" in r["summary"].lower() for r in result["results"])
+        assert "hybrid_score" in result["results"][0]
+
+    def test_search_hybrid_miss(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_search
+
+        result = json.loads(asyncio.run(ec_search("nonexistent_xyz_999", search_type="hybrid")))
+        assert result["count"] == 0
+
+
+class TestMCPAstSearch:
+    """Tests for ec_ast_search MCP tool."""
+
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        db.execute(
+            "INSERT INTO ast_symbols (id, file_path, symbol_type, name, qualified_name, start_line, end_line, docstring) "
+            "VALUES ('sym1', 'src/auth.py', 'function', 'authenticate', 'auth.authenticate', 1, 10, 'Authenticate user')"
+        )
+        db.execute(
+            "INSERT INTO ast_symbols (id, file_path, symbol_type, name, qualified_name, start_line, end_line, docstring) "
+            "VALUES ('sym2', 'src/auth.py', 'class', 'AuthManager', 'auth.AuthManager', 12, 50, 'Auth manager class')"
+        )
+        db.execute(
+            "INSERT INTO ast_symbols (id, file_path, symbol_type, name, qualified_name, start_line, end_line, docstring) "
+            "VALUES ('sym3', 'src/utils.py', 'function', 'hash_password', 'utils.hash_password', 1, 5, 'Hash a password')"
+        )
+        db.commit()
+        return db
+
+    def test_ast_search_hit(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_ast_search
+
+        result = json.loads(asyncio.run(ec_ast_search("authenticate")))
+        assert result["count"] >= 1
+        assert any(r["name"] == "authenticate" for r in result["results"])
+
+    def test_ast_search_by_type(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_ast_search
+
+        result = json.loads(asyncio.run(ec_ast_search("auth", symbol_type="class")))
+        assert result["count"] >= 1
+        assert all(r["symbol_type"] == "class" for r in result["results"])
+
+    def test_ast_search_by_file(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_ast_search
+
+        result = json.loads(asyncio.run(ec_ast_search("password", file_filter="src/utils.py")))
+        assert result["count"] >= 1
+        assert all(r["file_path"] == "src/utils.py" for r in result["results"])
+
+    def test_ast_search_miss(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_ast_search
+
+        result = json.loads(asyncio.run(ec_ast_search("nonexistent_xyz_999")))
+        assert result["count"] == 0
+
+    def test_ast_search_no_repo(self, monkeypatch):
+        pytest.importorskip("mcp")
+        from entirecontext.mcp.server import ec_ast_search
+
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        result = json.loads(asyncio.run(ec_ast_search("test")))
+        assert "error" in result
+
+
+class TestMCPGraph:
+    """Tests for ec_graph MCP tool."""
+
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        db.execute(
+            "UPDATE turns SET files_touched = ?, git_commit_hash = ? WHERE id = 't1'",
+            (json.dumps(["src/auth.py"]), "abc123"),
+        )
+        db.execute(
+            "UPDATE turns SET files_touched = ?, git_commit_hash = ? WHERE id = 't2'",
+            (json.dumps(["src/auth.py", "src/test.py"]), "def456"),
+        )
+        db.commit()
+        return db
+
+    def test_graph_basic(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_graph
+
+        result = json.loads(asyncio.run(ec_graph()))
+        assert "nodes" in result
+        assert "edges" in result
+        assert "stats" in result
+        assert result["stats"]["total_nodes"] > 0
+
+    def test_graph_with_session_filter(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_graph
+
+        result = json.loads(asyncio.run(ec_graph(session_id="s1")))
+        assert "nodes" in result
+        assert result["stats"]["total_nodes"] > 0
+
+    def test_graph_no_repo(self, monkeypatch):
+        pytest.importorskip("mcp")
+        from entirecontext.mcp.server import ec_graph
+
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        result = json.loads(asyncio.run(ec_graph()))
+        assert "error" in result
+
+
+class TestMCPDashboard:
+    """Tests for ec_dashboard MCP tool."""
+
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        return db
+
+    def test_dashboard_basic(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_dashboard
+
+        result = json.loads(asyncio.run(ec_dashboard()))
+        assert "sessions" in result
+        assert "total" in result["sessions"]
+
+    def test_dashboard_with_since(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_dashboard
+
+        result = json.loads(asyncio.run(ec_dashboard(since="2024-01-01")))
+        assert "sessions" in result
+
+    def test_dashboard_no_repo(self, monkeypatch):
+        pytest.importorskip("mcp")
+        from entirecontext.mcp.server import ec_dashboard
+
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        result = json.loads(asyncio.run(ec_dashboard()))
+        assert "error" in result
+
+
+class TestMCPActivate:
+    """Tests for ec_activate MCP tool."""
+
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        db.execute(
+            "UPDATE turns SET files_touched = ? WHERE id = 't1'",
+            (json.dumps(["src/auth.py"]),),
+        )
+        db.execute(
+            "UPDATE turns SET files_touched = ? WHERE id = 't2'",
+            (json.dumps(["src/auth.py", "src/test.py"]),),
+        )
+        db.commit()
+        return db
+
+    def test_activate_by_turn(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_activate
+
+        result = json.loads(asyncio.run(ec_activate(seed_turn_id="t1")))
+        assert "results" in result
+        assert result["count"] >= 1
+
+    def test_activate_no_seed(self, mock_repo_db):
+        from entirecontext.mcp.server import ec_activate
+
+        result = json.loads(asyncio.run(ec_activate()))
+        assert "error" in result
+
+    def test_activate_no_repo(self, monkeypatch):
+        pytest.importorskip("mcp")
+        from entirecontext.mcp.server import ec_activate
+
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        result = json.loads(asyncio.run(ec_activate(seed_turn_id="t1")))
+        assert "error" in result
+
+
 class TestMcpQueryRedaction:
     @pytest.fixture(autouse=True)
     def _require_mcp(self):
