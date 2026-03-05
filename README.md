@@ -10,29 +10,18 @@ EntireContext automatically captures every AI coding session — turns, checkpoi
 
 ## Features
 
-- **Auto session/turn capture** via Claude Code hooks — zero-friction recording
-- **Git-anchored checkpoints** — snapshots tied to specific commits
-- **4 search modes** — regex, FTS5 full-text, semantic (sentence-transformers), and hybrid (FTS5 + recency RRF)
-- **Per-line attribution** — `ec blame` shows human vs. agent authorship per file
-- **Cross-repo search** — query across all registered repos with `-g`/`-r` flags
-- **Shadow branch sync** — portable export/import via orphan git branch
-- **Content filtering** — 3-layer system: capture-time exclusion, query-time redaction, post-hoc purge
-- **Secret filtering** — configurable patterns strip credentials on export
-- **MCP server** — 12 tools for AI agents to query context programmatically
-- **Futures assessment** — LLM-powered code change evaluation based on "Tidy First?" philosophy
-- **Assessment relationships** — typed links (`causes`/`fixes`/`contradicts`) between assessments
-- **Tidy PR generation** — rule-based PR drafts from narrow assessment suggestions
-- **Futures report** — team-shareable Markdown summary of assessment trends
-- **Async assessment worker** — background analysis without blocking capture
-- **Team dashboard** — session, checkpoint, and assessment trend monitoring
-- **Knowledge graph** — git entity traversal (sessions, commits, files, agents)
-- **Code AST search** — Python AST symbol indexing with FTS5 full-text search
-- **Multi-agent session graph** — BFS hierarchy traversal through agent trees
-- **Spreading activation** — discover related turns via shared files/commits
-- **Memory consolidation** — compress old turn content to save storage
-- **Session export** — Markdown export with YAML frontmatter for sharing
-- **Data import** — migrate sessions from Aline databases
-- **Event system** — group sessions by task, temporal period, or milestone
+- **Automatic capture + git checkpoints** — session/turn/tool activity recorded via hooks and anchored to commits
+- **Flexible search** — regex, FTS5 full-text, semantic, and hybrid retrieval across sessions and repos (`-g`/`-r`)
+- **Attribution + rewind** — `ec blame` and checkpoint timeline for per-line ownership and historical context
+- **Sync + portability** — shadow-branch export/import and Markdown session export with YAML frontmatter
+- **Privacy filtering** — 3-layer content controls plus secret-pattern redaction on export
+- **Agent integrations** — MCP server (12 tools) for programmatic context queries from AI agents
+- **Futures workflow** — LLM-based assessment, typed assessment links, tidy PR draft generation, and trend reports
+- **Async operations + dashboard** — background assessment worker and team-level monitoring for sessions/checkpoints/assessments
+- **Graph exploration** — knowledge graph traversal, multi-agent session graph, and spreading activation over shared files/commits
+- **Code-aware indexing** — Python AST symbol indexing with FTS5-backed search
+- **Storage management** — memory consolidation to reduce long-term footprint
+- **Data migration + organization** — Aline import and event grouping by task, period, or milestone
 
 ## Quick Start
 
