@@ -93,8 +93,8 @@ ec checkpoint list
 | `ec search QUERY` | Search across sessions, turns, and events |
 | `ec blame FILE [-L START,END] [--summary]` | Show per-line human/agent attribution |
 | `ec rewind CHECKPOINT_ID` | Show or restore code state at a checkpoint |
-| `ec sync [--no-filter]` | Export to shadow branch and push (skip secret filtering with `--no-filter`) |
-| `ec pull` | Fetch shadow branch and import |
+| `ec sync [--no-filter]` | Export to shadow branch, then push with one automatic artifact-merge retry on non-fast-forward (skip secret filtering with `--no-filter`) |
+| `ec pull` | Fetch latest `origin` shadow branch snapshot and import |
 | `ec index [--semantic] [--force] [--model NAME]` | Rebuild FTS5 indexes, optionally generate embeddings |
 | `ec dashboard [--since DATE] [--limit N]` | Show team dashboard: sessions, checkpoints, assessment trends |
 | `ec graph [--session ID] [--since DATE] [--limit N]` | Show knowledge graph of git entities |
@@ -347,6 +347,21 @@ ec config search.default_mode          # get a value
 ec config search.default_mode fts      # set a value
 ec config security.filter_secrets true # set a value
 ```
+
+## Sync Policy
+
+Shadow branch sync uses artifact-level merge only on `entirecontext/checkpoints/v1`.
+
+- `ec sync` retries at most once, and only when the first push is rejected as non-fast-forward.
+- The retry path fetches `origin/entirecontext/checkpoints/v1`, merges exported artifacts, creates a new commit, and pushes again.
+- `ec pull` imports from the latest remote-tracking snapshot, not from the local shadow branch.
+- There is no git conflict UI and no general git 3-way merge support in this path.
+- Artifact merge policy:
+  - `manifest.json`: key union; higher `total_turns` wins for duplicate session entries.
+  - `sessions/<id>/meta.json`: higher `total_turns` wins; ties preserve non-null fields; `started_at` uses earlier value; `ended_at` uses later value.
+  - `sessions/<id>/transcript.jsonl`: deduplicate by turn `id`.
+  - `checkpoints/*.json`: filename union.
+- Malformed remote artifacts, missing remote shadow snapshots, and retry push failures are explicit sync errors.
 
 ## Architecture
 

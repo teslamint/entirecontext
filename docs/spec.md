@@ -200,24 +200,36 @@ Artifacts:
 ### 6.1 `ec sync` current workflow `[Implemented]`
 
 1. Ensure shadow branch exists (create orphan branch if absent)
-2. Create temporary git worktree on shadow branch
+2. Create temporary git worktree on local shadow branch
 3. Export sessions/checkpoints since `sync_metadata.last_export_at`
 4. Update `manifest.json`
 5. Commit changes when present
-6. Push when enabled by runtime config path (see caveat below)
-7. Update `sync_metadata.last_export_at` and duration fields
+6. Push when enabled by runtime config path
+7. If push is rejected as non-fast-forward:
+   - fetch `origin/<shadow-branch>`
+   - create detached worktrees for local `HEAD` snapshot and remote tracking snapshot
+   - merge artifacts at app level only
+   - create one merge retry commit and retry push once
+8. Update `sync_metadata.last_export_at` and duration fields only after successful sync completion
 
 ### 6.2 `ec pull` current workflow `[Implemented]`
 
-1. Fetch shadow branch
-2. Create temporary git worktree
-3. Import missing sessions/checkpoints (idempotent-by-ID)
-4. Update `sync_metadata.last_import_at`
+1. Fetch shadow branch from `origin`
+2. Resolve the latest remote tracking snapshot from `origin/<shadow-branch>`
+3. Create a detached temporary git worktree on that remote tracking ref
+4. Import missing sessions/checkpoints (idempotent-by-ID)
+5. Update `sync_metadata.last_import_at`
 
-### 6.3 Merge strategy status `[Partial]`
+### 6.3 Merge strategy status `[Implemented]`
 
-- App-level merge helpers exist (`sync/merge.py`) for manifest/transcript/checkpoint artifacts
-- Current `perform_sync`/`perform_pull` path does not execute an explicit multi-remote merge/retry orchestration loop
+- Automatic retry is fixed at one attempt and only triggers for non-fast-forward push rejection
+- There is no git 3-way merge and no interactive conflict UI
+- Merge policy is artifact-level only:
+  - `manifest.json`: key union, session entry with higher `total_turns` wins, ties preserve non-null fields
+  - `sessions/<id>/meta.json`: higher `total_turns` wins, ties preserve non-null fields, `started_at` uses earlier value, `ended_at` uses later value
+  - `sessions/<id>/transcript.jsonl`: union by turn `id`
+  - `checkpoints/*.json`: filename union
+- Malformed merge artifacts, missing remote snapshot, or failed retry push are explicit sync errors
 
 ---
 
@@ -432,8 +444,8 @@ The items below are implementation gaps, not documentation errors.
 ## P2
 
 4. Sync merge/retry policy alignment
-- Current: merge helpers exist but not orchestrated in sync engine retry loop
-- Target: either implement app-level merge/retry loop or officially narrow policy in docs/README
+- Current: app-level merge/retry loop and remote-tracking pull are implemented
+- Target: keep docs/runtime/tests aligned on artifact-level merge policy only
 - Acceptance criteria:
   - chosen policy is implemented and tested
   - docs and runtime are consistent
