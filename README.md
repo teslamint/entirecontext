@@ -352,9 +352,9 @@ ec config security.filter_secrets true # set a value
 
 Shadow branch sync uses artifact-level merge only on `entirecontext/checkpoints/v1`.
 
-- `ec sync` retries at most once, and only when the first push is rejected as non-fast-forward.
+- `ec sync` performs one automatic retry only, and only when the first push is rejected as non-fast-forward.
 - The retry path fetches `origin/entirecontext/checkpoints/v1`, merges exported artifacts, creates a new commit, and pushes again.
-- `ec pull` imports from the latest remote-tracking snapshot, not from the local shadow branch.
+- `ec pull` imports from the latest `origin/<shadow-branch>` remote-tracking snapshot, not from the local shadow branch.
 - There is no git conflict UI and no general git 3-way merge support in this path.
 - Artifact merge policy:
   - `manifest.json`: key union; higher `total_turns` wins for duplicate session entries.
