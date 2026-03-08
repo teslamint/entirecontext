@@ -4,9 +4,59 @@ from __future__ import annotations
 
 import json
 
+import pytest
 
-from entirecontext.sync.merge import merge_manifests, merge_transcripts, merge_checkpoint_files
+from entirecontext.sync.merge import (
+    merge_checkpoint_files,
+    merge_manifests,
+    merge_session_meta,
+    merge_transcripts,
+)
 from entirecontext.sync.security import filter_export_data, get_security_config
+
+
+class TestMergeSessionMeta:
+    def test_prefers_higher_total_turns_but_keeps_special_timestamp_rules(self):
+        local = {
+            "id": "s1",
+            "started_at": "2026-03-06T12:00:00+00:00",
+            "ended_at": "2026-03-06T13:00:00+00:00",
+            "session_summary": None,
+            "total_turns": 3,
+        }
+        remote = {
+            "id": "s1",
+            "started_at": "2026-03-06T11:00:00+00:00",
+            "ended_at": "2026-03-06T14:00:00+00:00",
+            "session_summary": "remote",
+            "total_turns": 5,
+        }
+
+        result = merge_session_meta(local, remote)
+
+        assert result["total_turns"] == 5
+        assert result["session_summary"] == "remote"
+        assert result["started_at"] == "2026-03-06T11:00:00+00:00"
+        assert result["ended_at"] == "2026-03-06T14:00:00+00:00"
+
+    def test_tie_preserves_non_null_fields(self):
+        local = {
+            "id": "s1",
+            "session_title": None,
+            "session_summary": "local",
+            "total_turns": 4,
+        }
+        remote = {
+            "id": "s1",
+            "session_title": "remote title",
+            "session_summary": None,
+            "total_turns": 4,
+        }
+
+        result = merge_session_meta(local, remote)
+
+        assert result["session_title"] == "remote title"
+        assert result["session_summary"] == "local"
 
 
 class TestMergeManifests:
@@ -54,6 +104,23 @@ class TestMergeManifests:
         result = merge_manifests(local, remote)
         assert result["version"] == 2
 
+    def test_merge_session_tie_preserves_non_null_fields(self):
+        local = {
+            "version": 1,
+            "checkpoints": {},
+            "sessions": {"s1": {"session_type": None, "started_at": "2026-03-06T12:00:00+00:00", "total_turns": 3}},
+        }
+        remote = {
+            "version": 1,
+            "checkpoints": {},
+            "sessions": {"s1": {"session_type": "claude", "started_at": "2026-03-06T11:00:00+00:00", "total_turns": 3}},
+        }
+
+        result = merge_manifests(local, remote)
+
+        assert result["sessions"]["s1"]["session_type"] == "claude"
+        assert result["sessions"]["s1"]["started_at"] == "2026-03-06T11:00:00+00:00"
+
 
 class TestMergeTranscripts:
     def test_merge_dedup_by_turn_id(self):
@@ -74,6 +141,10 @@ class TestMergeTranscripts:
         result = merge_transcripts(local, "")
         lines = [line for line in result.strip().split("\n") if line]
         assert len(lines) == 1
+
+    def test_merge_raises_on_malformed_jsonl(self):
+        with pytest.raises(ValueError, match="malformed transcript.jsonl entry"):
+            merge_transcripts('{"id":"t1"}\nnot-json\n', "")
 
 
 class TestMergeCheckpointFiles:

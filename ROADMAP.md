@@ -22,7 +22,7 @@ _Updated against codebase on 2026-03-05._
 
 ## Later (1-3 months)
 
-- [ ] **Sync merge/retry 정책 정비** (P2, spec §10 #4)
+- [x] **Sync merge/retry 정책 정비** (P2, spec §10 #4)
   - `sync/merge.py`에 merge helpers 존재하지만 `sync/engine.py`에서 미사용
   - 선택지: app-level merge/retry 루프 구현 또는 docs/README에 정책 축소 명문화
   - 영향 파일: `sync/engine.py`, `sync/merge.py`, docs

@@ -3,7 +3,7 @@
 > Time-travel searchable agent memory anchored to your codebase.
 
 **Version**: 0.1.0
-**Status**: Implementation-aligned specification (as of 2026-02-24)
+**Status**: Implementation-aligned specification (as of 2026-03-07)
 
 ---
 
@@ -102,7 +102,7 @@ Validated command set (from `ec --help`):
 - `ec futures`: `assess`, `list`, `feedback`, `lessons`, `trend`, `relate`, `relationships`, `unrelate`, `tidy-pr`, `report`, `worker-status`, `worker-stop`, `worker-launch`
 - `ec session`: `list`, `show`, `current`, `export`, `consolidate`, `graph`, `activate`
 - `ec purge`: `session`, `turn`, `match`
-- `ec sync`: supports `--no-filter` (see Known Gaps for runtime caveat)
+- `ec sync`: supports `--no-filter`
 
 ## 4.2 MCP interface `[Implemented]`
 
@@ -151,16 +151,12 @@ Exit codes:
 - `0` success
 - `2` reserved for block semantics (framework-level), not actively used by current handlers
 
-## 4.4 Git hooks `[Partial]`
+## 4.4 Git hooks `[Implemented]`
 
 Installed by `ec enable`:
 
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
-- `.git/hooks/pre-push` -> invokes `ec sync`
-
-Current caveat:
-
-- `PostCommit` is not dispatched in hook handler today (see Known Gaps).
+- `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`
 
 ---
 
@@ -200,24 +196,36 @@ Artifacts:
 ### 6.1 `ec sync` current workflow `[Implemented]`
 
 1. Ensure shadow branch exists (create orphan branch if absent)
-2. Create temporary git worktree on shadow branch
+2. Create temporary git worktree on local shadow branch
 3. Export sessions/checkpoints since `sync_metadata.last_export_at`
 4. Update `manifest.json`
 5. Commit changes when present
-6. Push when enabled by runtime config path (see caveat below)
-7. Update `sync_metadata.last_export_at` and duration fields
+6. Push when enabled by runtime config path
+7. If push is rejected as non-fast-forward:
+   - fetch `origin/<shadow-branch>`
+   - create detached worktrees for local `HEAD` snapshot and remote tracking snapshot
+   - merge artifacts at app level only
+   - create one merge retry commit and retry push once
+8. Update `sync_metadata.last_export_at` and duration fields only after successful sync completion
 
 ### 6.2 `ec pull` current workflow `[Implemented]`
 
-1. Fetch shadow branch
-2. Create temporary git worktree
-3. Import missing sessions/checkpoints (idempotent-by-ID)
-4. Update `sync_metadata.last_import_at`
+1. Fetch shadow branch from `origin`
+2. Resolve the latest remote tracking snapshot from `origin/<shadow-branch>`
+3. Create a detached temporary git worktree on that remote tracking ref
+4. Import missing sessions/checkpoints (idempotent-by-ID)
+5. Update `sync_metadata.last_import_at`
 
-### 6.3 Merge strategy status `[Partial]`
+### 6.3 Merge strategy status `[Implemented]`
 
-- App-level merge helpers exist (`sync/merge.py`) for manifest/transcript/checkpoint artifacts
-- Current `perform_sync`/`perform_pull` path does not execute an explicit multi-remote merge/retry orchestration loop
+- Automatic retry is fixed at one attempt and only triggers for non-fast-forward push rejection
+- There is no git 3-way merge and no interactive conflict UI
+- Merge policy is artifact-level only:
+  - `manifest.json`: key union, session entry with higher `total_turns` wins, ties preserve non-null fields
+  - `sessions/<id>/meta.json`: higher `total_turns` wins, ties preserve non-null fields, `started_at` uses earlier value, `ended_at` uses later value
+  - `sessions/<id>/transcript.jsonl`: union by turn `id`
+  - `checkpoints/*.json`: filename union
+- Malformed merge artifacts, missing remote snapshot, or failed retry push are explicit sync errors
 
 ---
 
@@ -348,7 +356,7 @@ lessons_output = "LESSONS.md"
 ## Phase 2: Git integration
 
 - `[Partial]` Checkpoint + sync/pull + rewind are present
-- `[Partial]` post-commit automation path has handler gap (Known Gap #1)
+- `[Implemented]` post-commit automation path dispatches `PostCommit` and creates checkpoints when policy allows
 
 ## Phase 3: Semantic + MCP
 
@@ -394,55 +402,19 @@ lessons_output = "LESSONS.md"
 
 ---
 
-## 10. Known Gaps and Follow-up Backlog
+## 10. Follow-up Notes
 
-The items below are implementation gaps, not documentation errors.
+Previously tracked sync-policy gaps in this section have been closed. The notes below record the current implementation-alignment state.
 
-## P0
+Sync policy notes:
 
-1. PostCommit hook dispatch gap
-- Current: git hook emits `PostCommit`, handler has no dispatcher entry
-- Target: `PostCommit` creates checkpoint when policy allows
-- Acceptance criteria:
-  - `post-commit` hook invocation creates checkpoint for active session
-  - no-op behavior remains safe without active session
-- Verification:
-  - integration test for hook dispatch + checkpoint row creation
-
-## P1
-
-2. pre-push optional policy mismatch
-- Current: `pre-push` script always calls `ec sync`
-- Target: behavior gated by explicit config policy (e.g., `sync.auto_sync_on_push` or replacement key)
-- Acceptance criteria:
-  - disabled config -> pre-push does not perform sync
-  - enabled config -> pre-push performs sync
-- Verification:
-  - hook unit/integration tests with both config states
-
-3. `ec sync --no-filter` runtime wiring
-- Current: CLI exposes option, but sync path does not apply filter toggle to exporter flow
-- Target: `--no-filter` must bypass secret filtering, default path must apply configured filtering
-- Acceptance criteria:
-  - same input transcript yields redacted output by default
-  - same input transcript yields unredacted output with `--no-filter`
-- Verification:
-  - exporter/security integration tests
-
-## P2
-
-4. Sync merge/retry policy alignment
-- Current: merge helpers exist but not orchestrated in sync engine retry loop
-- Target: either implement app-level merge/retry loop or officially narrow policy in docs/README
-- Acceptance criteria:
-  - chosen policy is implemented and tested
-  - docs and runtime are consistent
-- Verification:
-  - conflict scenario tests (simulated divergent shadow branch states)
+- `pre-push` is currently installed as `ec sync --if-enabled`, so push-triggered sync is gated by `sync.auto_sync_on_push`.
+- `ec sync --no-filter` currently propagates to runtime sync config and is covered by CLI tests.
+- Sync merge/retry and remote-tracking pull behavior are implemented; keep docs/tests aligned with the artifact-level policy above.
 
 ---
 
-## 11. Validation Checklist (2026-02-24)
+## 11. Validation Checklist (2026-03-07)
 
 ## CLI shape checks
 
@@ -465,8 +437,14 @@ The items below are implementation gaps, not documentation errors.
 
 ## Hook checks
 
-- Source-level confirmation of handled hook types and identified `PostCommit` gap
+- Source-level confirmation of handled hook types, including `PostCommit` dispatch
 - Content filtering integrated in `on_user_prompt`, `on_stop`, `on_tool_use`
+
+## Sync policy checks
+
+- `uv run pytest tests/test_sync.py tests/test_sync_engine.py tests/test_sync_cmds.py`
+- `uv run pytest`
+- `uv build`
 
 ---
 
