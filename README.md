@@ -1,27 +1,46 @@
 # EntireContext
 
-**Time-travel searchable agent memory anchored to your codebase.**
+**Git-anchored decision memory for coding agents.**
 
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue) ![Version 0.1.0](https://img.shields.io/badge/version-0.1.0-green) ![Status Experimental](https://img.shields.io/badge/status-experimental-orange) ![License MIT](https://img.shields.io/badge/license-MIT-lightgrey)
 
 > ⚠️ **Experimental** — API and data format may change without notice.
 
-EntireContext automatically captures every AI coding session — turns, checkpoints, tool calls — and anchors them to your git history. Search, rewind, blame, and sync your agent memory across repos and machines.
+EntireContext captures AI coding work as it happens, distills decisions and lessons from it, and brings the right context back when similar code changes happen again.
 
-## Features
+## Why It Exists
 
-- **Automatic capture + git checkpoints** — session/turn/tool activity recorded via hooks and anchored to commits
-- **Flexible search** — regex, FTS5 full-text, semantic, and hybrid retrieval across sessions and repos (`-g`/`-r`)
-- **Attribution + rewind** — `ec blame` and checkpoint timeline for per-line ownership and historical context
-- **Sync + portability** — shadow-branch export/import and Markdown session export with YAML frontmatter
-- **Privacy filtering** — 3-layer content controls plus secret-pattern redaction on export
-- **Agent integrations** — MCP server (12 tools) for programmatic context queries from AI agents
-- **Futures workflow** — LLM-based assessment, typed assessment links, tidy PR draft generation, and trend reports
-- **Async operations + dashboard** — background assessment worker and team-level monitoring for sessions/checkpoints/assessments
-- **Graph exploration** — knowledge graph traversal, multi-agent session graph, and spreading activation over shared files/commits
-- **Code-aware indexing** — Python AST symbol indexing with FTS5-backed search
-- **Storage management** — memory consolidation to reduce long-term footprint
-- **Data migration + organization** — Aline import and event grouping by task, period, or milestone
+AI coding tools generate changes quickly, but engineering judgment still gets buried in chat logs. Important decisions, rejected alternatives, and hard-won lessons disappear across sessions, repos, and agents, so teams keep rediscovering the same context.
+
+EntireContext turns session history into reusable engineering memory tied to commits, diffs, checkpoints, and files instead of leaving it as raw transcript storage.
+
+## Core Product Loop
+
+- **Capture** — sessions, turns, tool calls, and checkpoints are recorded through hooks and anchored to git history
+- **Distill** — assessments, feedback, and lessons convert raw session history into reusable judgment
+- **Retrieve** — search, graph traversal, attribution, and rewind surface the most relevant prior context
+- **Intervene** — agents and humans can apply past decisions before the next related change lands
+
+## What Makes EntireContext Different
+
+- **Git-anchored memory** — context is tied to commits, branches, diffs, and checkpoints
+- **Decision-oriented, not chat-oriented** — the goal is reusable engineering judgment, not transcript hoarding
+- **Built for coding agents** — native hook integration plus MCP access for in-session retrieval
+- **Per-repo and cross-repo** — preserve local project context while allowing broader learning patterns
+
+## Key Capabilities
+
+- **Decision capture and assessment** — futures assessments, typed relationships, feedback loops, and lessons
+- **Git time-travel** — checkpoints, rewind, blame, and historical inspection
+- **Context retrieval** — regex, FTS5, semantic, and hybrid search across sessions and repos
+- **Agent-facing interfaces** — MCP tools for search, checkpoints, assessments, graph traversal, and trends
+- **Operational support** — sync, filtering, consolidation, dashboarding, export, and migration tools
+
+## Who It's For
+
+- Engineers already using coding agents in day-to-day development
+- Small teams that want decisions and lessons to accumulate instead of disappearing into chat history
+- Repositories where historical intent matters as much as the final diff
 
 ## Quick Start
 
@@ -79,6 +98,8 @@ ec checkpoint list
 - For `uv tool`/`pipx` installs, ensure the scripts directory is on PATH.
 
 ## CLI Reference
+
+The sections below are reference material for the current CLI surface. They stay close to the implemented interface on purpose so the product narrative above does not drift from what the tool actually does.
 
 ### Top-Level Commands
 
@@ -201,6 +222,8 @@ Options: `--workspace`, `--dry-run`, `--skip-content`
 | `-t TARGET` | Search target: `turn` (default), `session`, `event`, `content` |
 
 ## MCP Server
+
+EntireContext exposes the same retrieval and assessment primitives to coding agents over MCP so the memory loop can run inside active coding sessions, not only through the CLI.
 
 ### Automatic Setup
 

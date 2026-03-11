@@ -1,24 +1,71 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-03-05._
+_Updated against codebase on 2026-03-12._
+
+## Product Thesis
+
+EntireContext should become the system that helps coding agents accumulate engineering judgment over time.
+
+The goal is not to store more agent history. The goal is to make past decisions, lessons, and feedback reappear at the exact moment they can improve the next code change.
+
+In short:
+
+`capture -> distill -> retrieve -> intervene`
+
+## What We Are Optimizing For
+
+1. Better decisions in repeated coding workflows
+2. Less context loss across sessions, repos, and agents
+3. Reuse of past lessons before mistakes repeat
+4. Strong git grounding for trust, auditability, and rewindability
+
+## Current Position
+
+The project already has broad infrastructure in place:
+
+- capture hooks for sessions, turns, checkpoints, and tool activity
+- git-aware rewind, attribution, and checkpoint history
+- hybrid retrieval across search, AST, graph, dashboard, and MCP tooling
+- futures assessments, feedback loops, lessons, and trend reporting
+- sync, filtering, export, and consolidation for operating the memory layer
+
+That foundation is useful, but it is broader than the product wedge. The next phase should narrow EntireContext around **decision memory for coding agents**, not expand it horizontally as a generic memory platform.
+
+The main implementation hardening gap still on the table is sync merge/retry policy alignment between runtime and docs.
 
 ## Now
 
-- [x] **코드 변경 없는 세션 자동 정리** (P2)
-  - 세션 종료 시 `files_touched`, `git_commit_hash`, checkpoint 유무 검사
-  - 코드 변경 없으면 자동 consolidate (메타데이터 보존, content 파일 삭제)
-  - 영향 파일: `hooks/session_lifecycle.py` (`on_session_end`), `core/purge.py` 또는 `core/consolidation.py`
-  - config 키: `capture.auto_cleanup_no_changes` (default: false)
-  - 안전장치: ended session만 대상, active session 보호
-  - 테스트: 변경 없는 세션 → content 파일 삭제 확인, 변경 있는 세션 → 미삭제 확인, active session → no-op 확인
+- [ ] **Sharpen product messaging around decision memory**
+  - Keep README, roadmap, and product-facing docs centered on the decision-memory loop
+  - Move broad platform capabilities into supporting sections instead of leading with them
+  - Make the primary persona explicit: engineers and small teams already doing agentic coding
 
-## Next (1-2 weeks)
+- [ ] **Define a first-class decision model**
+  - Represent decision, rationale, rejected alternatives, supporting evidence, scope, and staleness
+  - Link decisions to commits, checkpoints, files, and assessments
+  - Clarify how decisions differ from summaries, assessments, and lessons
 
-- [x] **MCP hybrid search 지원** — `ec_search` 도구의 `search_type`에 `"hybrid"` 옵션 추가
-- [x] **MCP AST search 도구** — `ec_ast_search` 도구 노출 (symbol_type, file_path 필터)
-- [x] **MCP knowledge graph 도구** — `ec_graph` 도구 노출 (session/since 필터)
-- [x] **MCP dashboard 도구** — `ec_dashboard` 도구 노출 (since/limit 필터)
-- [x] **MCP spreading activation 도구** — `ec_activate` 도구 노출 (turn/session/hops 파라미터)
+- [ ] **Make retrieval proactive, not just query-based**
+  - Surface relevant past decisions when similar files, diffs, or intents appear
+  - Rank results by current-change relevance, not only text similarity
+  - Expose the retrieval path through MCP so agents can consume it automatically
+
+## Next (1-3 weeks)
+
+- [ ] **Decision extraction pipeline**
+  - Extract candidate decisions from sessions, checkpoints, and assessments
+  - Allow confidence scoring plus lightweight human or agent confirmation
+  - Validate extraction quality against noisy, real coding sessions
+
+- [ ] **Relevance-based reactivation**
+  - Use touched files, diff similarity, git relationships, and assessment links
+  - Present "read these past decisions first" suggestions before new work starts
+  - Verify usefulness on repeated-task and regression-fix scenarios
+
+- [ ] **Staleness and contradiction handling**
+  - Detect when old guidance no longer matches current code or newer decisions
+  - Extend relationship handling around contradiction, replacement, or supersession
+  - Prevent stale memory from dominating retrieval results
 
 ## Later (1-3 months)
 
@@ -28,42 +75,42 @@ _Updated against codebase on 2026-03-05._
   - 영향 파일: `sync/engine.py`, `sync/merge.py`, docs
   - 테스트: 선택한 정책의 구현/문서 일관성 검증
 
-## Done
-- [x] **PostCommit hook → checkpoint 생성** (P0) — `on_post_commit` in `session_lifecycle.py`, git hook via `_install_git_hooks`
-- [x] **pre-push config 게이팅** (P1) — `sync --if-enabled` CLI option, `sync.auto_sync_on_push` config key
-- [x] **`--no-filter` 런타임 연결** (P1) — `engine.py` → `get_security_config` → `export_sessions(filter_enabled, filter_patterns)`
-- [x] **세션별 요약 — 사용자 의도 도출** (P1) — `_maybe_generate_intent_summary` LLM 호출, `capture.intent_summary` config
-- [x] **세션 종료 시 자동 임베딩 인덱싱** (P1) — `_maybe_trigger_auto_embed` via `async_worker`, `index.auto_embed` config
-- [x] Futures assessment 기능 (`ec futures assess`)
-- [x] Assessment 피드백 루프 (`ec futures feedback`)
-- [x] LLM 백엔드 추상화 (`openai/codex/claude/ollama/github`)
-- [x] GitHub Action 연동 (PR 트리거, GitHub Models 기반 평가)
-- [x] `ec futures lessons` 자동 증류 (수동 생성 + feedback 시 자동 + session end hook 트리거)
-- [x] 체크포인트 경량화 (기본은 git ref + diff summary, `--snapshot`일 때만 files snapshot)
-- [x] 콘텐츠 필터링 3-layer 시스템 (캡처 차단, 조회 시 redaction, 사후 purge)
-- [x] `ec purge session/turn/match` CLI (dry-run 기본, `--execute`로 삭제)
-- [x] per-session/global 캡처 토글 (`auto_capture`, `metadata.capture_disabled`)
-- [x] MCP 도구로 에이전트 자기 평가 완결 (`ec_assess_create`, `ec_assess`, `ec_lessons`, `ec_feedback`)
-- [x] 크로스 레포 futures 트렌드 분석 기반 마련
-- [x] typed relationships for assessments (`causes`/`fixes`/`contradicts`)
-- [x] 마크다운 export (세션 요약 → git-friendly 공유)
-- [x] futures 결과 리포트 템플릿/주기 실행 정리 (팀 공유 가능한 형태)
-- [x] assessment 기반 자동 tidy PR 제안 (룰 기반)
-- [x] 하이브리드 검색 (FTS5 + RRF reranking)
-- [x] 팀 대시보드로 전체 컨텍스트 모니터링 (세션/체크포인트/assessment 트렌드)
-- [x] 비동기 assessment 워커 (캡처 차단 없는 백그라운드 분석)
-- [x] knowledge graph 레이어 (git entities → nodes, relations → edges)
-- [x] memory consolidation/decay (오래된 turn 압축 전략)
-- [x] 코드 AST 기반 semantic search
-- [x] spreading activation (관련 turn 연쇄 탐색)
-- [x] multi-agent 세션 그래프
+- [ ] **Decision quality loop**
+  - Track whether retrieved guidance was accepted, ignored, or contradicted
+  - Measure which decisions and lessons actually improve later changes
+  - Use those outcomes to improve ranking and distillation quality
+
+- [ ] **Team policy and review memory**
+  - Capture recurring team preferences, review heuristics, and architectural constraints
+  - Separate repo-local norms from cross-repo lessons
+  - Generate team-facing reports about repeated decisions and repeated mistakes
+
+- [ ] **Sync and runtime hardening**
+  - Resolve merge/retry policy alignment in the sync engine or narrow the documented policy explicitly
+  - Keep docs and runtime behavior consistent for shared usage
+  - Test divergent shadow-branch conflict scenarios
+
+## Done Foundations
+
+- [x] Capture hooks, checkpoints, rewind, and attribution
+- [x] Hybrid search, AST search, graph/dashboard tooling, and MCP exposure
+- [x] Futures assessments, typed relationships, feedback, lessons, and trend analysis
+- [x] Async workers, filtering, export, consolidation, and cross-repo support
 
 ## Exploration
 
-- **Proactive checkpoint** — 코드 변경 패턴 기반 자동 체크포인트 시점 결정
-- **NL feedback loop** — 자연어 피드백으로 assessment 품질 자동 개선
-- **Pluggable graph backend** — SQLite knowledge graph → Neo4j 등 외부 그래프 DB 선택적 교체
-- **Temporal/meta query** — "지난 주에 뭐 했지?", "실행 안 한 아이디어" 같은 자연어 시간/메타 쿼리 지원
+- **Temporal queries** — how decisions and lessons change over time
+- **Agent learning reports** — where prior guidance helped and where it was ignored
+- **Decision packs by area** — reusable memory bundles for domains like sync, testing, or search
+- **Human-in-the-loop correction UX** — fast review of extracted decisions and stale lessons
+
+## Non-Goals for This Phase
+
+- Becoming a generic knowledge management system
+- Expanding dashboard or graph breadth before retrieval quality improves
+- Storing more raw transcripts without better distillation
+- Adding platform surface area that does not reinforce the decision-memory loop
 
 ## References
+
 - [Agent Memory Landscape Research](docs/research/agent-memory-landscape.md)
