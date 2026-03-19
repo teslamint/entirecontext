@@ -23,3 +23,4 @@ from . import purge_cmds  # noqa: F401, E402
 from . import graph_cmds  # noqa: F401, E402
 from . import ast_cmds  # noqa: F401, E402
 from . import dashboard_cmds  # noqa: F401, E402
+from . import context_cmds  # noqa: F401, E402

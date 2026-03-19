@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -21,7 +23,7 @@ def dashboard_cmd(
     """Show a team dashboard: session stats, checkpoint stats, and assessment trends."""
     from ..core.dashboard import get_dashboard_stats
     from ..core.project import find_git_root
-    from ..db import get_db
+    from ..db import check_and_migrate, get_db
 
     repo_path = find_git_root()
     if not repo_path:
@@ -30,6 +32,8 @@ def dashboard_cmd(
 
     conn = get_db(repo_path)
     try:
+        if isinstance(conn, sqlite3.Connection):
+            check_and_migrate(conn)
         stats = get_dashboard_stats(conn, since=since, limit=limit)
     finally:
         conn.close()
@@ -40,6 +44,16 @@ def dashboard_cmd(
 def _render_dashboard(stats: dict) -> None:
     """Render the dashboard stats using Rich tables."""
     since_label = f"  [dim]since {stats['since']}[/dim]" if stats["since"] else ""
+    console.print(
+        f"\n[bold]Dogfooding Maturity[/bold] — {stats['maturity_score']}/100  [cyan]{stats['maturity_grade']}[/cyan]"
+    )
+
+    maturity = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    maturity.add_column("Dimension", max_width=12)
+    maturity.add_column("Score", justify="right", max_width=8)
+    for key in ("capture", "distill", "retrieve", "intervene"):
+        maturity.add_row(key, str(stats["maturity_breakdown"][key]))
+    console.print(maturity)
 
     # ------------------------------------------------------------------
     # Sessions
@@ -143,3 +157,25 @@ def _render_dashboard(stats: dict) -> None:
         console.print(tbl)
     else:
         console.print("[dim]  No recent assessments.[/dim]")
+
+    telemetry = stats["telemetry"]
+    rates = telemetry["rates"]
+    console.print(f"\n[bold]Telemetry[/bold]{since_label}")
+    telemetry_table = Table(show_header=True, header_style="bold", box=None, pad_edge=False)
+    telemetry_table.add_column("Metric", max_width=32)
+    telemetry_table.add_column("Value", justify="right", max_width=14)
+    telemetry_table.add_row("retrieval events", str(telemetry["retrieval_events"]["total"]))
+    telemetry_table.add_row("sessions with retrieval", str(telemetry["retrieval_events"]["sessions_with_retrieval"]))
+    telemetry_table.add_row("retrieval selections", str(telemetry["retrieval_selections"]["total"]))
+    telemetry_table.add_row("context applications", str(telemetry["context_applications"]["total"]))
+    telemetry_table.add_row("applications with selection", str(telemetry["context_applications"]["with_selection"]))
+    telemetry_table.add_row(
+        "retrieval-assisted session rate", f"{rates['retrieval_assisted_session_rate'] * 100:.0f}%"
+    )
+    telemetry_table.add_row("search-to-selection rate", f"{rates['search_to_selection_rate'] * 100:.0f}%")
+    telemetry_table.add_row("applied-context rate", f"{rates['applied_context_rate'] * 100:.0f}%")
+    telemetry_table.add_row("lesson reuse rate", f"{rates['lesson_reuse_rate'] * 100:.0f}%")
+    telemetry_table.add_row(
+        "checkpoint-anchored assessment rate", f"{rates['checkpoint_anchored_assessment_rate'] * 100:.0f}%"
+    )
+    console.print(telemetry_table)

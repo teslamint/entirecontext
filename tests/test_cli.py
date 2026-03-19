@@ -113,6 +113,39 @@ class TestCheckpointCommands:
             assert result.exit_code != 0
 
 
+class TestContextCommands:
+    def test_context_select_and_apply(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+        from entirecontext.core.telemetry import record_retrieval_event
+        from entirecontext.core.turn import create_turn
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="ctx-cli-session")
+        turn = create_turn(ec_db, session["id"], 1, user_message="search auth", assistant_summary="results")
+        event = record_retrieval_event(
+            ec_db,
+            source="cli",
+            search_type="regex",
+            target="turn",
+            query="auth",
+            result_count=1,
+            latency_ms=5,
+            session_id=session["id"],
+            turn_id=turn["id"],
+        )
+
+        monkeypatch.setattr("entirecontext.core.project.find_git_root", lambda *a, **kw: str(ec_repo))
+        select_result = runner.invoke(app, ["context", "select", event["id"], "turn", "turn-source", "--rank", "1"])
+        assert select_result.exit_code == 0
+        assert "Selection ID:" in select_result.output
+        selection_id = select_result.output.strip().split(": ", 1)[1]
+
+        apply_result = runner.invoke(app, ["context", "apply", "reference", "--selection-id", selection_id])
+        assert apply_result.exit_code == 0
+        assert "Application ID:" in apply_result.output
+
+
 class TestRewindSafety:
     def test_rewind_restore_dirty_tree(self, ec_repo, ec_db, monkeypatch):
         from entirecontext.core.checkpoint import create_checkpoint

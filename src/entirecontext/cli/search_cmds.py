@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+import time
 from typing import List, Optional
 
 import typer
@@ -34,6 +36,7 @@ def search(
         raise typer.Exit(1)
 
     is_cross_repo = global_search or repo
+    retrieval_event_id = None
 
     if is_cross_repo:
         from ..core.cross_repo import cross_repo_search
@@ -54,7 +57,8 @@ def search(
         )
     else:
         from ..core.project import find_git_root
-        from ..db import get_db
+        from ..core.telemetry import detect_current_context, record_retrieval_event
+        from ..db import check_and_migrate, get_db
 
         repo_path = find_git_root()
         if not repo_path:
@@ -62,11 +66,13 @@ def search(
             raise typer.Exit(1)
 
         conn = get_db(repo_path)
-
+        if isinstance(conn, sqlite3.Connection):
+            check_and_migrate(conn)
         if semantic:
             try:
                 from ..core.embedding import semantic_search
 
+                started_at = time.perf_counter()
                 results = semantic_search(
                     conn,
                     query,
@@ -76,6 +82,7 @@ def search(
                     since=since,
                     limit=limit,
                 )
+                latency_ms = int((time.perf_counter() - started_at) * 1000)
             except ImportError:
                 conn.close()
                 console.print(
@@ -86,6 +93,7 @@ def search(
         elif hybrid:
             from ..core.hybrid_search import hybrid_search as _hybrid_search
 
+            started_at = time.perf_counter()
             results = _hybrid_search(
                 conn,
                 query,
@@ -96,9 +104,11 @@ def search(
                 since=since,
                 limit=limit,
             )
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
         elif fts:
             from ..core.search import fts_search
 
+            started_at = time.perf_counter()
             results = fts_search(
                 conn,
                 query,
@@ -109,9 +119,11 @@ def search(
                 since=since,
                 limit=limit,
             )
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
         else:
             from ..core.search import regex_search
 
+            started_at = time.perf_counter()
             results = regex_search(
                 conn,
                 query,
@@ -122,11 +134,32 @@ def search(
                 since=since,
                 limit=limit,
             )
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
+
+        session_id, turn_id = detect_current_context(conn)
+        retrieval_event = record_retrieval_event(
+            conn,
+            source="cli",
+            search_type="semantic" if semantic else ("hybrid" if hybrid else ("fts" if fts else "regex")),
+            target=target,
+            query=query,
+            result_count=len(results),
+            latency_ms=latency_ms,
+            session_id=session_id,
+            turn_id=turn_id,
+            file_filter=file,
+            commit_filter=commit,
+            agent_filter=agent,
+            since_filter=since,
+        )
+        retrieval_event_id = retrieval_event["id"]
 
         conn.close()
 
     if not results:
         console.print("[dim]No results found.[/dim]")
+        if not is_cross_repo and retrieval_event_id:
+            console.print(f"[dim]Search ID: {retrieval_event_id}[/dim]")
         return
 
     table = Table(title=f"Search: '{query}' ({len(results)} results)")
@@ -211,3 +244,7 @@ def search(
             table.add_row(*row)
 
     console.print(table)
+    if is_cross_repo:
+        console.print("[dim]Search telemetry skipped: cross_repo[/dim]")
+    elif retrieval_event_id:
+        console.print(f"[dim]Search ID: {retrieval_event_id}[/dim]")

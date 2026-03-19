@@ -126,12 +126,14 @@ class TestMCPToolIntegration:
         result = json.loads(asyncio.run(ec_search("auth")))
         assert result["count"] >= 1
         assert any("auth" in r["summary"].lower() for r in result["results"])
+        assert result["retrieval_event_id"]
 
     def test_search_regex_miss(self, mock_repo_db):
         from entirecontext.mcp.server import ec_search
 
         result = json.loads(asyncio.run(ec_search("nonexistent_xyz_999")))
         assert result["count"] == 0
+        assert result["retrieval_event_id"]
 
     def test_search_fts_hit(self, mock_repo_db):
         from entirecontext.mcp.server import ec_search
@@ -158,6 +160,30 @@ class TestMCPToolIntegration:
         assert result["count"] == 1
         assert result["checkpoints"][0]["commit_hash"] == "abc123"
 
+    def test_checkpoint_list_records_selection(self, mock_repo_db):
+        from entirecontext.core.telemetry import record_retrieval_event
+        from entirecontext.mcp.server import ec_checkpoint_list
+
+        mock_repo_db.execute(
+            "INSERT INTO checkpoints (id, session_id, git_commit_hash, git_branch, created_at, diff_summary) "
+            "VALUES ('cp-select', 's1', 'abc123', 'main', '2025-01-01', 'Added auth')"
+        )
+        mock_repo_db.commit()
+        event = record_retrieval_event(
+            mock_repo_db,
+            source="mcp",
+            search_type="regex",
+            target="turn",
+            query="auth",
+            result_count=1,
+            latency_ms=5,
+            session_id="s1",
+            turn_id="t1",
+        )
+        result = json.loads(asyncio.run(ec_checkpoint_list(retrieval_event_id=event["id"])))
+        assert result["selection_id"] is not None
+        assert result["selection_ids"]
+
     def test_session_context_auto_detect(self, mock_repo_db):
         from entirecontext.mcp.server import ec_session_context
 
@@ -172,6 +198,24 @@ class TestMCPToolIntegration:
         result = json.loads(asyncio.run(ec_session_context(session_id="s1")))
         assert result["session_id"] == "s1"
         assert result["total_turns"] == 3
+
+    def test_session_context_records_selection(self, mock_repo_db):
+        from entirecontext.core.telemetry import record_retrieval_event
+        from entirecontext.mcp.server import ec_session_context
+
+        event = record_retrieval_event(
+            mock_repo_db,
+            source="mcp",
+            search_type="regex",
+            target="turn",
+            query="session",
+            result_count=1,
+            latency_ms=5,
+            session_id="s1",
+            turn_id="t1",
+        )
+        result = json.loads(asyncio.run(ec_session_context(session_id="s1", retrieval_event_id=event["id"])))
+        assert result["selection_id"] is not None
 
     def test_session_context_not_found(self, mock_repo_db):
         from entirecontext.mcp.server import ec_session_context
@@ -635,6 +679,8 @@ class TestMCPDashboard:
         result = json.loads(asyncio.run(ec_dashboard()))
         assert "sessions" in result
         assert "total" in result["sessions"]
+        assert "telemetry" in result
+        assert "maturity_score" in result
 
     def test_dashboard_with_since(self, mock_repo_db):
         from entirecontext.mcp.server import ec_dashboard
@@ -649,6 +695,26 @@ class TestMCPDashboard:
         monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
         result = json.loads(asyncio.run(ec_dashboard()))
         assert "error" in result
+
+    def test_context_apply(self, mock_repo_db):
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+        from entirecontext.mcp.server import ec_context_apply
+
+        event = record_retrieval_event(
+            mock_repo_db,
+            source="mcp",
+            search_type="regex",
+            target="turn",
+            query="auth",
+            result_count=1,
+            latency_ms=5,
+            session_id="s1",
+            turn_id="t1",
+        )
+        selection = record_retrieval_selection(mock_repo_db, event["id"], "assessment", "asmt-1")
+        result = json.loads(asyncio.run(ec_context_apply("lesson_applied", selection_id=selection["id"])))
+        assert result["application_type"] == "lesson_applied"
+        assert result["retrieval_selection_id"] == selection["id"]
 
 
 class TestMCPActivate:

@@ -78,7 +78,7 @@ def _apply_migrations(conn: sqlite3.Connection, from_version: int) -> None:
     conn.commit()
 
 
-def _get_migrations() -> dict[int, list[str]]:
+def _get_migrations() -> dict[int, list]:
     """Return migration SQL for each version transition.
 
     Add new entries as schema evolves:
@@ -176,5 +176,62 @@ def _get_migrations() -> dict[int, list[str]]:
               INSERT INTO fts_ast_symbols(rowid, name, qualified_name, docstring, file_path)
               VALUES (new.rowid, new.name, new.qualified_name, new.docstring, new.file_path);
             END""",
+        ],
+        7: [
+            """CREATE TABLE IF NOT EXISTS retrieval_events (
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                turn_id TEXT,
+                source TEXT NOT NULL,
+                search_type TEXT NOT NULL,
+                target TEXT NOT NULL,
+                query TEXT NOT NULL,
+                file_filter TEXT,
+                commit_filter TEXT,
+                agent_filter TEXT,
+                since_filter TEXT,
+                result_count INTEGER NOT NULL DEFAULT 0,
+                latency_ms INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
+                FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE SET NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_retrieval_events_session ON retrieval_events(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_retrieval_events_created ON retrieval_events(created_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_retrieval_events_search_type ON retrieval_events(search_type)",
+            """CREATE TABLE IF NOT EXISTS retrieval_selections (
+                id TEXT PRIMARY KEY,
+                retrieval_event_id TEXT NOT NULL,
+                session_id TEXT,
+                turn_id TEXT,
+                result_type TEXT NOT NULL,
+                result_id TEXT NOT NULL,
+                rank INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (retrieval_event_id) REFERENCES retrieval_events(id) ON DELETE CASCADE,
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
+                FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE SET NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_retrieval_selections_event ON retrieval_selections(retrieval_event_id)",
+            "CREATE INDEX IF NOT EXISTS idx_retrieval_selections_session ON retrieval_selections(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_retrieval_selections_result_type ON retrieval_selections(result_type)",
+            """CREATE TABLE IF NOT EXISTS context_applications (
+                id TEXT PRIMARY KEY,
+                session_id TEXT,
+                turn_id TEXT,
+                retrieval_selection_id TEXT,
+                source_type TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                application_type TEXT NOT NULL,
+                note TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
+                FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE SET NULL,
+                FOREIGN KEY (retrieval_selection_id) REFERENCES retrieval_selections(id) ON DELETE SET NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_context_applications_session ON context_applications(session_id)",
+            "CREATE INDEX IF NOT EXISTS idx_context_applications_selection ON context_applications(retrieval_selection_id)",
+            "CREATE INDEX IF NOT EXISTS idx_context_applications_type ON context_applications(application_type)",
+            "CREATE INDEX IF NOT EXISTS idx_context_applications_created ON context_applications(created_at DESC)",
         ],
     }

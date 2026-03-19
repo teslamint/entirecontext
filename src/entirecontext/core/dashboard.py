@@ -59,6 +59,7 @@ def get_dashboard_stats(
     since_params: list = [since] if since is not None else []
     since_clause = " WHERE started_at >= ?" if since is not None else ""
     since_clause_ca = " WHERE created_at >= ?" if since is not None else ""
+    turns_since_clause = " WHERE s.started_at >= ?" if since is not None else ""
 
     # ------------------------------------------------------------------
     # Sessions
@@ -83,6 +84,17 @@ def get_dashboard_stats(
         f" ORDER BY last_activity_at DESC LIMIT ?",
         recent_sessions_params,
     ).fetchall()
+
+    turns_row = conn.execute(
+        "SELECT COUNT(*) AS total,"
+        " SUM(CASE WHEN t.files_touched IS NOT NULL AND TRIM(t.files_touched) NOT IN ('', '[]') THEN 1 ELSE 0 END) AS with_files"
+        " FROM turns t"
+        " JOIN sessions s ON t.session_id = s.id"
+        f"{turns_since_clause}",
+        since_params,
+    ).fetchone()
+    turns_total = turns_row["total"] or 0
+    turns_with_files = turns_row["with_files"] or 0
 
     # ------------------------------------------------------------------
     # Checkpoints
@@ -131,16 +143,161 @@ def get_dashboard_stats(
         recent_asmt_params,
     ).fetchall()
 
+    anchored_assessment_count = conn.execute(
+        f"SELECT COUNT(*) AS total FROM assessments WHERE checkpoint_id IS NOT NULL"
+        + (" AND created_at >= ?" if since is not None else ""),
+        since_params,
+    ).fetchone()["total"] or 0
+    checkpoint_anchored_assessment_rate = anchored_assessment_count / asmt_total if asmt_total > 0 else 0.0
+
+    retrieval_events_total = conn.execute(
+        f"SELECT COUNT(*) AS total FROM retrieval_events{since_clause_ca}",
+        since_params,
+    ).fetchone()["total"] or 0
+    retrieval_sessions_row = conn.execute(
+        "SELECT COUNT(DISTINCT session_id) AS total FROM retrieval_events"
+        + (" WHERE created_at >= ?" if since is not None else ""),
+        since_params,
+    ).fetchone()
+    retrieval_sessions_total = retrieval_sessions_row["total"] or 0
+
+    retrieval_selections_total = conn.execute(
+        f"SELECT COUNT(*) AS total FROM retrieval_selections{since_clause_ca}",
+        since_params,
+    ).fetchone()["total"] or 0
+
+    applications_row = conn.execute(
+        "SELECT COUNT(*) AS total,"
+        " SUM(CASE WHEN retrieval_selection_id IS NOT NULL THEN 1 ELSE 0 END) AS with_selection,"
+        " SUM(CASE WHEN source_type IN ('assessment', 'lesson') THEN 1 ELSE 0 END) AS lesson_reuse"
+        f" FROM context_applications{since_clause_ca}",
+        since_params,
+    ).fetchone()
+    context_applications_total = applications_row["total"] or 0
+    context_applications_with_selection = applications_row["with_selection"] or 0
+    lesson_reuse_count = applications_row["lesson_reuse"] or 0
+
+    retrieval_assisted_session_rate = retrieval_sessions_total / sessions_total if sessions_total > 0 else 0.0
+    search_to_selection_rate = retrieval_selections_total / retrieval_events_total if retrieval_events_total > 0 else 0.0
+    applied_context_rate = (
+        context_applications_with_selection / retrieval_selections_total if retrieval_selections_total > 0 else 0.0
+    )
+    lesson_reuse_rate = lesson_reuse_count / context_applications_total if context_applications_total > 0 else 0.0
+
+    changed_ended_sessions = conn.execute(
+        """
+        SELECT COUNT(*) AS total
+        FROM sessions s
+        WHERE s.ended_at IS NOT NULL
+          {since_filter}
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM turns t
+                  WHERE t.session_id = s.id
+                    AND (
+                        (t.files_touched IS NOT NULL AND TRIM(t.files_touched) NOT IN ('', '[]'))
+                        OR (t.git_commit_hash IS NOT NULL AND TRIM(t.git_commit_hash) != '')
+                    )
+              )
+              OR EXISTS (
+                  SELECT 1 FROM checkpoints c WHERE c.session_id = s.id
+              )
+          )
+        """.format(since_filter="AND s.started_at >= ?" if since is not None else ""),
+        since_params,
+    ).fetchone()["total"] or 0
+    changed_ended_sessions_with_checkpoints = conn.execute(
+        """
+        SELECT COUNT(DISTINCT s.id) AS total
+        FROM sessions s
+        JOIN checkpoints c ON c.session_id = s.id
+        WHERE s.ended_at IS NOT NULL
+          {since_filter}
+          AND (
+              EXISTS (
+                  SELECT 1
+                  FROM turns t
+                  WHERE t.session_id = s.id
+                    AND (
+                        (t.files_touched IS NOT NULL AND TRIM(t.files_touched) NOT IN ('', '[]'))
+                        OR (t.git_commit_hash IS NOT NULL AND TRIM(t.git_commit_hash) != '')
+                    )
+              )
+              OR EXISTS (
+                  SELECT 1 FROM checkpoints c2 WHERE c2.session_id = s.id
+              )
+          )
+        """.format(since_filter="AND s.started_at >= ?" if since is not None else ""),
+        since_params,
+    ).fetchone()["total"] or 0
+    checkpoint_coverage_rate = (
+        changed_ended_sessions_with_checkpoints / changed_ended_sessions if changed_ended_sessions > 0 else 0.0
+    )
+
+    avg_turns_per_session = turns_total / sessions_total if sessions_total > 0 else 0.0
+    turns_with_files_rate = turns_with_files / turns_total if turns_total > 0 else 0.0
+
+    capture_score = 0
+    if sessions_total > 0:
+        capture_score += 5
+    if avg_turns_per_session >= 2:
+        capture_score += 5
+    if turns_with_files_rate >= 0.25:
+        capture_score += 8
+    if checkpoint_coverage_rate >= 0.5:
+        capture_score += 12
+
+    distill_score = 0
+    if asmt_total > 0:
+        distill_score += 5
+    if feedback_rate >= 0.5:
+        distill_score += 8
+    if asmt_feedback > 0:
+        distill_score += 5
+    if checkpoint_anchored_assessment_rate >= 0.5:
+        distill_score += 7
+
+    retrieve_score = 0
+    if retrieval_events_total > 0:
+        retrieve_score += 5
+    if retrieval_assisted_session_rate >= 0.25:
+        retrieve_score += 8
+    if search_to_selection_rate >= 0.25:
+        retrieve_score += 12
+
+    intervene_score = 0
+    if context_applications_total > 0:
+        intervene_score += 5
+    if applied_context_rate >= 0.1:
+        intervene_score += 8
+    if lesson_reuse_rate >= 0.2:
+        intervene_score += 7
+
+    maturity_score = capture_score + distill_score + retrieve_score + intervene_score
+    if maturity_score >= 75:
+        maturity_grade = "Closed Loop"
+    elif maturity_score >= 50:
+        maturity_grade = "Operational"
+    elif maturity_score >= 25:
+        maturity_grade = "Partial"
+    else:
+        maturity_grade = "Absent"
+
     return {
         "sessions": {
             "total": sessions_total,
             "active": sessions_active,
             "ended": sessions_ended,
             "recent": [dict(r) for r in recent_sessions],
+            "avg_turns_per_session": avg_turns_per_session,
         },
         "checkpoints": {
             "total": checkpoints_total,
             "recent": [dict(r) for r in recent_checkpoints],
+            "changed_ended_sessions": changed_ended_sessions,
+            "changed_ended_sessions_with_checkpoints": changed_ended_sessions_with_checkpoints,
+            "checkpoint_coverage_rate": checkpoint_coverage_rate,
         },
         "assessments": {
             "total": asmt_total,
@@ -151,8 +308,39 @@ def get_dashboard_stats(
             },
             "with_feedback": asmt_feedback,
             "feedback_rate": feedback_rate,
+            "with_checkpoint": anchored_assessment_count,
+            "checkpoint_anchored_assessment_rate": checkpoint_anchored_assessment_rate,
             "recent": [dict(r) for r in recent_assessments],
         },
+        "telemetry": {
+            "retrieval_events": {
+                "total": retrieval_events_total,
+                "sessions_with_retrieval": retrieval_sessions_total,
+            },
+            "retrieval_selections": {
+                "total": retrieval_selections_total,
+            },
+            "context_applications": {
+                "total": context_applications_total,
+                "with_selection": context_applications_with_selection,
+            },
+            "rates": {
+                "retrieval_assisted_session_rate": retrieval_assisted_session_rate,
+                "search_to_selection_rate": search_to_selection_rate,
+                "applied_context_rate": applied_context_rate,
+                "lesson_reuse_rate": lesson_reuse_rate,
+                "checkpoint_anchored_assessment_rate": checkpoint_anchored_assessment_rate,
+                "turns_with_files_rate": turns_with_files_rate,
+            },
+        },
+        "maturity_breakdown": {
+            "capture": capture_score,
+            "distill": distill_score,
+            "retrieve": retrieve_score,
+            "intervene": intervene_score,
+        },
+        "maturity_score": maturity_score,
+        "maturity_grade": maturity_grade,
         "since": since,
         "limit": limit,
     }

@@ -41,6 +41,9 @@ class TestSchemaCreation:
             "attributions",
             "embeddings",
             "sync_metadata",
+            "retrieval_events",
+            "retrieval_selections",
+            "context_applications",
         }
         assert expected.issubset(tables)
 
@@ -221,3 +224,25 @@ class TestMigration:
 
         with pytest.raises(sqlite3.IntegrityError):
             db.execute("INSERT INTO sync_metadata (id, sync_status) VALUES (2, 'idle')")
+
+    def test_migration_v6_to_v7_recreates_telemetry_tables(self):
+        conn = get_memory_db()
+        init_schema(conn)
+        conn.execute("DROP TABLE context_applications")
+        conn.execute("DROP TABLE retrieval_selections")
+        conn.execute("DROP TABLE retrieval_events")
+        conn.execute("DELETE FROM schema_version")
+        conn.execute("INSERT INTO schema_version (version, description) VALUES (6, 'pre telemetry')")
+        conn.commit()
+
+        check_and_migrate(conn)
+
+        tables = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall()
+        }
+        assert {"retrieval_events", "retrieval_selections", "context_applications"}.issubset(tables)
+        assert get_current_version(conn) == SCHEMA_VERSION
+        conn.close()

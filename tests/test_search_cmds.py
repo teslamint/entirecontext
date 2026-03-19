@@ -27,6 +27,7 @@ class TestSearch:
             result = runner.invoke(app, ["search", "nothing"])
             assert result.exit_code == 0
             assert "No results found" in result.output
+            assert "Search ID:" in result.output
 
     def test_regex_search_default(self):
         mock_conn = MagicMock()
@@ -48,6 +49,7 @@ class TestSearch:
             assert result.exit_code == 0
             mock_regex.assert_called_once()
             assert "hello world" in result.output
+            assert "Search ID:" in result.output
 
     def test_fts_search(self):
         mock_conn = MagicMock()
@@ -119,6 +121,7 @@ class TestSearch:
             assert result.exit_code == 0
             mock_cross.assert_called_once()
             assert "my-repo" in result.output
+            assert "telemetry skipped: cross_repo" in result.output.lower()
 
     def test_session_target(self):
         mock_conn = MagicMock()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 try:
@@ -35,6 +36,63 @@ def _detect_current_session(conn) -> str | None:
         "SELECT id FROM sessions WHERE ended_at IS NULL ORDER BY last_activity_at DESC LIMIT 1"
     ).fetchone()
     return row["id"] if row else None
+
+
+def _record_search_event(
+    conn,
+    *,
+    query: str,
+    search_type: str,
+    target: str,
+    result_count: int,
+    latency_ms: int,
+    file_filter: str | None = None,
+    commit_filter: str | None = None,
+    agent_filter: str | None = None,
+    since: str | None = None,
+) -> str:
+    from ..core.telemetry import detect_current_context, record_retrieval_event
+
+    session_id, turn_id = detect_current_context(conn)
+    event = record_retrieval_event(
+        conn,
+        source="mcp",
+        search_type=search_type,
+        target=target,
+        query=query,
+        result_count=result_count,
+        latency_ms=latency_ms,
+        session_id=session_id,
+        turn_id=turn_id,
+        file_filter=file_filter,
+        commit_filter=commit_filter,
+        agent_filter=agent_filter,
+        since_filter=since,
+    )
+    return event["id"]
+
+
+def _record_selection(
+    conn,
+    *,
+    retrieval_event_id: str | None,
+    result_type: str,
+    result_id: str,
+    rank: int = 1,
+) -> str | None:
+    if not retrieval_event_id:
+        return None
+
+    from ..core.telemetry import record_retrieval_selection
+
+    selection = record_retrieval_selection(
+        conn,
+        retrieval_event_id,
+        result_type,
+        result_id,
+        rank=rank,
+    )
+    return selection["id"]
 
 
 if mcp:
@@ -80,6 +138,7 @@ if mcp:
                 since=since,
                 limit=limit,
             )
+            retrieval_event_id = None
         else:
             conn, repo_path_str = _get_repo_db()
             if not conn:
@@ -89,6 +148,7 @@ if mcp:
                 from ..core.config import load_config
 
                 _config = load_config(repo_path_str)
+                started_at = time.perf_counter()
 
                 if search_type == "semantic":
                     try:
@@ -147,6 +207,18 @@ if mcp:
                         limit=limit,
                         config=_config,
                     )
+                retrieval_event_id = _record_search_event(
+                    conn,
+                    query=query,
+                    search_type=search_type,
+                    target="turn",
+                    result_count=len(results),
+                    latency_ms=int((time.perf_counter() - started_at) * 1000),
+                    file_filter=file_filter,
+                    commit_filter=commit_filter,
+                    agent_filter=agent_filter,
+                    since=since,
+                )
             finally:
                 conn.close()
 
@@ -164,7 +236,10 @@ if mcp:
                 entry["repo_name"] = r.get("repo_name", "")
                 entry["repo_path"] = r.get("repo_path", "")
             formatted.append(entry)
-        return json.dumps({"results": formatted, "count": len(formatted)})
+        payload = {"results": formatted, "count": len(formatted), "retrieval_event_id": retrieval_event_id}
+        if is_cross_repo:
+            payload["telemetry_skipped"] = "cross_repo"
+        return json.dumps(payload)
 
     @mcp.tool()
     async def ec_checkpoint_list(
@@ -172,6 +247,7 @@ if mcp:
         limit: int = 20,
         since: str | None = None,
         repos: list[str] | None = None,
+        retrieval_event_id: str | None = None,
     ) -> str:
         """List checkpoints for current session or repo.
 
@@ -203,7 +279,14 @@ if mcp:
                         "repo_path": r.get("repo_path", ""),
                     }
                 )
-            return json.dumps({"checkpoints": checkpoints, "count": len(checkpoints), "warnings": warnings})
+            return json.dumps(
+                {
+                    "checkpoints": checkpoints,
+                    "count": len(checkpoints),
+                    "warnings": warnings,
+                    "telemetry_skipped": "cross_repo",
+                }
+            )
 
         conn, _ = _get_repo_db()
         if not conn:
@@ -225,7 +308,17 @@ if mcp:
 
             rows = conn.execute(query, params).fetchall()
             checkpoints = []
+            selection_ids = []
             for r in rows:
+                selection_id = _record_selection(
+                    conn,
+                    retrieval_event_id=retrieval_event_id,
+                    result_type="checkpoint",
+                    result_id=r["id"],
+                    rank=len(selection_ids) + 1,
+                )
+                if selection_id:
+                    selection_ids.append(selection_id)
                 checkpoints.append(
                     {
                         "id": r["id"],
@@ -235,7 +328,14 @@ if mcp:
                         "diff_summary": r["diff_summary"],
                     }
                 )
-            return json.dumps({"checkpoints": checkpoints, "count": len(checkpoints)})
+            return json.dumps(
+                {
+                    "checkpoints": checkpoints,
+                    "count": len(checkpoints),
+                    "selection_id": selection_ids[0] if selection_ids else None,
+                    "selection_ids": selection_ids,
+                }
+            )
         finally:
             conn.close()
 
@@ -243,6 +343,7 @@ if mcp:
     async def ec_session_context(
         session_id: str | None = None,
         repos: list[str] | None = None,
+        retrieval_event_id: str | None = None,
     ) -> str:
         """Get session context with summary and recent turns.
 
@@ -288,6 +389,7 @@ if mcp:
                         for t in turns
                     ],
                     "warnings": warnings,
+                    "telemetry_skipped": "cross_repo",
                 }
             )
 
@@ -318,6 +420,13 @@ if mcp:
 
             _config = load_config(_repo_path)
 
+            selection_id = _record_selection(
+                conn,
+                retrieval_event_id=retrieval_event_id,
+                result_type="session",
+                result_id=session["id"],
+            )
+
             return json.dumps(
                 {
                     "session_id": session["id"],
@@ -336,6 +445,7 @@ if mcp:
                         }
                         for t in turns
                     ],
+                    "selection_id": selection_id,
                 }
             )
         finally:
@@ -589,6 +699,7 @@ if mcp:
     async def ec_turn_content(
         turn_id: str,
         repos: list[str] | None = None,
+        retrieval_event_id: str | None = None,
     ) -> str:
         """Get full content for a specific turn.
 
@@ -618,6 +729,7 @@ if mcp:
                     "repo_name": result.get("repo_name", ""),
                     "repo_path": result.get("repo_path", ""),
                     "warnings": warnings,
+                    "telemetry_skipped": "cross_repo",
                 }
             )
 
@@ -649,6 +761,13 @@ if mcp:
 
             _config = load_config(repo_path)
 
+            selection_id = _record_selection(
+                conn,
+                retrieval_event_id=retrieval_event_id,
+                result_type="turn",
+                result_id=turn["id"],
+            )
+
             return json.dumps(
                 {
                     "turn_id": turn["id"],
@@ -659,6 +778,7 @@ if mcp:
                     "timestamp": turn.get("timestamp", ""),
                     "content": redact_for_query(content, _config) if content else content,
                     "content_path": content_path,
+                    "selection_id": selection_id,
                 }
             )
         finally:
@@ -667,6 +787,7 @@ if mcp:
     @mcp.tool()
     async def ec_assess(
         assessment_id: str | None = None,
+        retrieval_event_id: str | None = None,
     ) -> str:
         """Get a futures assessment. Returns latest if no ID given.
 
@@ -695,6 +816,14 @@ if mcp:
             if not result:
                 return json.dumps({"error": "No assessment found"})
 
+            selection_id = _record_selection(
+                conn,
+                retrieval_event_id=retrieval_event_id,
+                result_type="assessment",
+                result_id=result["id"],
+            )
+            result = dict(result)
+            result["selection_id"] = selection_id
             return json.dumps(result)
         finally:
             conn.close()
@@ -855,6 +984,43 @@ if mcp:
                     "auto_distilled": distilled,
                 }
             )
+        except ValueError as e:
+            return json.dumps({"error": str(e)})
+        finally:
+            conn.close()
+
+    @mcp.tool()
+    async def ec_context_apply(
+        application_type: str,
+        selection_id: str | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        note: str | None = None,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+    ) -> str:
+        """Record how retrieved context was applied in the current work."""
+        import json
+
+        conn, _ = _get_repo_db()
+        if not conn:
+            return json.dumps({"error": "Not in an EntireContext-initialized repo"})
+
+        try:
+            from ..core.telemetry import detect_current_context, record_context_application
+
+            current_session_id, current_turn_id = detect_current_context(conn)
+            application = record_context_application(
+                conn,
+                application_type=application_type,
+                selection_id=selection_id,
+                source_type=source_type,
+                source_id=source_id,
+                note=note,
+                session_id=session_id or current_session_id,
+                turn_id=turn_id or current_turn_id,
+            )
+            return json.dumps(application)
         except ValueError as e:
             return json.dumps({"error": str(e)})
         finally:

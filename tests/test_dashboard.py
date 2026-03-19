@@ -70,6 +70,22 @@ def _seed_db(ec_repo, ec_db):
     return {"s1": s1["id"], "s2": s2["id"]}
 
 
+def _seed_telemetry(ec_db):
+    ec_db.execute(
+        """INSERT INTO retrieval_events (id, session_id, turn_id, source, search_type, target, query, result_count, latency_ms, created_at)
+           VALUES ('re-1', 'dash-s1', NULL, 'cli', 'regex', 'turn', 'auth', 2, 5, datetime('now'))"""
+    )
+    ec_db.execute(
+        """INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, turn_id, result_type, result_id, rank, created_at)
+           VALUES ('rs-1', 're-1', 'dash-s1', NULL, 'assessment', 'asmt-1', 1, datetime('now'))"""
+    )
+    ec_db.execute(
+        """INSERT INTO context_applications (id, session_id, turn_id, retrieval_selection_id, source_type, source_id, application_type, created_at)
+           VALUES ('ca-1', 'dash-s1', NULL, 'rs-1', 'assessment', 'asmt-1', 'lesson_applied', datetime('now'))"""
+    )
+    ec_db.commit()
+
+
 # ---------------------------------------------------------------------------
 # TestGetDashboardStats
 # ---------------------------------------------------------------------------
@@ -79,7 +95,7 @@ class TestGetDashboardStats:
     def test_returns_dict_with_required_keys(self, ec_repo, ec_db):
         _seed_db(ec_repo, ec_db)
         stats = get_dashboard_stats(ec_db)
-        for key in ("sessions", "checkpoints", "assessments", "since", "limit"):
+        for key in ("sessions", "checkpoints", "assessments", "telemetry", "maturity_score", "maturity_grade", "since", "limit"):
             assert key in stats
 
     def test_sessions_total_count(self, ec_repo, ec_db):
@@ -208,6 +224,28 @@ class TestGetDashboardStats:
         assert bv["narrow"] == 0
         assert bv["neutral"] == 0
 
+    def test_telemetry_rates(self, ec_repo, ec_db):
+        _seed_db(ec_repo, ec_db)
+        _seed_telemetry(ec_db)
+        stats = get_dashboard_stats(ec_db)
+        assert stats["telemetry"]["retrieval_events"]["total"] == 1
+        assert stats["telemetry"]["retrieval_selections"]["total"] == 1
+        assert stats["telemetry"]["context_applications"]["with_selection"] == 1
+        assert stats["telemetry"]["rates"]["search_to_selection_rate"] == 1.0
+        assert stats["telemetry"]["rates"]["applied_context_rate"] == 1.0
+        assert stats["telemetry"]["rates"]["lesson_reuse_rate"] == 1.0
+
+    def test_maturity_grade_empty_db(self, ec_repo, ec_db):
+        stats = get_dashboard_stats(ec_db)
+        assert stats["maturity_score"] == 0
+        assert stats["maturity_grade"] == "Absent"
+
+    def test_maturity_grade_partial(self, ec_repo, ec_db):
+        _seed_db(ec_repo, ec_db)
+        stats = get_dashboard_stats(ec_db)
+        assert stats["maturity_score"] >= 25
+        assert stats["maturity_grade"] == "Partial"
+
 
 # ---------------------------------------------------------------------------
 # TestDashboardCLI
@@ -220,6 +258,7 @@ def _mock_stats() -> dict:
             "total": 2,
             "active": 1,
             "ended": 1,
+            "avg_turns_per_session": 2.0,
             "recent": [
                 {
                     "id": "sess-aaa",
@@ -232,6 +271,9 @@ def _mock_stats() -> dict:
         },
         "checkpoints": {
             "total": 1,
+            "changed_ended_sessions": 1,
+            "changed_ended_sessions_with_checkpoints": 1,
+            "checkpoint_coverage_rate": 1.0,
             "recent": [
                 {
                     "id": "ckp-aaa",
@@ -247,6 +289,8 @@ def _mock_stats() -> dict:
             "by_verdict": {"expand": 2, "narrow": 1, "neutral": 0},
             "with_feedback": 1,
             "feedback_rate": 0.33,
+            "with_checkpoint": 1,
+            "checkpoint_anchored_assessment_rate": 0.33,
             "recent": [
                 {
                     "id": "asmt-aaa",
@@ -257,6 +301,22 @@ def _mock_stats() -> dict:
                 }
             ],
         },
+        "telemetry": {
+            "retrieval_events": {"total": 2, "sessions_with_retrieval": 1},
+            "retrieval_selections": {"total": 1},
+            "context_applications": {"total": 1, "with_selection": 1},
+            "rates": {
+                "retrieval_assisted_session_rate": 0.5,
+                "search_to_selection_rate": 0.5,
+                "applied_context_rate": 1.0,
+                "lesson_reuse_rate": 1.0,
+                "checkpoint_anchored_assessment_rate": 0.33,
+                "turns_with_files_rate": 0.5,
+            },
+        },
+        "maturity_breakdown": {"capture": 10, "distill": 18, "retrieve": 13, "intervene": 20},
+        "maturity_score": 61,
+        "maturity_grade": "Operational",
         "since": None,
         "limit": 10,
     }
@@ -279,19 +339,45 @@ class TestDashboardCLI:
         assert result.exit_code == 0
         # Should contain session or numeric output
         assert "session" in result.output.lower() or "2" in result.output
+        assert "Dogfooding Maturity" in result.output
+        assert "Telemetry" in result.output
 
     def test_empty_stats_renders_without_error(self):
         mock_conn = MagicMock()
         empty = {
-            "sessions": {"total": 0, "active": 0, "ended": 0, "recent": []},
-            "checkpoints": {"total": 0, "recent": []},
+            "sessions": {"total": 0, "active": 0, "ended": 0, "recent": [], "avg_turns_per_session": 0.0},
+            "checkpoints": {
+                "total": 0,
+                "recent": [],
+                "changed_ended_sessions": 0,
+                "changed_ended_sessions_with_checkpoints": 0,
+                "checkpoint_coverage_rate": 0.0,
+            },
             "assessments": {
                 "total": 0,
                 "by_verdict": {"expand": 0, "narrow": 0, "neutral": 0},
                 "with_feedback": 0,
                 "feedback_rate": 0.0,
+                "with_checkpoint": 0,
+                "checkpoint_anchored_assessment_rate": 0.0,
                 "recent": [],
             },
+            "telemetry": {
+                "retrieval_events": {"total": 0, "sessions_with_retrieval": 0},
+                "retrieval_selections": {"total": 0},
+                "context_applications": {"total": 0, "with_selection": 0},
+                "rates": {
+                    "retrieval_assisted_session_rate": 0.0,
+                    "search_to_selection_rate": 0.0,
+                    "applied_context_rate": 0.0,
+                    "lesson_reuse_rate": 0.0,
+                    "checkpoint_anchored_assessment_rate": 0.0,
+                    "turns_with_files_rate": 0.0,
+                },
+            },
+            "maturity_breakdown": {"capture": 0, "distill": 0, "retrieve": 0, "intervene": 0},
+            "maturity_score": 0,
+            "maturity_grade": "Absent",
             "since": None,
             "limit": 10,
         }
