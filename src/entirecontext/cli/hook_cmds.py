@@ -6,10 +6,7 @@ import sys
 
 import typer
 
-from . import app
-
 hook_app = typer.Typer(help="Hook handlers (called by Claude Code)")
-app.add_typer(hook_app, name="hook")
 
 
 @hook_app.command("handle")
@@ -69,3 +66,7 @@ def codex_notify(
             payload = {}
 
     ingest_codex_notify_event(payload, payload_text=payload_text)
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(hook_app, name="hook")

@@ -7,11 +7,8 @@ import sqlite3
 import typer
 from rich.console import Console
 
-from . import app
-
 console = Console()
 context_app = typer.Typer(help="Context telemetry")
-app.add_typer(context_app, name="context")
 
 
 @context_app.command("select")
@@ -89,3 +86,7 @@ def context_apply(
         conn.close()
 
     console.print(f"Application ID: {application['id']}")
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(context_app, name="context")

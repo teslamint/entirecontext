@@ -8,12 +8,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 
-
-@app.command("blame")
 def blame_cmd(
     file: str = typer.Argument(..., help="File path to show attribution for"),
     summary: bool = typer.Option(False, "--summary", "-s", help="Show aggregated stats only"),
@@ -89,3 +85,7 @@ def blame_cmd(
         )
 
     console.print(table)
+
+
+def register(app: typer.Typer) -> None:
+    app.command("blame")(blame_cmd)

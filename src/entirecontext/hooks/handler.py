@@ -6,6 +6,8 @@ import json
 import sys
 from typing import Any
 
+from ..core.context import RepoContext
+
 
 def read_stdin_json() -> dict[str, Any]:
     """Read and parse JSON from stdin (Claude Code hook protocol)."""
@@ -45,6 +47,28 @@ def handle_hook(hook_type: str | None = None, *, data: dict[str, Any] | None = N
     try:
         return handler(data)
     except Exception as e:
+        cwd = data.get("cwd", ".") if data else "."
+        context = RepoContext.from_cwd(cwd)
+        if context is not None:
+            try:
+                from ..core.telemetry import record_operation_event
+
+                session_id, turn_id = None, None
+                if context.current_session_id:
+                    session_id = context.current_session_id
+                record_operation_event(
+                    context.conn,
+                    source="hook",
+                    operation_name="handle_hook",
+                    phase=hook_type or "unknown",
+                    status="warning",
+                    error_class=type(e).__name__,
+                    message=str(e),
+                    session_id=session_id,
+                    turn_id=turn_id,
+                )
+            finally:
+                context.close()
         print(f"EntireContext hook error ({hook_type}): {e}", file=sys.stderr)
         return 0
 

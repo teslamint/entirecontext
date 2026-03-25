@@ -8,11 +8,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 checkpoint_app = typer.Typer(help="Checkpoint management")
-app.add_typer(checkpoint_app, name="checkpoint")
 
 
 @checkpoint_app.command("create")
@@ -313,3 +310,7 @@ def checkpoint_diff(
 
     if not result["added"] and not result["removed"] and not result["modified"]:
         console.print("\n[dim]No differences in files_snapshot.[/dim]")
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(checkpoint_app, name="checkpoint")

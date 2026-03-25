@@ -8,11 +8,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 session_app = typer.Typer(help="Session management")
-app.add_typer(session_app, name="session")
 
 
 @session_app.command("list")
@@ -446,3 +443,7 @@ def session_activate(
         table.add_row(score, r["id"][:12], r["session_id"][:12], msg, date)
 
     console.print(table)
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(session_app, name="session")

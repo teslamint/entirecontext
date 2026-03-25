@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 from uuid import uuid4
 
+from .context import RepoContext
 from ..db import get_db, get_global_db, check_and_migrate
 from ..db.global_schema import init_global_schema
 
@@ -103,53 +104,44 @@ def _register_in_global_db(repo_path: str, repo_name: str) -> None:
 def get_project(repo_path: str | Path | None = None) -> dict | None:
     """Get project info for a repo. Returns None if not initialized."""
     if repo_path is None:
-        repo_path = find_git_root()
-    if repo_path is None:
+        context = RepoContext.from_cwd()
+    else:
+        context = RepoContext.from_repo_path(repo_path)
+    if context is None:
         return None
-
-    repo_path = str(Path(repo_path).resolve())
-    db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
-    if not db_path.exists():
-        return None
-
-    conn = get_db(repo_path)
-    row = conn.execute("SELECT * FROM projects WHERE repo_path = ?", (repo_path,)).fetchone()
-    conn.close()
-
-    if row:
-        return dict(row)
-    return None
+    try:
+        return context.project
+    finally:
+        context.close()
 
 
 def get_status(repo_path: str | Path | None = None) -> dict:
     """Get project status including session/turn counts."""
     if repo_path is None:
-        repo_path = find_git_root()
-    if repo_path is None:
+        context = RepoContext.from_cwd()
+    else:
+        context = RepoContext.from_repo_path(repo_path)
+    if context is None:
         return {"initialized": False, "error": "Not in a git repository"}
+    try:
+        if context.project is None:
+            return {"initialized": False, "repo_path": context.repo_path}
 
-    repo_path = str(Path(repo_path).resolve())
-    project = get_project(repo_path)
-    if project is None:
-        return {"initialized": False, "repo_path": repo_path}
+        session_count = context.conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        turn_count = context.conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+        checkpoint_count = context.conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
 
-    conn = get_db(repo_path)
-    session_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-    turn_count = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
-    checkpoint_count = conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
+        active_session = context.conn.execute(
+            "SELECT id, started_at, total_turns FROM sessions WHERE ended_at IS NULL ORDER BY last_activity_at DESC LIMIT 1"
+        ).fetchone()
 
-    active_session = conn.execute(
-        "SELECT id, started_at, total_turns FROM sessions WHERE ended_at IS NULL ORDER BY last_activity_at DESC LIMIT 1"
-    ).fetchone()
-
-    conn.close()
-
-    status = {
-        "initialized": True,
-        "project": project,
-        "session_count": session_count,
-        "turn_count": turn_count,
-        "checkpoint_count": checkpoint_count,
-        "active_session": dict(active_session) if active_session else None,
-    }
-    return status
+        return {
+            "initialized": True,
+            "project": context.project,
+            "session_count": session_count,
+            "turn_count": turn_count,
+            "checkpoint_count": checkpoint_count,
+            "active_session": dict(active_session) if active_session else None,
+        }
+    finally:
+        context.close()

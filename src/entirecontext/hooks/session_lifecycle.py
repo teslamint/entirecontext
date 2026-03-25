@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -27,6 +26,31 @@ def _find_git_root(cwd: str) -> str | None:
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return None
+
+
+def _record_hook_warning(repo_path: str, phase: str, exc: Exception) -> None:
+    if not repo_path:
+        return
+    try:
+        from ..db import check_and_migrate, get_db
+        from ..core.telemetry import record_operation_event
+
+        conn = get_db(repo_path)
+        try:
+            check_and_migrate(conn)
+            record_operation_event(
+                conn,
+                source="hook",
+                operation_name="session_lifecycle",
+                phase=phase,
+                status="warning",
+                error_class=type(exc).__name__,
+                message=str(exc),
+            )
+        finally:
+            conn.close()
+    except Exception:
+        return
 
 
 def _ensure_project(conn, repo_path: str) -> str:
@@ -104,8 +128,8 @@ def on_session_start(data: dict[str, Any]) -> None:
                 (metadata, session_id),
             )
             conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_hook_warning(repo_path, "session_start_metadata", exc)
 
     conn.close()
 
@@ -197,8 +221,8 @@ def _maybe_generate_intent_summary(conn, session_id: str) -> None:
 
         conn.execute("UPDATE sessions SET session_summary = ? WHERE id = ?", (summary[:500], session_id))
         conn.commit()
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_hook_warning(repo_path, "intent_summary", exc)
 
 
 def on_session_end(data: dict[str, Any]) -> None:
@@ -242,7 +266,8 @@ def on_session_end(data: dict[str, Any]) -> None:
         )
         gconn.commit()
         gconn.close()
-    except Exception:
+    except Exception as exc:
+        _record_hook_warning(repo_path, "session_end_global_counts", exc)
         try:
             conn.close()
         except Exception:
@@ -308,8 +333,8 @@ def _maybe_auto_cleanup_no_changes(repo_path: str, session_id: str) -> None:
             consolidate_old_turns(conn, repo_path, before_date="9999-12-31", session_id=session_id, dry_run=False)
         finally:
             conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_hook_warning(repo_path, "auto_cleanup_no_changes", exc)
 
 
 def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
@@ -358,12 +383,13 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
             metadata={"source": "auto_session_end"},
         )
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_hook_warning(repo_path, "auto_checkpoint", exc)
 
 
 def on_post_commit(data: dict[str, Any]) -> None:
     """Handle PostCommit hook — create checkpoint for active session. Never crashes."""
+    repo_path = data.get("cwd", ".")
     try:
         cwd = data.get("cwd", ".")
         repo_path = _find_git_root(cwd)
@@ -414,8 +440,8 @@ def on_post_commit(data: dict[str, Any]) -> None:
             metadata={"source": "post_commit"},
         )
         conn.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_hook_warning(repo_path, "post_commit", exc)
 
 
 def _maybe_trigger_auto_embed(repo_path: str) -> None:
@@ -434,8 +460,8 @@ def _maybe_trigger_auto_embed(repo_path: str) -> None:
         if worker_status(repo_path).get("running"):
             return
         launch_worker(repo_path, [sys.executable, "-m", "entirecontext.cli", "index", "rebuild", "--semantic"])
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_hook_warning(repo_path, "auto_embed", exc)
 
 
 def _maybe_trigger_auto_distill(repo_path: str) -> None:
@@ -444,8 +470,8 @@ def _maybe_trigger_auto_distill(repo_path: str) -> None:
         from ..core.futures import auto_distill_lessons
 
         auto_distill_lessons(repo_path)
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_hook_warning(repo_path, "auto_distill", exc)
 
 
 def _maybe_trigger_auto_sync(repo_path: str) -> None:
@@ -459,5 +485,5 @@ def _maybe_trigger_auto_sync(repo_path: str) -> None:
         from ..sync.auto_sync import trigger_background_sync
 
         trigger_background_sync(repo_path)
-    except Exception:
-        pass
+    except Exception as exc:
+        _record_hook_warning(repo_path, "auto_sync", exc)

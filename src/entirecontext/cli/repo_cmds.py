@@ -8,11 +8,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 repo_app = typer.Typer(help="Repository management")
-app.add_typer(repo_app, name="repo")
 
 
 @repo_app.command("list")
@@ -44,3 +41,7 @@ def repo_list():
         )
 
     console.print(table)
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(repo_app, name="repo")

@@ -241,5 +241,5 @@ class TestCrossRepoAssessmentTrends:
 
         trends, warnings = cross_repo_assessment_trends(include_warnings=True)
         assert len(warnings) >= 1
-        assert any("broken" in w for w in warnings)
+        assert any(w["repo_name"] == "broken" for w in warnings)
         assert "frontend" in trends["by_repo"]

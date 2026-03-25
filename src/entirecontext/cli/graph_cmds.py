@@ -6,12 +6,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 
-
-@app.command("graph")
 def graph_cmd(
     session_id: str | None = typer.Option(None, "--session", "-s", help="Restrict graph to a single session ID"),
     since: str | None = typer.Option(None, "--since", help="Only include turns on or after this date (YYYY-MM-DD)"),
@@ -64,3 +60,7 @@ def graph_cmd(
     edges_table.add_row("[bold]Total[/bold]", f"[bold]{stats['total_edges']}[/bold]")
 
     console.print(edges_table)
+
+
+def register(app: typer.Typer) -> None:
+    app.command("graph")(graph_cmd)

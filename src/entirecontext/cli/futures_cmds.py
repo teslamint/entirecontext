@@ -12,11 +12,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from . import app
-
 console = Console()
 futures_app = typer.Typer(help="Futures assessment (Tidy First)")
-app.add_typer(futures_app, name="futures")
 
 
 from ..core.futures import ASSESS_SYSTEM_PROMPT as SYSTEM_PROMPT  # noqa: E402
@@ -595,3 +592,7 @@ def futures_worker_launch(
 
     pid = launch_worker(repo_path, cmd)
     console.print(f"[green]Worker launched[/green] (PID {pid})")
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(futures_app, name="futures")

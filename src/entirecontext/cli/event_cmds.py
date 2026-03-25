@@ -8,11 +8,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 event_app = typer.Typer(help="Event management")
-app.add_typer(event_app, name="event")
 
 
 @event_app.command("list")
@@ -203,3 +200,7 @@ def event_link(
     conn.close()
 
     console.print(f"[green]Linked session {session_id[:12]} to event {event_id[:12]}[/green]")
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(event_app, name="event")

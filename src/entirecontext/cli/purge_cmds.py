@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import typer
 
-from . import app
-
 purge_app = typer.Typer(help="Purge turns, sessions, or matching content.")
-app.add_typer(purge_app, name="purge")
 
 
 def _get_conn_and_repo():
@@ -57,6 +54,10 @@ def purge_session_cmd(
         raise typer.Exit(1)
     finally:
         conn.close()
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(purge_app, name="purge")
 
 
 @purge_app.command("turn")

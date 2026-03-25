@@ -5,12 +5,8 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from . import app
-
 console = Console()
 
-
-@app.command("index")
 def index_cmd(
     semantic: bool = typer.Option(
         False, "--semantic", help="Generate semantic embeddings (requires entirecontext[semantic])"
@@ -48,3 +44,7 @@ def index_cmd(
             raise typer.Exit(1)
 
     conn.close()
+
+
+def register(app: typer.Typer) -> None:
+    app.command("index")(index_cmd)

@@ -7,12 +7,8 @@ from typing import List, Optional
 import typer
 from rich.console import Console
 
-from . import app
-
 console = Console()
 
-
-@app.command("rewind")
 def rewind(
     checkpoint_id: str = typer.Argument(..., help="Checkpoint ID to rewind to"),
     restore: bool = typer.Option(False, "--restore", help="Restore working tree to checkpoint state"),
@@ -152,3 +148,7 @@ def rewind(
         except subprocess.CalledProcessError as e:
             console.print(f"[red]Failed to restore: {e.stderr.strip()}[/red]")
             raise typer.Exit(1)
+
+
+def register(app: typer.Typer) -> None:
+    app.command("rewind")(rewind)

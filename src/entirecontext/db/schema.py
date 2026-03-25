@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -312,6 +312,27 @@ CREATE INDEX IF NOT EXISTS idx_context_applications_session ON context_applicati
 CREATE INDEX IF NOT EXISTS idx_context_applications_selection ON context_applications(retrieval_selection_id);
 CREATE INDEX IF NOT EXISTS idx_context_applications_type ON context_applications(application_type);
 CREATE INDEX IF NOT EXISTS idx_context_applications_created ON context_applications(created_at DESC);
+""",
+    "operation_events": """
+CREATE TABLE IF NOT EXISTS operation_events (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    turn_id TEXT,
+    source TEXT NOT NULL,
+    operation_name TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    status TEXT NOT NULL,
+    latency_ms INTEGER NOT NULL DEFAULT 0,
+    error_class TEXT,
+    message TEXT,
+    metadata TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
+    FOREIGN KEY (turn_id) REFERENCES turns(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_operation_events_session ON operation_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_operation_events_created ON operation_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_operation_events_status ON operation_events(status);
 """,
 }
 

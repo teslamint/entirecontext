@@ -10,12 +10,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 
-
-@app.command()
 def search(
     query: str = typer.Argument(..., help="Search query"),
     fts: bool = typer.Option(False, "--fts", help="Use FTS5 full-text search"),
@@ -248,3 +244,7 @@ def search(
         console.print("[dim]Search telemetry skipped: cross_repo[/dim]")
     elif retrieval_event_id:
         console.print(f"[dim]Search ID: {retrieval_event_id}[/dim]")
+
+
+def register(app: typer.Typer) -> None:
+    app.command()(search)

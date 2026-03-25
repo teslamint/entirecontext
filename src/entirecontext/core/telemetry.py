@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from .session import get_current_session
 
 VALID_APPLICATION_TYPES = ("reference", "decision_change", "code_reuse", "lesson_applied")
+VALID_OPERATION_STATUSES = ("ok", "warning", "error")
 
 
 def _now_iso() -> str:
@@ -198,5 +200,63 @@ def record_context_application(
         "source_id": source_id,
         "application_type": application_type,
         "note": note,
+        "created_at": now,
+    }
+
+
+def record_operation_event(
+    conn,
+    *,
+    source: str,
+    operation_name: str,
+    phase: str,
+    status: str,
+    latency_ms: int = 0,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+    error_class: str | None = None,
+    message: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    if status not in VALID_OPERATION_STATUSES:
+        raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_OPERATION_STATUSES}")
+
+    event_id = str(uuid4())
+    now = _now_iso()
+    conn.execute(
+        """
+        INSERT INTO operation_events (
+            id, session_id, turn_id, source, operation_name, phase, status,
+            latency_ms, error_class, message, metadata, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event_id,
+            session_id,
+            turn_id,
+            source,
+            operation_name,
+            phase,
+            status,
+            latency_ms,
+            error_class,
+            message,
+            json.dumps(metadata) if metadata is not None else None,
+            now,
+        ),
+    )
+    conn.commit()
+    return {
+        "id": event_id,
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "source": source,
+        "operation_name": operation_name,
+        "phase": phase,
+        "status": status,
+        "latency_ms": latency_ms,
+        "error_class": error_class,
+        "message": message,
+        "metadata": metadata,
         "created_at": now,
     }

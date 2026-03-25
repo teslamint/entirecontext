@@ -99,14 +99,14 @@ def _mk_subprocess_side_effect(
             (worktree_path / "sessions").mkdir(exist_ok=True)
             (worktree_path / "checkpoints").mkdir(exist_ok=True)
 
-            if ref == SHADOW_BRANCH:
-                state["branch_worktree"] = worktree_path
-            elif ref == "HEAD" and state["branch_worktree"] is not None:
+            if ref == SHADOW_BRANCH and worktree_path.name.startswith("ec-sync-local-") and state["branch_worktree"] is not None:
                 _copy_tree(state["branch_worktree"], worktree_path)
+            elif ref == SHADOW_BRANCH:
+                state["branch_worktree"] = worktree_path
+                if stale_fixture is not None:
+                    _copy_tree(stale_fixture, worktree_path)
             elif ref == REMOTE_SHADOW_REF and remote_fixture is not None:
                 _copy_tree(remote_fixture, worktree_path)
-            elif ref == SHADOW_BRANCH and stale_fixture is not None:
-                _copy_tree(stale_fixture, worktree_path)
 
             return _cp()
 

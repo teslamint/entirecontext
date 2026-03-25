@@ -8,12 +8,8 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from . import app
-
 console = Console()
 
-
-@app.command("import")
 def import_cmd(
     from_aline: Optional[str] = typer.Option(
         None,
@@ -104,3 +100,7 @@ def _import_from_aline(
         console.print("[green]Import complete.[/green]")
     finally:
         conn.close()
+
+
+def register(app: typer.Typer) -> None:
+    app.command("import")(import_cmd)

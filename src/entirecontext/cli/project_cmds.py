@@ -13,8 +13,6 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 
 _AGENT_CHOICES = {"claude", "codex", "both"}
@@ -160,7 +158,6 @@ def _is_ec_hook(entry: dict) -> bool:
     return False
 
 
-@app.command()
 def init():
     """Initialize EntireContext in current git repo."""
     from ..core.project import init_project
@@ -224,7 +221,6 @@ def _remove_git_hooks(repo_path: str) -> list[str]:
     return removed
 
 
-@app.command()
 def enable(
     no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
     agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
@@ -299,7 +295,6 @@ def enable(
         console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
 
 
-@app.command()
 def disable(
     agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
 ):
@@ -352,7 +347,6 @@ def disable(
             console.print("No Codex notify integration found.")
 
 
-@app.command()
 def status(
     agent: str = typer.Option("claude", "--agent", help="View status for claude|codex|both"),
 ):
@@ -403,7 +397,6 @@ def status(
     console.print(table)
 
 
-@app.command()
 def config(
     key: str | None = typer.Argument(None, help="Config key (dotted notation, e.g. capture.auto_capture)"),
     value: str | None = typer.Argument(None, help="Value to set"),
@@ -432,7 +425,6 @@ def config(
     console.print(f"[green]Set[/green] {key} = {value}")
 
 
-@app.command()
 def doctor(
     agent: str = typer.Option("claude", "--agent", help="Validate claude|codex|both integrations"),
 ):
@@ -519,3 +511,12 @@ def doctor(
             console.print(f"[yellow]WARN:[/yellow] {warning}")
     if not issues and not warnings:
         console.print("[green]All checks passed.[/green]")
+
+
+def register(app: typer.Typer) -> None:
+    app.command()(init)
+    app.command()(enable)
+    app.command()(disable)
+    app.command()(status)
+    app.command()(config)
+    app.command()(doctor)

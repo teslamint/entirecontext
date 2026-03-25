@@ -5,12 +5,8 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from . import app
-
 console = Console()
 
-
-@app.command("sync")
 def sync(
     no_filter: bool = typer.Option(False, "--no-filter", help="Skip secret filtering"),
     if_enabled: bool = typer.Option(False, "--if-enabled", help="Only run if auto_sync_on_push is enabled in config"),
@@ -65,8 +61,6 @@ def sync(
     finally:
         conn.close()
 
-
-@app.command("pull")
 def pull():
     """Fetch shadow branch and import."""
     from ..core.project import find_git_root, get_project
@@ -101,3 +95,8 @@ def pull():
         console.print("[green]Pull complete.[/green]")
     finally:
         conn.close()
+
+
+def register(app: typer.Typer) -> None:
+    app.command("sync")(sync)
+    app.command("pull")(pull)

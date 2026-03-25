@@ -5,11 +5,8 @@ from __future__ import annotations
 import typer
 from rich.console import Console
 
-from . import app
-
 console = Console()
 mcp_app = typer.Typer(help="MCP server management")
-app.add_typer(mcp_app, name="mcp")
 
 
 @mcp_app.command("serve")
@@ -22,3 +19,7 @@ def mcp_serve():
     except ImportError:
         console.print("[red]MCP not available. Install with: pip install 'entirecontext[mcp]'[/red]")
         raise typer.Exit(1)
+
+
+def register(app: typer.Typer) -> None:
+    app.add_typer(mcp_app, name="mcp")

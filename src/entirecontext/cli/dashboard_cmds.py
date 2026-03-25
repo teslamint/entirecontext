@@ -8,12 +8,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 
-
-@app.command("dashboard")
 def dashboard_cmd(
     since: str | None = typer.Option(
         None, "--since", "-s", help="Only include data on or after this date (YYYY-MM-DD)"
@@ -179,3 +175,7 @@ def _render_dashboard(stats: dict) -> None:
         "checkpoint-anchored assessment rate", f"{rates['checkpoint_anchored_assessment_rate'] * 100:.0f}%"
     )
     console.print(telemetry_table)
+
+
+def register(app: typer.Typer) -> None:
+    app.command("dashboard")(dashboard_cmd)

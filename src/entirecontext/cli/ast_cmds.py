@@ -6,12 +6,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from . import app
-
 console = Console()
 
-
-@app.command("ast-search")
 def ast_search_cmd(
     query: str = typer.Argument(..., help="Search query (name, docstring keyword, etc.)"),
     symbol_type: str | None = typer.Option(
@@ -71,3 +67,7 @@ def ast_search_cmd(
         )
 
     console.print(table)
+
+
+def register(app: typer.Typer) -> None:
+    app.command("ast-search")(ast_search_cmd)

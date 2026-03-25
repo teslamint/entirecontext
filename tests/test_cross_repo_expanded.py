@@ -100,7 +100,8 @@ class TestForEachRepo:
 
         results, warnings = _for_each_repo(fn)
         assert len(warnings) == 1
-        assert "broken" in warnings[0]
+        assert warnings[0]["repo_name"] == "broken"
+        assert warnings[0]["phase"] == "query"
         assert len(results) >= 2
 
     def test_empty_repos_returns_empty(self, isolated_global_db):
