@@ -167,6 +167,11 @@ The sections below are reference material for the current CLI surface. They stay
 | `ec futures worker-status` | Show background assessment worker status |
 | `ec futures worker-stop` | Stop background assessment worker |
 | `ec futures worker-launch [--diff TEXT]` | Launch background assessment worker |
+| `ec decision create TITLE [--rationale TEXT] [--scope TEXT]` | Create a decision record |
+| `ec decision list [--status STATUS] [--file PATH] [--limit N]` | List decisions (optional staleness/file filter) |
+| `ec decision show DECISION_ID` | Show decision details and linked artifacts |
+| `ec decision link DECISION_ID [--assessment ID\|--checkpoint ID\|--file PATH]` | Link decision to assessment/checkpoint/file |
+| `ec decision stale DECISION_ID --status STATUS` | Update decision staleness (`fresh\|stale\|superseded\|contradicted`) |
 
 ### LLM Backends (`ec futures assess`)
 
@@ -502,3 +507,15 @@ EntireContext was inspired by:
 ## License
 
 [MIT](LICENSE)
+
+
+### Decision / Assessment / Lesson roles
+
+- **Decision**: reusable engineering intent (what/why/scope), linked to files, checkpoints, and assessments.
+- **Assessment**: point-in-time evaluation of a diff/checkpoint (expand/narrow/neutral) using Tidy First framing.
+- **Lesson**: assessment + feedback distilled into guidance for future changes.
+
+### MCP Decision Tools
+
+- `ec_decision_get(decision_id)` — resolve decision by full or prefix ID.
+- `ec_decision_related(files?, assessment_ids?, diff_text?, limit?)` — rank linked decisions by file overlap, assessment relations, and diff text match.

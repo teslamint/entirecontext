@@ -250,3 +250,84 @@ def _fts_search_events(conn, query, since, limit) -> list[dict]:
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def rank_related_decisions(
+    conn,
+    *,
+    file_paths: list[str] | None = None,
+    assessment_ids: list[str] | None = None,
+    diff_text: str | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Rank decisions by file overlap, assessment links, and recency.
+
+    Scoring rules:
+    - +4 per linked assessment match
+    - +2 per linked file path match
+    - +1 if title/rationale appears in diff text
+    """
+    file_paths = file_paths or []
+    assessment_ids = assessment_ids or []
+    diff_text_lc = (diff_text or "").lower()
+
+    decisions = [dict(r) for r in conn.execute("SELECT * FROM decisions ORDER BY updated_at DESC LIMIT 200").fetchall()]
+    if not decisions:
+        return []
+
+    resolved_assessment_ids: set[str] = set()
+    for assessment_id in assessment_ids:
+        row = conn.execute(
+            "SELECT id FROM assessments WHERE id = ? OR id LIKE ?", (assessment_id, f"{assessment_id}%")
+        ).fetchone()
+        if row:
+            resolved_assessment_ids.add(row["id"])
+
+    scored: list[dict] = []
+    for d in decisions:
+        decision_id = d["id"]
+        score = 0.0
+
+        if file_paths:
+            linked_files = {
+                row["file_path"]
+                for row in conn.execute(
+                    "SELECT file_path FROM decision_files WHERE decision_id = ?", (decision_id,)
+                ).fetchall()
+            }
+            for file_path in file_paths:
+                if any(file_path in linked or linked in file_path for linked in linked_files):
+                    score += 2
+
+        if resolved_assessment_ids:
+            linked_assessment_ids = {
+                row["assessment_id"]
+                for row in conn.execute(
+                    "SELECT assessment_id FROM decision_assessments WHERE decision_id = ?", (decision_id,)
+                ).fetchall()
+            }
+            score += 4 * len(linked_assessment_ids & resolved_assessment_ids)
+
+        if diff_text_lc:
+            title = (d.get("title") or "").lower()
+            rationale = (d.get("rationale") or "").lower()
+            if title and title in diff_text_lc:
+                score += 1
+            elif rationale and rationale[:80] and rationale[:80] in diff_text_lc:
+                score += 1
+
+        if score == 0:
+            continue
+
+        scored.append(
+            {
+                "id": decision_id,
+                "title": d.get("title"),
+                "staleness_status": d.get("staleness_status"),
+                "updated_at": d.get("updated_at"),
+                "score": round(score, 3),
+            }
+        )
+
+    scored.sort(key=lambda item: (item["score"], item.get("updated_at", "")), reverse=True)
+    return scored[:limit]
