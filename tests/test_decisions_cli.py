@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
@@ -88,3 +89,34 @@ class TestDecisionsCLI:
             ["decision", "link", decision["id"][:12], "--assessment", "a", "--file", "src/x.py"],
         )
         assert invalid_link.exit_code == 1
+
+    @pytest.mark.parametrize(
+        ("argv", "patched_symbol"),
+        [
+            (["decision", "create", "Use idempotency keys"], "create_decision"),
+            (["decision", "show", "decision-123"], "get_decision"),
+        ],
+    )
+    def test_create_and_show_close_connection_on_exception(self, ec_repo, monkeypatch, argv, patched_symbol):
+        monkeypatch.chdir(ec_repo)
+
+        class SpyConnection:
+            def __init__(self):
+                self.closed = False
+
+            def close(self):
+                self.closed = True
+
+        conn = SpyConnection()
+
+        def raise_error(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("entirecontext.db.get_db", lambda repo_path: conn)
+        monkeypatch.setattr(f"entirecontext.core.decisions.{patched_symbol}", raise_error)
+
+        result = runner.invoke(app, argv)
+
+        assert result.exit_code == 1
+        assert isinstance(result.exception, RuntimeError)
+        assert conn.closed is True

@@ -16,6 +16,7 @@ from entirecontext.core.decisions import (
 )
 from entirecontext.core.futures import create_assessment, list_assessments
 from entirecontext.core.project import get_project
+from entirecontext.core.search import rank_related_decisions
 from entirecontext.core.session import create_session
 
 
@@ -74,6 +75,48 @@ class TestDecisionsCore:
         assert enriched is not None
         assert enriched["assessments"][0]["assessment_id"] == assessment["id"]
         assert "src/service/retry.py" in enriched["files"]
+
+    def test_rank_related_decisions_escapes_assessment_prefix_wildcards(self, ec_db):
+        ec_db.execute(
+            """INSERT INTO assessments (
+                id, checkpoint_id, verdict, impact_summary, roadmap_alignment,
+                tidy_suggestion, diff_summary, model_name, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("abc%foo-1", None, "expand", "literal percent", None, None, None, None, "2025-01-01T00:00:00+00:00"),
+        )
+        ec_db.execute(
+            """INSERT INTO assessments (
+                id, checkpoint_id, verdict, impact_summary, roadmap_alignment,
+                tidy_suggestion, diff_summary, model_name, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            ("abcXfoo-2", None, "expand", "wildcard match", None, None, None, None, "2025-01-01T00:00:01+00:00"),
+        )
+        first = create_decision(ec_db, title="Literal match")
+        second = create_decision(ec_db, title="Wildcard candidate")
+        link_decision_to_assessment(ec_db, first["id"], "abc%foo-1")
+        link_decision_to_assessment(ec_db, second["id"], "abcXfoo-2")
+
+        ranked = rank_related_decisions(ec_db, assessment_ids=["abc%f"], limit=10)
+
+        assert [item["id"] for item in ranked] == [first["id"]]
+
+    def test_link_decision_to_assessment_keeps_distinct_relation_types(self, ec_db):
+        assessment = create_assessment(ec_db, verdict="expand", impact_summary="enables retries")
+        decision = create_decision(ec_db, title="Queue retries")
+
+        supports = link_decision_to_assessment(ec_db, decision["id"], assessment["id"], relation_type="supports")
+        supports_again = link_decision_to_assessment(ec_db, decision["id"], assessment["id"], relation_type="supports")
+        informed_by = link_decision_to_assessment(ec_db, decision["id"], assessment["id"], relation_type="informed_by")
+
+        rows = ec_db.execute(
+            "SELECT relation_type FROM decision_assessments WHERE decision_id = ? AND assessment_id = ? ORDER BY relation_type",
+            (decision["id"], assessment["id"]),
+        ).fetchall()
+
+        assert supports["relation_type"] == "supports"
+        assert supports_again["relation_type"] == "supports"
+        assert informed_by["relation_type"] == "informed_by"
+        assert [row["relation_type"] for row in rows] == ["informed_by", "supports"]
 
     def test_link_checkpoint_and_commit(self, ec_repo, ec_db):
         from entirecontext.core.checkpoint import create_checkpoint

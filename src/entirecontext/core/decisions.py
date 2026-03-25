@@ -7,10 +7,14 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-VALID_STALENESS = ("fresh", "stale", "superseded", "contradicted")
+VALID_STALENESS = frozenset(("fresh", "stale", "superseded", "contradicted"))
 # relation_type is part of identity so one decision-assessment pair can keep
 # multiple typed links (e.g. informed_by + contradicts) when historically true.
-VALID_DECISION_ASSESSMENT_RELATION_TYPES = ("supports", "informed_by", "contradicts", "supersedes")
+VALID_DECISION_ASSESSMENT_RELATION_TYPES = frozenset(("supports", "informed_by", "contradicts", "supersedes"))
+
+
+def _format_allowed(values: frozenset[str]) -> tuple[str, ...]:
+    return tuple(sorted(values))
 
 
 def _now_iso() -> str:
@@ -66,7 +70,7 @@ def create_decision(
     supporting_evidence: list[dict[str, Any]] | list[str] | None = None,
 ) -> dict:
     if staleness_status not in VALID_STALENESS:
-        raise ValueError(f"Invalid staleness_status '{staleness_status}'. Must be one of: {VALID_STALENESS}")
+        raise ValueError(f"Invalid staleness_status '{staleness_status}'. Must be one of: {_format_allowed(VALID_STALENESS)}")
 
     decision_id = str(uuid4())
     now = _now_iso()
@@ -122,7 +126,7 @@ def list_decisions(
     limit: int = 20,
 ) -> list[dict]:
     if staleness_status and staleness_status not in VALID_STALENESS:
-        raise ValueError(f"Invalid staleness_status '{staleness_status}'. Must be one of: {VALID_STALENESS}")
+        raise ValueError(f"Invalid staleness_status '{staleness_status}'. Must be one of: {_format_allowed(VALID_STALENESS)}")
 
     query = "SELECT DISTINCT d.* FROM decisions d"
     params: list[Any] = []
@@ -149,7 +153,7 @@ def list_decisions(
 
 def update_decision_staleness(conn, decision_id: str, status: str) -> dict:
     if status not in VALID_STALENESS:
-        raise ValueError(f"Invalid status '{status}'. Must be one of: {VALID_STALENESS}")
+        raise ValueError(f"Invalid status '{status}'. Must be one of: {_format_allowed(VALID_STALENESS)}")
 
     full_id = _resolve_decision_id(conn, decision_id)
     if full_id is None:
@@ -165,7 +169,7 @@ def update_decision_staleness(conn, decision_id: str, status: str) -> dict:
 def link_decision_to_assessment(conn, decision_id: str, assessment_id: str, relation_type: str = "supports") -> dict:
     if relation_type not in VALID_DECISION_ASSESSMENT_RELATION_TYPES:
         raise ValueError(
-            f"Invalid relation_type '{relation_type}'. Must be one of: {VALID_DECISION_ASSESSMENT_RELATION_TYPES}"
+            f"Invalid relation_type '{relation_type}'. Must be one of: {_format_allowed(VALID_DECISION_ASSESSMENT_RELATION_TYPES)}"
         )
 
     full_decision_id = _resolve_decision_id(conn, decision_id)
@@ -177,6 +181,8 @@ def link_decision_to_assessment(conn, decision_id: str, assessment_id: str, rela
         raise ValueError(f"Assessment '{assessment_id}' not found")
 
     conn.execute(
+        # Duplicate inserts for the same typed link are ignored, while the same
+        # decision-assessment pair may coexist with additional relation types.
         """INSERT OR IGNORE INTO decision_assessments (decision_id, assessment_id, relation_type)
         VALUES (?, ?, ?)""",
         (full_decision_id, full_assessment_id, relation_type),

@@ -276,12 +276,12 @@ def rank_related_decisions(
         return []
 
     resolved_assessment_ids: set[str] = set()
+    from .decisions import _resolve_assessment_id
+
     for assessment_id in assessment_ids:
-        row = conn.execute(
-            "SELECT id FROM assessments WHERE id = ? OR id LIKE ?", (assessment_id, f"{assessment_id}%")
-        ).fetchone()
-        if row:
-            resolved_assessment_ids.add(row["id"])
+        full_assessment_id = _resolve_assessment_id(conn, assessment_id)
+        if full_assessment_id:
+            resolved_assessment_ids.add(full_assessment_id)
 
     scored: list[dict] = []
     decision_ids = [d["id"] for d in decisions]

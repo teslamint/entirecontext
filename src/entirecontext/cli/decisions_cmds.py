@@ -28,8 +28,10 @@ def decision_create(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    decision = create_decision(conn, title=title, rationale=rationale, scope=scope)
-    conn.close()
+    try:
+        decision = create_decision(conn, title=title, rationale=rationale, scope=scope)
+    finally:
+        conn.close()
     console.print(f"[green]Created decision:[/green] {decision['id']}")
 
 
@@ -83,8 +85,10 @@ def decision_show(decision_id: str = typer.Argument(..., help="Decision ID")):
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    decision = get_decision(conn, decision_id)
-    conn.close()
+    try:
+        decision = get_decision(conn, decision_id)
+    finally:
+        conn.close()
 
     if not decision:
         console.print(f"[red]Decision not found:[/red] {decision_id}")
@@ -157,9 +161,9 @@ def decision_link(
             console.print(f"[green]Linked decision {linked['decision_id'][:12]} to file {linked['file_path']}[/green]")
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
-        conn.close()
         raise typer.Exit(1)
-    conn.close()
+    finally:
+        conn.close()
 
 
 @decision_app.command("stale")
@@ -181,9 +185,9 @@ def decision_stale(
         decision = update_decision_staleness(conn, decision_id, status)
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
-        conn.close()
         raise typer.Exit(1)
-    conn.close()
+    finally:
+        conn.close()
     console.print(f"[green]Updated decision:[/green] {decision['id'][:12]} -> {decision['staleness_status']}")
 
 
