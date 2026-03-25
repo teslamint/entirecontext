@@ -53,9 +53,9 @@ def decision_list(
         decisions = list_decisions(conn, staleness_status=status, file_path=file, limit=limit)
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
-        conn.close()
         raise typer.Exit(1)
-    conn.close()
+    finally:
+        conn.close()
 
     if not decisions:
         console.print("[dim]No decisions found.[/dim]")
@@ -112,16 +112,22 @@ def decision_link(
     decision_id: str = typer.Argument(..., help="Decision ID"),
     assessment: Optional[str] = typer.Option(None, "--assessment", help="Assessment ID"),
     checkpoint: Optional[str] = typer.Option(None, "--checkpoint", help="Checkpoint ID"),
+    commit: Optional[str] = typer.Option(None, "--commit", help="Commit SHA"),
     file: Optional[str] = typer.Option(None, "--file", help="File path"),
     relation_type: str = typer.Option("supports", "--relation-type", help="Assessment relation type"),
 ):
-    from ..core.decisions import link_decision_to_assessment, link_decision_to_checkpoint, link_decision_to_file
+    from ..core.decisions import (
+        link_decision_to_assessment,
+        link_decision_to_checkpoint,
+        link_decision_to_commit,
+        link_decision_to_file,
+    )
     from ..core.project import find_git_root
     from ..db import get_db
 
-    link_args = [bool(assessment), bool(checkpoint), bool(file)]
+    link_args = [bool(assessment), bool(checkpoint), bool(commit), bool(file)]
     if sum(link_args) != 1:
-        console.print("[red]Exactly one of --assessment, --checkpoint, --file is required.[/red]")
+        console.print("[red]Exactly one of --assessment, --checkpoint, --commit, --file is required.[/red]")
         raise typer.Exit(1)
 
     repo_path = find_git_root()
@@ -140,6 +146,11 @@ def decision_link(
             linked = link_decision_to_checkpoint(conn, decision_id, checkpoint)
             console.print(
                 f"[green]Linked decision {linked['decision_id'][:12]} to checkpoint {linked['checkpoint_id'][:12]}[/green]"
+            )
+        elif commit:
+            linked = link_decision_to_commit(conn, decision_id, commit)
+            console.print(
+                f"[green]Linked decision {linked['decision_id'][:12]} to commit {linked['commit_sha']}[/green]"
             )
         else:
             linked = link_decision_to_file(conn, decision_id, file or "")

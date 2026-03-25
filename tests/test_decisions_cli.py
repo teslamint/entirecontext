@@ -67,6 +67,9 @@ class TestDecisionsCLI:
         result = runner.invoke(app, ["decision", "link", decision["id"][:12], "--checkpoint", checkpoint["id"][:12]])
         assert result.exit_code == 0
 
+        result = runner.invoke(app, ["decision", "link", decision["id"][:12], "--commit", "abc999"])
+        assert result.exit_code == 0
+
     def test_stale_and_error_cases(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
         conn = get_db(str(ec_repo))

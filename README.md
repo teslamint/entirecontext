@@ -170,7 +170,7 @@ The sections below are reference material for the current CLI surface. They stay
 | `ec decision create TITLE [--rationale TEXT] [--scope TEXT]` | Create a decision record |
 | `ec decision list [--status STATUS] [--file PATH] [--limit N]` | List decisions (optional staleness/file filter) |
 | `ec decision show DECISION_ID` | Show decision details and linked artifacts |
-| `ec decision link DECISION_ID [--assessment ID\|--checkpoint ID\|--file PATH]` | Link decision to assessment/checkpoint/file |
+| `ec decision link DECISION_ID [--assessment ID\|--checkpoint ID\|--commit SHA\|--file PATH]` | Link decision to assessment/checkpoint/commit/file |
 | `ec decision stale DECISION_ID --status STATUS` | Update decision staleness (`fresh\|stale\|superseded\|contradicted`) |
 
 ### LLM Backends (`ec futures assess`)

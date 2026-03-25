@@ -8,6 +8,8 @@ from typing import Any
 from uuid import uuid4
 
 VALID_STALENESS = ("fresh", "stale", "superseded", "contradicted")
+# relation_type is part of identity so one decision-assessment pair can keep
+# multiple typed links (e.g. informed_by + contradicts) when historically true.
 VALID_DECISION_ASSESSMENT_RELATION_TYPES = ("supports", "informed_by", "contradicts", "supersedes")
 
 
@@ -23,12 +25,35 @@ def _resolve_decision_id(conn, decision_id: str) -> str | None:
     return row["id"] if row else None
 
 
+def _resolve_checkpoint_id(conn, checkpoint_id: str) -> str | None:
+    row = conn.execute("SELECT id FROM checkpoints WHERE id = ?", (checkpoint_id,)).fetchone()
+    if row is None:
+        escaped = checkpoint_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        row = conn.execute("SELECT id FROM checkpoints WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
+    return row["id"] if row else None
+
+
 def _resolve_assessment_id(conn, assessment_id: str) -> str | None:
     row = conn.execute("SELECT id FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
     if row is None:
         escaped = assessment_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         row = conn.execute("SELECT id FROM assessments WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
     return row["id"] if row else None
+
+
+def _escape_like_contains(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _parse_decision_json_fields(decision: dict[str, Any]) -> dict[str, Any]:
+    for field in ("rejected_alternatives", "supporting_evidence"):
+        raw = decision.get(field)
+        try:
+            decision[field] = json.loads(raw) if raw else []
+        except (json.JSONDecodeError, TypeError):
+            decision[field] = []
+    return decision
 
 
 def create_decision(
@@ -68,13 +93,7 @@ def get_decision(conn, decision_id: str) -> dict | None:
     if row is None:
         return None
 
-    decision = dict(row)
-    for field in ("rejected_alternatives", "supporting_evidence"):
-        raw = decision.get(field)
-        try:
-            decision[field] = json.loads(raw) if raw else []
-        except (json.JSONDecodeError, TypeError):
-            decision[field] = []
+    decision = _parse_decision_json_fields(dict(row))
 
     decision["files"] = [
         r["file_path"]
@@ -111,8 +130,8 @@ def list_decisions(
 
     if file_path:
         query += " JOIN decision_files df ON df.decision_id = d.id"
-        conditions.append("df.file_path LIKE ?")
-        params.append(f"%{file_path}%")
+        conditions.append("df.file_path LIKE ? ESCAPE '\\'")
+        params.append(_escape_like_contains(file_path))
 
     if staleness_status:
         conditions.append("d.staleness_status = ?")
@@ -125,7 +144,7 @@ def list_decisions(
     params.append(limit)
 
     rows = conn.execute(query, params).fetchall()
-    return [dict(r) for r in rows]
+    return [_parse_decision_json_fields(dict(r)) for r in rows]
 
 
 def update_decision_staleness(conn, decision_id: str, status: str) -> dict:
@@ -189,18 +208,33 @@ def link_decision_to_file(conn, decision_id: str, file_path: str) -> dict:
     return dict(row) if row else {}
 
 
+def link_decision_to_commit(conn, decision_id: str, commit_sha: str) -> dict:
+    full_decision_id = _resolve_decision_id(conn, decision_id)
+    if full_decision_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
+
+    conn.execute(
+        "INSERT OR IGNORE INTO decision_commits (decision_id, commit_sha) VALUES (?, ?)",
+        (full_decision_id, commit_sha),
+    )
+    conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
+    conn.commit()
+    row = conn.execute(
+        "SELECT decision_id, commit_sha, added_at FROM decision_commits WHERE decision_id = ? AND commit_sha = ?",
+        (full_decision_id, commit_sha),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
 def link_decision_to_checkpoint(conn, decision_id: str, checkpoint_id: str) -> dict:
     full_decision_id = _resolve_decision_id(conn, decision_id)
     if full_decision_id is None:
         raise ValueError(f"Decision '{decision_id}' not found")
 
-    row = conn.execute(
-        "SELECT id FROM checkpoints WHERE id = ? OR id LIKE ?", (checkpoint_id, f"{checkpoint_id}%")
-    ).fetchone()
-    if row is None:
+    full_checkpoint_id = _resolve_checkpoint_id(conn, checkpoint_id)
+    if full_checkpoint_id is None:
         raise ValueError(f"Checkpoint '{checkpoint_id}' not found")
 
-    full_checkpoint_id = row["id"]
     conn.execute(
         "INSERT OR IGNORE INTO decision_checkpoints (decision_id, checkpoint_id) VALUES (?, ?)",
         (full_decision_id, full_checkpoint_id),

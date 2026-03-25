@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from .. import runtime
 
@@ -35,6 +36,7 @@ async def ec_decision_related(
     try:
         from ...core.search import rank_related_decisions
 
+        started_at = time.perf_counter()
         decisions = rank_related_decisions(
             conn,
             file_paths=files or [],
@@ -42,15 +44,31 @@ async def ec_decision_related(
             diff_text=diff_text,
             limit=limit,
         )
+        tracked_event_id = runtime.record_search_event(
+            conn,
+            query=diff_text or "decision-related",
+            search_type="decision_related",
+            target="decision",
+            result_count=len(decisions),
+            latency_ms=int((time.perf_counter() - started_at) * 1000),
+            file_filter=",".join(files or []) or None,
+            since=None,
+        )
         for idx, item in enumerate(decisions, start=1):
             runtime.record_selection(
                 conn,
-                retrieval_event_id=retrieval_event_id,
+                retrieval_event_id=tracked_event_id or retrieval_event_id,
                 result_type="decision",
                 result_id=item["id"],
                 rank=idx,
             )
-        return json.dumps({"decisions": decisions, "count": len(decisions)})
+        return json.dumps(
+            {
+                "decisions": decisions,
+                "count": len(decisions),
+                "retrieval_event_id": tracked_event_id,
+            }
+        )
     finally:
         conn.close()
 

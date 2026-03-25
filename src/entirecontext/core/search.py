@@ -284,28 +284,38 @@ def rank_related_decisions(
             resolved_assessment_ids.add(row["id"])
 
     scored: list[dict] = []
+    decision_ids = [d["id"] for d in decisions]
+    file_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
+    assessment_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
+
+    if decision_ids:
+        placeholders = ",".join("?" for _ in decision_ids)
+        file_rows = conn.execute(
+            f"SELECT decision_id, file_path FROM decision_files WHERE decision_id IN ({placeholders})",
+            decision_ids,
+        ).fetchall()
+        for row in file_rows:
+            file_links_by_decision[row["decision_id"]].add(row["file_path"])
+
+        assessment_rows = conn.execute(
+            f"SELECT decision_id, assessment_id FROM decision_assessments WHERE decision_id IN ({placeholders})",
+            decision_ids,
+        ).fetchall()
+        for row in assessment_rows:
+            assessment_links_by_decision[row["decision_id"]].add(row["assessment_id"])
+
     for d in decisions:
         decision_id = d["id"]
         score = 0.0
 
         if file_paths:
-            linked_files = {
-                row["file_path"]
-                for row in conn.execute(
-                    "SELECT file_path FROM decision_files WHERE decision_id = ?", (decision_id,)
-                ).fetchall()
-            }
+            linked_files = file_links_by_decision.get(decision_id, set())
             for file_path in file_paths:
                 if any(file_path in linked or linked in file_path for linked in linked_files):
                     score += 2
 
         if resolved_assessment_ids:
-            linked_assessment_ids = {
-                row["assessment_id"]
-                for row in conn.execute(
-                    "SELECT assessment_id FROM decision_assessments WHERE decision_id = ?", (decision_id,)
-                ).fetchall()
-            }
+            linked_assessment_ids = assessment_links_by_decision.get(decision_id, set())
             score += 4 * len(linked_assessment_ids & resolved_assessment_ids)
 
         if diff_text_lc:
