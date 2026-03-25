@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from entirecontext.mcp.tools import checkpoint, futures, misc, search, session
+from entirecontext.mcp.tools import checkpoint, decisions, futures, misc, search, session
 
 
 class _FakeMCP:
@@ -20,7 +20,7 @@ class _FakeMCP:
 def test_register_tools_exports_expected_public_tool_names():
     mcp = _FakeMCP()
 
-    for module in (search, checkpoint, session, futures, misc):
+    for module in (search, checkpoint, session, futures, misc, decisions):
         module.register_tools(mcp)
 
     assert set(mcp.registered) == {
@@ -33,6 +33,8 @@ def test_register_tools_exports_expected_public_tool_names():
         "ec_checkpoint_list",
         "ec_context_apply",
         "ec_dashboard",
+        "ec_decision_get",
+        "ec_decision_related",
         "ec_feedback",
         "ec_graph",
         "ec_lessons",

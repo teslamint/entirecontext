@@ -10,6 +10,7 @@ from . import ast_cmds  # noqa: E402
 from . import blame_cmds  # noqa: E402
 from . import checkpoint_cmds  # noqa: E402
 from . import context_cmds  # noqa: E402
+from . import decisions_cmds  # noqa: E402
 from . import dashboard_cmds  # noqa: E402
 from . import event_cmds  # noqa: E402
 from . import futures_cmds  # noqa: E402
@@ -46,6 +47,7 @@ _MODULES = (
     ast_cmds,
     dashboard_cmds,
     context_cmds,
+    decisions_cmds,
 )
 
 for module in _MODULES:

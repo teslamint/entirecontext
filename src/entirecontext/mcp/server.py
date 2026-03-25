@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 from ..core.context import RepoContext
 
 try:
@@ -89,6 +87,7 @@ def _record_selection(
 
 
 from .tools.checkpoint import ec_checkpoint_list, ec_rewind  # noqa: E402
+from .tools.decisions import ec_decision_get, ec_decision_related  # noqa: E402
 from .tools.futures import ec_assess, ec_assess_create, ec_assess_trends, ec_feedback, ec_lessons  # noqa: E402
 from .tools.misc import ec_dashboard, ec_graph  # noqa: E402
 from .tools.search import ec_activate, ec_ast_search, ec_related, ec_search  # noqa: E402
@@ -96,10 +95,10 @@ from .tools.session import ec_attribution, ec_context_apply, ec_session_context,
 
 if mcp:
     from .runtime import ServiceRegistry
-    from .tools import checkpoint, futures, misc, search, session
+    from .tools import checkpoint, decisions, futures, misc, search, session
 
     _services = ServiceRegistry()
-    for module in (search, checkpoint, session, futures, misc):
+    for module in (search, checkpoint, session, futures, misc, decisions):
         module.register_tools(mcp, _services)
 
 
@@ -109,3 +108,27 @@ def run_server():
         print("MCP not available. Install with: pip install 'entirecontext[mcp]'")
         return
     mcp.run()
+
+
+__all__ = [
+    "ec_search",
+    "ec_related",
+    "ec_ast_search",
+    "ec_activate",
+    "ec_checkpoint_list",
+    "ec_rewind",
+    "ec_session_context",
+    "ec_turn_content",
+    "ec_attribution",
+    "ec_context_apply",
+    "ec_assess",
+    "ec_assess_create",
+    "ec_assess_trends",
+    "ec_feedback",
+    "ec_lessons",
+    "ec_dashboard",
+    "ec_graph",
+    "ec_decision_get",
+    "ec_decision_related",
+    "run_server",
+]

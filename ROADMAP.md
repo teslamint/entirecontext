@@ -40,10 +40,10 @@ The main implementation hardening gap still on the table is sync merge/retry pol
   - Move broad platform capabilities into supporting sections instead of leading with them
   - Make the primary persona explicit: engineers and small teams already doing agentic coding
 
-- [ ] **Define a first-class decision model**
+- [x] **Define a first-class decision model**
   - Represent decision, rationale, rejected alternatives, supporting evidence, scope, and staleness
   - Link decisions to commits, checkpoints, files, and assessments
-  - Clarify how decisions differ from summaries, assessments, and lessons
+  - Clarify how decisions differ from summaries, assessments, and lessons (documented in README + CLI/MCP examples)
 
 - [ ] **Make retrieval proactive, not just query-based**
   - Surface relevant past decisions when similar files, diffs, or intents appear
