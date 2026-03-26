@@ -8,9 +8,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from entirecontext.core.checkpoint import create_checkpoint, get_checkpoint
-from entirecontext.core.telemetry import detect_current_context, record_operation_event
 from entirecontext.core.session import create_session, get_session
+from entirecontext.core.checkpoint import create_checkpoint
+from entirecontext.core.telemetry import detect_current_context, record_operation_event
 
 from .artifact_merge import ShadowMergeError, merge_shadow_artifacts
 from .export_flow import run_export
@@ -103,6 +103,11 @@ def _update_sync_metadata(conn, *, last_export_at: str | None = None, last_impor
         conn.commit()
     except Exception as exc:
         raise SyncMetadataError(str(exc)) from exc
+
+
+def _checkpoint_exists_exact(conn, checkpoint_id: str) -> bool:
+    row = conn.execute("SELECT 1 FROM checkpoints WHERE id = ?", (checkpoint_id,)).fetchone()
+    return row is not None
 
 
 def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dict:
@@ -253,36 +258,79 @@ def perform_pull(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
         checkpoints_dir = Path(worktree_path) / "checkpoints"
         checkpoint_count = 0
         if checkpoints_dir.exists():
+            # Phase 1: Load all new checkpoint data
+            pending: dict[str, dict] = {}
             for checkpoint_file in checkpoints_dir.glob("*.json"):
                 try:
                     checkpoint_data = json.loads(checkpoint_file.read_text(encoding="utf-8"))
                     checkpoint_id = checkpoint_data["id"]
-                    existing = get_checkpoint(conn, checkpoint_id)
-                    if not existing:
-                        files_snapshot = checkpoint_data.get("files_snapshot")
-                        if isinstance(files_snapshot, str):
-                            try:
-                                files_snapshot = json.loads(files_snapshot)
-                            except json.JSONDecodeError:
-                                pass
-                        metadata = checkpoint_data.get("metadata")
-                        if isinstance(metadata, str):
-                            try:
-                                metadata = json.loads(metadata)
-                            except json.JSONDecodeError:
-                                pass
-                        create_checkpoint(
-                            conn,
-                            session_id=checkpoint_data["session_id"],
-                            git_commit_hash=checkpoint_data["git_commit_hash"],
-                            git_branch=checkpoint_data.get("git_branch"),
-                            files_snapshot=files_snapshot,
-                            diff_summary=checkpoint_data.get("diff_summary"),
-                            parent_checkpoint_id=checkpoint_data.get("parent_checkpoint_id"),
-                            metadata=metadata,
-                            checkpoint_id=checkpoint_id,
-                        )
-                        checkpoint_count += 1
+                    if not _checkpoint_exists_exact(conn, checkpoint_id):
+                        pending[checkpoint_id] = checkpoint_data
+                except (json.JSONDecodeError, KeyError):
+                    continue
+
+            # Phase 2: Topological sort — parents before children
+            ordered: list[dict] = []
+            states: dict[str, int] = {}
+
+            for cid in pending:
+                if states.get(cid) == 2:
+                    continue
+
+                stack: list[tuple[str, bool]] = [(cid, False)]
+                while stack:
+                    current_id, expanded = stack.pop()
+                    if current_id not in pending:
+                        continue
+
+                    state = states.get(current_id, 0)
+                    if expanded:
+                        if state != 2:
+                            states[current_id] = 2
+                            ordered.append(pending[current_id])
+                        continue
+                    if state == 2:
+                        continue
+                    if state == 1:
+                        continue
+
+                    states[current_id] = 1
+                    stack.append((current_id, True))
+
+                    parent_id = pending[current_id].get("parent_checkpoint_id")
+                    if parent_id and parent_id in pending and states.get(parent_id) != 2:
+                        stack.append((parent_id, False))
+
+            # Phase 3: Insert in dependency order
+            for checkpoint_data in ordered:
+                try:
+                    files_snapshot = checkpoint_data.get("files_snapshot")
+                    if isinstance(files_snapshot, str):
+                        try:
+                            files_snapshot = json.loads(files_snapshot)
+                        except json.JSONDecodeError:
+                            pass
+                    metadata = checkpoint_data.get("metadata")
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except json.JSONDecodeError:
+                            pass
+                    parent_id = checkpoint_data.get("parent_checkpoint_id")
+                    if parent_id and parent_id not in pending and not _checkpoint_exists_exact(conn, parent_id):
+                        parent_id = None
+                    create_checkpoint(
+                        conn,
+                        session_id=checkpoint_data["session_id"],
+                        git_commit_hash=checkpoint_data["git_commit_hash"],
+                        git_branch=checkpoint_data.get("git_branch"),
+                        files_snapshot=files_snapshot,
+                        diff_summary=checkpoint_data.get("diff_summary"),
+                        parent_checkpoint_id=parent_id,
+                        metadata=metadata,
+                        checkpoint_id=checkpoint_data["id"],
+                    )
+                    checkpoint_count += 1
                 except (json.JSONDecodeError, KeyError):
                     continue
         result.imported_checkpoints = checkpoint_count

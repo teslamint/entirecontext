@@ -575,3 +575,156 @@ class TestPerformPull:
             result = perform_pull(sync_db, str(ec_repo), {})
 
         assert result["error"] == "worktree error"
+
+    def test_pull_imports_child_checkpoint_after_parent(self, sync_db, ec_repo, tmp_path):
+        """Child checkpoint referencing parent_checkpoint_id must not cause FK violation."""
+        project_row = sync_db.execute("SELECT id FROM projects LIMIT 1").fetchone()
+        project_id = project_row["id"]
+
+        remote_fixture = tmp_path / "remote-shadow"
+        _write_snapshot(
+            remote_fixture,
+            session_id="parent-child-session",
+            session_meta={"id": "parent-child-session", "project_id": project_id, "session_type": "claude"},
+            checkpoints={
+                # Filenames are intentionally ordered so child sorts before parent
+                "aaa-child-cp": {
+                    "id": "aaa-child-cp",
+                    "session_id": "parent-child-session",
+                    "git_commit_hash": "def456",
+                    "git_branch": "main",
+                    "parent_checkpoint_id": "zzz-parent-cp",
+                },
+                "zzz-parent-cp": {
+                    "id": "zzz-parent-cp",
+                    "session_id": "parent-child-session",
+                    "git_commit_hash": "abc123",
+                    "git_branch": "main",
+                },
+            },
+            manifest={"version": 1, "sessions": {"parent-child-session": {"total_turns": 1}}, "checkpoints": {}},
+        )
+        side_effect, _state = _mk_subprocess_side_effect(remote_fixture=remote_fixture)
+
+        with patch("entirecontext.sync.engine.subprocess.run", side_effect=side_effect):
+            result = perform_pull(sync_db, str(ec_repo), {})
+
+        assert result["error"] is None
+        assert result["imported_checkpoints"] == 2
+        parent = sync_db.execute("SELECT * FROM checkpoints WHERE id = 'zzz-parent-cp'").fetchone()
+        child = sync_db.execute("SELECT * FROM checkpoints WHERE id = 'aaa-child-cp'").fetchone()
+        assert parent is not None
+        assert child is not None
+        assert child["parent_checkpoint_id"] == "zzz-parent-cp"
+
+    def test_pull_nullifies_missing_parent_checkpoint(self, sync_db, ec_repo, tmp_path):
+        """If parent_checkpoint_id references a checkpoint not in the export or DB, set to None."""
+        project_row = sync_db.execute("SELECT id FROM projects LIMIT 1").fetchone()
+        project_id = project_row["id"]
+
+        remote_fixture = tmp_path / "remote-shadow"
+        _write_snapshot(
+            remote_fixture,
+            session_id="orphan-session",
+            session_meta={"id": "orphan-session", "project_id": project_id, "session_type": "claude"},
+            checkpoints={
+                "orphan-cp": {
+                    "id": "orphan-cp",
+                    "session_id": "orphan-session",
+                    "git_commit_hash": "abc123",
+                    "git_branch": "main",
+                    "parent_checkpoint_id": "nonexistent-parent",
+                },
+            },
+            manifest={"version": 1, "sessions": {"orphan-session": {"total_turns": 1}}, "checkpoints": {}},
+        )
+        side_effect, _state = _mk_subprocess_side_effect(remote_fixture=remote_fixture)
+
+        with patch("entirecontext.sync.engine.subprocess.run", side_effect=side_effect):
+            result = perform_pull(sync_db, str(ec_repo), {})
+
+        assert result["error"] is None
+        assert result["imported_checkpoints"] == 1
+        row = sync_db.execute("SELECT * FROM checkpoints WHERE id = 'orphan-cp'").fetchone()
+        assert row is not None
+        assert row["parent_checkpoint_id"] is None
+
+    def test_pull_imports_deep_checkpoint_chain_without_recursion_error(self, sync_db, ec_repo, tmp_path):
+        project_row = sync_db.execute("SELECT id FROM projects LIMIT 1").fetchone()
+        project_id = project_row["id"]
+
+        chain_length = 1200
+        checkpoints: dict[str, dict] = {}
+        for idx in range(chain_length):
+            checkpoint_id = f"cp-{idx:04d}"
+            checkpoint_data = {
+                "id": checkpoint_id,
+                "session_id": "deep-chain-session",
+                "git_commit_hash": f"hash-{idx:04d}",
+                "git_branch": "main",
+            }
+            if idx > 0:
+                checkpoint_data["parent_checkpoint_id"] = f"cp-{idx - 1:04d}"
+            checkpoints[checkpoint_id] = checkpoint_data
+
+        remote_fixture = tmp_path / "remote-shadow"
+        _write_snapshot(
+            remote_fixture,
+            session_id="deep-chain-session",
+            session_meta={"id": "deep-chain-session", "project_id": project_id, "session_type": "claude"},
+            checkpoints=checkpoints,
+            manifest={"version": 1, "sessions": {"deep-chain-session": {"total_turns": 1}}, "checkpoints": {}},
+        )
+        side_effect, _state = _mk_subprocess_side_effect(remote_fixture=remote_fixture)
+
+        with patch("entirecontext.sync.engine.subprocess.run", side_effect=side_effect):
+            result = perform_pull(sync_db, str(ec_repo), {})
+
+        assert result["error"] is None
+        assert result["imported_checkpoints"] == chain_length
+        first = sync_db.execute("SELECT * FROM checkpoints WHERE id = 'cp-0000'").fetchone()
+        middle = sync_db.execute("SELECT * FROM checkpoints WHERE id = 'cp-0600'").fetchone()
+        last = sync_db.execute(f"SELECT * FROM checkpoints WHERE id = 'cp-{chain_length - 1:04d}'").fetchone()
+        assert first is not None
+        assert first["parent_checkpoint_id"] is None
+        assert middle is not None
+        assert middle["parent_checkpoint_id"] == "cp-0599"
+        assert last is not None
+        assert last["parent_checkpoint_id"] == f"cp-{chain_length - 2:04d}"
+
+    def test_pull_nullifies_missing_parent_when_existing_id_shares_prefix(self, sync_db, ec_repo, tmp_path):
+        from entirecontext.core.checkpoint import create_checkpoint
+        from entirecontext.core.session import create_session
+
+        project_row = sync_db.execute("SELECT id FROM projects LIMIT 1").fetchone()
+        project_id = project_row["id"]
+
+        create_session(sync_db, project_id, session_id="existing-session")
+        create_checkpoint(sync_db, "existing-session", "seed123", checkpoint_id="cp-parent-v2")
+
+        remote_fixture = tmp_path / "remote-shadow"
+        _write_snapshot(
+            remote_fixture,
+            session_id="prefix-session",
+            session_meta={"id": "prefix-session", "project_id": project_id, "session_type": "claude"},
+            checkpoints={
+                "child-cp": {
+                    "id": "child-cp",
+                    "session_id": "prefix-session",
+                    "git_commit_hash": "abc123",
+                    "git_branch": "main",
+                    "parent_checkpoint_id": "cp-parent",
+                }
+            },
+            manifest={"version": 1, "sessions": {"prefix-session": {"total_turns": 1}}, "checkpoints": {}},
+        )
+        side_effect, _state = _mk_subprocess_side_effect(remote_fixture=remote_fixture)
+
+        with patch("entirecontext.sync.engine.subprocess.run", side_effect=side_effect):
+            result = perform_pull(sync_db, str(ec_repo), {})
+
+        assert result["error"] is None
+        assert result["imported_checkpoints"] == 1
+        child = sync_db.execute("SELECT * FROM checkpoints WHERE id = 'child-cp'").fetchone()
+        assert child is not None
+        assert child["parent_checkpoint_id"] is None
