@@ -717,6 +717,109 @@ class TestMCPDashboard:
         assert result["retrieval_selection_id"] == selection["id"]
 
 
+class TestMCPDecisionTools:
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        return db
+
+    def test_decision_get_includes_quality_summary(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, record_decision_outcome
+        from entirecontext.mcp.server import ec_decision_get
+
+        decision = create_decision(mock_repo_db, title="Use queue retries")
+        record_decision_outcome(mock_repo_db, decision["id"], "accepted", note="Applied in worker")
+
+        result = json.loads(asyncio.run(ec_decision_get(decision["id"])))
+        assert result["quality_summary"]["counts"]["accepted"] == 1
+        assert result["recent_outcomes"][0]["note"] == "Applied in worker"
+
+    def test_decision_outcome_records_with_selection(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+        from entirecontext.mcp.server import ec_decision_outcome
+
+        decision = create_decision(mock_repo_db, title="Use queue retries")
+        event = record_retrieval_event(
+            mock_repo_db,
+            source="mcp",
+            search_type="decision_related",
+            target="decision",
+            query="retries",
+            result_count=1,
+            latency_ms=5,
+            session_id="s1",
+            turn_id="t1",
+        )
+        selection = record_retrieval_selection(mock_repo_db, event["id"], "decision", decision["id"])
+
+        result = json.loads(
+            asyncio.run(
+                ec_decision_outcome(
+                    decision["id"][:12],
+                    "accepted",
+                    selection_id=selection["id"],
+                    note="Applied in worker",
+                )
+            )
+        )
+        assert result["decision_id"] == decision["id"]
+        assert result["retrieval_selection_id"] == selection["id"]
+        assert result["outcome_type"] == "accepted"
+
+    def test_decision_outcome_rejects_non_decision_selection(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+        from entirecontext.mcp.server import ec_decision_outcome
+
+        decision = create_decision(mock_repo_db, title="Use queue retries")
+        event = record_retrieval_event(
+            mock_repo_db,
+            source="mcp",
+            search_type="regex",
+            target="turn",
+            query="retries",
+            result_count=1,
+            latency_ms=5,
+            session_id="s1",
+            turn_id="t1",
+        )
+        selection = record_retrieval_selection(mock_repo_db, event["id"], "turn", "t1")
+
+        result = json.loads(asyncio.run(ec_decision_outcome(decision["id"], "accepted", selection_id=selection["id"])))
+        assert "error" in result
+        assert "must point to a decision" in result["error"]
+
+    def test_decision_outcome_uses_selection_context_when_current_session_has_no_turns(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.core.session import create_session
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+        from entirecontext.mcp.server import ec_decision_outcome
+
+        decision = create_decision(mock_repo_db, title="Use queue retries")
+        event = record_retrieval_event(
+            mock_repo_db,
+            source="mcp",
+            search_type="decision_related",
+            target="decision",
+            query="retries",
+            result_count=1,
+            latency_ms=5,
+            session_id="s1",
+            turn_id="t1",
+        )
+        selection = record_retrieval_selection(mock_repo_db, event["id"], "decision", decision["id"])
+        create_session(mock_repo_db, "p1", session_id="s2")
+
+        result = json.loads(asyncio.run(ec_decision_outcome(decision["id"], "accepted", selection_id=selection["id"])))
+        assert result["session_id"] == "s1"
+        assert result["turn_id"] == "t1"
+
+
 class TestMCPActivate:
     """Tests for ec_activate MCP tool."""
 

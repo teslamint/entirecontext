@@ -266,6 +266,7 @@ def rank_related_decisions(
     - +4 per linked assessment match
     - +2 per linked file path match
     - +1 if title/rationale appears in diff text
+    - quality score adjustment from tracked outcomes, capped to [-4, +4]
     """
     file_paths = file_paths or []
     assessment_ids = assessment_ids or []
@@ -276,7 +277,7 @@ def rank_related_decisions(
         return []
 
     resolved_assessment_ids: set[str] = set()
-    from .decisions import _resolve_assessment_id
+    from .decisions import calculate_decision_quality_score, _resolve_assessment_id
 
     for assessment_id in assessment_ids:
         full_assessment_id = _resolve_assessment_id(conn, assessment_id)
@@ -287,6 +288,7 @@ def rank_related_decisions(
     decision_ids = [d["id"] for d in decisions]
     file_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
     assessment_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
+    outcome_counts_by_decision: dict[str, dict[str, int]] = {decision_id: {} for decision_id in decision_ids}
 
     if decision_ids:
         placeholders = ",".join("?" for _ in decision_ids)
@@ -304,30 +306,45 @@ def rank_related_decisions(
         for row in assessment_rows:
             assessment_links_by_decision[row["decision_id"]].add(row["assessment_id"])
 
+        outcome_rows = conn.execute(
+            (
+                "SELECT decision_id, outcome_type, COUNT(*) AS total "
+                f"FROM decision_outcomes WHERE decision_id IN ({placeholders}) "
+                "GROUP BY decision_id, outcome_type"
+            ),
+            decision_ids,
+        ).fetchall()
+        for row in outcome_rows:
+            counts = outcome_counts_by_decision.setdefault(row["decision_id"], {})
+            counts[row["outcome_type"]] = row["total"] or 0
+
     for d in decisions:
         decision_id = d["id"]
-        score = 0.0
+        base_score = 0.0
 
         if file_paths:
             linked_files = file_links_by_decision.get(decision_id, set())
             for file_path in file_paths:
                 if any(file_path in linked or linked in file_path for linked in linked_files):
-                    score += 2
+                    base_score += 2
 
         if resolved_assessment_ids:
             linked_assessment_ids = assessment_links_by_decision.get(decision_id, set())
-            score += 4 * len(linked_assessment_ids & resolved_assessment_ids)
+            base_score += 4 * len(linked_assessment_ids & resolved_assessment_ids)
 
         if diff_text_lc:
             title = (d.get("title") or "").lower()
             rationale = (d.get("rationale") or "").lower()
             if title and title in diff_text_lc:
-                score += 1
+                base_score += 1
             elif rationale and rationale[:80] and rationale[:80] in diff_text_lc:
-                score += 1
+                base_score += 1
 
-        if score == 0:
+        if base_score == 0:
             continue
+
+        quality_score = calculate_decision_quality_score(outcome_counts_by_decision.get(decision_id, {}))
+        score = base_score + quality_score
 
         scored.append(
             {
@@ -335,6 +352,8 @@ def rank_related_decisions(
                 "title": d.get("title"),
                 "staleness_status": d.get("staleness_status"),
                 "updated_at": d.get("updated_at"),
+                "base_score": round(base_score, 3),
+                "quality_score": round(quality_score, 3),
                 "score": round(score, 3),
             }
         )

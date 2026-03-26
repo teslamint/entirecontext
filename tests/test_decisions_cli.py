@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 from typer.testing import CliRunner
 
@@ -11,9 +13,51 @@ from entirecontext.core.decisions import create_decision
 from entirecontext.core.futures import create_assessment
 from entirecontext.core.project import get_project
 from entirecontext.core.session import create_session
-from entirecontext.db import get_db
+from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+from entirecontext.core.turn import create_turn
+from entirecontext.db import SCHEMA_VERSION, get_db, get_current_version
+from entirecontext.db.migrations.v009 import MIGRATION_STEPS as V009_MIGRATION_STEPS
 
 runner = CliRunner()
+
+
+def _seed_v9_decision_repo(repo_path, *, decision_id: str | None = None) -> str:
+    conn = get_db(str(repo_path))
+    conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
+    conn.execute("INSERT INTO schema_version (version, description) VALUES (9, 'v9')")
+    conn.execute("CREATE TABLE assessments (id TEXT PRIMARY KEY)")
+    conn.execute("CREATE TABLE checkpoints (id TEXT PRIMARY KEY)")
+    conn.execute(
+        "CREATE TABLE retrieval_selections (id TEXT PRIMARY KEY, result_type TEXT, result_id TEXT, session_id TEXT, turn_id TEXT)"
+    )
+    conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
+    conn.execute("CREATE TABLE turns (id TEXT PRIMARY KEY)")
+    for statement in V009_MIGRATION_STEPS:
+        conn.execute(statement)
+
+    seeded_decision_id = decision_id or "11111111-2222-3333-4444-555555555555"
+    conn.execute(
+        """
+        INSERT INTO decisions (
+            id, title, rationale, scope, staleness_status, rejected_alternatives,
+            supporting_evidence, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            seeded_decision_id,
+            "Legacy decision",
+            "carry forward compatibility",
+            "cli",
+            "fresh",
+            "[]",
+            "[]",
+            "2025-01-01T00:00:00Z",
+            "2025-01-01T00:00:00Z",
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return seeded_decision_id
 
 
 class TestDecisionsCLI:
@@ -90,6 +134,162 @@ class TestDecisionsCLI:
         )
         assert invalid_link.exit_code == 1
 
+    def test_outcome_records_and_show_displays_quality(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Use queue retries")
+        project = get_project(str(ec_repo))
+        session = create_session(conn, project["id"], session_id="decision-cli-outcome")
+        turn = create_turn(conn, session["id"], 1, user_message="search retries", assistant_summary="found decision")
+        event = record_retrieval_event(
+            conn,
+            source="cli",
+            search_type="decision_related",
+            target="decision",
+            query="retries",
+            result_count=1,
+            latency_ms=5,
+            session_id=session["id"],
+            turn_id=turn["id"],
+        )
+        selection = record_retrieval_selection(conn, event["id"], "decision", decision["id"])
+        conn.close()
+
+        result = runner.invoke(
+            app,
+            [
+                "decision",
+                "outcome",
+                decision["id"][:12],
+                "--outcome",
+                "accepted",
+                "--selection-id",
+                selection["id"],
+                "--note",
+                "Applied in retry worker",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Recorded decision outcome:" in result.stdout
+
+        show = runner.invoke(app, ["decision", "show", decision["id"][:12]])
+        assert show.exit_code == 0
+        assert "accepted=1" in show.stdout
+        assert "Recent outcomes:" in show.stdout
+
+    def test_show_migrates_v9_repo_before_querying_outcomes(self, git_repo, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        decision_id = _seed_v9_decision_repo(git_repo)
+
+        conn = get_db(str(git_repo))
+        assert get_current_version(conn) == 9
+        with pytest.raises(sqlite3.OperationalError):
+            conn.execute("SELECT 1 FROM decision_outcomes LIMIT 1").fetchone()
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "show", decision_id[:12]])
+
+        assert result.exit_code == 0
+        assert "Legacy decision" in result.stdout
+
+        conn = get_db(str(git_repo))
+        table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'decision_outcomes'"
+        ).fetchone()
+        version = get_current_version(conn)
+        conn.close()
+
+        assert table is not None
+        assert version == SCHEMA_VERSION
+
+    def test_create_migrates_v9_repo_before_querying_outcomes(self, git_repo, monkeypatch):
+        monkeypatch.chdir(git_repo)
+        _seed_v9_decision_repo(git_repo)
+
+        result = runner.invoke(app, ["decision", "create", "Upgrade-safe decision"])
+
+        assert result.exit_code == 0
+        assert "Created decision:" in result.stdout
+
+        conn = get_db(str(git_repo))
+        created = conn.execute("SELECT title FROM decisions WHERE title = ?", ("Upgrade-safe decision",)).fetchone()
+        table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'decision_outcomes'"
+        ).fetchone()
+        version = get_current_version(conn)
+        conn.close()
+
+        assert created is not None
+        assert table is not None
+        assert version == SCHEMA_VERSION
+
+    def test_outcome_rejects_invalid_selection(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Use queue retries")
+        project = get_project(str(ec_repo))
+        session = create_session(conn, project["id"], session_id="decision-cli-outcome-invalid")
+        turn = create_turn(conn, session["id"], 1, user_message="search retries", assistant_summary="found turn")
+        event = record_retrieval_event(
+            conn,
+            source="cli",
+            search_type="regex",
+            target="turn",
+            query="retries",
+            result_count=1,
+            latency_ms=5,
+            session_id=session["id"],
+            turn_id=turn["id"],
+        )
+        selection = record_retrieval_selection(conn, event["id"], "turn", "t1")
+        conn.close()
+
+        result = runner.invoke(
+            app,
+            ["decision", "outcome", decision["id"][:12], "--outcome", "accepted", "--selection-id", selection["id"]],
+        )
+        assert result.exit_code == 1
+
+    def test_outcome_uses_selection_context_when_current_session_has_no_turns(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Use queue retries")
+        project = get_project(str(ec_repo))
+        source_session = create_session(conn, project["id"], session_id="decision-cli-source")
+        source_turn = create_turn(
+            conn, source_session["id"], 1, user_message="search retries", assistant_summary="found decision"
+        )
+        event = record_retrieval_event(
+            conn,
+            source="cli",
+            search_type="decision_related",
+            target="decision",
+            query="retries",
+            result_count=1,
+            latency_ms=5,
+            session_id=source_session["id"],
+            turn_id=source_turn["id"],
+        )
+        selection = record_retrieval_selection(conn, event["id"], "decision", decision["id"])
+        create_session(conn, project["id"], session_id="decision-cli-current-empty")
+        conn.close()
+
+        result = runner.invoke(
+            app,
+            ["decision", "outcome", decision["id"][:12], "--outcome", "accepted", "--selection-id", selection["id"]],
+        )
+        assert result.exit_code == 0
+
+        conn = get_db(str(ec_repo))
+        row = conn.execute(
+            "SELECT session_id, turn_id FROM decision_outcomes WHERE retrieval_selection_id = ?",
+            (selection["id"],),
+        ).fetchone()
+        conn.close()
+
+        assert row["session_id"] == source_session["id"]
+        assert row["turn_id"] == source_turn["id"]
+
     @pytest.mark.parametrize(
         ("argv", "patched_symbol"),
         [
@@ -113,6 +313,7 @@ class TestDecisionsCLI:
             raise RuntimeError("boom")
 
         monkeypatch.setattr("entirecontext.db.get_db", lambda repo_path: conn)
+        monkeypatch.setattr("entirecontext.db.check_and_migrate", lambda db_conn: None)
         monkeypatch.setattr(f"entirecontext.core.decisions.{patched_symbol}", raise_error)
 
         result = runner.invoke(app, argv)

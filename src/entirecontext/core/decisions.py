@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 VALID_STALENESS = frozenset(("fresh", "stale", "superseded", "contradicted"))
+VALID_DECISION_OUTCOME_TYPES = frozenset(("accepted", "ignored", "contradicted"))
 # relation_type is part of identity so one decision-assessment pair can keep
 # multiple typed links (e.g. informed_by + contradicts) when historically true.
 VALID_DECISION_ASSESSMENT_RELATION_TYPES = frozenset(("supports", "informed_by", "contradicts", "supersedes"))
@@ -60,6 +61,47 @@ def _parse_decision_json_fields(decision: dict[str, Any]) -> dict[str, Any]:
     return decision
 
 
+def calculate_decision_quality_score(counts: dict[str, int]) -> float:
+    """Calculate a quality score from outcome counts.
+
+    Formula: accepted * 1.0 - ignored * 0.5 - contradicted * 2.0, clamped to [-4, +4].
+    Contradictions are penalised heavily; ignored outcomes have mild negative weight.
+    """
+    raw_score = (
+        float(counts.get("accepted", 0))
+        - (0.5 * float(counts.get("ignored", 0)))
+        - (2.0 * float(counts.get("contradicted", 0)))
+    )
+    return max(-4.0, min(4.0, raw_score))
+
+
+def _resolve_outcome_context(
+    conn,
+    *,
+    selection: dict[str, Any] | None,
+    session_id: str | None,
+    turn_id: str | None,
+) -> tuple[str | None, str | None]:
+    if (session_id is None) != (turn_id is None):
+        raise ValueError("session_id and turn_id must be provided together")
+
+    if session_id is not None and turn_id is not None:
+        session_row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if session_row is None:
+            raise ValueError(f"Session '{session_id}' not found")
+        row = conn.execute("SELECT session_id FROM turns WHERE id = ?", (turn_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"Turn '{turn_id}' not found")
+        if row["session_id"] != session_id:
+            raise ValueError("turn_id does not belong to session_id")
+        return session_id, turn_id
+
+    if selection is not None:
+        return selection.get("session_id"), selection.get("turn_id")
+
+    return None, None
+
+
 def create_decision(
     conn,
     title: str,
@@ -70,7 +112,9 @@ def create_decision(
     supporting_evidence: list[dict[str, Any]] | list[str] | None = None,
 ) -> dict:
     if staleness_status not in VALID_STALENESS:
-        raise ValueError(f"Invalid staleness_status '{staleness_status}'. Must be one of: {_format_allowed(VALID_STALENESS)}")
+        raise ValueError(
+            f"Invalid staleness_status '{staleness_status}'. Must be one of: {_format_allowed(VALID_STALENESS)}"
+        )
 
     decision_id = str(uuid4())
     now = _now_iso()
@@ -112,10 +156,15 @@ def get_decision(conn, decision_id: str) -> dict | None:
             "added_at": r["added_at"],
         }
         for r in conn.execute(
-            "SELECT assessment_id, relation_type, added_at FROM decision_assessments WHERE decision_id = ? ORDER BY added_at DESC",
+            (
+                "SELECT assessment_id, relation_type, added_at "
+                "FROM decision_assessments WHERE decision_id = ? ORDER BY added_at DESC"
+            ),
             (full_id,),
         )
     ]
+    decision["quality_summary"] = _get_decision_quality_summary_resolved(conn, full_id)
+    decision["recent_outcomes"] = _list_decision_outcomes_resolved(conn, full_id, limit=10)
     return decision
 
 
@@ -126,7 +175,9 @@ def list_decisions(
     limit: int = 20,
 ) -> list[dict]:
     if staleness_status and staleness_status not in VALID_STALENESS:
-        raise ValueError(f"Invalid staleness_status '{staleness_status}'. Must be one of: {_format_allowed(VALID_STALENESS)}")
+        raise ValueError(
+            f"Invalid staleness_status '{staleness_status}'. Must be one of: {_format_allowed(VALID_STALENESS)}"
+        )
 
     query = "SELECT DISTINCT d.* FROM decisions d"
     params: list[Any] = []
@@ -166,10 +217,122 @@ def update_decision_staleness(conn, decision_id: str, status: str) -> dict:
     return get_decision(conn, full_id) or {}
 
 
+def list_decision_outcomes(conn, decision_id: str, limit: int = 20) -> list[dict]:
+    full_id = _resolve_decision_id(conn, decision_id)
+    if full_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
+    return _list_decision_outcomes_resolved(conn, full_id, limit)
+
+
+def _list_decision_outcomes_resolved(conn, resolved_id: str, limit: int = 20) -> list[dict]:
+    rows = conn.execute(
+        """
+        SELECT id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
+        FROM decision_outcomes
+        WHERE decision_id = ?
+        ORDER BY created_at DESC
+        LIMIT ?
+        """,
+        (resolved_id, limit),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_decision_quality_summary(conn, decision_id: str) -> dict[str, Any]:
+    full_id = _resolve_decision_id(conn, decision_id)
+    if full_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
+    return _get_decision_quality_summary_resolved(conn, full_id)
+
+
+def _get_decision_quality_summary_resolved(conn, resolved_id: str) -> dict[str, Any]:
+    counts = {outcome_type: 0 for outcome_type in VALID_DECISION_OUTCOME_TYPES}
+    rows = conn.execute(
+        """
+        SELECT outcome_type, COUNT(*) AS total
+        FROM decision_outcomes
+        WHERE decision_id = ?
+        GROUP BY outcome_type
+        """,
+        (resolved_id,),
+    ).fetchall()
+    for row in rows:
+        counts[row["outcome_type"]] = row["total"] or 0
+
+    total_outcomes = sum(counts.values())
+    return {
+        "total_outcomes": total_outcomes,
+        "counts": counts,
+        "quality_score": calculate_decision_quality_score(counts),
+    }
+
+
+def record_decision_outcome(
+    conn,
+    decision_id: str,
+    outcome_type: str,
+    *,
+    retrieval_selection_id: str | None = None,
+    note: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+) -> dict[str, Any]:
+    if outcome_type not in VALID_DECISION_OUTCOME_TYPES:
+        raise ValueError(
+            f"Invalid outcome_type '{outcome_type}'. Must be one of: {_format_allowed(VALID_DECISION_OUTCOME_TYPES)}"
+        )
+
+    full_decision_id = _resolve_decision_id(conn, decision_id)
+    if full_decision_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
+
+    selection = None
+    if retrieval_selection_id is not None:
+        from .telemetry import get_retrieval_selection
+
+        selection = get_retrieval_selection(conn, retrieval_selection_id)
+        if not selection:
+            raise ValueError(f"Retrieval selection '{retrieval_selection_id}' not found")
+        if selection["result_type"] != "decision":
+            raise ValueError("Retrieval selection must point to a decision result")
+        if selection["result_id"] != full_decision_id:
+            raise ValueError("Retrieval selection decision does not match the requested decision")
+
+    session_id, turn_id = _resolve_outcome_context(
+        conn,
+        selection=selection,
+        session_id=session_id,
+        turn_id=turn_id,
+    )
+
+    outcome_id = str(uuid4())
+    now = _now_iso()
+    conn.execute(
+        """
+        INSERT INTO decision_outcomes (
+            id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (outcome_id, full_decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, now),
+    )
+    conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (now, full_decision_id))
+    conn.commit()
+    row = conn.execute(
+        """
+        SELECT id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
+        FROM decision_outcomes
+        WHERE id = ?
+        """,
+        (outcome_id,),
+    ).fetchone()
+    return dict(row) if row else {}
+
+
 def link_decision_to_assessment(conn, decision_id: str, assessment_id: str, relation_type: str = "supports") -> dict:
     if relation_type not in VALID_DECISION_ASSESSMENT_RELATION_TYPES:
         raise ValueError(
-            f"Invalid relation_type '{relation_type}'. Must be one of: {_format_allowed(VALID_DECISION_ASSESSMENT_RELATION_TYPES)}"
+            "Invalid relation_type "
+            f"'{relation_type}'. Must be one of: {_format_allowed(VALID_DECISION_ASSESSMENT_RELATION_TYPES)}"
         )
 
     full_decision_id = _resolve_decision_id(conn, decision_id)
@@ -190,7 +353,10 @@ def link_decision_to_assessment(conn, decision_id: str, assessment_id: str, rela
     conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
     conn.commit()
     row = conn.execute(
-        "SELECT decision_id, assessment_id, relation_type, added_at FROM decision_assessments WHERE decision_id = ? AND assessment_id = ? AND relation_type = ?",
+        (
+            "SELECT decision_id, assessment_id, relation_type, added_at "
+            "FROM decision_assessments WHERE decision_id = ? AND assessment_id = ? AND relation_type = ?"
+        ),
         (full_decision_id, full_assessment_id, relation_type),
     ).fetchone()
     return dict(row) if row else {}
@@ -248,7 +414,10 @@ def link_decision_to_checkpoint(conn, decision_id: str, checkpoint_id: str) -> d
     conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
     conn.commit()
     row = conn.execute(
-        "SELECT decision_id, checkpoint_id, added_at FROM decision_checkpoints WHERE decision_id = ? AND checkpoint_id = ?",
+        (
+            "SELECT decision_id, checkpoint_id, added_at "
+            "FROM decision_checkpoints WHERE decision_id = ? AND checkpoint_id = ?"
+        ),
         (full_decision_id, full_checkpoint_id),
     ).fetchone()
     return dict(row) if row else {}

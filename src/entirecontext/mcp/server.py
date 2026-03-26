@@ -87,7 +87,7 @@ def _record_selection(
 
 
 from .tools.checkpoint import ec_checkpoint_list, ec_rewind  # noqa: E402
-from .tools.decisions import ec_decision_get, ec_decision_related  # noqa: E402
+from .tools.decisions import ec_decision_get, ec_decision_outcome, ec_decision_related  # noqa: E402
 from .tools.futures import ec_assess, ec_assess_create, ec_assess_trends, ec_feedback, ec_lessons  # noqa: E402
 from .tools.misc import ec_dashboard, ec_graph  # noqa: E402
 from .tools.search import ec_activate, ec_ast_search, ec_related, ec_search  # noqa: E402
@@ -129,6 +129,7 @@ __all__ = [
     "ec_dashboard",
     "ec_graph",
     "ec_decision_get",
+    "ec_decision_outcome",
     "ec_decision_related",
     "run_server",
 ]

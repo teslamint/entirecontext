@@ -12,15 +12,9 @@ console = Console()
 decision_app = typer.Typer(help="Decision memory management")
 
 
-@decision_app.command("create")
-def decision_create(
-    title: str = typer.Argument(..., help="Decision title"),
-    rationale: Optional[str] = typer.Option(None, "--rationale", help="Decision rationale"),
-    scope: Optional[str] = typer.Option(None, "--scope", help="Decision scope"),
-):
-    from ..core.decisions import create_decision
+def _get_repo_connection():
     from ..core.project import find_git_root
-    from ..db import get_db
+    from ..db import check_and_migrate, get_db
 
     repo_path = find_git_root()
     if not repo_path:
@@ -28,6 +22,23 @@ def decision_create(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
+    try:
+        check_and_migrate(conn)
+    except Exception:
+        conn.close()
+        raise
+    return conn
+
+
+@decision_app.command("create")
+def decision_create(
+    title: str = typer.Argument(..., help="Decision title"),
+    rationale: Optional[str] = typer.Option(None, "--rationale", help="Decision rationale"),
+    scope: Optional[str] = typer.Option(None, "--scope", help="Decision scope"),
+):
+    from ..core.decisions import create_decision
+
+    conn = _get_repo_connection()
     try:
         decision = create_decision(conn, title=title, rationale=rationale, scope=scope)
     finally:
@@ -42,15 +53,8 @@ def decision_list(
     limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
 ):
     from ..core.decisions import list_decisions
-    from ..core.project import find_git_root
-    from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
-    conn = get_db(repo_path)
+    conn = _get_repo_connection()
     try:
         decisions = list_decisions(conn, staleness_status=status, file_path=file, limit=limit)
     except ValueError as exc:
@@ -76,15 +80,8 @@ def decision_list(
 @decision_app.command("show")
 def decision_show(decision_id: str = typer.Argument(..., help="Decision ID")):
     from ..core.decisions import get_decision
-    from ..core.project import find_git_root
-    from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
-    conn = get_db(repo_path)
+    conn = _get_repo_connection()
     try:
         decision = get_decision(conn, decision_id)
     finally:
@@ -101,6 +98,16 @@ def decision_show(decision_id: str = typer.Argument(..., help="Decision ID")):
     console.print(f"  Rationale: {decision.get('rationale') or ''}")
     console.print(f"  Rejected alternatives: {len(decision.get('rejected_alternatives', []))}")
     console.print(f"  Supporting evidence: {len(decision.get('supporting_evidence', []))}")
+    quality = decision.get("quality_summary") or {}
+    counts = quality.get("counts") or {}
+    console.print(
+        "  Outcomes:"
+        f" accepted={counts.get('accepted', 0)}"
+        f" ignored={counts.get('ignored', 0)}"
+        f" contradicted={counts.get('contradicted', 0)}"
+        f" total={quality.get('total_outcomes', 0)}"
+        f" score={quality.get('quality_score', 0.0)}"
+    )
     if decision.get("files"):
         console.print("  Files:")
         for file_path in decision["files"]:
@@ -109,6 +116,10 @@ def decision_show(decision_id: str = typer.Argument(..., help="Decision ID")):
         console.print("  Assessments:")
         for item in decision["assessments"]:
             console.print(f"    - {item['assessment_id'][:12]} ({item['relation_type']})")
+    if decision.get("recent_outcomes"):
+        console.print("  Recent outcomes:")
+        for item in decision["recent_outcomes"]:
+            console.print(f"    - {item['outcome_type']} @ {item['created_at']}")
 
 
 @decision_app.command("link")
@@ -126,30 +137,26 @@ def decision_link(
         link_decision_to_commit,
         link_decision_to_file,
     )
-    from ..core.project import find_git_root
-    from ..db import get_db
 
     link_args = [bool(assessment), bool(checkpoint), bool(commit), bool(file)]
     if sum(link_args) != 1:
         console.print("[red]Exactly one of --assessment, --checkpoint, --commit, --file is required.[/red]")
         raise typer.Exit(1)
 
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
-    conn = get_db(repo_path)
+    conn = _get_repo_connection()
     try:
         if assessment:
             linked = link_decision_to_assessment(conn, decision_id, assessment, relation_type=relation_type)
             console.print(
-                f"[green]Linked decision {linked['decision_id'][:12]} to assessment {linked['assessment_id'][:12]} ({linked['relation_type']})[/green]"
+                "[green]Linked decision "
+                f"{linked['decision_id'][:12]} to assessment {linked['assessment_id'][:12]} "
+                f"({linked['relation_type']})[/green]"
             )
         elif checkpoint:
             linked = link_decision_to_checkpoint(conn, decision_id, checkpoint)
             console.print(
-                f"[green]Linked decision {linked['decision_id'][:12]} to checkpoint {linked['checkpoint_id'][:12]}[/green]"
+                "[green]Linked decision "
+                f"{linked['decision_id'][:12]} to checkpoint {linked['checkpoint_id'][:12]}[/green]"
             )
         elif commit:
             linked = link_decision_to_commit(conn, decision_id, commit)
@@ -172,15 +179,8 @@ def decision_stale(
     status: str = typer.Option(..., "--status", help="fresh|stale|superseded|contradicted"),
 ):
     from ..core.decisions import update_decision_staleness
-    from ..core.project import find_git_root
-    from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
-    conn = get_db(repo_path)
+    conn = _get_repo_connection()
     try:
         decision = update_decision_staleness(conn, decision_id, status)
     except ValueError as exc:
@@ -189,6 +189,41 @@ def decision_stale(
     finally:
         conn.close()
     console.print(f"[green]Updated decision:[/green] {decision['id'][:12]} -> {decision['staleness_status']}")
+
+
+@decision_app.command("outcome")
+def decision_outcome(
+    decision_id: str = typer.Argument(..., help="Decision ID"),
+    outcome: str = typer.Option(..., "--outcome", help="accepted|ignored|contradicted"),
+    selection_id: Optional[str] = typer.Option(None, "--selection-id", help="Decision retrieval selection ID"),
+    note: Optional[str] = typer.Option(None, "--note", help="Optional outcome note"),
+):
+    from ..core.decisions import record_decision_outcome
+    from ..core.telemetry import detect_current_context
+
+    conn = _get_repo_connection()
+    try:
+        session_id, turn_id = detect_current_context(conn)
+        if turn_id is None:
+            session_id = None
+        created = record_decision_outcome(
+            conn,
+            decision_id,
+            outcome,
+            retrieval_selection_id=selection_id,
+            note=note,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+    console.print(
+        f"[green]Recorded decision outcome:[/green] {created['decision_id'][:12]} -> {created['outcome_type']}"
+    )
 
 
 def register(app: typer.Typer) -> None:

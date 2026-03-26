@@ -44,6 +44,12 @@ class TestSchemaCreation:
             "retrieval_events",
             "retrieval_selections",
             "context_applications",
+            "decisions",
+            "decision_commits",
+            "decision_checkpoints",
+            "decision_files",
+            "decision_assessments",
+            "decision_outcomes",
         }
         assert expected.issubset(tables)
 
@@ -217,6 +223,27 @@ class TestMigration:
         check_and_migrate(db)
         v2 = get_current_version(db)
         assert v1 == v2
+
+    def test_migrate_v9_to_v10_adds_decision_outcomes(self):
+        conn = get_memory_db()
+        conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
+        conn.execute("INSERT INTO schema_version (version, description) VALUES (9, 'v9')")
+        conn.execute("CREATE TABLE decisions (id TEXT PRIMARY KEY)")
+        conn.execute(
+            "CREATE TABLE retrieval_selections (id TEXT PRIMARY KEY, result_type TEXT, result_id TEXT, session_id TEXT, turn_id TEXT)"
+        )
+        conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE turns (id TEXT PRIMARY KEY)")
+        conn.commit()
+
+        check_and_migrate(conn)
+
+        table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name = 'decision_outcomes'"
+        ).fetchone()
+        assert table is not None
+        assert get_current_version(conn) == SCHEMA_VERSION
+        conn.close()
 
     def test_sync_metadata_singleton(self, db):
         db.execute("INSERT INTO sync_metadata (id, sync_status) VALUES (1, 'idle')")

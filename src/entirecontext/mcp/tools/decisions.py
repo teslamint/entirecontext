@@ -73,6 +73,50 @@ async def ec_decision_related(
         conn.close()
 
 
+async def ec_decision_outcome(
+    decision_id: str,
+    outcome_type: str,
+    selection_id: str | None = None,
+    note: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+) -> str:
+    """Record the outcome of a decision (accepted, ignored, or contradicted).
+
+    Links the outcome to a retrieval selection when selection_id is provided,
+    enabling quality tracking. Falls back to the current session context when
+    session_id and turn_id are not explicitly provided.
+    """
+    conn, _ = runtime.get_repo_db()
+    if not conn:
+        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    try:
+        from ...core.decisions import record_decision_outcome
+        from ...core.telemetry import detect_current_context
+
+        current_session_id, current_turn_id = detect_current_context(conn)
+        if current_turn_id is None:
+            current_session_id = None
+        if session_id is not None or turn_id is not None:
+            effective_session_id, effective_turn_id = session_id, turn_id
+        else:
+            effective_session_id, effective_turn_id = current_session_id, current_turn_id
+        outcome = record_decision_outcome(
+            conn,
+            decision_id,
+            outcome_type,
+            retrieval_selection_id=selection_id,
+            note=note,
+            session_id=effective_session_id,
+            turn_id=effective_turn_id,
+        )
+        return json.dumps(outcome)
+    except ValueError as exc:
+        return runtime.error_payload(str(exc))
+    finally:
+        conn.close()
+
+
 def register_tools(mcp, services=None) -> None:
-    for tool in (ec_decision_get, ec_decision_related):
+    for tool in (ec_decision_get, ec_decision_related, ec_decision_outcome):
         mcp.tool()(tool)

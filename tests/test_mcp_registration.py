@@ -34,6 +34,7 @@ def test_register_tools_exports_expected_public_tool_names():
         "ec_context_apply",
         "ec_dashboard",
         "ec_decision_get",
+        "ec_decision_outcome",
         "ec_decision_related",
         "ec_feedback",
         "ec_graph",

@@ -7,17 +7,22 @@ import pytest
 from entirecontext.core.decisions import (
     create_decision,
     get_decision,
+    get_decision_quality_summary,
     link_decision_to_assessment,
     link_decision_to_checkpoint,
     link_decision_to_commit,
     link_decision_to_file,
+    list_decision_outcomes,
     list_decisions,
+    record_decision_outcome,
     update_decision_staleness,
 )
 from entirecontext.core.futures import create_assessment, list_assessments
 from entirecontext.core.project import get_project
 from entirecontext.core.search import rank_related_decisions
 from entirecontext.core.session import create_session
+from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+from entirecontext.core.turn import create_turn
 
 
 class TestDecisionsCore:
@@ -157,3 +162,171 @@ class TestDecisionsCore:
         decisions = list_decisions(ec_db, limit=1)
         assert isinstance(decisions[0]["rejected_alternatives"], list)
         assert isinstance(decisions[0]["supporting_evidence"], list)
+
+    def test_record_decision_outcome_with_selection_and_summary(self, ec_repo, ec_db):
+        decision = create_decision(ec_db, title="Use queue based retries")
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="decision-outcome-session")
+        turn = create_turn(ec_db, session["id"], 1, user_message="search retries", assistant_summary="found decision")
+        event = record_retrieval_event(
+            ec_db,
+            source="cli",
+            search_type="decision_related",
+            target="decision",
+            query="retries",
+            result_count=1,
+            latency_ms=4,
+            session_id=session["id"],
+            turn_id=turn["id"],
+        )
+        selection = record_retrieval_selection(ec_db, event["id"], "decision", decision["id"], rank=1)
+
+        created = record_decision_outcome(
+            ec_db,
+            decision["id"][:12],
+            "accepted",
+            retrieval_selection_id=selection["id"],
+            note="Applied the retry design",
+        )
+
+        outcomes = list_decision_outcomes(ec_db, decision["id"])
+        summary = get_decision_quality_summary(ec_db, decision["id"])
+        fetched = get_decision(ec_db, decision["id"])
+
+        assert created["retrieval_selection_id"] == selection["id"]
+        assert outcomes[0]["outcome_type"] == "accepted"
+        assert summary["counts"]["accepted"] == 1
+        assert summary["quality_score"] == 1.0
+        assert fetched is not None
+        assert fetched["quality_summary"]["total_outcomes"] == 1
+        assert fetched["recent_outcomes"][0]["note"] == "Applied the retry design"
+
+    def test_record_decision_outcome_rejects_non_decision_selection(self, ec_repo, ec_db):
+        decision = create_decision(ec_db, title="Use queue based retries")
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="decision-outcome-invalid")
+        turn = create_turn(ec_db, session["id"], 1, user_message="search retries", assistant_summary="found turn")
+        event = record_retrieval_event(
+            ec_db,
+            source="cli",
+            search_type="regex",
+            target="turn",
+            query="retries",
+            result_count=1,
+            latency_ms=4,
+            session_id=session["id"],
+            turn_id=turn["id"],
+        )
+        selection = record_retrieval_selection(ec_db, event["id"], "turn", "t-source", rank=1)
+
+        with pytest.raises(ValueError, match="must point to a decision"):
+            record_decision_outcome(ec_db, decision["id"], "accepted", retrieval_selection_id=selection["id"])
+
+    def test_record_decision_outcome_rejects_partial_context_override(self, ec_repo, ec_db):
+        decision = create_decision(ec_db, title="Use queue based retries")
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="decision-outcome-partial")
+        turn = create_turn(ec_db, session["id"], 1, user_message="search retries", assistant_summary="found decision")
+        event = record_retrieval_event(
+            ec_db,
+            source="cli",
+            search_type="decision_related",
+            target="decision",
+            query="retries",
+            result_count=1,
+            latency_ms=4,
+            session_id=session["id"],
+            turn_id=turn["id"],
+        )
+        selection = record_retrieval_selection(ec_db, event["id"], "decision", decision["id"], rank=1)
+
+        with pytest.raises(ValueError, match="session_id and turn_id must be provided together"):
+            record_decision_outcome(
+                ec_db,
+                decision["id"],
+                "accepted",
+                retrieval_selection_id=selection["id"],
+                session_id=session["id"],
+            )
+
+    def test_record_decision_outcome_accepts_consistent_explicit_context_override(self, ec_repo, ec_db):
+        decision = create_decision(ec_db, title="Use queue based retries")
+        project = get_project(str(ec_repo))
+        selection_session = create_session(ec_db, project["id"], session_id="decision-outcome-source")
+        selection_turn = create_turn(
+            ec_db, selection_session["id"], 1, user_message="search retries", assistant_summary="found decision"
+        )
+        event = record_retrieval_event(
+            ec_db,
+            source="cli",
+            search_type="decision_related",
+            target="decision",
+            query="retries",
+            result_count=1,
+            latency_ms=4,
+            session_id=selection_session["id"],
+            turn_id=selection_turn["id"],
+        )
+        selection = record_retrieval_selection(ec_db, event["id"], "decision", decision["id"], rank=1)
+        override_session = create_session(ec_db, project["id"], session_id="decision-outcome-override")
+        override_turn = create_turn(
+            ec_db, override_session["id"], 1, user_message="apply retries", assistant_summary="used decision"
+        )
+
+        created = record_decision_outcome(
+            ec_db,
+            decision["id"],
+            "accepted",
+            retrieval_selection_id=selection["id"],
+            session_id=override_session["id"],
+            turn_id=override_turn["id"],
+        )
+
+        assert created["session_id"] == override_session["id"]
+        assert created["turn_id"] == override_turn["id"]
+
+    def test_record_decision_outcome_rejects_nonexistent_session(self, ec_repo, ec_db):
+        decision = create_decision(ec_db, title="Use queue based retries")
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="decision-outcome-exists")
+        turn = create_turn(ec_db, session["id"], 1, user_message="search retries", assistant_summary="found")
+
+        with pytest.raises(ValueError, match="Session .* not found"):
+            record_decision_outcome(
+                ec_db,
+                decision["id"],
+                "accepted",
+                session_id="nonexistent-session-id",
+                turn_id=turn["id"],
+            )
+
+    def test_record_decision_outcome_rejects_mismatched_explicit_context_override(self, ec_repo, ec_db):
+        decision = create_decision(ec_db, title="Use queue based retries")
+        project = get_project(str(ec_repo))
+        session_one = create_session(ec_db, project["id"], session_id="decision-outcome-mismatch-1")
+        turn_one = create_turn(ec_db, session_one["id"], 1, user_message="search retries", assistant_summary="found")
+        session_two = create_session(ec_db, project["id"], session_id="decision-outcome-mismatch-2")
+
+        with pytest.raises(ValueError, match="does not belong to session_id"):
+            record_decision_outcome(
+                ec_db,
+                decision["id"],
+                "accepted",
+                session_id=session_two["id"],
+                turn_id=turn_one["id"],
+            )
+
+    def test_rank_related_decisions_applies_quality_adjustment(self, ec_db):
+        promoted = create_decision(ec_db, title="Promoted")
+        demoted = create_decision(ec_db, title="Demoted")
+        link_decision_to_file(ec_db, promoted["id"], "src/service/retry.py")
+        link_decision_to_file(ec_db, demoted["id"], "src/service/retry.py")
+        record_decision_outcome(ec_db, promoted["id"], "accepted")
+        record_decision_outcome(ec_db, promoted["id"], "accepted")
+        record_decision_outcome(ec_db, demoted["id"], "contradicted")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/service/retry.py"], limit=10)
+
+        assert [item["id"] for item in ranked[:2]] == [promoted["id"], demoted["id"]]
+        assert ranked[0]["quality_score"] > ranked[1]["quality_score"]
+        assert ranked[0]["base_score"] == ranked[1]["base_score"] == 2.0
