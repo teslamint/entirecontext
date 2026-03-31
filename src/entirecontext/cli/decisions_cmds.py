@@ -176,19 +176,37 @@ def decision_link(
 @decision_app.command("stale")
 def decision_stale(
     decision_id: str = typer.Argument(..., help="Decision ID"),
-    status: str = typer.Option(..., "--status", help="fresh|stale|superseded|contradicted"),
+    status: Optional[str] = typer.Option(None, "--status", help="Manually set: fresh|stale|superseded|contradicted"),
 ):
-    from ..core.decisions import update_decision_staleness
+    """Check or set staleness for a decision. Without --status, auto-detects via git."""
+    from ..core.project import find_git_root
 
     conn = _get_repo_connection()
     try:
-        decision = update_decision_staleness(conn, decision_id, status)
+        if status:
+            from ..core.decisions import update_decision_staleness
+
+            decision = update_decision_staleness(conn, decision_id, status)
+            console.print(f"[green]Updated decision:[/green] {decision['id'][:12]} -> {decision['staleness_status']}")
+        else:
+            from ..core.decisions import check_staleness
+
+            repo_path = find_git_root()
+            if not repo_path:
+                console.print("[red]Not in a git repository.[/red]")
+                raise typer.Exit(1)
+            result = check_staleness(conn, decision_id, repo_path)
+            if result["stale"]:
+                console.print(f"[yellow]STALE[/yellow] — {len(result['changed_files'])} linked file(s) changed:")
+                for f in result["changed_files"]:
+                    console.print(f"  - {f}")
+            else:
+                console.print("[green]Not stale.[/green]")
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
     finally:
         conn.close()
-    console.print(f"[green]Updated decision:[/green] {decision['id'][:12]} -> {decision['staleness_status']}")
 
 
 @decision_app.command("outcome")
@@ -224,6 +242,124 @@ def decision_outcome(
     console.print(
         f"[green]Recorded decision outcome:[/green] {created['decision_id'][:12]} -> {created['outcome_type']}"
     )
+
+
+@decision_app.command("update")
+def decision_update(
+    decision_id: str = typer.Argument(..., help="Decision ID (supports prefix)"),
+    title: Optional[str] = typer.Option(None, "--title", "-t"),
+    rationale: Optional[str] = typer.Option(None, "--rationale"),
+    scope: Optional[str] = typer.Option(None, "--scope"),
+):
+    """Update a decision's fields."""
+    from ..core.decisions import update_decision
+
+    conn = _get_repo_connection()
+    try:
+        d = update_decision(conn, decision_id, title=title, rationale=rationale, scope=scope)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+    console.print(f"[green]Updated decision:[/green] {d['id'][:12]} — {d['title']}")
+
+
+@decision_app.command("supersede")
+def decision_supersede(
+    old_id: str = typer.Argument(..., help="Decision ID to supersede (supports prefix)"),
+    new_id: str = typer.Argument(..., help="New decision ID that replaces it (supports prefix)"),
+):
+    """Mark a decision as superseded by another."""
+    from ..core.decisions import supersede_decision
+
+    conn = _get_repo_connection()
+    try:
+        d = supersede_decision(conn, old_id, new_id)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+    console.print(f"[green]Decision superseded:[/green] {d['id'][:12]} → {d.get('superseded_by_id', '')[:12]}")
+
+
+@decision_app.command("unlink")
+def decision_unlink(
+    decision_id: str = typer.Argument(..., help="Decision ID (supports prefix)"),
+    assessment: Optional[str] = typer.Option(None, "--assessment", help="Assessment ID to unlink"),
+    checkpoint: Optional[str] = typer.Option(None, "--checkpoint", help="Checkpoint ID to unlink"),
+    commit: Optional[str] = typer.Option(None, "--commit", help="Commit SHA to unlink"),
+    file: Optional[str] = typer.Option(None, "--file", help="File path to unlink"),
+    relation_type: str = typer.Option("supports", "--relation-type", help="Assessment relation type"),
+):
+    """Remove a link from a decision."""
+    from ..core.decisions import (
+        unlink_decision_from_assessment,
+        unlink_decision_from_checkpoint,
+        unlink_decision_from_commit,
+        unlink_decision_from_file,
+    )
+
+    link_args = [bool(assessment), bool(checkpoint), bool(commit), bool(file)]
+    if sum(link_args) != 1:
+        console.print("[red]Exactly one of --assessment, --checkpoint, --commit, --file is required.[/red]")
+        raise typer.Exit(1)
+
+    conn = _get_repo_connection()
+    try:
+        if assessment:
+            removed = unlink_decision_from_assessment(conn, decision_id, assessment, relation_type)
+        elif checkpoint:
+            removed = unlink_decision_from_checkpoint(conn, decision_id, checkpoint)
+        elif commit:
+            removed = unlink_decision_from_commit(conn, decision_id, commit)
+        else:
+            removed = unlink_decision_from_file(conn, decision_id, file or "")
+    finally:
+        conn.close()
+
+    if removed:
+        console.print("[green]Link removed.[/green]")
+    else:
+        console.print("[yellow]Link not found.[/yellow]")
+
+
+@decision_app.command("stale-all")
+def decision_stale_all():
+    """Check staleness for all fresh decisions and persist results."""
+    from ..core.decisions import check_staleness, list_decisions, update_decision_staleness
+    from ..core.project import find_git_root
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    from ..db import check_and_migrate, get_db
+
+    conn = get_db(repo_path)
+    check_and_migrate(conn)
+    try:
+        decisions = list_decisions(conn, staleness_status="fresh", limit=1000)
+        stale_count = 0
+        for d in decisions:
+            result = check_staleness(conn, d["id"], repo_path)
+            if result["stale"]:
+                stale_count += 1
+                update_decision_staleness(conn, d["id"], "stale")
+                console.print(
+                    f"[yellow]STALE[/yellow] {d['id'][:12]} {d['title'][:40]} — {len(result['changed_files'])} file(s)"
+                )
+    finally:
+        conn.close()
+
+    if stale_count == 0:
+        console.print(f"[green]All {len(decisions)} fresh decisions are up to date.[/green]")
+    else:
+        console.print(f"\n[yellow]{stale_count}/{len(decisions)} decisions marked as stale.[/yellow]")
 
 
 def register(app: typer.Typer) -> None:

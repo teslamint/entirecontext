@@ -228,7 +228,7 @@ class TestMigration:
         conn = get_memory_db()
         conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
         conn.execute("INSERT INTO schema_version (version, description) VALUES (9, 'v9')")
-        conn.execute("CREATE TABLE decisions (id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE decisions (id TEXT PRIMARY KEY, title TEXT, rationale TEXT, scope TEXT, staleness_status TEXT DEFAULT 'fresh', rejected_alternatives TEXT, supporting_evidence TEXT, created_at TEXT, updated_at TEXT)")
         conn.execute(
             "CREATE TABLE retrieval_selections (id TEXT PRIMARY KEY, result_type TEXT, result_id TEXT, session_id TEXT, turn_id TEXT)"
         )

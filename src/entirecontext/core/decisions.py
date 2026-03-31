@@ -3,9 +3,30 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+
+
+class _UnsetType:
+    """Sentinel type for distinguishing 'not provided' from None."""
+
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "<UNSET>"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+_UNSET = _UnsetType()
 
 VALID_STALENESS = frozenset(("fresh", "stale", "superseded", "contradicted"))
 VALID_DECISION_OUTCOME_TYPES = frozenset(("accepted", "ignored", "contradicted"))
@@ -421,3 +442,149 @@ def link_decision_to_checkpoint(conn, decision_id: str, checkpoint_id: str) -> d
         (full_decision_id, full_checkpoint_id),
     ).fetchone()
     return dict(row) if row else {}
+
+
+def update_decision(
+    conn,
+    decision_id: str,
+    title: str | None = None,
+    rationale: str | None = None,
+    scope: str | None = None,
+    rejected_alternatives: list | None | _UnsetType = _UNSET,
+    supporting_evidence: list | None | _UnsetType = _UNSET,
+) -> dict:
+    full_id = _resolve_decision_id(conn, decision_id)
+    if full_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
+
+    updates: list[str] = []
+    params: list[Any] = []
+
+    if title is not None:
+        updates.append("title = ?")
+        params.append(title)
+    if rationale is not None:
+        updates.append("rationale = ?")
+        params.append(rationale)
+    if scope is not None:
+        updates.append("scope = ?")
+        params.append(scope)
+    if rejected_alternatives is not _UNSET:
+        updates.append("rejected_alternatives = ?")
+        params.append(json.dumps(rejected_alternatives or []))
+    if supporting_evidence is not _UNSET:
+        updates.append("supporting_evidence = ?")
+        params.append(json.dumps(supporting_evidence or []))
+
+    if not updates:
+        return get_decision(conn, full_id) or {}
+
+    updates.append("updated_at = ?")
+    params.append(_now_iso())
+    params.append(full_id)
+
+    conn.execute(f"UPDATE decisions SET {', '.join(updates)} WHERE id = ?", params)
+    conn.commit()
+    return get_decision(conn, full_id) or {}
+
+
+def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict:
+    old_full = _resolve_decision_id(conn, old_decision_id)
+    if old_full is None:
+        raise ValueError(f"Decision '{old_decision_id}' not found")
+
+    new_full = _resolve_decision_id(conn, new_decision_id)
+    if new_full is None:
+        raise ValueError(f"Decision '{new_decision_id}' not found")
+
+    if old_full == new_full:
+        raise ValueError("A decision cannot supersede itself")
+
+    now = _now_iso()
+    conn.execute(
+        "UPDATE decisions SET staleness_status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE id = ?",
+        (new_full, now, old_full),
+    )
+    conn.commit()
+    return get_decision(conn, old_full) or {}
+
+
+def unlink_decision_from_file(conn, decision_id: str, file_path: str) -> bool:
+    full_id = _resolve_decision_id(conn, decision_id)
+    if full_id is None:
+        return False
+    cursor = conn.execute("DELETE FROM decision_files WHERE decision_id = ? AND file_path = ?", (full_id, file_path))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def unlink_decision_from_commit(conn, decision_id: str, commit_sha: str) -> bool:
+    full_id = _resolve_decision_id(conn, decision_id)
+    if full_id is None:
+        return False
+    cursor = conn.execute(
+        "DELETE FROM decision_commits WHERE decision_id = ? AND commit_sha = ?", (full_id, commit_sha)
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def unlink_decision_from_assessment(
+    conn, decision_id: str, assessment_id: str, relation_type: str = "supports"
+) -> bool:
+    full_decision_id = _resolve_decision_id(conn, decision_id)
+    full_assessment_id = _resolve_assessment_id(conn, assessment_id)
+    if full_decision_id is None or full_assessment_id is None:
+        return False
+    cursor = conn.execute(
+        "DELETE FROM decision_assessments WHERE decision_id = ? AND assessment_id = ? AND relation_type = ?",
+        (full_decision_id, full_assessment_id, relation_type),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def unlink_decision_from_checkpoint(conn, decision_id: str, checkpoint_id: str) -> bool:
+    full_decision_id = _resolve_decision_id(conn, decision_id)
+    full_checkpoint_id = _resolve_checkpoint_id(conn, checkpoint_id)
+    if full_decision_id is None or full_checkpoint_id is None:
+        return False
+    cursor = conn.execute(
+        "DELETE FROM decision_checkpoints WHERE decision_id = ? AND checkpoint_id = ?",
+        (full_decision_id, full_checkpoint_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
+    full_id = _resolve_decision_id(conn, decision_id)
+    if full_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
+
+    decision = get_decision(conn, full_id)
+    linked_files = decision.get("files", []) if decision else []
+    not_stale = {"stale": False, "changed_files": [], "decision_id": full_id}
+
+    if not linked_files:
+        return not_stale
+
+    since = decision.get("created_at") if decision else None
+    since_arg = f"--since={since}" if since else "--since=3 months ago"
+
+    try:
+        result = subprocess.run(
+            ["git", "log", since_arg, "--name-only", "--pretty=format:"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return not_stale
+        recently_changed = {line for line in result.stdout.strip().split("\n") if line}
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return not_stale
+
+    changed_in_scope = sorted(set(linked_files) & recently_changed)
+    return {"stale": len(changed_in_scope) > 0, "changed_files": changed_in_scope, "decision_id": full_id}

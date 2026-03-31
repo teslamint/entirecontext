@@ -117,6 +117,99 @@ async def ec_decision_outcome(
         conn.close()
 
 
+async def ec_decision_create(
+    title: str,
+    rationale: str | None = None,
+    scope: str | None = None,
+    rejected_alternatives: list[str] | None = None,
+    supporting_evidence: list | None = None,
+) -> str:
+    """Create a new decision record.
+
+    Args:
+        title: Short name for the decision
+        rationale: Reasoning behind the decision
+        scope: Scope or area this decision applies to
+        rejected_alternatives: List of alternatives that were considered and rejected
+        supporting_evidence: Evidence supporting the decision
+    """
+    conn, _ = runtime.get_repo_db()
+    if not conn:
+        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    try:
+        from ...core.decisions import create_decision
+
+        d = create_decision(
+            conn,
+            title=title,
+            rationale=rationale,
+            scope=scope,
+            rejected_alternatives=rejected_alternatives,
+            supporting_evidence=supporting_evidence,
+        )
+        return json.dumps(d)
+    except ValueError as exc:
+        return runtime.error_payload(str(exc))
+    finally:
+        conn.close()
+
+
+async def ec_decision_list(
+    staleness_status: str | None = None,
+    file_path: str | None = None,
+    limit: int = 20,
+) -> str:
+    """List decisions with optional filters.
+
+    Args:
+        staleness_status: Filter by status (fresh/stale/superseded/contradicted)
+        file_path: Filter by linked file path
+        limit: Maximum results (default 20)
+    """
+    conn, _ = runtime.get_repo_db()
+    if not conn:
+        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    try:
+        from ...core.decisions import list_decisions
+
+        decisions = list_decisions(conn, staleness_status=staleness_status, file_path=file_path, limit=limit)
+        return json.dumps({"decisions": decisions, "count": len(decisions)})
+    except ValueError as exc:
+        return runtime.error_payload(str(exc))
+    finally:
+        conn.close()
+
+
+async def ec_decision_stale(decision_id: str) -> str:
+    """Check if a decision's linked files have changed recently (read-only).
+
+    Returns staleness info without persisting the result. Use the CLI
+    ``ec decision stale-all`` command to detect and persist staleness.
+
+    Args:
+        decision_id: Decision ID (supports prefix)
+    """
+    conn, repo_path = runtime.get_repo_db()
+    if not conn:
+        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    try:
+        from ...core.decisions import check_staleness
+
+        result = check_staleness(conn, decision_id, repo_path)
+        return json.dumps(result)
+    except ValueError as exc:
+        return runtime.error_payload(str(exc))
+    finally:
+        conn.close()
+
+
 def register_tools(mcp, services=None) -> None:
-    for tool in (ec_decision_get, ec_decision_related, ec_decision_outcome):
+    for tool in (
+        ec_decision_get,
+        ec_decision_related,
+        ec_decision_outcome,
+        ec_decision_create,
+        ec_decision_list,
+        ec_decision_stale,
+    ):
         mcp.tool()(tool)
