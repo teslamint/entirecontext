@@ -31,11 +31,11 @@ The project already has broad infrastructure in place:
 
 That foundation is useful, but it is broader than the product wedge. The next phase should narrow EntireContext around **decision memory for coding agents**, not expand it horizontally as a generic memory platform.
 
-The main implementation hardening gap still on the table is sync merge/retry policy alignment between runtime and docs.
+The main product gap still on the table is proactive decision reactivation at the moment new work starts.
 
 ## Now
 
-- [ ] **Sharpen product messaging around decision memory**
+- [x] **Sharpen product messaging around decision memory**
   - Keep README, roadmap, and product-facing docs centered on the decision-memory loop
   - Move broad platform capabilities into supporting sections instead of leading with them
   - Make the primary persona explicit: engineers and small teams already doing agentic coding
@@ -46,9 +46,11 @@ The main implementation hardening gap still on the table is sync merge/retry pol
   - Clarify how decisions differ from summaries, assessments, and lessons (documented in README + CLI/MCP examples)
 
 - [ ] **Make retrieval proactive, not just query-based**
+  - Current status: decision relevance ranking is implemented for linked files, linked assessments, diff text, and tracked outcomes, and exposed through MCP via `ec_decision_related`
   - Surface relevant past decisions when similar files, diffs, or intents appear
   - Rank results by current-change relevance, not only text similarity
   - Expose the retrieval path through MCP so agents can consume it automatically
+  - Remaining gap: automatic surfacing at session start / during active coding is not yet wired into hooks or runtime intervention paths
 
 ## Next (1-3 weeks)
 
@@ -58,14 +60,16 @@ The main implementation hardening gap still on the table is sync merge/retry pol
   - Validate extraction quality against noisy, real coding sessions
 
 - [ ] **Relevance-based reactivation**
+  - Current status: file-based, diff-based, assessment-linked, and outcome-adjusted reactivation primitives already exist
   - Use touched files, diff similarity, git relationships, and assessment links
   - Present "read these past decisions first" suggestions before new work starts
   - Verify usefulness on repeated-task and regression-fix scenarios
 
 - [ ] **Staleness and contradiction handling**
+  - Current status: decision staleness states, manual/auto stale detection, contradiction outcomes, and supersession links are implemented
   - Detect when old guidance no longer matches current code or newer decisions
   - Extend relationship handling around contradiction, replacement, or supersession
-  - Prevent stale memory from dominating retrieval results
+  - Remaining gap: retrieval ranking does not yet directly suppress stale/superseded decisions based on status alone
 
 ## Later (1-3 months)
 
@@ -75,7 +79,7 @@ The main implementation hardening gap still on the table is sync merge/retry pol
   - 영향 파일: `sync/engine.py`, `sync/merge.py`, docs
   - 테스트: 선택한 정책의 구현/문서 일관성 검증
 
-- [ ] **Decision quality loop**
+- [x] **Decision quality loop**
   - Track whether retrieved guidance was accepted, ignored, or contradicted
   - Measure which decisions and lessons actually improve later changes
   - Use those outcomes to improve ranking and distillation quality
@@ -85,7 +89,7 @@ The main implementation hardening gap still on the table is sync merge/retry pol
   - Separate repo-local norms from cross-repo lessons
   - Generate team-facing reports about repeated decisions and repeated mistakes
 
-- [ ] **Sync and runtime hardening**
+- [x] **Sync and runtime hardening**
   - Resolve merge/retry policy alignment in the sync engine or narrow the documented policy explicitly
   - Keep docs and runtime behavior consistent for shared usage
   - Test divergent shadow-branch conflict scenarios
