@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -210,10 +210,12 @@ CREATE TABLE IF NOT EXISTS decisions (
     rationale TEXT,
     scope TEXT,
     staleness_status TEXT NOT NULL DEFAULT 'fresh',
+    superseded_by_id TEXT,
     rejected_alternatives TEXT,
     supporting_evidence TEXT,
     created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (superseded_by_id) REFERENCES decisions(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_decisions_staleness ON decisions(staleness_status);
 CREATE INDEX IF NOT EXISTS idx_decisions_updated_at ON decisions(updated_at DESC);
@@ -454,6 +456,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_ast_symbols USING fts5(
     content_rowid='rowid'
 );
 """,
+    "fts_decisions": """
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_decisions USING fts5(
+    title,
+    rationale,
+    content='decisions',
+    content_rowid='rowid'
+);
+""",
 }
 
 # FTS5 sync triggers (9 total: 3 per FTS table)
@@ -536,6 +546,26 @@ CREATE TRIGGER IF NOT EXISTS fts_ast_symbols_au AFTER UPDATE ON ast_symbols BEGI
   VALUES ('delete', old.rowid, old.name, old.qualified_name, old.docstring, old.file_path);
   INSERT INTO fts_ast_symbols(rowid, name, qualified_name, docstring, file_path)
   VALUES (new.rowid, new.name, new.qualified_name, new.docstring, new.file_path);
+END;
+""",
+    "fts_decisions_ai": """
+CREATE TRIGGER IF NOT EXISTS fts_decisions_ai AFTER INSERT ON decisions BEGIN
+  INSERT INTO fts_decisions(rowid, title, rationale)
+  VALUES (new.rowid, new.title, new.rationale);
+END;
+""",
+    "fts_decisions_ad": """
+CREATE TRIGGER IF NOT EXISTS fts_decisions_ad AFTER DELETE ON decisions BEGIN
+  INSERT INTO fts_decisions(fts_decisions, rowid, title, rationale)
+  VALUES ('delete', old.rowid, old.title, old.rationale);
+END;
+""",
+    "fts_decisions_au": """
+CREATE TRIGGER IF NOT EXISTS fts_decisions_au AFTER UPDATE ON decisions BEGIN
+  INSERT INTO fts_decisions(fts_decisions, rowid, title, rationale)
+  VALUES ('delete', old.rowid, old.title, old.rationale);
+  INSERT INTO fts_decisions(rowid, title, rationale)
+  VALUES (new.rowid, new.title, new.rationale);
 END;
 """,
 }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from entirecontext.core.decisions import (
+    check_staleness,
     create_decision,
     get_decision,
     get_decision_quality_summary,
@@ -15,6 +16,12 @@ from entirecontext.core.decisions import (
     list_decision_outcomes,
     list_decisions,
     record_decision_outcome,
+    supersede_decision,
+    unlink_decision_from_assessment,
+    unlink_decision_from_checkpoint,
+    unlink_decision_from_commit,
+    unlink_decision_from_file,
+    update_decision,
     update_decision_staleness,
 )
 from entirecontext.core.futures import create_assessment, list_assessments
@@ -330,3 +337,158 @@ class TestDecisionsCore:
         assert [item["id"] for item in ranked[:2]] == [promoted["id"], demoted["id"]]
         assert ranked[0]["quality_score"] > ranked[1]["quality_score"]
         assert ranked[0]["base_score"] == ranked[1]["base_score"] == 2.0
+
+
+class TestUpdateDecision:
+    def test_update_title(self, ec_db):
+        d = create_decision(ec_db, title="Old title")
+        updated = update_decision(ec_db, d["id"], title="New title")
+        assert updated["title"] == "New title"
+
+    def test_update_rationale(self, ec_db):
+        d = create_decision(ec_db, title="Test")
+        updated = update_decision(ec_db, d["id"], rationale="New reasoning")
+        assert updated["rationale"] == "New reasoning"
+
+    def test_update_prefix_id(self, ec_db):
+        d = create_decision(ec_db, title="Original")
+        updated = update_decision(ec_db, d["id"][:12], title="Updated")
+        assert updated["title"] == "Updated"
+
+    def test_update_nonexistent_raises(self, ec_db):
+        with pytest.raises(ValueError, match="not found"):
+            update_decision(ec_db, "nonexistent-id", title="Nope")
+
+    def test_no_changes_returns_current(self, ec_db):
+        d = create_decision(ec_db, title="Same")
+        result = update_decision(ec_db, d["id"])
+        assert result["title"] == "Same"
+
+
+class TestSupersedeDecision:
+    def test_supersede(self, ec_db):
+        old = create_decision(ec_db, title="Old approach")
+        new = create_decision(ec_db, title="New approach")
+        result = supersede_decision(ec_db, old["id"], new["id"])
+        assert result["staleness_status"] == "superseded"
+        assert result["superseded_by_id"] == new["id"]
+
+    def test_supersede_preserves_scope(self, ec_db):
+        old = create_decision(ec_db, title="Old", scope="auth module")
+        new = create_decision(ec_db, title="New")
+        supersede_decision(ec_db, old["id"], new["id"])
+        fetched = get_decision(ec_db, old["id"])
+        assert fetched["scope"] == "auth module"
+        assert fetched["superseded_by_id"] == new["id"]
+
+    def test_prefix_id_support(self, ec_db):
+        old = create_decision(ec_db, title="Old")
+        new = create_decision(ec_db, title="New")
+        result = supersede_decision(ec_db, old["id"][:12], new["id"][:12])
+        assert result["staleness_status"] == "superseded"
+
+    def test_self_supersede_raises(self, ec_db):
+        d = create_decision(ec_db, title="Self")
+        with pytest.raises(ValueError, match="cannot supersede itself"):
+            supersede_decision(ec_db, d["id"], d["id"])
+
+    def test_nonexistent_raises(self, ec_db):
+        new = create_decision(ec_db, title="New")
+        with pytest.raises(ValueError, match="not found"):
+            supersede_decision(ec_db, "nonexistent", new["id"])
+
+
+class TestUnlinkDecision:
+    def test_unlink_file(self, ec_db):
+        d = create_decision(ec_db, title="Test")
+        link_decision_to_file(ec_db, d["id"], "src/a.py")
+        assert unlink_decision_from_file(ec_db, d["id"], "src/a.py") is True
+        fetched = get_decision(ec_db, d["id"])
+        assert "src/a.py" not in fetched["files"]
+
+    def test_unlink_nonexistent_returns_false(self, ec_db):
+        d = create_decision(ec_db, title="Test")
+        assert unlink_decision_from_file(ec_db, d["id"], "nonexistent.py") is False
+
+    def test_unlink_commit(self, ec_db):
+        d = create_decision(ec_db, title="Test")
+        link_decision_to_commit(ec_db, d["id"], "abc123")
+        assert unlink_decision_from_commit(ec_db, d["id"], "abc123") is True
+
+    def test_unlink_assessment(self, ec_db):
+        assessment = create_assessment(ec_db, verdict="expand", impact_summary="test")
+        d = create_decision(ec_db, title="Test")
+        link_decision_to_assessment(ec_db, d["id"], assessment["id"])
+        assert unlink_decision_from_assessment(ec_db, d["id"], assessment["id"]) is True
+        fetched = get_decision(ec_db, d["id"])
+        assert len(fetched["assessments"]) == 0
+
+    def test_unlink_checkpoint(self, ec_repo, ec_db):
+        from entirecontext.core.checkpoint import create_checkpoint
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="unlink-cp-session")
+        checkpoint = create_checkpoint(ec_db, session["id"], git_commit_hash="abc123", git_branch="main")
+        d = create_decision(ec_db, title="Test")
+        link_decision_to_checkpoint(ec_db, d["id"], checkpoint["id"])
+        assert unlink_decision_from_checkpoint(ec_db, d["id"], checkpoint["id"]) is True
+
+
+class TestCheckStaleness:
+    def test_no_files_not_stale(self, ec_db, ec_repo):
+        d = create_decision(ec_db, title="No files")
+        result = check_staleness(ec_db, d["id"], str(ec_repo))
+        assert result["stale"] is False
+        assert result["changed_files"] == []
+
+    def test_nonexistent_raises(self, ec_db, ec_repo):
+        with pytest.raises(ValueError, match="not found"):
+            check_staleness(ec_db, "nonexistent", str(ec_repo))
+
+    def test_stale_when_linked_file_changed(self, ec_db, ec_repo):
+        import subprocess
+
+        test_file = ec_repo / "staleness_test.py"
+        test_file.write_text("x = 1\n")
+        subprocess.run(["git", "add", "."], cwd=str(ec_repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "add file"], cwd=str(ec_repo), capture_output=True)
+
+        d = create_decision(ec_db, title="Stale test")
+        link_decision_to_file(ec_db, d["id"], "staleness_test.py")
+
+        test_file.write_text("x = 2\n")
+        subprocess.run(["git", "add", "."], cwd=str(ec_repo), capture_output=True)
+        subprocess.run(["git", "commit", "-m", "modify file"], cwd=str(ec_repo), capture_output=True)
+
+        result = check_staleness(ec_db, d["id"], str(ec_repo))
+        assert result["stale"] is True
+        assert "staleness_test.py" in result["changed_files"]
+
+
+class TestFTSDecisions:
+    def test_fts_search_by_title(self, ec_db):
+        create_decision(ec_db, title="Adopt microservices architecture")
+        create_decision(ec_db, title="Use monolith pattern")
+        rows = ec_db.execute(
+            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("microservices",)
+        ).fetchall()
+        assert len(rows) == 1
+
+    def test_fts_search_by_rationale(self, ec_db):
+        create_decision(ec_db, title="DB choice", rationale="PostgreSQL offers better JSON support")
+        rows = ec_db.execute(
+            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("PostgreSQL",)
+        ).fetchall()
+        assert len(rows) == 1
+
+    def test_fts_updated_after_update_decision(self, ec_db):
+        d = create_decision(ec_db, title="Old searchable title")
+        update_decision(ec_db, d["id"], title="New searchable title")
+        old_rows = ec_db.execute(
+            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("Old",)
+        ).fetchall()
+        new_rows = ec_db.execute(
+            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("New",)
+        ).fetchall()
+        assert len(old_rows) == 0
+        assert len(new_rows) == 1
