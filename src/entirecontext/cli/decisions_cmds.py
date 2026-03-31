@@ -196,7 +196,9 @@ def decision_stale(
                 console.print("[red]Not in a git repository.[/red]")
                 raise typer.Exit(1)
             result = check_staleness(conn, decision_id, repo_path)
-            if result["stale"]:
+            if not result.get("checked", True):
+                console.print("[yellow]Warning: staleness check could not be completed (git error).[/yellow]")
+            elif result["stale"]:
                 console.print(f"[yellow]STALE[/yellow] — {len(result['changed_files'])} linked file(s) changed:")
                 for f in result["changed_files"]:
                     console.print(f"  - {f}")
@@ -318,6 +320,9 @@ def decision_unlink(
             removed = unlink_decision_from_commit(conn, decision_id, commit)
         else:
             removed = unlink_decision_from_file(conn, decision_id, file or "")
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
     finally:
         conn.close()
 
@@ -338,15 +343,15 @@ def decision_stale_all():
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
 
-    from ..db import check_and_migrate, get_db
-
-    conn = get_db(repo_path)
+    conn = _get_repo_connection()
     try:
-        check_and_migrate(conn)
         decisions = list_decisions(conn, staleness_status="fresh", limit=1000)
         stale_count = 0
         for d in decisions:
             result = check_staleness(conn, d["id"], repo_path)
+            if not result.get("checked", True):
+                console.print(f"[yellow]SKIP[/yellow] {d['id'][:12]} — staleness check failed")
+                continue
             if result["stale"]:
                 stale_count += 1
                 update_decision_staleness(conn, d["id"], "stale")

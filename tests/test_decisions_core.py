@@ -406,9 +406,25 @@ class TestUnlinkDecision:
         fetched = get_decision(ec_db, d["id"])
         assert "src/a.py" not in fetched["files"]
 
-    def test_unlink_nonexistent_returns_false(self, ec_db):
+    def test_unlink_nonexistent_file_returns_false(self, ec_db):
         d = create_decision(ec_db, title="Test")
         assert unlink_decision_from_file(ec_db, d["id"], "nonexistent.py") is False
+
+    def test_unlink_file_nonexistent_decision_raises(self, ec_db):
+        with pytest.raises(ValueError, match="not found"):
+            unlink_decision_from_file(ec_db, "nonexistent", "src/a.py")
+
+    def test_unlink_commit_nonexistent_decision_raises(self, ec_db):
+        with pytest.raises(ValueError, match="not found"):
+            unlink_decision_from_commit(ec_db, "nonexistent", "abc123")
+
+    def test_unlink_assessment_nonexistent_decision_raises(self, ec_db):
+        with pytest.raises(ValueError, match="not found"):
+            unlink_decision_from_assessment(ec_db, "nonexistent", "some-assessment")
+
+    def test_unlink_checkpoint_nonexistent_decision_raises(self, ec_db):
+        with pytest.raises(ValueError, match="not found"):
+            unlink_decision_from_checkpoint(ec_db, "nonexistent", "some-checkpoint")
 
     def test_unlink_commit(self, ec_db):
         d = create_decision(ec_db, title="Test")
@@ -440,6 +456,7 @@ class TestCheckStaleness:
         result = check_staleness(ec_db, d["id"], str(ec_repo))
         assert result["stale"] is False
         assert result["changed_files"] == []
+        assert result["checked"] is True
 
     def test_nonexistent_raises(self, ec_db, ec_repo):
         with pytest.raises(ValueError, match="not found"):
@@ -463,6 +480,15 @@ class TestCheckStaleness:
         result = check_staleness(ec_db, d["id"], str(ec_repo))
         assert result["stale"] is True
         assert "staleness_test.py" in result["changed_files"]
+        assert result["checked"] is True
+
+    def test_checked_false_on_git_failure(self, ec_db, ec_repo, monkeypatch):
+        d = create_decision(ec_db, title="Git fail test")
+        link_decision_to_file(ec_db, d["id"], "some_file.py")
+        monkeypatch.setattr("entirecontext.core.git_utils.get_changed_files_since", lambda *a, **kw: None)
+        result = check_staleness(ec_db, d["id"], str(ec_repo))
+        assert result["stale"] is False
+        assert result["checked"] is False
 
 
 class TestFTSDecisions:

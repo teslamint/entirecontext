@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -512,7 +511,7 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
 def unlink_decision_from_file(conn, decision_id: str, file_path: str) -> bool:
     full_id = _resolve_decision_id(conn, decision_id)
     if full_id is None:
-        return False
+        raise ValueError(f"Decision '{decision_id}' not found")
     cursor = conn.execute("DELETE FROM decision_files WHERE decision_id = ? AND file_path = ?", (full_id, file_path))
     conn.commit()
     return cursor.rowcount > 0
@@ -521,7 +520,7 @@ def unlink_decision_from_file(conn, decision_id: str, file_path: str) -> bool:
 def unlink_decision_from_commit(conn, decision_id: str, commit_sha: str) -> bool:
     full_id = _resolve_decision_id(conn, decision_id)
     if full_id is None:
-        return False
+        raise ValueError(f"Decision '{decision_id}' not found")
     cursor = conn.execute(
         "DELETE FROM decision_commits WHERE decision_id = ? AND commit_sha = ?", (full_id, commit_sha)
     )
@@ -533,9 +532,11 @@ def unlink_decision_from_assessment(
     conn, decision_id: str, assessment_id: str, relation_type: str = "supports"
 ) -> bool:
     full_decision_id = _resolve_decision_id(conn, decision_id)
+    if full_decision_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
     full_assessment_id = _resolve_assessment_id(conn, assessment_id)
-    if full_decision_id is None or full_assessment_id is None:
-        return False
+    if full_assessment_id is None:
+        raise ValueError(f"Assessment '{assessment_id}' not found")
     cursor = conn.execute(
         "DELETE FROM decision_assessments WHERE decision_id = ? AND assessment_id = ? AND relation_type = ?",
         (full_decision_id, full_assessment_id, relation_type),
@@ -546,9 +547,11 @@ def unlink_decision_from_assessment(
 
 def unlink_decision_from_checkpoint(conn, decision_id: str, checkpoint_id: str) -> bool:
     full_decision_id = _resolve_decision_id(conn, decision_id)
+    if full_decision_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
     full_checkpoint_id = _resolve_checkpoint_id(conn, checkpoint_id)
-    if full_decision_id is None or full_checkpoint_id is None:
-        return False
+    if full_checkpoint_id is None:
+        raise ValueError(f"Checkpoint '{checkpoint_id}' not found")
     cursor = conn.execute(
         "DELETE FROM decision_checkpoints WHERE decision_id = ? AND checkpoint_id = ?",
         (full_decision_id, full_checkpoint_id),
@@ -560,37 +563,33 @@ def unlink_decision_from_checkpoint(conn, decision_id: str, checkpoint_id: str) 
 def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
     """Check if linked files changed since decision creation.
 
-    Requires git >= 2.x for reliable ISO 8601 timestamp parsing in --since.
+    Returns a dict with ``checked`` indicating whether the git query succeeded.
+    When ``checked`` is False the remaining fields are defaults and should not
+    be treated as authoritative.
     """
+    from .git_utils import get_changed_files_since
+
     full_id = _resolve_decision_id(conn, decision_id)
     if full_id is None:
         raise ValueError(f"Decision '{decision_id}' not found")
 
     decision = get_decision(conn, full_id)
     linked_files = decision.get("files", []) if decision else []
-    not_stale = {"stale": False, "changed_files": [], "decision_id": full_id}
 
     if not linked_files:
-        return not_stale
+        return {"stale": False, "changed_files": [], "decision_id": full_id, "checked": True}
 
     since = decision.get("created_at") if decision else None
-    if since and since.endswith("+00:00"):
-        since = since[:-6] + "Z"
-    since_arg = f"--since={since}" if since else "--since=3 months ago"
+    since_value = since if since else "3 months ago"
 
-    try:
-        result = subprocess.run(
-            ["git", "log", since_arg, "--name-only", "--pretty=format:"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode != 0:
-            return not_stale
-        recently_changed = {line for line in result.stdout.strip().split("\n") if line}
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return not_stale
+    recently_changed = get_changed_files_since(repo_path, since_value)
+    if recently_changed is None:
+        return {"stale": False, "changed_files": [], "decision_id": full_id, "checked": False}
 
     changed_in_scope = sorted(set(linked_files) & recently_changed)
-    return {"stale": len(changed_in_scope) > 0, "changed_files": changed_in_scope, "decision_id": full_id}
+    return {
+        "stale": len(changed_in_scope) > 0,
+        "changed_files": changed_in_scope,
+        "decision_id": full_id,
+        "checked": True,
+    }
