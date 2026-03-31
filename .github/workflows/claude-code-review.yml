@@ -41,7 +41,6 @@ jobs:
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           use_sticky_comment: true
-          show_full_output: true
           claude_args: '--allowedTools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh api:*),Bash(gh pr checks:*)"'
           additional_permissions: |
             actions: read
