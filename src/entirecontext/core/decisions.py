@@ -43,28 +43,24 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _resolve_decision_id(conn, decision_id: str) -> str | None:
-    row = conn.execute("SELECT id FROM decisions WHERE id = ?", (decision_id,)).fetchone()
+def _resolve_id(conn, table: str, id_value: str) -> str | None:
+    row = conn.execute(f"SELECT id FROM {table} WHERE id = ?", (id_value,)).fetchone()
     if row is None:
-        escaped = decision_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        row = conn.execute("SELECT id FROM decisions WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
+        escaped = id_value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        row = conn.execute(f"SELECT id FROM {table} WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
     return row["id"] if row else None
+
+
+def _resolve_decision_id(conn, decision_id: str) -> str | None:
+    return _resolve_id(conn, "decisions", decision_id)
 
 
 def _resolve_checkpoint_id(conn, checkpoint_id: str) -> str | None:
-    row = conn.execute("SELECT id FROM checkpoints WHERE id = ?", (checkpoint_id,)).fetchone()
-    if row is None:
-        escaped = checkpoint_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        row = conn.execute("SELECT id FROM checkpoints WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
-    return row["id"] if row else None
+    return _resolve_id(conn, "checkpoints", checkpoint_id)
 
 
 def _resolve_assessment_id(conn, assessment_id: str) -> str | None:
-    row = conn.execute("SELECT id FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
-    if row is None:
-        escaped = assessment_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        row = conn.execute("SELECT id FROM assessments WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
-    return row["id"] if row else None
+    return _resolve_id(conn, "assessments", assessment_id)
 
 
 def _escape_like_contains(value: str) -> str:
