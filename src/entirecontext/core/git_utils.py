@@ -85,3 +85,23 @@ def get_tracked_files_snapshot(repo_path: str) -> dict[str, str]:
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return {}
+
+
+def get_changed_files_since(repo_path: str, since: str) -> set[str] | None:
+    """Get set of file paths changed in commits since a given timestamp.
+
+    Returns None if the git command fails or times out.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "log", f"--since={since}", "--name-only", "--pretty=format:"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return {line for line in result.stdout.strip().split("\n") if line}
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
