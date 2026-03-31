@@ -447,9 +447,9 @@ def link_decision_to_checkpoint(conn, decision_id: str, checkpoint_id: str) -> d
 def update_decision(
     conn,
     decision_id: str,
-    title: str | None = None,
-    rationale: str | None = None,
-    scope: str | None = None,
+    title: str | None | _UnsetType = _UNSET,
+    rationale: str | None | _UnsetType = _UNSET,
+    scope: str | None | _UnsetType = _UNSET,
     rejected_alternatives: list | None | _UnsetType = _UNSET,
     supporting_evidence: list | None | _UnsetType = _UNSET,
 ) -> dict:
@@ -460,13 +460,13 @@ def update_decision(
     updates: list[str] = []
     params: list[Any] = []
 
-    if title is not None:
+    if title is not _UNSET:
         updates.append("title = ?")
         params.append(title)
-    if rationale is not None:
+    if rationale is not _UNSET:
         updates.append("rationale = ?")
         params.append(rationale)
-    if scope is not None:
+    if scope is not _UNSET:
         updates.append("scope = ?")
         params.append(scope)
     if rejected_alternatives is not _UNSET:
@@ -558,6 +558,10 @@ def unlink_decision_from_checkpoint(conn, decision_id: str, checkpoint_id: str) 
 
 
 def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
+    """Check if linked files changed since decision creation.
+
+    Requires git >= 2.x for reliable ISO 8601 timestamp parsing in --since.
+    """
     full_id = _resolve_decision_id(conn, decision_id)
     if full_id is None:
         raise ValueError(f"Decision '{decision_id}' not found")
@@ -570,6 +574,8 @@ def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
         return not_stale
 
     since = decision.get("created_at") if decision else None
+    if since and since.endswith("+00:00"):
+        since = since[:-6] + "Z"
     since_arg = f"--since={since}" if since else "--since=3 months ago"
 
     try:

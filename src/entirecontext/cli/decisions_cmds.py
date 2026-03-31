@@ -341,8 +341,8 @@ def decision_stale_all():
     from ..db import check_and_migrate, get_db
 
     conn = get_db(repo_path)
-    check_and_migrate(conn)
     try:
+        check_and_migrate(conn)
         decisions = list_decisions(conn, staleness_status="fresh", limit=1000)
         stale_count = 0
         for d in decisions:
