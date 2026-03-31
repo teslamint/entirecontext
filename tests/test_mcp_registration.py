@@ -39,6 +39,7 @@ def test_register_tools_exports_expected_public_tool_names():
         "ec_decision_outcome",
         "ec_decision_related",
         "ec_decision_stale",
+        "ec_decision_contradictions",
         "ec_feedback",
         "ec_graph",
         "ec_lessons",

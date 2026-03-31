@@ -33,6 +33,7 @@ VALID_DECISION_OUTCOME_TYPES = frozenset(("accepted", "ignored", "contradicted")
 # relation_type is part of identity so one decision-assessment pair can keep
 # multiple typed links (e.g. informed_by + contradicts) when historically true.
 VALID_DECISION_ASSESSMENT_RELATION_TYPES = frozenset(("supports", "informed_by", "contradicts", "supersedes"))
+VALID_DECISION_RELATIONSHIP_TYPES = frozenset(("contradicts", "supersedes", "related_to"))
 
 
 def _format_allowed(values: frozenset[str]) -> tuple[str, ...]:
@@ -180,6 +181,7 @@ def get_decision(conn, decision_id: str) -> dict | None:
             (full_id,),
         )
     ]
+    decision["relationships"] = _get_decision_relationships_resolved(conn, full_id)
     decision["quality_summary"] = _get_decision_quality_summary_resolved(conn, full_id)
     decision["recent_outcomes"] = _list_decision_outcomes_resolved(conn, full_id, limit=10)
     return decision
@@ -501,6 +503,12 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
         "UPDATE decisions SET staleness_status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE id = ?",
         (new_full, now, old_full),
     )
+    rel_id = str(uuid4())
+    conn.execute(
+        "INSERT OR IGNORE INTO decision_relationships (id, source_id, target_id, relationship_type, confidence) "
+        "VALUES (?, ?, ?, 'supersedes', 1.0)",
+        (rel_id, new_full, old_full),
+    )
     conn.commit()
     return get_decision(conn, old_full) or {}
 
@@ -590,3 +598,178 @@ def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
 
     changed_in_scope = sorted(set(linked_files) & recently_changed)
     return {"stale": len(changed_in_scope) > 0, "changed_files": changed_in_scope, "decision_id": full_id}
+
+
+def add_decision_relationship(
+    conn,
+    source_id: str,
+    target_id: str,
+    relationship_type: str,
+    *,
+    confidence: float = 1.0,
+    note: str | None = None,
+) -> dict:
+    if relationship_type not in VALID_DECISION_RELATIONSHIP_TYPES:
+        raise ValueError(
+            f"Invalid relationship_type '{relationship_type}'. "
+            f"Must be one of: {_format_allowed(VALID_DECISION_RELATIONSHIP_TYPES)}"
+        )
+
+    full_source = _resolve_decision_id(conn, source_id)
+    if full_source is None:
+        raise ValueError(f"Source decision '{source_id}' not found")
+
+    full_target = _resolve_decision_id(conn, target_id)
+    if full_target is None:
+        raise ValueError(f"Target decision '{target_id}' not found")
+
+    if full_source == full_target:
+        raise ValueError("A decision cannot have a relationship with itself")
+
+    rel_id = str(uuid4())
+    conn.execute(
+        "INSERT INTO decision_relationships (id, source_id, target_id, relationship_type, confidence, note) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (rel_id, full_source, full_target, relationship_type, confidence, note),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM decision_relationships WHERE id = ?", (rel_id,)).fetchone()
+    return dict(row) if row else {}
+
+
+def get_decision_relationships(conn, decision_id: str, direction: str = "both") -> list[dict]:
+    full_id = _resolve_decision_id(conn, decision_id)
+    if full_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
+    return _get_decision_relationships_resolved(conn, full_id, direction=direction)
+
+
+def _get_decision_relationships_resolved(conn, resolved_id: str, direction: str = "both") -> list[dict]:
+    results: list[dict] = []
+
+    if direction in ("outgoing", "both"):
+        rows = conn.execute(
+            "SELECT dr.*, d.title AS target_title FROM decision_relationships dr "
+            "JOIN decisions d ON d.id = dr.target_id "
+            "WHERE dr.source_id = ? ORDER BY dr.created_at DESC",
+            (resolved_id,),
+        ).fetchall()
+        for row in rows:
+            r = dict(row)
+            r["direction"] = "outgoing"
+            results.append(r)
+
+    if direction in ("incoming", "both"):
+        rows = conn.execute(
+            "SELECT dr.*, d.title AS source_title FROM decision_relationships dr "
+            "JOIN decisions d ON d.id = dr.source_id "
+            "WHERE dr.target_id = ? ORDER BY dr.created_at DESC",
+            (resolved_id,),
+        ).fetchall()
+        for row in rows:
+            r = dict(row)
+            r["direction"] = "incoming"
+            results.append(r)
+
+    return results
+
+
+def remove_decision_relationship(conn, source_id: str, target_id: str, relationship_type: str) -> bool:
+    full_source = _resolve_decision_id(conn, source_id)
+    full_target = _resolve_decision_id(conn, target_id)
+    if full_source is None or full_target is None:
+        return False
+    cursor = conn.execute(
+        "DELETE FROM decision_relationships WHERE source_id = ? AND target_id = ? AND relationship_type = ?",
+        (full_source, full_target, relationship_type),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def detect_contradictions(
+    conn,
+    *,
+    scope_filter: str | None = None,
+    min_file_overlap: int = 1,
+    limit: int = 50,
+) -> list[dict]:
+    """Find pairs of fresh decisions that may contradict each other.
+
+    Scoring: +2 per shared file, +3 if same non-null scope.
+    Excludes pairs already linked as 'contradicts' in decision_relationships.
+    """
+    query = "SELECT d.id, d.title, d.scope FROM decisions d WHERE d.staleness_status = 'fresh'"
+    params: list[Any] = []
+    if scope_filter:
+        query += " AND d.scope = ?"
+        params.append(scope_filter)
+
+    decisions = [dict(r) for r in conn.execute(query, params).fetchall()]
+    if len(decisions) < 2:
+        return []
+
+    decision_ids = [d["id"] for d in decisions]
+    decision_map = {d["id"]: d for d in decisions}
+
+    placeholders = ",".join("?" for _ in decision_ids)
+    file_rows = conn.execute(
+        f"SELECT decision_id, file_path FROM decision_files WHERE decision_id IN ({placeholders})",
+        decision_ids,
+    ).fetchall()
+
+    files_by_decision: dict[str, set[str]] = {did: set() for did in decision_ids}
+    file_to_decisions: dict[str, set[str]] = {}
+    for row in file_rows:
+        did, fp = row["decision_id"], row["file_path"]
+        files_by_decision[did].add(fp)
+        file_to_decisions.setdefault(fp, set()).add(did)
+
+    existing_contradictions: set[tuple[str, str]] = set()
+    rel_rows = conn.execute(
+        f"SELECT source_id, target_id FROM decision_relationships "
+        f"WHERE relationship_type = 'contradicts' AND (source_id IN ({placeholders}) OR target_id IN ({placeholders}))",
+        decision_ids + decision_ids,
+    ).fetchall()
+    for row in rel_rows:
+        pair = tuple(sorted((row["source_id"], row["target_id"])))
+        existing_contradictions.add(pair)
+
+    pair_scores: dict[tuple[str, str], dict] = {}
+    for fp, dids in file_to_decisions.items():
+        dids_list = sorted(dids)
+        for i in range(len(dids_list)):
+            for j in range(i + 1, len(dids_list)):
+                pair = (dids_list[i], dids_list[j])
+                if pair in existing_contradictions:
+                    continue
+                if pair not in pair_scores:
+                    pair_scores[pair] = {"shared_files": [], "score": 0.0}
+                pair_scores[pair]["shared_files"].append(fp)
+                pair_scores[pair]["score"] += 2.0
+
+    for pair, info in pair_scores.items():
+        scope_a = decision_map[pair[0]].get("scope")
+        scope_b = decision_map[pair[1]].get("scope")
+        if scope_a and scope_b and scope_a == scope_b:
+            info["score"] += 3.0
+            info["shared_scope"] = scope_a
+
+    results = []
+    for pair, info in pair_scores.items():
+        if len(info["shared_files"]) < min_file_overlap:
+            continue
+        results.append(
+            {
+                "source_id": pair[0],
+                "source_title": decision_map[pair[0]]["title"],
+                "target_id": pair[1],
+                "target_title": decision_map[pair[1]]["title"],
+                "shared_files": sorted(info["shared_files"]),
+                "shared_scope": info.get("shared_scope"),
+                "score": info["score"],
+            }
+        )
+
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:limit]

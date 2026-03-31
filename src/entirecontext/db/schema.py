@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -302,6 +302,24 @@ CREATE TABLE IF NOT EXISTS assessment_relationships (
 );
 CREATE INDEX IF NOT EXISTS idx_assessment_rel_source ON assessment_relationships(source_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_rel_target ON assessment_relationships(target_id);
+""",
+    "decision_relationships": """
+CREATE TABLE IF NOT EXISTS decision_relationships (
+    id TEXT PRIMARY KEY,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relationship_type TEXT NOT NULL CHECK(relationship_type IN ('contradicts', 'supersedes', 'related_to')),
+    confidence REAL NOT NULL DEFAULT 1.0,
+    note TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    CHECK (source_id != target_id),
+    UNIQUE(source_id, target_id, relationship_type),
+    FOREIGN KEY (source_id) REFERENCES decisions(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES decisions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_decision_rel_source ON decision_relationships(source_id);
+CREATE INDEX IF NOT EXISTS idx_decision_rel_target ON decision_relationships(target_id);
+CREATE INDEX IF NOT EXISTS idx_decision_rel_type ON decision_relationships(relationship_type);
 """,
     "sync_metadata": """
 CREATE TABLE IF NOT EXISTS sync_metadata (

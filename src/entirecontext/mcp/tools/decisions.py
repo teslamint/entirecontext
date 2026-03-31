@@ -203,6 +203,30 @@ async def ec_decision_stale(decision_id: str) -> str:
         conn.close()
 
 
+async def ec_decision_contradictions(
+    scope: str | None = None,
+    min_file_overlap: int = 1,
+    limit: int = 20,
+) -> str:
+    """Detect potential contradictions between fresh decisions based on file/scope overlap.
+
+    Args:
+        scope: Filter by decision scope
+        min_file_overlap: Minimum shared files to consider (default 1)
+        limit: Maximum results (default 20)
+    """
+    conn, _ = runtime.get_repo_db()
+    if not conn:
+        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    try:
+        from ...core.decisions import detect_contradictions
+
+        results = detect_contradictions(conn, scope_filter=scope, min_file_overlap=min_file_overlap, limit=limit)
+        return json.dumps({"contradictions": results, "count": len(results)})
+    finally:
+        conn.close()
+
+
 def register_tools(mcp, services=None) -> None:
     for tool in (
         ec_decision_get,
@@ -211,5 +235,6 @@ def register_tools(mcp, services=None) -> None:
         ec_decision_create,
         ec_decision_list,
         ec_decision_stale,
+        ec_decision_contradictions,
     ):
         mcp.tool()(tool)

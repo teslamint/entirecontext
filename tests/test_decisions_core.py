@@ -5,10 +5,13 @@ from __future__ import annotations
 import pytest
 
 from entirecontext.core.decisions import (
+    add_decision_relationship,
     check_staleness,
     create_decision,
+    detect_contradictions,
     get_decision,
     get_decision_quality_summary,
+    get_decision_relationships,
     link_decision_to_assessment,
     link_decision_to_checkpoint,
     link_decision_to_commit,
@@ -16,6 +19,7 @@ from entirecontext.core.decisions import (
     list_decision_outcomes,
     list_decisions,
     record_decision_outcome,
+    remove_decision_relationship,
     supersede_decision,
     unlink_decision_from_assessment,
     unlink_decision_from_checkpoint,
@@ -469,26 +473,221 @@ class TestFTSDecisions:
     def test_fts_search_by_title(self, ec_db):
         create_decision(ec_db, title="Adopt microservices architecture")
         create_decision(ec_db, title="Use monolith pattern")
-        rows = ec_db.execute(
-            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("microservices",)
-        ).fetchall()
+        rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("microservices",)).fetchall()
         assert len(rows) == 1
 
     def test_fts_search_by_rationale(self, ec_db):
         create_decision(ec_db, title="DB choice", rationale="PostgreSQL offers better JSON support")
-        rows = ec_db.execute(
-            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("PostgreSQL",)
-        ).fetchall()
+        rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("PostgreSQL",)).fetchall()
         assert len(rows) == 1
 
     def test_fts_updated_after_update_decision(self, ec_db):
         d = create_decision(ec_db, title="Old searchable title")
         update_decision(ec_db, d["id"], title="New searchable title")
-        old_rows = ec_db.execute(
-            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("Old",)
-        ).fetchall()
-        new_rows = ec_db.execute(
-            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("New",)
-        ).fetchall()
+        old_rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("Old",)).fetchall()
+        new_rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("New",)).fetchall()
         assert len(old_rows) == 0
         assert len(new_rows) == 1
+
+
+class TestDecisionRelationships:
+    def test_add_and_get_relationship(self, ec_db):
+        a = create_decision(ec_db, title="Decision A")
+        b = create_decision(ec_db, title="Decision B")
+        rel = add_decision_relationship(ec_db, a["id"], b["id"], "contradicts", note="scope conflict")
+        assert rel["source_id"] == a["id"]
+        assert rel["target_id"] == b["id"]
+        assert rel["relationship_type"] == "contradicts"
+        assert rel["note"] == "scope conflict"
+
+        rels = get_decision_relationships(ec_db, a["id"])
+        assert len(rels) == 1
+        assert rels[0]["direction"] == "outgoing"
+        assert rels[0]["target_title"] == "Decision B"
+
+        rels_b = get_decision_relationships(ec_db, b["id"])
+        assert len(rels_b) == 1
+        assert rels_b[0]["direction"] == "incoming"
+        assert rels_b[0]["source_title"] == "Decision A"
+
+    def test_direction_filtering(self, ec_db):
+        a = create_decision(ec_db, title="Source")
+        b = create_decision(ec_db, title="Target")
+        add_decision_relationship(ec_db, a["id"], b["id"], "related_to")
+
+        assert len(get_decision_relationships(ec_db, a["id"], direction="outgoing")) == 1
+        assert len(get_decision_relationships(ec_db, a["id"], direction="incoming")) == 0
+        assert len(get_decision_relationships(ec_db, b["id"], direction="incoming")) == 1
+        assert len(get_decision_relationships(ec_db, b["id"], direction="outgoing")) == 0
+
+    def test_duplicate_relationship_raises(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        add_decision_relationship(ec_db, a["id"], b["id"], "contradicts")
+        with pytest.raises(Exception):
+            add_decision_relationship(ec_db, a["id"], b["id"], "contradicts")
+
+    def test_self_relationship_raises(self, ec_db):
+        a = create_decision(ec_db, title="Self")
+        with pytest.raises(ValueError, match="cannot have a relationship with itself"):
+            add_decision_relationship(ec_db, a["id"], a["id"], "contradicts")
+
+    def test_invalid_type_raises(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        with pytest.raises(ValueError, match="Invalid relationship_type"):
+            add_decision_relationship(ec_db, a["id"], b["id"], "invalid_type")
+
+    def test_remove_relationship(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        add_decision_relationship(ec_db, a["id"], b["id"], "related_to")
+        assert remove_decision_relationship(ec_db, a["id"], b["id"], "related_to") is True
+        assert len(get_decision_relationships(ec_db, a["id"])) == 0
+
+    def test_remove_nonexistent_returns_false(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        assert remove_decision_relationship(ec_db, a["id"], b["id"], "contradicts") is False
+
+    def test_get_decision_includes_relationships(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        add_decision_relationship(ec_db, a["id"], b["id"], "supersedes")
+        fetched = get_decision(ec_db, a["id"])
+        assert "relationships" in fetched
+        assert len(fetched["relationships"]) == 1
+        assert fetched["relationships"][0]["relationship_type"] == "supersedes"
+
+    def test_supersede_creates_relationship(self, ec_db):
+        old = create_decision(ec_db, title="Old")
+        new = create_decision(ec_db, title="New")
+        supersede_decision(ec_db, old["id"], new["id"])
+        rels = get_decision_relationships(ec_db, new["id"], direction="outgoing")
+        assert len(rels) == 1
+        assert rels[0]["relationship_type"] == "supersedes"
+        assert rels[0]["target_id"] == old["id"]
+
+    def test_confidence_stored(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        rel = add_decision_relationship(ec_db, a["id"], b["id"], "contradicts", confidence=0.5)
+        assert rel["confidence"] == 0.5
+
+
+class TestDetectContradictions:
+    def test_detects_file_overlap(self, ec_db):
+        a = create_decision(ec_db, title="Use caching")
+        b = create_decision(ec_db, title="Avoid caching")
+        link_decision_to_file(ec_db, a["id"], "src/cache.py")
+        link_decision_to_file(ec_db, b["id"], "src/cache.py")
+
+        results = detect_contradictions(ec_db)
+        assert len(results) == 1
+        ids = {results[0]["source_id"], results[0]["target_id"]}
+        assert ids == {a["id"], b["id"]}
+        assert "src/cache.py" in results[0]["shared_files"]
+
+    def test_scope_overlap_boosts_score(self, ec_db):
+        a = create_decision(ec_db, title="A", scope="auth")
+        b = create_decision(ec_db, title="B", scope="auth")
+        c = create_decision(ec_db, title="C", scope="other")
+        link_decision_to_file(ec_db, a["id"], "src/auth.py")
+        link_decision_to_file(ec_db, b["id"], "src/auth.py")
+        link_decision_to_file(ec_db, c["id"], "src/auth.py")
+
+        results = detect_contradictions(ec_db)
+        ab_pair = [r for r in results if {r["source_id"], r["target_id"]} == {a["id"], b["id"]}]
+        ac_pair = [r for r in results if {r["source_id"], r["target_id"]} == {a["id"], c["id"]}]
+        assert ab_pair[0]["score"] > ac_pair[0]["score"]
+        assert ab_pair[0]["shared_scope"] == "auth"
+
+    def test_ignores_stale_decisions(self, ec_db):
+        a = create_decision(ec_db, title="Fresh", staleness_status="fresh")
+        b = create_decision(ec_db, title="Stale", staleness_status="stale")
+        link_decision_to_file(ec_db, a["id"], "src/x.py")
+        link_decision_to_file(ec_db, b["id"], "src/x.py")
+
+        results = detect_contradictions(ec_db)
+        assert len(results) == 0
+
+    def test_excludes_already_linked_contradictions(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        link_decision_to_file(ec_db, a["id"], "src/x.py")
+        link_decision_to_file(ec_db, b["id"], "src/x.py")
+        add_decision_relationship(ec_db, a["id"], b["id"], "contradicts")
+
+        results = detect_contradictions(ec_db)
+        assert len(results) == 0
+
+    def test_empty_when_no_overlap(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        link_decision_to_file(ec_db, a["id"], "src/a.py")
+        link_decision_to_file(ec_db, b["id"], "src/b.py")
+
+        results = detect_contradictions(ec_db)
+        assert len(results) == 0
+
+    def test_min_file_overlap_filter(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        link_decision_to_file(ec_db, a["id"], "src/x.py")
+        link_decision_to_file(ec_db, b["id"], "src/x.py")
+
+        assert len(detect_contradictions(ec_db, min_file_overlap=1)) == 1
+        assert len(detect_contradictions(ec_db, min_file_overlap=2)) == 0
+
+    def test_scope_filter(self, ec_db):
+        a = create_decision(ec_db, title="A", scope="auth")
+        b = create_decision(ec_db, title="B", scope="auth")
+        c = create_decision(ec_db, title="C", scope="db")
+        link_decision_to_file(ec_db, a["id"], "src/x.py")
+        link_decision_to_file(ec_db, b["id"], "src/x.py")
+        link_decision_to_file(ec_db, c["id"], "src/x.py")
+
+        results = detect_contradictions(ec_db, scope_filter="auth")
+        assert len(results) == 1
+
+
+class TestStalenessAwareRanking:
+    def test_stale_decision_ranked_lower(self, ec_db):
+        fresh = create_decision(ec_db, title="Fresh decision")
+        stale = create_decision(ec_db, title="Stale decision", staleness_status="stale")
+        link_decision_to_file(ec_db, fresh["id"], "src/x.py")
+        link_decision_to_file(ec_db, stale["id"], "src/x.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/x.py"], limit=10)
+        assert ranked[0]["id"] == fresh["id"]
+        assert ranked[1]["id"] == stale["id"]
+        assert ranked[0]["staleness_penalty"] == 0.0
+        assert ranked[1]["staleness_penalty"] == -2.0
+
+    def test_superseded_decision_ranked_lowest(self, ec_db):
+        fresh = create_decision(ec_db, title="Fresh")
+        stale = create_decision(ec_db, title="Stale", staleness_status="stale")
+        superseded = create_decision(ec_db, title="Superseded", staleness_status="superseded")
+        for d in [fresh, stale, superseded]:
+            link_decision_to_file(ec_db, d["id"], "src/x.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/x.py"], limit=10)
+        assert ranked[0]["id"] == fresh["id"]
+        assert ranked[-1]["id"] == superseded["id"]
+        assert ranked[-1]["staleness_penalty"] == -4.0
+
+    def test_fresh_unaffected(self, ec_db):
+        d = create_decision(ec_db, title="Fresh one")
+        link_decision_to_file(ec_db, d["id"], "src/x.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/x.py"], limit=10)
+        assert len(ranked) == 1
+        assert ranked[0]["staleness_penalty"] == 0.0
+        assert ranked[0]["score"] == ranked[0]["base_score"] + ranked[0]["quality_score"]
+
+    def test_contradicted_penalty(self, ec_db):
+        d = create_decision(ec_db, title="Contradicted", staleness_status="contradicted")
+        link_decision_to_file(ec_db, d["id"], "src/x.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/x.py"], limit=10)
+        assert ranked[0]["staleness_penalty"] == -3.0

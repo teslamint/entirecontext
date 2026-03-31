@@ -344,7 +344,10 @@ def rank_related_decisions(
             continue
 
         quality_score = calculate_decision_quality_score(outcome_counts_by_decision.get(decision_id, {}))
-        score = base_score + quality_score
+
+        staleness_penalties = {"fresh": 0.0, "stale": -2.0, "superseded": -4.0, "contradicted": -3.0}
+        staleness_penalty = staleness_penalties.get(d.get("staleness_status", "fresh"), 0.0)
+        score = base_score + quality_score + staleness_penalty
 
         scored.append(
             {
@@ -354,6 +357,7 @@ def rank_related_decisions(
                 "updated_at": d.get("updated_at"),
                 "base_score": round(base_score, 3),
                 "quality_score": round(quality_score, 3),
+                "staleness_penalty": round(staleness_penalty, 3),
                 "score": round(score, 3),
             }
         )

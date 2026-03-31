@@ -330,7 +330,7 @@ def decision_unlink(
 @decision_app.command("stale-all")
 def decision_stale_all():
     """Check staleness for all fresh decisions and persist results."""
-    from ..core.decisions import check_staleness, list_decisions, update_decision_staleness
+    from ..core.decisions import check_staleness, detect_contradictions, list_decisions, update_decision_staleness
     from ..core.project import find_git_root
 
     repo_path = find_git_root()
@@ -353,6 +353,13 @@ def decision_stale_all():
                 console.print(
                     f"[yellow]STALE[/yellow] {d['id'][:12]} {d['title'][:40]} — {len(result['changed_files'])} file(s)"
                 )
+
+        contradictions = detect_contradictions(conn, limit=10)
+        if contradictions:
+            console.print(
+                f"\n[yellow]Found {len(contradictions)} potential contradiction pair(s). "
+                f"Run 'ec decision contradictions' for details.[/yellow]"
+            )
     finally:
         conn.close()
 
@@ -360,6 +367,119 @@ def decision_stale_all():
         console.print(f"[green]All {len(decisions)} fresh decisions are up to date.[/green]")
     else:
         console.print(f"\n[yellow]{stale_count}/{len(decisions)} decisions marked as stale.[/yellow]")
+
+
+@decision_app.command("relate")
+def decision_relate(
+    source_id: str = typer.Argument(..., help="Source decision ID"),
+    target_id: str = typer.Argument(..., help="Target decision ID"),
+    relationship_type: str = typer.Argument(..., help="contradicts|supersedes|related_to"),
+    note: Optional[str] = typer.Option(None, "--note", help="Relationship note"),
+    confidence: float = typer.Option(1.0, "--confidence", help="Confidence 0.0-1.0"),
+):
+    """Create a relationship between two decisions."""
+    from ..core.decisions import add_decision_relationship
+
+    conn = _get_repo_connection()
+    try:
+        rel = add_decision_relationship(conn, source_id, target_id, relationship_type, confidence=confidence, note=note)
+    except (ValueError, Exception) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+    console.print(
+        f"[green]Created relationship:[/green] {rel['source_id'][:12]} "
+        f"--{rel['relationship_type']}--> {rel['target_id'][:12]}"
+    )
+
+
+@decision_app.command("relations")
+def decision_relations(
+    decision_id: str = typer.Argument(..., help="Decision ID"),
+    direction: str = typer.Option("both", "--direction", help="outgoing|incoming|both"),
+):
+    """Show relationships for a decision."""
+    from ..core.decisions import get_decision_relationships
+
+    conn = _get_repo_connection()
+    try:
+        rels = get_decision_relationships(conn, decision_id, direction=direction)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+    if not rels:
+        console.print("[dim]No relationships found.[/dim]")
+        return
+
+    table = Table(title=f"Decision Relationships ({len(rels)})")
+    table.add_column("Direction", style="dim")
+    table.add_column("Type")
+    table.add_column("Other Decision")
+    table.add_column("Confidence")
+    table.add_column("Note")
+    for r in rels:
+        other_title = r.get("target_title") or r.get("source_title") or ""
+        other_id = r["target_id"][:12] if r["direction"] == "outgoing" else r["source_id"][:12]
+        table.add_row(
+            r["direction"],
+            r["relationship_type"],
+            f"{other_id} {other_title[:30]}",
+            f"{r.get('confidence', 1.0):.1f}",
+            (r.get("note") or "")[:40],
+        )
+    console.print(table)
+
+
+@decision_app.command("contradictions")
+def decision_contradictions(
+    scope: Optional[str] = typer.Option(None, "--scope", help="Filter by scope"),
+    min_overlap: int = typer.Option(1, "--min-overlap", help="Min shared files"),
+    limit: int = typer.Option(20, "--limit", "-n"),
+    auto_link: bool = typer.Option(False, "--auto-link", help="Auto-create contradiction relationships"),
+):
+    """Detect potential contradictions between fresh decisions."""
+    from ..core.decisions import add_decision_relationship, detect_contradictions
+
+    conn = _get_repo_connection()
+    try:
+        results = detect_contradictions(conn, scope_filter=scope, min_file_overlap=min_overlap, limit=limit)
+
+        if not results:
+            console.print("[green]No potential contradictions found.[/green]")
+            return
+
+        table = Table(title=f"Potential Contradictions ({len(results)})")
+        table.add_column("Decision A", max_width=30)
+        table.add_column("Decision B", max_width=30)
+        table.add_column("Shared Files")
+        table.add_column("Scope")
+        table.add_column("Score")
+        for r in results:
+            table.add_row(
+                f"{r['source_id'][:12]} {r['source_title'][:18]}",
+                f"{r['target_id'][:12]} {r['target_title'][:18]}",
+                str(len(r["shared_files"])),
+                r.get("shared_scope") or "",
+                f"{r['score']:.1f}",
+            )
+        console.print(table)
+
+        if auto_link:
+            linked = 0
+            for r in results:
+                try:
+                    add_decision_relationship(conn, r["source_id"], r["target_id"], "contradicts", confidence=0.5)
+                    linked += 1
+                except Exception:
+                    pass
+            console.print(f"[green]Auto-linked {linked} contradiction pair(s).[/green]")
+    finally:
+        conn.close()
 
 
 def register(app: typer.Typer) -> None:
