@@ -359,6 +359,11 @@ class TestUpdateDecision:
         with pytest.raises(ValueError, match="not found"):
             update_decision(ec_db, "nonexistent-id", title="Nope")
 
+    def test_update_title_to_none_raises(self, ec_db):
+        d = create_decision(ec_db, title="Has title")
+        with pytest.raises(ValueError, match="title cannot be None"):
+            update_decision(ec_db, d["id"], title=None)
+
     def test_no_changes_returns_current(self, ec_db):
         d = create_decision(ec_db, title="Same")
         result = update_decision(ec_db, d["id"])

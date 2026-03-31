@@ -456,6 +456,9 @@ def update_decision(
     if full_id is None:
         raise ValueError(f"Decision '{decision_id}' not found")
 
+    if title is not _UNSET and title is None:
+        raise ValueError("title cannot be None (NOT NULL constraint)")
+
     updates: list[str] = []
     params: list[Any] = []
 
