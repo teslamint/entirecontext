@@ -42,6 +42,13 @@ EntireContext turns session history into reusable engineering memory tied to com
 - Small teams that want decisions and lessons to accumulate instead of disappearing into chat history
 - Repositories where historical intent matters as much as the final diff
 
+## AGENTS.md Templates
+
+If you want agents to reuse stored decisions consistently, start from these templates:
+
+- `entirecontext` maintainers: [docs/templates/entirecontext-maintainer-decision-reuse-template.md](docs/templates/entirecontext-maintainer-decision-reuse-template.md)
+- Projects using EntireContext: [docs/templates/entirecontext-user-decision-reuse-template.md](docs/templates/entirecontext-user-decision-reuse-template.md)
+
 ## Quick Start
 
 Choose an install path first:
