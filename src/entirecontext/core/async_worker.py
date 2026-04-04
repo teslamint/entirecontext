@@ -19,17 +19,17 @@ import subprocess
 from pathlib import Path
 
 
-def _pid_file(repo_path: str) -> Path:
+def _pid_file(repo_path: str, pid_name: str = "worker") -> Path:
     """Return the path to the worker PID file."""
-    return Path(repo_path) / ".entirecontext" / "worker.pid"
+    return Path(repo_path) / ".entirecontext" / f"{pid_name}.pid"
 
 
-def get_worker_pid(repo_path: str) -> int | None:
+def get_worker_pid(repo_path: str, pid_name: str = "worker") -> int | None:
     """Read the worker PID from the PID file.
 
     Returns None if the file does not exist or contains invalid content.
     """
-    pid_path = _pid_file(repo_path)
+    pid_path = _pid_file(repo_path, pid_name)
     if not pid_path.exists():
         return None
     try:
@@ -57,21 +57,22 @@ def is_worker_running(pid: int) -> bool:
         return True
 
 
-def launch_worker(repo_path: str, cmd: list[str]) -> int:
+def launch_worker(repo_path: str, cmd: list[str], pid_name: str = "worker") -> int:
     """Launch *cmd* as a detached background process and record its PID.
 
     The child process is started with ``start_new_session=True`` so it is
     detached from the parent's terminal and process group.  Its PID is
-    written to ``<repo>/.entirecontext/worker.pid``.
+    written to ``<repo>/.entirecontext/<pid_name>.pid``.
 
     Args:
         repo_path: Absolute path to the git repository root.
         cmd: Command + arguments to execute (passed directly to ``Popen``).
+        pid_name: Base name for the PID file (default: ``"worker"``).
 
     Returns:
         The PID of the launched process.
     """
-    pid_path = _pid_file(repo_path)
+    pid_path = _pid_file(repo_path, pid_name)
     pid_path.parent.mkdir(parents=True, exist_ok=True)
 
     proc = subprocess.Popen(
@@ -84,7 +85,7 @@ def launch_worker(repo_path: str, cmd: list[str]) -> int:
     return proc.pid
 
 
-def stop_worker(repo_path: str) -> str:
+def stop_worker(repo_path: str, pid_name: str = "worker") -> str:
     """Send SIGTERM to the worker and remove the PID file.
 
     Returns a string indicating the outcome:
@@ -96,7 +97,7 @@ def stop_worker(repo_path: str) -> str:
         PermissionError: if the worker process exists but SIGTERM cannot be
             delivered due to OS permission restrictions.
     """
-    pid = get_worker_pid(repo_path)
+    pid = get_worker_pid(repo_path, pid_name)
     if pid is None:
         return "none"
 
@@ -108,7 +109,7 @@ def stop_worker(repo_path: str) -> str:
         outcome = "stale"
     # PermissionError propagates so the caller knows the stop failed.
 
-    pid_path = _pid_file(repo_path)
+    pid_path = _pid_file(repo_path, pid_name)
     try:
         pid_path.unlink()
     except OSError:
@@ -117,7 +118,7 @@ def stop_worker(repo_path: str) -> str:
     return outcome
 
 
-def worker_status(repo_path: str) -> dict:
+def worker_status(repo_path: str, pid_name: str = "worker") -> dict:
     """Return a dict describing the current worker state.
 
     Keys:
@@ -126,7 +127,7 @@ def worker_status(repo_path: str) -> dict:
         ``stale`` (bool, optional): Present and True when a PID file exists
             but the referenced process is no longer alive.
     """
-    pid = get_worker_pid(repo_path)
+    pid = get_worker_pid(repo_path, pid_name)
     if pid is None:
         return {"running": False, "pid": None}
 
