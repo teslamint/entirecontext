@@ -55,13 +55,12 @@ All default **off**. Added to `DEFAULT_CONFIG` in `core/config.py`.
 
 Returns text to be included in hook stdout (agent context). Returns `None` when nothing to show.
 
-**stdout contract (design assumption — to be validated):** The hook handler (`_handle_session_start`) will `print()` the returned string. The assumption is that Claude Code hooks capture stdout as `additionalContext` injected into the agent's system prompt. However, the current codebase has no prior example of SessionStart hooks producing stdout output (`handler.py:76` is a bare dispatch), and `docs/spec.md` does not formally define stdout injection semantics. This assumption MUST be validated during implementation:
+**Dual output strategy:** The hook uses two output channels simultaneously:
 
-1. Add an integration test that verifies `_handle_session_start` prints the return value to stdout
-2. Manually verify that Claude Code surfaces the output as `additionalContext` in a real session
-3. If stdout injection does not work, fall back to writing a `.entirecontext/decisions-context.md` file that agents can read via their file-reading tools
+1. **stdout** — `_handle_session_start` prints the returned string. Claude Code hooks capture stdout as `additionalContext` injected into the agent's system prompt.
+2. **File fallback** — `.entirecontext/decisions-context.md` is always written alongside stdout. Agents that don't capture hook stdout (Codex, Gemini, Copilot) can read this file via their file-reading tools. The file is cleaned up (deleted) when there are no relevant decisions.
 
-The Markdown format is deliberately agent-agnostic so that any agent receiving the text can parse it.
+This dual approach eliminates the need for a "validate then fallback" branch — both channels are always active, and the Markdown format is agent-agnostic so any agent receiving the text can parse it.
 
 ### Flow
 

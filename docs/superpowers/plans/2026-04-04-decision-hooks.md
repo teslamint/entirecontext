@@ -1175,11 +1175,11 @@ class TestHandlerIntegration:
         stale_called = []
         extract_called = []
         monkeypatch.setattr(
-            "entirecontext.hooks.session_lifecycle.maybe_check_stale_decisions",
+            "entirecontext.hooks.decision_hooks.maybe_check_stale_decisions",
             lambda rp: stale_called.append(rp),
         )
         monkeypatch.setattr(
-            "entirecontext.hooks.session_lifecycle.maybe_extract_decisions",
+            "entirecontext.hooks.decision_hooks.maybe_extract_decisions",
             lambda rp, sid: extract_called.append((rp, sid)),
         )
         from entirecontext.hooks.handler import _handle_session_end
@@ -1243,17 +1243,7 @@ def _maybe_extract_decisions(repo_path: str, session_id: str) -> None:
         _record_hook_warning(repo_path, "decision_extract_dispatch", exc)
 ```
 
-The test monkeypatches the `decision_hooks` module directly (not `session_lifecycle`) since the wrappers use deferred imports. Update `test_session_end_calls_decision_hooks` test monkeypatch targets:
-```python
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.maybe_check_stale_decisions",
-            lambda rp: stale_called.append(rp),
-        )
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.maybe_extract_decisions",
-            lambda rp, sid: extract_called.append((rp, sid)),
-        )
-```
+Note: The test monkeypatches `decision_hooks` module directly (not `session_lifecycle`) since the wrappers use deferred imports inside try/except.
 
 - [ ] **Step 5: Run tests to verify they pass**
 
