@@ -55,7 +55,13 @@ All default **off**. Added to `DEFAULT_CONFIG` in `core/config.py`.
 
 Returns text to be included in hook stdout (agent context). Returns `None` when nothing to show.
 
-**stdout contract verification:** The hook handler (`_handle_session_start`) will `print()` the returned string. Claude Code hooks capture stdout as `additionalContext` injected into the agent's system prompt. This is the same mechanism used by the existing SessionStart hook output. For non-Claude agents (Codex, Gemini, Copilot), the hook output appears in their respective context injection paths — the Markdown format is deliberately agent-agnostic so that any agent that receives the text can parse it. A dedicated integration test will verify that the return value is correctly printed to stdout.
+**stdout contract (design assumption — to be validated):** The hook handler (`_handle_session_start`) will `print()` the returned string. The assumption is that Claude Code hooks capture stdout as `additionalContext` injected into the agent's system prompt. However, the current codebase has no prior example of SessionStart hooks producing stdout output (`handler.py:76` is a bare dispatch), and `docs/spec.md` does not formally define stdout injection semantics. This assumption MUST be validated during implementation:
+
+1. Add an integration test that verifies `_handle_session_start` prints the return value to stdout
+2. Manually verify that Claude Code surfaces the output as `additionalContext` in a real session
+3. If stdout injection does not work, fall back to writing a `.entirecontext/decisions-context.md` file that agents can read via their file-reading tools
+
+The Markdown format is deliberately agent-agnostic so that any agent receiving the text can parse it.
 
 ### Flow
 
@@ -113,24 +119,47 @@ Consider updating stale decisions or marking them as superseded.
 
 ### Function: `maybe_extract_decisions(repo_path: str, session_id: str) -> None`
 
-**Critical constraint:** SessionEnd hook timeout is **5 seconds** (`project_cmds.py:246`). LLM calls take 10-120 seconds. Therefore LLM extraction MUST run as a **background process**, following the same pattern as `_maybe_trigger_auto_sync` which uses `async_worker.launch_worker`.
+**Critical constraint:** SessionEnd hook timeout is **5 seconds** (`project_cmds.py:246`). LLM calls take 10-120 seconds. Therefore LLM extraction MUST run as a **background process**.
+
+### Worker slot contention
+
+The current `async_worker` uses a single `worker.pid` file per repo. `auto_embed` already occupies this slot (`session_lifecycle.py:458`). To avoid contention without over-engineering:
+
+- **Use a named PID file**: `decision_hooks.py` uses `.entirecontext/worker-decision.pid` instead of the shared `worker.pid`. Introduce a `pid_name` parameter to `launch_worker` (or use a thin wrapper that writes to a decision-specific PID file).
+- **Check decision-specific PID**: `worker_status` checks `.entirecontext/worker-decision.pid` only.
+- This keeps the existing `auto_embed` worker unaffected and avoids building a full queue system (YAGNI).
+
+### Idempotency
+
+To prevent duplicate decision extraction when the hook re-fires or the worker retries:
+
+- Before launching the background worker, check for an **extraction marker** in session metadata:
+  `sessions.metadata` JSON field gets `"decisions_extracted": true` after successful extraction.
+- The `extract-from-session` CLI command checks this marker at startup and exits early if already set.
+- The marker is set AFTER all decisions are created (not before), so a crashed extraction can be retried.
 
 ### Flow
 
 ```
 1. Config gate: decisions.auto_extract
-2. Collect turn summaries (inline, fast — DB query only):
+2. Idempotency check:
+   - SELECT metadata FROM sessions WHERE id = ?
+   - If metadata contains "decisions_extracted": true → early return
+3. Collect turn summaries (inline, fast — DB query only):
    SELECT assistant_summary FROM turns
    WHERE session_id = ? AND assistant_summary IS NOT NULL
    ORDER BY turn_number ASC
-3. Keyword filter (1st pass, inline):
+4. Keyword filter (1st pass, inline):
    - Compile config extract_keywords as regex pattern (OR-joined)
    - Match against each summary
    - 0 matches → early return (no background process spawned)
-4. Launch background worker:
-   - launch_worker(repo_path, [sys.executable, "-m", "entirecontext.cli",
-     "decision", "extract-from-session", session_id])
-   - Returns immediately (PID recorded in .entirecontext/worker.pid)
+5. Check decision-specific worker status:
+   - If worker-decision.pid is running → early return
+6. Launch background worker:
+   - launch to worker-decision.pid
+   - Command: [sys.executable, "-m", "entirecontext.cli",
+     "decision", "extract-from-session", session_id]
+   - Returns immediately
 ```
 
 ### New CLI command: `ec decision extract-from-session <session_id>`
@@ -139,8 +168,13 @@ Runs in background. No hook timeout constraint.
 
 ```
 1. Load config, open DB
-2. Collect matched turn summaries (same query as above)
-3. LLM extraction:
+2. Idempotency check (same as above — guard against race)
+3. Collect turn summaries with files_touched data:
+   SELECT assistant_summary, files_touched FROM turns
+   WHERE session_id = ? AND assistant_summary IS NOT NULL
+   ORDER BY turn_number ASC
+4. Keyword filter (re-run, since this is a separate process)
+5. LLM extraction:
    - Use existing futures.default_backend / futures.default_model
    - System prompt:
      "Extract architectural/technical decisions from this coding session.
@@ -149,13 +183,20 @@ Runs in background. No hook timeout constraint.
       not tasks, plans, or status updates.
       Return [] if no decisions were made."
    - Input: matched summaries joined with newlines
-4. Parse JSON response:
+6. Parse JSON response:
    - Invalid JSON → log warning, exit
-   - Empty array → exit
+   - Empty array → mark extracted, exit
    - Truncate to max 5 items
-5. For each extracted decision:
+7. For each extracted decision:
    - create_decision(conn, title=..., rationale=..., scope=...)
+   - Auto-link files: collect all files_touched from session turns,
+     call link_decision_to_file for each unique file path.
+     This ensures auto-extracted decisions are discoverable by
+     SessionStart relevance and stale checks.
    - On individual failure: skip, continue to next
+8. Set idempotency marker:
+   - UPDATE sessions SET metadata = json_set(metadata, '$.decisions_extracted', true)
+     WHERE id = ?
 ```
 
 ### Safety guards
@@ -163,11 +204,13 @@ Runs in background. No hook timeout constraint.
 - Config default off
 - Keyword gate prevents unnecessary background process spawns
 - LLM call runs in background — never blocks hook chain
+- Named PID file (`worker-decision.pid`) — no contention with auto_embed
+- Idempotency marker prevents duplicate extraction on re-fire/retry
+- Auto-linked files from `files_touched` — extracted decisions participate in lifecycle
 - Max 5 decisions per session
 - Invalid LLM response → warning, no crash
 - LLM network failure → warning, no crash
 - Each decision creation is independent — one failure doesn't block others
-- If worker is already running (`worker_status`), skip to avoid contention
 
 ## Config Integration
 
@@ -217,13 +260,18 @@ Follows TOML deep merge: defaults ← global config ← per-repo config.
 | Case | Expected |
 |------|----------|
 | 0 keyword matches | No background process spawned |
-| Keywords match | Background worker launched via launch_worker |
-| Worker already running | Skip, no second worker |
-| CLI extract-from-session: LLM returns valid JSON | Decisions created |
-| CLI extract-from-session: LLM returns empty array | No decisions created |
-| CLI extract-from-session: LLM returns invalid JSON | Warning logged, clean exit |
-| CLI extract-from-session: LLM call fails (network) | Warning logged, clean exit |
-| CLI extract-from-session: LLM returns >5 decisions | Only first 5 created |
+| Keywords match | Background worker launched to worker-decision.pid |
+| Decision worker already running | Skip, no second worker |
+| Embed worker running (different PID) | Decision worker still launches |
+| Session already has decisions_extracted marker | Early return, no worker |
+| CLI: LLM returns valid JSON | Decisions created + files auto-linked |
+| CLI: LLM returns empty array | No decisions, marker still set |
+| CLI: LLM returns invalid JSON | Warning logged, no marker set (retryable) |
+| CLI: LLM call fails (network) | Warning logged, no marker set (retryable) |
+| CLI: LLM returns >5 decisions | Only first 5 created |
+| CLI: Same session extracted twice | Second run exits early (marker check) |
+| CLI: files_touched present on turns | Linked to created decisions |
+| CLI: files_touched empty | Decisions created without file links |
 
 ### Mock targets
 
@@ -249,9 +297,10 @@ def maybe_check_stale_decisions(repo_path: str) -> None:
 
 | File | Change |
 |------|--------|
-| `src/entirecontext/hooks/decision_hooks.py` | NEW — all 3 hook functions (SessionStart inline, SessionEnd stale inline, SessionEnd extract launches background) |
+| `src/entirecontext/hooks/decision_hooks.py` | NEW — all 3 hook functions (SessionStart inline, SessionEnd stale inline, SessionEnd extract launches background via named PID) |
 | `src/entirecontext/hooks/handler.py` | `_handle_session_start` prints `on_session_start_decisions()` return value to stdout when non-None |
 | `src/entirecontext/hooks/session_lifecycle.py` | Add calls to `maybe_check_stale_decisions` and `maybe_extract_decisions` at end of `on_session_end` |
 | `src/entirecontext/core/config.py` | Add `decisions` section to `DEFAULT_CONFIG` |
-| `src/entirecontext/cli/decisions_cmds.py` | Add `extract-from-session` subcommand (background worker target) |
-| `tests/test_decision_hooks.py` | NEW — test suite |
+| `src/entirecontext/core/async_worker.py` | Add `pid_name` parameter to `launch_worker` / `worker_status` (or thin wrapper in decision_hooks.py) |
+| `src/entirecontext/cli/decisions_cmds.py` | Add `extract-from-session` subcommand with idempotency check and auto file linking |
+| `tests/test_decision_hooks.py` | NEW — test suite including idempotency, worker contention, and file linking tests |
