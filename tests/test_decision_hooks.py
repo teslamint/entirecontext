@@ -5,6 +5,7 @@ from __future__ import annotations
 from entirecontext.core.config import DEFAULT_CONFIG
 from unittest.mock import patch, MagicMock
 from entirecontext.core.async_worker import launch_worker, worker_status, _pid_file
+from entirecontext.core.decisions import create_decision, link_decision_to_file, get_decision
 
 
 class TestDecisionConfig:
@@ -52,9 +53,6 @@ class TestNamedWorker:
         ec_dir.mkdir()
         status = worker_status(str(tmp_path), pid_name="worker-decision")
         assert status["running"] is False
-
-
-from entirecontext.core.decisions import create_decision, link_decision_to_file, get_decision
 
 
 class TestMaybeCheckStaleDecisions:

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from .session_lifecycle import _find_git_root, _record_hook_warning
+from .session_lifecycle import _record_hook_warning
 
 
 def _load_decisions_config(repo_path: str) -> dict:
