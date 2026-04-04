@@ -55,10 +55,13 @@ All default **off**. Added to `DEFAULT_CONFIG` in `core/config.py`.
 
 Returns text to be included in hook stdout (agent context). Returns `None` when nothing to show.
 
+**stdout contract verification:** The hook handler (`_handle_session_start`) will `print()` the returned string. Claude Code hooks capture stdout as `additionalContext` injected into the agent's system prompt. This is the same mechanism used by the existing SessionStart hook output. For non-Claude agents (Codex, Gemini, Copilot), the hook output appears in their respective context injection paths — the Markdown format is deliberately agent-agnostic so that any agent that receives the text can parse it. A dedicated integration test will verify that the return value is correctly printed to stdout.
+
 ### Flow
 
 1. Check config `decisions.show_related_on_start` — return if disabled
-2. Run `git diff --name-only HEAD~5` to get recently changed files
+2. Run `git diff --name-only HEAD~5..HEAD` to get recently changed files (explicit range, not relative ref)
+   - Falls back to `git log --name-only --pretty=format: -5` if diff fails (e.g. shallow clone with <5 commits)
 3. Query `decision_files` table for decisions linked to those files
 4. Query `list_decisions(staleness_status="stale")` for stale decisions
 5. Deduplicate (a decision may appear in both sets)
@@ -87,7 +90,7 @@ Consider updating stale decisions or marking them as superseded.
 - Markdown format — parseable by Claude, Codex, Gemini, Copilot
 - 0 decisions → no output (no noise)
 - Max 5 decisions (context budget)
-- `git diff` failure → `_record_hook_warning`, return None
+- `git diff` failure → fallback to `git log`, then `_record_hook_warning`, return None
 
 ## Hook 2: SessionEnd — Stale Auto-Detection
 
@@ -106,23 +109,38 @@ Consider updating stale decisions or marking them as superseded.
 - Each `check_staleness` runs `git log` subprocess — already has 10s timeout
 - All exceptions caught → `_record_hook_warning(repo_path, "auto_stale_check", exc)`
 
-## Hook 3: SessionEnd — Hybrid Decision Extraction
+## Hook 3: SessionEnd — Hybrid Decision Extraction (Background)
 
 ### Function: `maybe_extract_decisions(repo_path: str, session_id: str) -> None`
+
+**Critical constraint:** SessionEnd hook timeout is **5 seconds** (`project_cmds.py:246`). LLM calls take 10-120 seconds. Therefore LLM extraction MUST run as a **background process**, following the same pattern as `_maybe_trigger_auto_sync` which uses `async_worker.launch_worker`.
 
 ### Flow
 
 ```
 1. Config gate: decisions.auto_extract
-2. Collect turn summaries:
+2. Collect turn summaries (inline, fast — DB query only):
    SELECT assistant_summary FROM turns
    WHERE session_id = ? AND assistant_summary IS NOT NULL
    ORDER BY turn_number ASC
-3. Keyword filter (1st pass):
+3. Keyword filter (1st pass, inline):
    - Compile config extract_keywords as regex pattern (OR-joined)
    - Match against each summary
-   - 0 matches → early return (no LLM call)
-4. LLM extraction (2nd pass):
+   - 0 matches → early return (no background process spawned)
+4. Launch background worker:
+   - launch_worker(repo_path, [sys.executable, "-m", "entirecontext.cli",
+     "decision", "extract-from-session", session_id])
+   - Returns immediately (PID recorded in .entirecontext/worker.pid)
+```
+
+### New CLI command: `ec decision extract-from-session <session_id>`
+
+Runs in background. No hook timeout constraint.
+
+```
+1. Load config, open DB
+2. Collect matched turn summaries (same query as above)
+3. LLM extraction:
    - Use existing futures.default_backend / futures.default_model
    - System prompt:
      "Extract architectural/technical decisions from this coding session.
@@ -131,11 +149,11 @@ Consider updating stale decisions or marking them as superseded.
       not tasks, plans, or status updates.
       Return [] if no decisions were made."
    - Input: matched summaries joined with newlines
-5. Parse JSON response:
-   - Invalid JSON → _record_hook_warning, return
-   - Empty array → return
+4. Parse JSON response:
+   - Invalid JSON → log warning, exit
+   - Empty array → exit
    - Truncate to max 5 items
-6. For each extracted decision:
+5. For each extracted decision:
    - create_decision(conn, title=..., rationale=..., scope=...)
    - On individual failure: skip, continue to next
 ```
@@ -143,11 +161,13 @@ Consider updating stale decisions or marking them as superseded.
 ### Safety guards
 
 - Config default off
-- Keyword gate prevents unnecessary LLM calls
+- Keyword gate prevents unnecessary background process spawns
+- LLM call runs in background — never blocks hook chain
 - Max 5 decisions per session
 - Invalid LLM response → warning, no crash
 - LLM network failure → warning, no crash
 - Each decision creation is independent — one failure doesn't block others
+- If worker is already running (`worker_status`), skip to avoid contention
 
 ## Config Integration
 
@@ -179,7 +199,9 @@ Follows TOML deep merge: defaults ← global config ← per-repo config.
 | Changed files, no linked decisions | None output |
 | Stale decisions exist | Stale Decisions section included |
 | Config disabled | None output, no DB/git calls |
-| git subprocess failure | Warning recorded, None output |
+| git diff failure | Fallback to git log |
+| git log also fails | Warning recorded, None output |
+| stdout output is printed by handler | Verify `_handle_session_start` prints non-None return |
 
 ### SessionEnd stale check tests
 
@@ -194,12 +216,14 @@ Follows TOML deep merge: defaults ← global config ← per-repo config.
 
 | Case | Expected |
 |------|----------|
-| 0 keyword matches | No LLM call, early return |
-| Keywords match, LLM returns valid JSON | Decisions created |
-| Keywords match, LLM returns empty array | No decisions created |
-| Keywords match, LLM returns invalid JSON | Warning recorded, no crash |
-| Keywords match, LLM call fails (network) | Warning recorded, no crash |
-| LLM returns >5 decisions | Only first 5 created |
+| 0 keyword matches | No background process spawned |
+| Keywords match | Background worker launched via launch_worker |
+| Worker already running | Skip, no second worker |
+| CLI extract-from-session: LLM returns valid JSON | Decisions created |
+| CLI extract-from-session: LLM returns empty array | No decisions created |
+| CLI extract-from-session: LLM returns invalid JSON | Warning logged, clean exit |
+| CLI extract-from-session: LLM call fails (network) | Warning logged, clean exit |
+| CLI extract-from-session: LLM returns >5 decisions | Only first 5 created |
 
 ### Mock targets
 
@@ -225,8 +249,9 @@ def maybe_check_stale_decisions(repo_path: str) -> None:
 
 | File | Change |
 |------|--------|
-| `src/entirecontext/hooks/decision_hooks.py` | NEW — all 3 hook functions |
+| `src/entirecontext/hooks/decision_hooks.py` | NEW — all 3 hook functions (SessionStart inline, SessionEnd stale inline, SessionEnd extract launches background) |
 | `src/entirecontext/hooks/handler.py` | `_handle_session_start` prints `on_session_start_decisions()` return value to stdout when non-None |
 | `src/entirecontext/hooks/session_lifecycle.py` | Add calls to `maybe_check_stale_decisions` and `maybe_extract_decisions` at end of `on_session_end` |
 | `src/entirecontext/core/config.py` | Add `decisions` section to `DEFAULT_CONFIG` |
+| `src/entirecontext/cli/decisions_cmds.py` | Add `extract-from-session` subcommand (background worker target) |
 | `tests/test_decision_hooks.py` | NEW — test suite |
