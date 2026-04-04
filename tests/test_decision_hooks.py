@@ -463,3 +463,55 @@ class TestHandlerIntegration:
         _handle_session_end({"cwd": str(ec_repo), "session_id": session["id"]})
         assert len(stale_called) == 1
         assert len(extract_called) == 1
+
+
+class TestStdoutContract:
+    def test_handler_prints_decision_context(self, ec_repo, ec_db, monkeypatch, capsys):
+        """Verify _handle_session_start actually prints decision text to stdout."""
+        create_decision(ec_db, title="Stdout test decision", staleness_status="stale")
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        from entirecontext.hooks.handler import _handle_session_start
+
+        _handle_session_start({"cwd": str(ec_repo), "session_id": "stdout-test"})
+        captured = capsys.readouterr()
+        assert "Stdout test decision" in captured.out
+
+    def test_fallback_file_written(self, ec_repo, ec_db, monkeypatch):
+        """Verify fallback file is written alongside stdout."""
+        create_decision(ec_db, title="Fallback test decision", staleness_status="stale")
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "fb-test"})
+        assert result is not None
+
+        from pathlib import Path
+
+        fallback_path = Path(str(ec_repo)) / ".entirecontext" / "decisions-context.md"
+        assert fallback_path.exists()
+        content = fallback_path.read_text(encoding="utf-8")
+        assert "Fallback test decision" in content
+
+    def test_fallback_file_cleaned_when_no_decisions(self, ec_repo, ec_db, monkeypatch):
+        """Verify fallback file is removed when there are no decisions to show."""
+        from pathlib import Path
+
+        fallback_path = Path(str(ec_repo)) / ".entirecontext" / "decisions-context.md"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_text("old content")
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "cleanup-test"})
+        assert result is None
+        assert not fallback_path.exists()

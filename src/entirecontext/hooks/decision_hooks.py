@@ -141,10 +141,23 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     + "\n\nConsider updating stale decisions or marking them as superseded."
                 )
 
-            if not sections:
-                return None
+            # Write fallback file for agents that don't capture stdout
+            from pathlib import Path
 
-            return "\n\n".join(sections)
+            fallback_path = Path(repo_path) / ".entirecontext" / "decisions-context.md"
+            if sections:
+                output = "\n\n".join(sections)
+                fallback_path.parent.mkdir(parents=True, exist_ok=True)
+                fallback_path.write_text(output, encoding="utf-8")
+                return output
+            else:
+                # Clean up stale fallback file
+                if fallback_path.exists():
+                    try:
+                        fallback_path.unlink()
+                    except OSError:
+                        pass
+                return None
         finally:
             conn.close()
     except Exception as exc:
