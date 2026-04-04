@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -229,7 +230,7 @@ def _maybe_generate_intent_summary(conn, session_id: str) -> None:
         conn.execute("UPDATE sessions SET session_summary = ? WHERE id = ?", (summary[:500], session_id))
         conn.commit()
     except Exception as exc:
-        _record_hook_warning(repo_path, "intent_summary", exc)
+        _record_hook_warning(project["repo_path"] if project else "unknown", "intent_summary", exc)
 
 
 def on_session_end(data: dict[str, Any]) -> None:
@@ -476,6 +477,7 @@ def _maybe_trigger_auto_embed(repo_path: str) -> None:
 def _maybe_check_stale_decisions(repo_path: str) -> None:
     try:
         from .decision_hooks import maybe_check_stale_decisions
+
         maybe_check_stale_decisions(repo_path)
     except Exception as exc:
         _record_hook_warning(repo_path, "decision_stale_dispatch", exc)
@@ -484,6 +486,7 @@ def _maybe_check_stale_decisions(repo_path: str) -> None:
 def _maybe_extract_decisions(repo_path: str, session_id: str) -> None:
     try:
         from .decision_hooks import maybe_extract_decisions
+
         maybe_extract_decisions(repo_path, session_id)
     except Exception as exc:
         _record_hook_warning(repo_path, "decision_extract_dispatch", exc)

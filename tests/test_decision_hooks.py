@@ -95,7 +95,8 @@ class TestMaybeCheckStaleDecisions:
         subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
         subprocess.run(
             ["git", "-C", str(ec_repo), "commit", "-m", "change app"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
@@ -155,7 +156,8 @@ class TestOnSessionStartDecisions:
         _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
         _subprocess.run(
             ["git", "-C", str(ec_repo), "commit", "-m", "add app"],
-            check=True, capture_output=True,
+            check=True,
+            capture_output=True,
         )
 
         from entirecontext.hooks.decision_hooks import on_session_start_decisions
@@ -196,6 +198,7 @@ class TestOnSessionStartDecisions:
 
     def test_git_failure_returns_none(self, ec_repo, ec_db, monkeypatch):
         from unittest.mock import MagicMock
+
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks._load_decisions_config",
             lambda _: {"show_related_on_start": True},
@@ -229,6 +232,7 @@ class TestMaybeExtractDecisions:
             lambda _: {"auto_extract": False, "extract_keywords": ["decided"]},
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
         maybe_extract_decisions(str(ec_repo), "fake-session-id")
 
     def test_no_keyword_matches_no_worker(self, ec_repo, ec_db, monkeypatch):
@@ -243,6 +247,7 @@ class TestMaybeExtractDecisions:
             lambda *a, **kw: launched.append(1) or 0,
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
         maybe_extract_decisions(str(ec_repo), session["id"])
         assert len(launched) == 0
 
@@ -262,6 +267,7 @@ class TestMaybeExtractDecisions:
             lambda *a, **kw: {"running": False, "pid": None},
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
         maybe_extract_decisions(str(ec_repo), session["id"])
         assert len(launched) == 1
 
@@ -281,6 +287,7 @@ class TestMaybeExtractDecisions:
             lambda *a, **kw: {"running": True, "pid": 999},
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
         maybe_extract_decisions(str(ec_repo), session["id"])
         assert len(launched) == 0
 
@@ -301,6 +308,7 @@ class TestMaybeExtractDecisions:
             lambda *a, **kw: launched.append(1) or 0,
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
         maybe_extract_decisions(str(ec_repo), session["id"])
         assert len(launched) == 0
 
@@ -320,12 +328,22 @@ class TestExtractFromSessionCLI:
         return session
 
     def test_creates_decisions_from_llm_response(self, ec_repo, ec_db, monkeypatch):
-        session = self._setup_session_with_turns(ec_db, [
-            ("We decided to use Redis for caching", ["src/cache.py"]),
-        ])
-        llm_response = json.dumps([
-            {"title": "Use Redis for caching", "rationale": "Fast in-memory store", "scope": "caching", "rejected_alternatives": ["memcached"]},
-        ])
+        session = self._setup_session_with_turns(
+            ec_db,
+            [
+                ("We decided to use Redis for caching", ["src/cache.py"]),
+            ],
+        )
+        llm_response = json.dumps(
+            [
+                {
+                    "title": "Use Redis for caching",
+                    "rationale": "Fast in-memory store",
+                    "scope": "caching",
+                    "rejected_alternatives": ["memcached"],
+                },
+            ]
+        )
         monkeypatch.setattr(
             "entirecontext.cli.decisions_cmds._get_llm_response",
             lambda *a, **kw: llm_response,
@@ -343,12 +361,17 @@ class TestExtractFromSessionCLI:
         assert meta.get("decisions_extracted") is True
 
     def test_auto_links_files(self, ec_repo, ec_db, monkeypatch):
-        session = self._setup_session_with_turns(ec_db, [
-            ("We decided to use Redis", ["src/cache.py", "src/config.py"]),
-        ])
-        llm_response = json.dumps([
-            {"title": "Use Redis", "rationale": "Fast", "scope": "cache", "rejected_alternatives": []},
-        ])
+        session = self._setup_session_with_turns(
+            ec_db,
+            [
+                ("We decided to use Redis", ["src/cache.py", "src/config.py"]),
+            ],
+        )
+        llm_response = json.dumps(
+            [
+                {"title": "Use Redis", "rationale": "Fast", "scope": "cache", "rejected_alternatives": []},
+            ]
+        )
         monkeypatch.setattr(
             "entirecontext.cli.decisions_cmds._get_llm_response",
             lambda *a, **kw: llm_response,
@@ -362,9 +385,12 @@ class TestExtractFromSessionCLI:
         assert "src/cache.py" in d.get("files", [])
 
     def test_empty_array_sets_marker(self, ec_repo, ec_db, monkeypatch):
-        session = self._setup_session_with_turns(ec_db, [
-            ("We decided nothing", []),
-        ])
+        session = self._setup_session_with_turns(
+            ec_db,
+            [
+                ("We decided nothing", []),
+            ],
+        )
         monkeypatch.setattr(
             "entirecontext.cli.decisions_cmds._get_llm_response",
             lambda *a, **kw: "[]",
@@ -378,9 +404,12 @@ class TestExtractFromSessionCLI:
         assert meta.get("decisions_extracted") is True
 
     def test_invalid_json_no_marker(self, ec_repo, ec_db, monkeypatch):
-        session = self._setup_session_with_turns(ec_db, [
-            ("We decided something", []),
-        ])
+        session = self._setup_session_with_turns(
+            ec_db,
+            [
+                ("We decided something", []),
+            ],
+        )
         monkeypatch.setattr(
             "entirecontext.cli.decisions_cmds._get_llm_response",
             lambda *a, **kw: "not json at all",
@@ -394,13 +423,15 @@ class TestExtractFromSessionCLI:
         assert meta.get("decisions_extracted") is not True
 
     def test_max_5_decisions(self, ec_repo, ec_db, monkeypatch):
-        session = self._setup_session_with_turns(ec_db, [
-            ("Many decisions decided", []),
-        ])
-        llm_response = json.dumps([
-            {"title": f"Decision {i}", "rationale": "r", "scope": "s", "rejected_alternatives": []}
-            for i in range(8)
-        ])
+        session = self._setup_session_with_turns(
+            ec_db,
+            [
+                ("Many decisions decided", []),
+            ],
+        )
+        llm_response = json.dumps(
+            [{"title": f"Decision {i}", "rationale": "r", "scope": "s", "rejected_alternatives": []} for i in range(8)]
+        )
         monkeypatch.setattr(
             "entirecontext.cli.decisions_cmds._get_llm_response",
             lambda *a, **kw: llm_response,
@@ -413,9 +444,12 @@ class TestExtractFromSessionCLI:
         assert len(decisions) <= 5
 
     def test_idempotency_second_run_skips(self, ec_repo, ec_db, monkeypatch):
-        session = self._setup_session_with_turns(ec_db, [
-            ("We decided X", []),
-        ])
+        session = self._setup_session_with_turns(
+            ec_db,
+            [
+                ("We decided X", []),
+            ],
+        )
         call_count = []
         monkeypatch.setattr(
             "entirecontext.cli.decisions_cmds._get_llm_response",

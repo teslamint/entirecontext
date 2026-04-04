@@ -45,7 +45,10 @@ def _get_recently_changed_files(repo_path: str) -> list[str]:
     try:
         result = subprocess.run(
             ["git", "diff", "--name-only", "HEAD~5..HEAD"],
-            cwd=repo_path, capture_output=True, text=True, timeout=5,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
             return [f for f in result.stdout.strip().split("\n") if f]
@@ -55,7 +58,10 @@ def _get_recently_changed_files(repo_path: str) -> list[str]:
     try:
         result = subprocess.run(
             ["git", "log", "--name-only", "--pretty=format:", "-5"],
-            cwd=repo_path, capture_output=True, text=True, timeout=5,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if result.returncode == 0 and result.stdout.strip():
             return list({f for f in result.stdout.strip().split("\n") if f})
@@ -121,8 +127,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     entries = [_format_decision_entry(d) for d in file_related[:5]]
                     sections.append(
                         "## Related Decisions\n\n"
-                        "The following decisions are linked to recently changed files:\n\n"
-                        + "\n\n".join(entries)
+                        "The following decisions are linked to recently changed files:\n\n" + "\n\n".join(entries)
                     )
 
             # 2. Stale decisions
