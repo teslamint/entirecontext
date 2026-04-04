@@ -52,3 +52,66 @@ class TestNamedWorker:
         ec_dir.mkdir()
         status = worker_status(str(tmp_path), pid_name="worker-decision")
         assert status["running"] is False
+
+
+from entirecontext.core.decisions import create_decision, link_decision_to_file, get_decision
+
+
+class TestMaybeCheckStaleDecisions:
+    def test_disabled_by_config(self, ec_repo, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_stale_check": False},
+        )
+        from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
+
+        maybe_check_stale_decisions(str(ec_repo))
+
+    def test_no_decisions_early_return(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_stale_check": True},
+        )
+        from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
+
+        maybe_check_stale_decisions(str(ec_repo))
+
+    def test_stale_detection_updates_status(self, ec_repo, ec_db, monkeypatch):
+        import subprocess
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_stale_check": True},
+        )
+        d = create_decision(ec_db, title="Test decision")
+        test_file = ec_repo / "src" / "app.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "change app"],
+            check=True, capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
+
+        maybe_check_stale_decisions(str(ec_repo))
+
+        updated = get_decision(ec_db, d["id"])
+        assert updated["staleness_status"] == "stale"
+
+    def test_exception_does_not_propagate(self, ec_repo, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_stale_check": True},
+        )
+
+        def _boom(*a, **kw):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("entirecontext.core.decisions.list_decisions", _boom)
+        from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
+
+        maybe_check_stale_decisions(str(ec_repo))
