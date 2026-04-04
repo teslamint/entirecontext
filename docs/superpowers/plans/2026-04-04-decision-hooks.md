@@ -240,8 +240,8 @@ from entirecontext.core.decisions import create_decision, link_decision_to_file,
 class TestMaybeCheckStaleDecisions:
     def test_disabled_by_config(self, ec_repo, monkeypatch):
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.load_config",
-            lambda _: {"decisions": {"auto_stale_check": False}},
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_stale_check": False},
         )
         from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
 
@@ -250,8 +250,8 @@ class TestMaybeCheckStaleDecisions:
 
     def test_no_decisions_early_return(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.load_config",
-            lambda _: {"decisions": {"auto_stale_check": True}},
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_stale_check": True},
         )
         from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
 
@@ -262,8 +262,8 @@ class TestMaybeCheckStaleDecisions:
         import subprocess
 
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.load_config",
-            lambda _: {"decisions": {"auto_stale_check": True}},
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_stale_check": True},
         )
         # Create a decision and link a file
         d = create_decision(ec_db, title="Test decision")
@@ -288,13 +288,14 @@ class TestMaybeCheckStaleDecisions:
 
     def test_exception_does_not_propagate(self, ec_repo, monkeypatch):
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.load_config",
-            lambda _: {"decisions": {"auto_stale_check": True}},
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_stale_check": True},
         )
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.list_decisions",
-            lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")),
-        )
+
+        def _boom(*a, **kw):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("entirecontext.core.decisions.list_decisions", _boom)
         from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
 
         # Must not raise
@@ -352,8 +353,7 @@ def maybe_check_stale_decisions(repo_path: str) -> None:
 
 ```
 
-Note: The monkeypatch targets in tests use the full module path (e.g., `"entirecontext.hooks.decision_hooks.load_config"`). Since `_load_decisions_config` wraps the import internally, tests monkeypatch `_load_decisions_config` directly instead of needing re-exports.
-```
+Note: Tests monkeypatch `_load_decisions_config` directly since it wraps the config import internally. No re-exports needed.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -491,7 +491,10 @@ import subprocess
 
 
 def _get_recently_changed_files(repo_path: str) -> list[str]:
-    """Get files changed in recent commits. Falls back to git log if git diff fails."""
+    """Get files changed in recent commits. Falls back to git log if git diff fails.
+
+    Records a warning via _record_hook_warning if both git diff and git log fail.
+    """
     try:
         result = subprocess.run(
             ["git", "diff", "--name-only", "HEAD~5..HEAD"],
@@ -512,6 +515,7 @@ def _get_recently_changed_files(repo_path: str) -> list[str]:
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
 
+    _record_hook_warning(repo_path, "get_recently_changed_files", RuntimeError("both git diff and git log failed"))
     return []
 
 
@@ -552,21 +556,20 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             sections = []
             seen_ids: set[str] = set()
 
-            # 1. Recently changed files → linked decisions
+            # 1. Recently changed files → linked decisions (using DB-level file_path filter)
             changed_files = _get_recently_changed_files(repo_path)
+            file_related = []
             if changed_files:
-                related = list_decisions(conn, limit=50)
-                file_related = []
-                for d in related:
-                    if d["id"] in seen_ids:
-                        continue
-                    linked_files = d.get("files") or []
-                    if not linked_files:
-                        full = get_decision(conn, d["id"])
-                        linked_files = full.get("files", []) if full else []
-                    if set(linked_files) & set(changed_files):
-                        file_related.append(d if d.get("files") else (get_decision(conn, d["id"]) or d))
-                        seen_ids.add(d["id"])
+                for f in changed_files:
+                    for d in list_decisions(conn, file_path=f, limit=10):
+                        if d["id"] not in seen_ids:
+                            full = get_decision(conn, d["id"]) or d
+                            file_related.append(full)
+                            seen_ids.add(d["id"])
+                        if len(seen_ids) >= 5:
+                            break
+                    if len(seen_ids) >= 5:
+                        break
 
                 if file_related:
                     entries = [_format_decision_entry(d) for d in file_related[:5]]
@@ -641,9 +644,12 @@ from entirecontext.core.turn import create_turn
 class TestMaybeExtractDecisions:
     def _setup_session_with_summaries(self, ec_db, summaries):
         """Helper: create session with turns that have given summaries."""
-        session = create_session(ec_db, session_type="claude", workspace_path="/tmp")
+        from entirecontext.core.project import get_project
+
+        project = get_project(ec_db)
+        session = create_session(ec_db, project["id"])
         for i, summary in enumerate(summaries):
-            turn = create_turn(ec_db, session_id=session["id"], user_message=f"msg {i}")
+            turn = create_turn(ec_db, session["id"], i + 1, user_message=f"msg {i}")
             ec_db.execute(
                 "UPDATE turns SET assistant_summary = ?, turn_status = 'completed' WHERE id = ?",
                 (summary, turn["id"]),
@@ -850,9 +856,12 @@ Append to `tests/test_decision_hooks.py`:
 class TestExtractFromSessionCLI:
     def _setup_session_with_turns(self, ec_db, turn_data):
         """Helper: create session with turns. turn_data = [(summary, files_touched), ...]"""
-        session = create_session(ec_db, session_type="claude", workspace_path="/tmp")
+        from entirecontext.core.project import get_project
+
+        project = get_project(ec_db)
+        session = create_session(ec_db, project["id"])
         for i, (summary, files) in enumerate(turn_data):
-            turn = create_turn(ec_db, session_id=session["id"], user_message=f"msg {i}")
+            turn = create_turn(ec_db, session["id"], i + 1, user_message=f"msg {i}")
             ec_db.execute(
                 "UPDATE turns SET assistant_summary = ?, files_touched = ?, turn_status = 'completed' WHERE id = ?",
                 (summary, json.dumps(files) if files else None, turn["id"]),
@@ -1237,16 +1246,7 @@ def _maybe_extract_decisions(repo_path: str, session_id: str) -> None:
         _record_hook_warning(repo_path, "decision_extract_dispatch", exc)
 ```
 
-Also, expose these for monkeypatching by adding at module level near the imports of `on_session_end`:
-```python
-# Re-exported for test monkeypatching
-maybe_check_stale_decisions = None  # type: ignore
-maybe_extract_decisions = None  # type: ignore
-```
-
-Wait — actually, the monkeypatch in the test patches `session_lifecycle.maybe_check_stale_decisions`. Since we use local wrapper functions `_maybe_check_stale_decisions` that import inside, the monkeypatch approach needs to target the wrapper's import. Adjust the test to monkeypatch the decision_hooks module directly instead:
-
-Update the test `test_session_end_calls_decision_hooks` to monkeypatch:
+The test monkeypatches the `decision_hooks` module directly (not `session_lifecycle`) since the wrappers use deferred imports. Update `test_session_end_calls_decision_hooks` test monkeypatch targets:
 ```python
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks.maybe_check_stale_decisions",
@@ -1277,7 +1277,68 @@ git commit -m "feat(hooks): wire decision hooks into handler and session_lifecyc
 
 ---
 
-### Task 8: Full integration test and cleanup
+### Task 8: Validate stdout contract and implement fallback
+
+**Files:**
+- Modify: `src/entirecontext/hooks/decision_hooks.py`
+- Modify: `src/entirecontext/hooks/handler.py`
+- Test: `tests/test_decision_hooks.py`
+
+This task validates the design assumption that Claude Code captures hook stdout as `additionalContext`. If validation fails, implement the `.entirecontext/decisions-context.md` file fallback.
+
+- [ ] **Step 1: Write integration test for stdout output**
+
+Append to `tests/test_decision_hooks.py`:
+
+```python
+class TestStdoutContract:
+    def test_handler_prints_decision_context(self, ec_repo, ec_db, monkeypatch, capsys):
+        """Verify _handle_session_start actually prints decision text to stdout."""
+        create_decision(ec_db, title="Stdout test decision", staleness_status="stale")
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        from entirecontext.hooks.handler import _handle_session_start
+
+        _handle_session_start({"cwd": str(ec_repo), "session_id": "stdout-test"})
+        captured = capsys.readouterr()
+        assert "Stdout test decision" in captured.out
+```
+
+- [ ] **Step 2: Run test**
+
+Run: `uv run pytest tests/test_decision_hooks.py::TestStdoutContract -v`
+Expected: PASS (handler already prints in Task 7)
+
+- [ ] **Step 3: Manual validation**
+
+Run a real Claude Code session with `show_related_on_start = true` in `.entirecontext/config.toml` and verify the output appears as `additionalContext` in the system prompt. Document the result in the commit message.
+
+- [ ] **Step 4: If stdout doesn't work, implement file fallback**
+
+If manual validation shows stdout is NOT captured as agent context, add a fallback in `on_session_start_decisions` that writes the output to `.entirecontext/decisions-context.md`:
+
+```python
+# At the end of on_session_start_decisions, before returning:
+from pathlib import Path
+context_file = Path(repo_path) / ".entirecontext" / "decisions-context.md"
+context_file.parent.mkdir(parents=True, exist_ok=True)
+context_file.write_text(output, encoding="utf-8")
+```
+
+If stdout DOES work, skip this step and note "stdout validated" in the commit.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -u
+git commit -m "feat(hooks): validate stdout contract for decision context surfacing"
+```
+
+---
+
+### Task 9: Full integration test and cleanup
 
 **Files:**
 - Test: `tests/test_decision_hooks.py`
