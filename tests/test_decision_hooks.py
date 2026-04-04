@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import subprocess as _subprocess
+from unittest.mock import MagicMock, patch
+
+from entirecontext.core.async_worker import _pid_file, launch_worker, worker_status
 from entirecontext.core.config import DEFAULT_CONFIG
-from unittest.mock import patch, MagicMock
-from entirecontext.core.async_worker import launch_worker, worker_status, _pid_file
-from entirecontext.core.decisions import create_decision, link_decision_to_file, get_decision
+from entirecontext.core.decisions import create_decision, get_decision, link_decision_to_file
 
 
 class TestDecisionConfig:
@@ -113,3 +115,93 @@ class TestMaybeCheckStaleDecisions:
         from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
 
         maybe_check_stale_decisions(str(ec_repo))
+
+
+class TestOnSessionStartDecisions:
+    def test_disabled_by_config(self, ec_repo, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": False},
+        )
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is None
+
+    def test_no_related_decisions_returns_none(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is None
+
+    def test_related_decisions_shown(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        d = create_decision(ec_db, title="Arch decision")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        test_file = ec_repo / "src" / "app.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add app"],
+            check=True, capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Arch decision" in result
+        assert "Related Decisions" in result
+
+    def test_stale_decisions_shown(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        create_decision(ec_db, title="Stale one", staleness_status="stale")
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Stale Decisions" in result
+        assert "Stale one" in result
+
+    def test_max_5_decisions(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        for i in range(8):
+            create_decision(ec_db, title=f"Stale {i}", staleness_status="stale")
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        entries = [line for line in result.split("\n") if line.strip().startswith("- [")]
+        assert len(entries) <= 5
+
+    def test_git_failure_returns_none(self, ec_repo, ec_db, monkeypatch):
+        from unittest.mock import MagicMock
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.subprocess.run",
+            lambda *a, **kw: MagicMock(returncode=1, stdout=""),
+        )
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is None
