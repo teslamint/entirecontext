@@ -362,5 +362,137 @@ def decision_stale_all():
         console.print(f"\n[yellow]{stale_count}/{len(decisions)} decisions marked as stale.[/yellow]")
 
 
+def _get_llm_response(summaries: str, repo_path: str) -> str:
+    """Call LLM to extract decisions. Separated for testability."""
+    from ..core.config import load_config
+    from ..core.llm import get_backend
+
+    config = load_config(repo_path)
+    backend_name = config.get("futures", {}).get("default_backend", "openai")
+    model = config.get("futures", {}).get("default_model", None)
+    backend = get_backend(backend_name, model=model)
+
+    system = (
+        "Extract architectural/technical decisions from this coding session. "
+        'Return a JSON array: [{"title": str, "rationale": str, "scope": str, "rejected_alternatives": [str]}] '
+        "Only include actual decisions (choosing one approach over another), "
+        "not tasks, plans, or status updates. "
+        "Return [] if no decisions were made."
+    )
+    return backend.complete(system, summaries)
+
+
+def _extract_from_session_impl(conn, session_id: str, repo_path: str) -> None:
+    """Core extraction logic. Used by CLI command and testable directly."""
+    import json as _json
+    import re
+
+    from ..core.config import load_config
+    from ..core.decisions import create_decision, link_decision_to_file
+
+    # Idempotency check
+    row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    if row and row["metadata"]:
+        try:
+            meta = _json.loads(row["metadata"])
+            if meta.get("decisions_extracted") is True:
+                return
+        except (ValueError, TypeError):
+            pass
+
+    # Collect summaries with files
+    rows = conn.execute(
+        "SELECT assistant_summary, files_touched FROM turns "
+        "WHERE session_id = ? AND assistant_summary IS NOT NULL "
+        "ORDER BY turn_number ASC",
+        (session_id,),
+    ).fetchall()
+    if not rows:
+        return
+
+    summaries = [r["assistant_summary"] for r in rows if r["assistant_summary"]]
+    all_files: set[str] = set()
+    for r in rows:
+        if r["files_touched"]:
+            try:
+                files = _json.loads(r["files_touched"])
+                if isinstance(files, list):
+                    all_files.update(files)
+            except (ValueError, TypeError):
+                pass
+
+    # Keyword filter
+    config = load_config(repo_path)
+    keywords = config.get("decisions", {}).get("extract_keywords", [])
+    if keywords:
+        pattern = re.compile("|".join(re.escape(k) for k in keywords), re.IGNORECASE)
+        summaries = [s for s in summaries if pattern.search(s)]
+    if not summaries:
+        return
+
+    # LLM call
+    combined = "\n".join(summaries)
+    raw = _get_llm_response(combined, repo_path)
+
+    # Parse
+    try:
+        decisions_data = _json.loads(raw)
+    except (ValueError, TypeError):
+        console.print("[yellow]Invalid JSON from LLM, skipping extraction[/yellow]")
+        return
+
+    if not isinstance(decisions_data, list):
+        return
+
+    decisions_data = decisions_data[:5]
+
+    for item in decisions_data:
+        try:
+            if not isinstance(item, dict) or "title" not in item:
+                continue
+            d = create_decision(
+                conn,
+                title=item["title"],
+                rationale=item.get("rationale"),
+                scope=item.get("scope"),
+                rejected_alternatives=item.get("rejected_alternatives"),
+            )
+            for f in all_files:
+                try:
+                    link_decision_to_file(conn, d["id"], f)
+                except Exception:
+                    pass
+        except Exception:
+            continue
+
+    # Set idempotency marker (null-safe)
+    conn.execute(
+        "UPDATE sessions SET metadata = json_set(COALESCE(metadata, '{}'), '$.decisions_extracted', json('true')) WHERE id = ?",
+        (session_id,),
+    )
+    conn.commit()
+
+
+@decision_app.command("extract-from-session")
+def decision_extract_from_session(
+    session_id: str = typer.Argument(..., help="Session ID to extract decisions from"),
+):
+    """Extract decisions from a session using LLM (background worker target)."""
+    conn = _get_repo_connection()
+    try:
+        from ..core.project import find_git_root
+
+        repo_path = find_git_root()
+        if not repo_path:
+            console.print("[red]Not in a git repository.[/red]")
+            raise typer.Exit(1)
+        _extract_from_session_impl(conn, session_id, repo_path)
+    except Exception as exc:
+        console.print(f"[red]Extraction failed: {exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+
 def register(app: typer.Typer) -> None:
     app.add_typer(decision_app, name="decision")

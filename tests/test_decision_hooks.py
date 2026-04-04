@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from entirecontext.core.async_worker import _pid_file, launch_worker, worker_status
 from entirecontext.core.config import DEFAULT_CONFIG
-from entirecontext.core.decisions import create_decision, get_decision, link_decision_to_file
+from entirecontext.core.decisions import create_decision, get_decision, link_decision_to_file, list_decisions
 from entirecontext.core.session import create_session
 from entirecontext.core.turn import create_turn
 
@@ -303,3 +303,126 @@ class TestMaybeExtractDecisions:
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
         maybe_extract_decisions(str(ec_repo), session["id"])
         assert len(launched) == 0
+
+
+class TestExtractFromSessionCLI:
+    def _setup_session_with_turns(self, ec_db, turn_data):
+        """Helper: create session with turns. turn_data = [(summary, files_touched), ...]"""
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        for i, (summary, files) in enumerate(turn_data):
+            turn = create_turn(ec_db, session["id"], i + 1, user_message=f"msg {i}")
+            ec_db.execute(
+                "UPDATE turns SET assistant_summary = ?, files_touched = ?, turn_status = 'completed' WHERE id = ?",
+                (summary, json.dumps(files) if files else None, turn["id"]),
+            )
+        ec_db.commit()
+        return session
+
+    def test_creates_decisions_from_llm_response(self, ec_repo, ec_db, monkeypatch):
+        session = self._setup_session_with_turns(ec_db, [
+            ("We decided to use Redis for caching", ["src/cache.py"]),
+        ])
+        llm_response = json.dumps([
+            {"title": "Use Redis for caching", "rationale": "Fast in-memory store", "scope": "caching", "rejected_alternatives": ["memcached"]},
+        ])
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: llm_response,
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+
+        decisions = list_decisions(ec_db)
+        titles = [d["title"] for d in decisions]
+        assert "Use Redis for caching" in titles
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()
+        meta = json.loads(row["metadata"]) if row["metadata"] else {}
+        assert meta.get("decisions_extracted") is True
+
+    def test_auto_links_files(self, ec_repo, ec_db, monkeypatch):
+        session = self._setup_session_with_turns(ec_db, [
+            ("We decided to use Redis", ["src/cache.py", "src/config.py"]),
+        ])
+        llm_response = json.dumps([
+            {"title": "Use Redis", "rationale": "Fast", "scope": "cache", "rejected_alternatives": []},
+        ])
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: llm_response,
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+
+        decisions = list_decisions(ec_db)
+        d = get_decision(ec_db, decisions[0]["id"])
+        assert "src/cache.py" in d.get("files", [])
+
+    def test_empty_array_sets_marker(self, ec_repo, ec_db, monkeypatch):
+        session = self._setup_session_with_turns(ec_db, [
+            ("We decided nothing", []),
+        ])
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: "[]",
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()
+        meta = json.loads(row["metadata"]) if row["metadata"] else {}
+        assert meta.get("decisions_extracted") is True
+
+    def test_invalid_json_no_marker(self, ec_repo, ec_db, monkeypatch):
+        session = self._setup_session_with_turns(ec_db, [
+            ("We decided something", []),
+        ])
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: "not json at all",
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()
+        meta = json.loads(row["metadata"]) if row["metadata"] else {}
+        assert meta.get("decisions_extracted") is not True
+
+    def test_max_5_decisions(self, ec_repo, ec_db, monkeypatch):
+        session = self._setup_session_with_turns(ec_db, [
+            ("Many decisions decided", []),
+        ])
+        llm_response = json.dumps([
+            {"title": f"Decision {i}", "rationale": "r", "scope": "s", "rejected_alternatives": []}
+            for i in range(8)
+        ])
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: llm_response,
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+
+        decisions = list_decisions(ec_db)
+        assert len(decisions) <= 5
+
+    def test_idempotency_second_run_skips(self, ec_repo, ec_db, monkeypatch):
+        session = self._setup_session_with_turns(ec_db, [
+            ("We decided X", []),
+        ])
+        call_count = []
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: (call_count.append(1), "[]")[1],
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+        assert len(call_count) == 1
