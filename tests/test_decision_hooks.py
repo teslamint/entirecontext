@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from entirecontext.core.config import DEFAULT_CONFIG
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 from entirecontext.core.async_worker import launch_worker, worker_status, _pid_file
 
