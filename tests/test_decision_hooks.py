@@ -426,3 +426,40 @@ class TestExtractFromSessionCLI:
         _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
         _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
         assert len(call_count) == 1
+
+
+class TestHandlerIntegration:
+    def test_session_start_prints_decisions(self, ec_repo, ec_db, monkeypatch, capsys):
+        """Verify _handle_session_start prints decision context to stdout."""
+        create_decision(ec_db, title="Integration test decision", staleness_status="stale")
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+
+        from entirecontext.hooks.handler import _handle_session_start
+
+        _handle_session_start({"cwd": str(ec_repo), "session_id": "test-session"})
+        captured = capsys.readouterr()
+        assert "Integration test decision" in captured.out
+
+    def test_session_end_calls_decision_hooks(self, ec_repo, ec_db, monkeypatch, isolated_global_db):
+        from entirecontext.core.session import create_session
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        stale_called = []
+        extract_called = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.maybe_check_stale_decisions",
+            lambda rp: stale_called.append(rp),
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.maybe_extract_decisions",
+            lambda rp, sid: extract_called.append((rp, sid)),
+        )
+        from entirecontext.hooks.handler import _handle_session_end
+
+        _handle_session_end({"cwd": str(ec_repo), "session_id": session["id"]})
+        assert len(stale_called) == 1
+        assert len(extract_called) == 1

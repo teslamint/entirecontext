@@ -168,9 +168,16 @@ def _populate_session_summary(conn, session_id: str) -> None:
             updates["session_summary"] = combined[:500]
 
     if updates:
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
-        values = list(updates.values()) + [session_id]
-        conn.execute(f"UPDATE sessions SET {set_clause} WHERE id = ?", values)
+        if "session_title" in updates:
+            conn.execute(
+                "UPDATE sessions SET session_title = ? WHERE id = ?",
+                (updates["session_title"], session_id),
+            )
+        if "session_summary" in updates:
+            conn.execute(
+                "UPDATE sessions SET session_summary = ? WHERE id = ?",
+                (updates["session_summary"], session_id),
+            )
         conn.commit()
 
     _maybe_generate_intent_summary(conn, session_id)
@@ -278,6 +285,8 @@ def on_session_end(data: dict[str, Any]) -> None:
     _maybe_trigger_auto_sync(repo_path)
     _maybe_trigger_auto_distill(repo_path)
     _maybe_trigger_auto_embed(repo_path)
+    _maybe_check_stale_decisions(repo_path)
+    _maybe_extract_decisions(repo_path, session_id)
 
 
 def _session_has_change_signals(conn, session_id: str) -> bool:
@@ -462,6 +471,22 @@ def _maybe_trigger_auto_embed(repo_path: str) -> None:
         launch_worker(repo_path, [sys.executable, "-m", "entirecontext.cli", "index", "rebuild", "--semantic"])
     except Exception as exc:
         _record_hook_warning(repo_path, "auto_embed", exc)
+
+
+def _maybe_check_stale_decisions(repo_path: str) -> None:
+    try:
+        from .decision_hooks import maybe_check_stale_decisions
+        maybe_check_stale_decisions(repo_path)
+    except Exception as exc:
+        _record_hook_warning(repo_path, "decision_stale_dispatch", exc)
+
+
+def _maybe_extract_decisions(repo_path: str, session_id: str) -> None:
+    try:
+        from .decision_hooks import maybe_extract_decisions
+        maybe_extract_decisions(repo_path, session_id)
+    except Exception as exc:
+        _record_hook_warning(repo_path, "decision_extract_dispatch", exc)
 
 
 def _maybe_trigger_auto_distill(repo_path: str) -> None:

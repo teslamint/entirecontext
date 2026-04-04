@@ -77,6 +77,15 @@ def _handle_session_start(data: dict[str, Any]) -> int:
     from .session_lifecycle import on_session_start
 
     on_session_start(data)
+
+    try:
+        from .decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions(data)
+        if result:
+            print(result)
+    except Exception:
+        pass
     return 0
 
 
