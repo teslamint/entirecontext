@@ -1,0 +1,12 @@
+{
+  "id": "18c2ff27-89cb-4b26-9037-44bf7ec02fb4",
+  "session_id": "515114f6-3c13-409d-8220-f0f849dc924a",
+  "git_commit_hash": "6593b9aee7044fe837e150a8fef099899a9b4c79",
+  "git_branch": "test/claude-review-output",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": null,
+  "agent_state": null,
+  "created_at": "2026-04-03 03:20:32",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

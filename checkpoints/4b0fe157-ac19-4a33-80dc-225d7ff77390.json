@@ -1,0 +1,12 @@
+{
+  "id": "4b0fe157-ac19-4a33-80dc-225d7ff77390",
+  "session_id": "515114f6-3c13-409d-8220-f0f849dc924a",
+  "git_commit_hash": "6593b9aee7044fe837e150a8fef099899a9b4c79",
+  "git_branch": "test/claude-review-output",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "ROADMAP.md                                  |  14 +-\n src/entirecontext/cli/decisions_cmds.py     | 122 ++++++++++++++-\n src/entirecontext/core/decisions.py         | 183 +++++++++++++++++++++++\n src/entirecontext/core/search.py            |   6 +-\n src/entirecontext/db/migrations/__init__.py |   2 +-\n src/entirecontext/db/migrations/v012.py     |  36 +++++\n src/entirecontext/db/schema.py              |  20 ++-\n src/entirecontext/mcp/tools/decisions.py    |  25 ++++\n tests/test_decisions_core.py                | 223 ++++++++++++++++++++++++++--\n tests/test_mcp_registration.py              |   1 +\n 10 files changed, 611 insertions(+), 21 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-02 12:08:01",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}
