@@ -96,7 +96,7 @@ Consider updating stale decisions or marking them as superseded.
 - Markdown format — parseable by Claude, Codex, Gemini, Copilot
 - 0 decisions → no output (no noise)
 - Max 5 decisions (context budget)
-- `git diff` failure → fallback to `git log`, then `_record_hook_warning`, return None
+- `git diff` failure → fallback to `git log`. Only if `git log` also fails → `_record_hook_warning`, return None
 
 ## Hook 2: SessionEnd — Stale Auto-Detection
 
@@ -194,8 +194,8 @@ Runs in background. No hook timeout constraint.
      This ensures auto-extracted decisions are discoverable by
      SessionStart relevance and stale checks.
    - On individual failure: skip, continue to next
-8. Set idempotency marker:
-   - UPDATE sessions SET metadata = json_set(metadata, '$.decisions_extracted', true)
+8. Set idempotency marker (null-safe):
+   - UPDATE sessions SET metadata = json_set(COALESCE(metadata, '{}'), '$.decisions_extracted', true)
      WHERE id = ?
 ```
 
