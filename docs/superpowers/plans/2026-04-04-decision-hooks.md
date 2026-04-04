@@ -644,10 +644,8 @@ from entirecontext.core.turn import create_turn
 class TestMaybeExtractDecisions:
     def _setup_session_with_summaries(self, ec_db, summaries):
         """Helper: create session with turns that have given summaries."""
-        from entirecontext.core.project import get_project
-
-        project = get_project(ec_db)
-        session = create_session(ec_db, project["id"])
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
         for i, summary in enumerate(summaries):
             turn = create_turn(ec_db, session["id"], i + 1, user_message=f"msg {i}")
             ec_db.execute(
@@ -856,10 +854,8 @@ Append to `tests/test_decision_hooks.py`:
 class TestExtractFromSessionCLI:
     def _setup_session_with_turns(self, ec_db, turn_data):
         """Helper: create session with turns. turn_data = [(summary, files_touched), ...]"""
-        from entirecontext.core.project import get_project
-
-        project = get_project(ec_db)
-        session = create_session(ec_db, project["id"])
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
         for i, (summary, files) in enumerate(turn_data):
             turn = create_turn(ec_db, session["id"], i + 1, user_message=f"msg {i}")
             ec_db.execute(
@@ -1174,7 +1170,8 @@ class TestHandlerIntegration:
     def test_session_end_calls_decision_hooks(self, ec_repo, ec_db, monkeypatch, isolated_global_db):
         from entirecontext.core.session import create_session
 
-        session = create_session(ec_db, session_type="claude", workspace_path=str(ec_repo))
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
         stale_called = []
         extract_called = []
         monkeypatch.setattr(
@@ -1304,36 +1301,108 @@ class TestStdoutContract:
         _handle_session_start({"cwd": str(ec_repo), "session_id": "stdout-test"})
         captured = capsys.readouterr()
         assert "Stdout test decision" in captured.out
+
+    def test_fallback_file_written(self, ec_repo, ec_db, monkeypatch):
+        """Verify fallback file is written alongside stdout."""
+        create_decision(ec_db, title="Fallback test decision", staleness_status="stale")
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "fb-test"})
+        assert result is not None
+
+        from pathlib import Path
+
+        fallback_path = Path(str(ec_repo)) / ".entirecontext" / "decisions-context.md"
+        assert fallback_path.exists()
+        content = fallback_path.read_text(encoding="utf-8")
+        assert "Fallback test decision" in content
+
+    def test_fallback_file_cleaned_when_no_decisions(self, ec_repo, ec_db, monkeypatch):
+        """Verify fallback file is removed when there are no decisions to show."""
+        from pathlib import Path
+
+        fallback_path = Path(str(ec_repo)) / ".entirecontext" / "decisions-context.md"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_text("old content")
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "cleanup-test"})
+        assert result is None
+        assert not fallback_path.exists()
 ```
 
-- [ ] **Step 2: Run test**
+- [ ] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest tests/test_decision_hooks.py::TestStdoutContract -v`
-Expected: PASS (handler already prints in Task 7)
+Expected: FAIL — `test_fallback_file_written` and `test_fallback_file_cleaned_when_no_decisions` fail (fallback not implemented yet)
 
-- [ ] **Step 3: Manual validation**
+- [ ] **Step 3: Implement dual output (stdout + file fallback)**
 
-Run a real Claude Code session with `show_related_on_start = true` in `.entirecontext/config.toml` and verify the output appears as `additionalContext` in the system prompt. Document the result in the commit message.
+In `src/entirecontext/hooks/decision_hooks.py`, modify `on_session_start_decisions` to always write the fallback file alongside returning the text. Add this at two points:
 
-- [ ] **Step 4: If stdout doesn't work, implement file fallback**
-
-If manual validation shows stdout is NOT captured as agent context, add a fallback in `on_session_start_decisions` that writes the output to `.entirecontext/decisions-context.md`:
+At the end of the function, just before `return "\n\n".join(sections)`:
 
 ```python
-# At the end of on_session_start_decisions, before returning:
-from pathlib import Path
-context_file = Path(repo_path) / ".entirecontext" / "decisions-context.md"
-context_file.parent.mkdir(parents=True, exist_ok=True)
-context_file.write_text(output, encoding="utf-8")
+            # Write fallback file for agents that don't capture stdout
+            from pathlib import Path
+
+            fallback_path = Path(repo_path) / ".entirecontext" / "decisions-context.md"
+            if sections:
+                output = "\n\n".join(sections)
+                fallback_path.parent.mkdir(parents=True, exist_ok=True)
+                fallback_path.write_text(output, encoding="utf-8")
+                return output
+            else:
+                # Clean up stale fallback file
+                if fallback_path.exists():
+                    try:
+                        fallback_path.unlink()
+                    except OSError:
+                        pass
+                return None
 ```
 
-If stdout DOES work, skip this step and note "stdout validated" in the commit.
+Replace the existing `if not sections: return None` and `return "\n\n".join(sections)` with the above block.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `uv run pytest tests/test_decision_hooks.py::TestStdoutContract -v`
+Expected: PASS (3 tests)
+
+- [ ] **Step 5: Manual validation in Claude Code**
+
+Create `.entirecontext/config.toml` with:
+```toml
+[decisions]
+show_related_on_start = true
+```
+
+Start a new Claude Code session (`claude` command) and check:
+1. Does the session start show `additionalContext` with the decisions Markdown?
+2. If yes: stdout works — both channels active (stdout for Claude, file for others)
+3. If no: file fallback at `.entirecontext/decisions-context.md` is available for agents to read
+
+Document the result in the commit message.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add -u
-git commit -m "feat(hooks): validate stdout contract for decision context surfacing"
+git add src/entirecontext/hooks/decision_hooks.py tests/test_decision_hooks.py
+git commit -m "feat(hooks): add dual output (stdout + file fallback) for decision context
+
+stdout prints for Claude Code additionalContext injection.
+.entirecontext/decisions-context.md written as fallback for agents
+that don't capture hook stdout (Codex, Gemini, Copilot).
+File is cleaned up when no decisions are relevant."
 ```
 
 ---
