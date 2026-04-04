@@ -1,0 +1,1 @@
+Use Python 3.12+ with Ruff formatting (line length 120). Keep CLI concerns in `cli/` and business logic in `core/` or feature modules like `sync/`. Prefer snake_case for functions/modules and PascalCase for classes. Tests use pytest and should exercise real business logic with minimal mocking of external integrations only.

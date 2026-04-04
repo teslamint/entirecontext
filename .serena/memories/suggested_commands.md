@@ -1,0 +1,1 @@
+Install deps: `uv sync --extra dev`. Run CLI help: `uv run ec --help`. Run tests: `uv run pytest` or targeted `uv run pytest tests/test_sync.py tests/test_sync_engine.py tests/test_sync_cmds.py`. Coverage: `uv run pytest --cov=entirecontext`. Format: `uv run ruff format .`. Lint: `uv run ruff check . --fix`. Build: `uv build`.

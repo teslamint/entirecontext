@@ -1,0 +1,1 @@
+After code changes, run relevant pytest targets first, then full `uv run pytest` when the change touches shared behavior. Run `uv run ruff format .` and `uv run ruff check . --fix` if formatting/linting may be affected. Build with `uv build` when packaging or public CLI/docs behavior changes are involved. Summarize what was verified and any remaining risks.

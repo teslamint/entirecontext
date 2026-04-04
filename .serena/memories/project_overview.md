@@ -1,0 +1,1 @@
+EntireContext is a Python 3.12+ CLI and MCP server for time-travel searchable agent memory anchored to git repositories. Core areas live under src/entirecontext/{cli,core,db,hooks,sync,mcp}. Tests are under tests/. Docs and research are under docs/ and docs/research/. Main entrypoint is `ec` via `entirecontext.cli:app`.

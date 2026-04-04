@@ -1,0 +1,63 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 2886 >>
+stream
+BT /F1 18 Tf 48 806 Td (EntireContext - One-Page App Summary) Tj ET
+BT /F1 9 Tf 48 790 Td (Repo evidence only: README.md and docs/spec.md) Tj ET
+BT /F1 12 Tf 48 764 Td (What it is) Tj ET
+BT /F1 10 Tf 60 748 Td (EntireContext is a Python CLI and MCP server for time-travel searchable AI coding memory.) Tj ET
+BT /F1 10 Tf 60 734 Td (It captures sessions, turns, and checkpoints, then anchors them to Git history for retrieval.) Tj ET
+BT /F1 12 Tf 48 710 Td (Who it's for) Tj ET
+BT /F1 10 Tf 60 694 Td (Primary persona: AI-assisted software engineers and teams who need traceable coding context) Tj ET
+BT /F1 10 Tf 60 680 Td (across sessions, commits, and repositories.) Tj ET
+BT /F1 12 Tf 48 656 Td (What it does) Tj ET
+BT /F1 10 Tf 60 640 Td (- Auto-captures sessions, turns, and tool activity via Claude Code hooks.) Tj ET
+BT /F1 10 Tf 60 626 Td (- Creates Git-anchored checkpoints and supports rewind/diff inspection.) Tj ET
+BT /F1 10 Tf 60 612 Td (- Supports regex, FTS5, semantic, and hybrid search modes.) Tj ET
+BT /F1 10 Tf 60 598 Td (- Enables cross-repo query via global index and repo filters.) Tj ET
+BT /F1 10 Tf 60 584 Td (- Syncs memory through a shadow branch export/import workflow.) Tj ET
+BT /F1 10 Tf 60 570 Td (- Provides per-line human-vs-agent attribution and session/agent graph views.) Tj ET
+BT /F1 10 Tf 60 556 Td (- Exposes MCP tools plus futures assessment and trend reporting workflows.) Tj ET
+BT /F1 12 Tf 48 532 Td (How it works \(repo-evidence architecture\)) Tj ET
+BT /F1 10 Tf 60 516 Td (- Interfaces: CLI \(Typer\), Claude hooks, MCP server \(src/entirecontext/mcp/server.py\).) Tj ET
+BT /F1 10 Tf 60 502 Td (- Core services: capture, checkpoint, search, attribution, futures, cross-repo orchestration.) Tj ET
+BT /F1 10 Tf 60 488 Td (- Storage: per-repo SQLite, global SQLite, turn content files, shadow branch artifacts.) Tj ET
+BT /F1 10 Tf 60 474 Td (- Data flow: hooks write sessions/turns -> DB + FTS indexes -> CLI/MCP query core services.) Tj ET
+BT /F1 10 Tf 60 460 Td (- Sync flow: ec sync exports to entirecontext/checkpoints/v1; ec pull imports back.) Tj ET
+BT /F1 12 Tf 48 436 Td (How to run \(minimal getting started\)) Tj ET
+BT /F1 10 Tf 60 420 Td (1. Install: uv add entirecontext  \(or uv tool install entirecontext for global CLI\).) Tj ET
+BT /F1 10 Tf 60 406 Td (2. In your Git repo: ec init) Tj ET
+BT /F1 10 Tf 60 392 Td (3. Enable hooks and MCP registration: ec enable) Tj ET
+BT /F1 10 Tf 60 378 Td (4. Query history: ec search "authentication") Tj ET
+BT /F1 12 Tf 48 354 Td (Not found in repo) Tj ET
+BT /F1 10 Tf 60 338 Td (- Explicit pricing model: Not found in repo.) Tj ET
+BT /F1 10 Tf 60 324 Td (- Formal SLA/support guarantees: Not found in repo.) Tj ET
+BT /F1 10 Tf 60 310 Td (- GA stability commitment \(beyond Experimental notice\): Not found in repo.) Tj ET
+BT /F1 9 Tf 48 286 Td (Generated on 2026-03-03 \(Asia/Seoul\).) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000003179 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+3249
+%%EOF
