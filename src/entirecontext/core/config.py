@@ -66,6 +66,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "default_backend": "openai",
         "default_model": "gpt-4o-mini",
     },
+    "decisions": {
+        "auto_stale_check": False,
+        "auto_extract": False,
+        "show_related_on_start": False,
+        "extract_keywords": [
+            "결정", "선택", "방식으로",
+            "decided", "chose", "approach", "instead of",
+        ],
+    },
 }
 
 
