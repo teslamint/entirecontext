@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from typing import Any
 
+from ..core.async_worker import launch_worker, worker_status
 from .session_lifecycle import _find_git_root, _record_hook_warning
 
 
@@ -153,3 +155,67 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         except Exception:
             pass
         return None
+
+
+def _session_has_extraction_marker(conn, session_id: str) -> bool:
+    row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    if not row or not row["metadata"]:
+        return False
+    try:
+        import json
+
+        meta = json.loads(row["metadata"])
+        return meta.get("decisions_extracted", False) is True
+    except (ValueError, TypeError):
+        return False
+
+
+def _summaries_match_keywords(summaries: list[str], keywords: list[str]) -> bool:
+    if not keywords:
+        return False
+    pattern = re.compile("|".join(re.escape(k) for k in keywords), re.IGNORECASE)
+    return any(pattern.search(s) for s in summaries)
+
+
+def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
+    """Launch background decision extraction if keywords match. Never raises."""
+    try:
+        config = _load_decisions_config(repo_path)
+        if not config.get("auto_extract", False):
+            return
+
+        from ..db import get_db
+
+        conn = get_db(repo_path)
+        try:
+            if _session_has_extraction_marker(conn, session_id):
+                return
+
+            rows = conn.execute(
+                "SELECT assistant_summary FROM turns "
+                "WHERE session_id = ? AND assistant_summary IS NOT NULL "
+                "ORDER BY turn_number ASC",
+                (session_id,),
+            ).fetchall()
+            summaries = [r["assistant_summary"] for r in rows if r["assistant_summary"]]
+            if not summaries:
+                return
+
+            keywords = config.get("extract_keywords", [])
+            if not _summaries_match_keywords(summaries, keywords):
+                return
+
+            if worker_status(repo_path, pid_name="worker-decision").get("running"):
+                return
+
+            import sys
+
+            launch_worker(
+                repo_path,
+                [sys.executable, "-m", "entirecontext.cli", "decision", "extract-from-session", session_id],
+                pid_name="worker-decision",
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        _record_hook_warning(repo_path, "auto_extract_decisions", exc)

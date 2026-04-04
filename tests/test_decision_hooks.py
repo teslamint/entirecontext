@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import subprocess as _subprocess
 from unittest.mock import MagicMock, patch
 
 from entirecontext.core.async_worker import _pid_file, launch_worker, worker_status
 from entirecontext.core.config import DEFAULT_CONFIG
 from entirecontext.core.decisions import create_decision, get_decision, link_decision_to_file
+from entirecontext.core.session import create_session
+from entirecontext.core.turn import create_turn
 
 
 class TestDecisionConfig:
@@ -205,3 +208,98 @@ class TestOnSessionStartDecisions:
 
         result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
         assert result is None
+
+
+class TestMaybeExtractDecisions:
+    def _setup_session_with_summaries(self, ec_db, summaries):
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        for i, summary in enumerate(summaries):
+            turn = create_turn(ec_db, session["id"], i + 1, user_message=f"msg {i}")
+            ec_db.execute(
+                "UPDATE turns SET assistant_summary = ?, turn_status = 'completed' WHERE id = ?",
+                (summary, turn["id"]),
+            )
+        ec_db.commit()
+        return session
+
+    def test_disabled_by_config(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_extract": False, "extract_keywords": ["decided"]},
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+        maybe_extract_decisions(str(ec_repo), "fake-session-id")
+
+    def test_no_keyword_matches_no_worker(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"]},
+        )
+        session = self._setup_session_with_summaries(ec_db, ["just a normal conversation"])
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(1) or 0,
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+        maybe_extract_decisions(str(ec_repo), session["id"])
+        assert len(launched) == 0
+
+    def test_keyword_match_launches_worker(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"]},
+        )
+        session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(kw) or 0,
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.worker_status",
+            lambda *a, **kw: {"running": False, "pid": None},
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+        maybe_extract_decisions(str(ec_repo), session["id"])
+        assert len(launched) == 1
+
+    def test_worker_already_running_skips(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"]},
+        )
+        session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(1) or 0,
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.worker_status",
+            lambda *a, **kw: {"running": True, "pid": 999},
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+        maybe_extract_decisions(str(ec_repo), session["id"])
+        assert len(launched) == 0
+
+    def test_idempotency_marker_skips(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"]},
+        )
+        session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
+        ec_db.execute(
+            "UPDATE sessions SET metadata = ? WHERE id = ?",
+            (json.dumps({"decisions_extracted": True}), session["id"]),
+        )
+        ec_db.commit()
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(1) or 0,
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+        maybe_extract_decisions(str(ec_repo), session["id"])
+        assert len(launched) == 0
