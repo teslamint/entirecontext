@@ -1,62 +1,97 @@
-[
-  {
-    "id": "e5e1feb7-97c6-4ad8-bcea-fc49935153f8",
-    "title": "Consolidate search into single module",
-    "rationale": "hybrid_search, indexing, and search were fragmented across 5 files sharing the same data model and query patterns; merging reduces cognitive overhead and import complexity",
-    "scope": "core/search",
-    "staleness_status": "fresh",
-    "superseded_by_id": null,
-    "rejected_alternatives": "[]",
-    "supporting_evidence": "[]",
-    "created_at": "2026-04-05T14:08:00.618577+00:00",
-    "updated_at": "2026-04-05T14:08:00.618577+00:00"
-  },
-  {
-    "id": "7f4a0283-6926-4585-ad8c-16847e05195b",
-    "title": "Domain functions belong in their domain module",
-    "rationale": "rank_related_decisions operated on decisions tables but lived in search.py, creating a misleading cross-domain dependency",
-    "scope": "core/decisions",
-    "staleness_status": "fresh",
-    "superseded_by_id": null,
-    "rejected_alternatives": "[]",
-    "supporting_evidence": "[]",
-    "created_at": "2026-04-05T14:08:01.529596+00:00",
-    "updated_at": "2026-04-05T14:08:01.529596+00:00"
-  },
-  {
-    "id": "a38f8a78-4b9c-441b-b225-28c7a852a453",
-    "title": "Use re-export shims for backwards compatibility",
-    "rationale": "Thin re-export modules avoid breaking existing imports across tests, MCP tools, and cross_repo while making the canonical location clear",
-    "scope": "core",
-    "staleness_status": "fresh",
-    "superseded_by_id": null,
-    "rejected_alternatives": "[]",
-    "supporting_evidence": "[]",
-    "created_at": "2026-04-05T14:08:02.839333+00:00",
-    "updated_at": "2026-04-05T14:08:02.839333+00:00"
-  },
-  {
-    "id": "a3fc30a0-a7a1-441d-ad51-3b1bd61b223f",
-    "title": "Extract shared ID resolution to core/resolve.py",
-    "rationale": "_resolve_assessment_id was copy-pasted between decisions.py and futures.py; decisions.py already had a generic _resolve_id that worked for any table",
-    "scope": "core/resolve",
-    "staleness_status": "fresh",
-    "superseded_by_id": null,
-    "rejected_alternatives": "[]",
-    "supporting_evidence": "[]",
-    "created_at": "2026-04-05T14:08:04.656493+00:00",
-    "updated_at": "2026-04-05T14:08:04.656493+00:00"
-  },
-  {
-    "id": "f5b1f350-6778-4d84-9eda-d160be40a8b4",
-    "title": "Extract shared CLI connection helper",
-    "rationale": "find_git_root/get_db/check_and_migrate pattern was repeated verbatim across 17 CLI modules; cli/helpers.py reduces boilerplate",
-    "scope": "cli/helpers",
-    "staleness_status": "fresh",
-    "superseded_by_id": null,
-    "rejected_alternatives": "[]",
-    "supporting_evidence": "[]",
-    "created_at": "2026-04-05T14:08:05.648393+00:00",
-    "updated_at": "2026-04-05T14:08:05.648393+00:00"
-  }
-]
+{
+  "decisions": [
+    {
+      "id": "e5e1feb7-97c6-4ad8-bcea-fc49935153f8",
+      "title": "Consolidate search into single module",
+      "rationale": "hybrid_search, indexing, and search were fragmented across 5 files sharing the same data model and query patterns; merging reduces cognitive overhead and import complexity",
+      "scope": "core/search",
+      "staleness_status": "fresh",
+      "superseded_by_id": null,
+      "rejected_alternatives": "[]",
+      "supporting_evidence": "[]",
+      "created_at": "2026-04-05T14:08:00.618577+00:00",
+      "updated_at": "2026-04-05T14:08:00.618577+00:00"
+    },
+    {
+      "id": "7f4a0283-6926-4585-ad8c-16847e05195b",
+      "title": "Domain functions belong in their domain module",
+      "rationale": "rank_related_decisions operated on decisions tables but lived in search.py, creating a misleading cross-domain dependency",
+      "scope": "core/decisions",
+      "staleness_status": "fresh",
+      "superseded_by_id": null,
+      "rejected_alternatives": "[]",
+      "supporting_evidence": "[]",
+      "created_at": "2026-04-05T14:08:01.529596+00:00",
+      "updated_at": "2026-04-05T14:08:01.529596+00:00"
+    },
+    {
+      "id": "a38f8a78-4b9c-441b-b225-28c7a852a453",
+      "title": "Use re-export shims for backwards compatibility",
+      "rationale": "Thin re-export modules avoid breaking existing imports across tests, MCP tools, and cross_repo while making the canonical location clear",
+      "scope": "core",
+      "staleness_status": "fresh",
+      "superseded_by_id": null,
+      "rejected_alternatives": "[]",
+      "supporting_evidence": "[]",
+      "created_at": "2026-04-05T14:08:02.839333+00:00",
+      "updated_at": "2026-04-05T14:08:02.839333+00:00"
+    },
+    {
+      "id": "a3fc30a0-a7a1-441d-ad51-3b1bd61b223f",
+      "title": "Extract shared ID resolution to core/resolve.py",
+      "rationale": "_resolve_assessment_id was copy-pasted between decisions.py and futures.py; decisions.py already had a generic _resolve_id that worked for any table",
+      "scope": "core/resolve",
+      "staleness_status": "fresh",
+      "superseded_by_id": null,
+      "rejected_alternatives": "[]",
+      "supporting_evidence": "[]",
+      "created_at": "2026-04-05T14:08:04.656493+00:00",
+      "updated_at": "2026-04-05T14:08:04.656493+00:00"
+    },
+    {
+      "id": "f5b1f350-6778-4d84-9eda-d160be40a8b4",
+      "title": "Extract shared CLI connection helper",
+      "rationale": "find_git_root/get_db/check_and_migrate pattern was repeated verbatim across 17 CLI modules; cli/helpers.py reduces boilerplate",
+      "scope": "cli/helpers",
+      "staleness_status": "fresh",
+      "superseded_by_id": null,
+      "rejected_alternatives": "[]",
+      "supporting_evidence": "[]",
+      "created_at": "2026-04-05T14:08:05.648393+00:00",
+      "updated_at": "2026-04-05T14:08:05.648393+00:00"
+    }
+  ],
+  "sessions": [
+    {
+      "id": "783cb3df-76e2-4e08-99cf-e37aa3da7e0f",
+      "project_id": "9b683112-c485-4617-bb67-70d7b6c2edc1",
+      "agent_id": null,
+      "session_type": "claude",
+      "workspace_path": null,
+      "started_at": "2026-04-05T14:11:24.327962+00:00",
+      "ended_at": null,
+      "last_activity_at": "2026-04-05T14:11:24.327962+00:00",
+      "session_title": "Refactor: reduce feature complexity and fragmentation",
+      "session_summary": "Analyzed codebase architecture (15.6k LOC, 24 tables, 21 CLI modules). Consolidated 5 fragmented search modules into unified search.py. Moved rank_related_decisions to decisions.py (domain ownership). Extracted shared resolve.py for ID prefix-matching. Added cli/helpers.py for connection boilerplate. Recorded 5 architectural decisions. All 1081 tests pass.",
+      "summary_updated_at": null,
+      "total_turns": 0,
+      "created_at": "2026-04-05 14:11:24",
+      "updated_at": "2026-04-05 14:11:24",
+      "metadata": null
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "ee42f726-039e-4bdd-b2e9-cfea86110941",
+      "session_id": "783cb3df-76e2-4e08-99cf-e37aa3da7e0f",
+      "git_commit_hash": "214a35efabe6341cf56b8dff4235c8453a88f68f",
+      "git_branch": "claude/refactor-feature-complexity-uS1Z8",
+      "parent_checkpoint_id": null,
+      "files_snapshot": null,
+      "diff_summary": "Consolidate search modules, extract shared utilities, record 5 architectural decisions",
+      "agent_state": null,
+      "created_at": "2026-04-05 14:11:29",
+      "metadata": null
+    }
+  ]
+}
