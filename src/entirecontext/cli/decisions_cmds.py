@@ -13,20 +13,9 @@ decision_app = typer.Typer(help="Decision memory management")
 
 
 def _get_repo_connection():
-    from ..core.project import find_git_root
-    from ..db import check_and_migrate, get_db
+    from .helpers import get_repo_connection
 
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
-    conn = get_db(repo_path)
-    try:
-        check_and_migrate(conn)
-    except Exception:
-        conn.close()
-        raise
+    conn, _repo_path = get_repo_connection()
     return conn
 
 

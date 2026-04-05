@@ -1,11 +1,22 @@
-"""Search engine — regex, FTS5, structured filters."""
+"""Search engine — regex, FTS5, hybrid (RRF), and structured filters.
+
+Hybrid search (formerly in hybrid_search.py) combines FTS5 relevance with
+recency via Reciprocal Rank Fusion (RRF).  Algorithm:
+1. Run FTS5 full-text search to retrieve an expanded candidate set.
+2. Re-rank the *same* candidates by recency (timestamp DESC).
+3. Fuse both ranked lists with RRF: score(d) = Σᵢ [ wᵢ / (k + rankᵢ(d)) ]
+4. Return top ``limit`` by fused score, each enriched with ``hybrid_score``.
+"""
 
 from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from pathlib import Path
 from typing import Any
+
+from .decisions import rank_related_decisions  # noqa: F401  # re-export for backwards compat
 
 
 def _apply_query_redaction(results: list[dict], config: dict[str, Any] | None) -> list[dict]:
@@ -252,111 +263,115 @@ def _fts_search_events(conn, query, since, limit) -> list[dict]:
     return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
 
-def rank_related_decisions(
-    conn,
-    *,
-    file_paths: list[str] | None = None,
-    assessment_ids: list[str] | None = None,
-    diff_text: str | None = None,
-    limit: int = 10,
-) -> list[dict]:
-    """Rank decisions by file overlap, assessment links, and recency.
+# ---------------------------------------------------------------------------
+# Hybrid search — FTS5 + recency via Reciprocal Rank Fusion (RRF)
+# ---------------------------------------------------------------------------
 
-    Scoring rules:
-    - +4 per linked assessment match
-    - +2 per linked file path match
-    - +1 if title/rationale appears in diff text
-    - quality score adjustment from tracked outcomes, capped to [-4, +4]
+
+def rrf_fuse(
+    rank_lists: list[list[str]],
+    weights: list[float] | None = None,
+    k: int = 60,
+) -> dict[str, float]:
+    """Reciprocal Rank Fusion over multiple ranked ID lists.
+
+    Standard RRF formula (Cormack et al., 2009):
+        score(d) = Σᵢ [ wᵢ / (k + rankᵢ(d)) ]
     """
-    file_paths = file_paths or []
-    assessment_ids = assessment_ids or []
-    diff_text_lc = (diff_text or "").lower()
+    if weights is None:
+        weights = [1.0] * len(rank_lists)
 
-    decisions = [dict(r) for r in conn.execute("SELECT * FROM decisions ORDER BY updated_at DESC LIMIT 200").fetchall()]
-    if not decisions:
+    scores: dict[str, float] = {}
+    for rank_list, w in zip(rank_lists, weights):
+        for rank_1based, doc_id in enumerate(rank_list, start=1):
+            scores[doc_id] = scores.get(doc_id, 0.0) + w / (k + rank_1based)
+    return scores
+
+
+def hybrid_search(
+    conn,
+    query: str,
+    target: str = "turn",
+    file_filter: str | None = None,
+    commit_filter: str | None = None,
+    agent_filter: str | None = None,
+    since: str | None = None,
+    limit: int = 20,
+    k: int = 60,
+    config: dict[str, Any] | None = None,
+) -> list[dict]:
+    """Hybrid search combining FTS5 relevance and recency via RRF."""
+    if target == "turn":
+        results = _hybrid_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit, k)
+    elif target == "session":
+        results = _hybrid_search_sessions(conn, query, since, limit, k)
+    elif target == "event":
+        results = _hybrid_search_events(conn, query, since, limit, k)
+    else:
+        results = []
+    return _apply_query_redaction(results, config)
+
+
+def _fuse_and_rank(fts_results: list[dict], ts_key: str, limit: int, k: int) -> list[dict]:
+    """Common RRF fusion step shared by all target types."""
+    fts_rank_list = [r["id"] for r in fts_results]
+    id_to_ts = {r["id"]: (r.get(ts_key) or "") for r in fts_results}
+    recency_rank_list = sorted(fts_rank_list, key=lambda rid: id_to_ts.get(rid, ""), reverse=True)
+
+    scores = rrf_fuse([fts_rank_list, recency_rank_list], k=k)
+    sorted_ids = sorted(scores, key=scores.__getitem__, reverse=True)[:limit]
+
+    id_to_doc = {r["id"]: r for r in fts_results}
+    results: list[dict] = []
+    for rid in sorted_ids:
+        if rid in id_to_doc:
+            doc = dict(id_to_doc[rid])
+            doc["hybrid_score"] = round(scores[rid], 6)
+            results.append(doc)
+    return results
+
+
+def _hybrid_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit, k) -> list[dict]:
+    fetch_multiplier = 10 if file_filter else 3
+    fts_results = _fts_search_turns(
+        conn, query, file_filter, commit_filter, agent_filter, since, limit * fetch_multiplier
+    )
+    if not fts_results:
         return []
+    return _fuse_and_rank(fts_results, ts_key="timestamp", limit=limit, k=k)
 
-    resolved_assessment_ids: set[str] = set()
-    from .decisions import calculate_decision_quality_score, _resolve_assessment_id
 
-    for assessment_id in assessment_ids:
-        full_assessment_id = _resolve_assessment_id(conn, assessment_id)
-        if full_assessment_id:
-            resolved_assessment_ids.add(full_assessment_id)
+def _hybrid_search_sessions(conn, query, since, limit, k) -> list[dict]:
+    fts_results = _fts_search_sessions(conn, query, since, limit * 3)
+    if not fts_results:
+        return []
+    return _fuse_and_rank(fts_results, ts_key="last_activity_at", limit=limit, k=k)
 
-    scored: list[dict] = []
-    decision_ids = [d["id"] for d in decisions]
-    file_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
-    assessment_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
-    outcome_counts_by_decision: dict[str, dict[str, int]] = {decision_id: {} for decision_id in decision_ids}
 
-    if decision_ids:
-        placeholders = ",".join("?" for _ in decision_ids)
-        file_rows = conn.execute(
-            f"SELECT decision_id, file_path FROM decision_files WHERE decision_id IN ({placeholders})",
-            decision_ids,
-        ).fetchall()
-        for row in file_rows:
-            file_links_by_decision[row["decision_id"]].add(row["file_path"])
+def _hybrid_search_events(conn, query, since, limit, k) -> list[dict]:
+    fts_results = _fts_search_events(conn, query, since, limit * 3)
+    if not fts_results:
+        return []
+    return _fuse_and_rank(fts_results, ts_key="created_at", limit=limit, k=k)
 
-        assessment_rows = conn.execute(
-            f"SELECT decision_id, assessment_id FROM decision_assessments WHERE decision_id IN ({placeholders})",
-            decision_ids,
-        ).fetchall()
-        for row in assessment_rows:
-            assessment_links_by_decision[row["decision_id"]].add(row["assessment_id"])
 
-        outcome_rows = conn.execute(
-            (
-                "SELECT decision_id, outcome_type, COUNT(*) AS total "
-                f"FROM decision_outcomes WHERE decision_id IN ({placeholders}) "
-                "GROUP BY decision_id, outcome_type"
-            ),
-            decision_ids,
-        ).fetchall()
-        for row in outcome_rows:
-            counts = outcome_counts_by_decision.setdefault(row["decision_id"], {})
-            counts[row["outcome_type"]] = row["total"] or 0
+# ---------------------------------------------------------------------------
+# FTS index maintenance (formerly in indexing.py)
+# ---------------------------------------------------------------------------
 
-    for d in decisions:
-        decision_id = d["id"]
-        base_score = 0.0
 
-        if file_paths:
-            linked_files = file_links_by_decision.get(decision_id, set())
-            for file_path in file_paths:
-                if any(file_path in linked or linked in file_path for linked in linked_files):
-                    base_score += 2
+def rebuild_fts_indexes(conn: sqlite3.Connection) -> dict:
+    """Rebuild FTS5 content-sync tables using the FTS5 'rebuild' command."""
+    counts = {}
 
-        if resolved_assessment_ids:
-            linked_assessment_ids = assessment_links_by_decision.get(decision_id, set())
-            base_score += 4 * len(linked_assessment_ids & resolved_assessment_ids)
+    conn.execute("INSERT INTO fts_turns(fts_turns) VALUES('rebuild')")
+    counts["fts_turns"] = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
 
-        if diff_text_lc:
-            title = (d.get("title") or "").lower()
-            rationale = (d.get("rationale") or "").lower()
-            if title and title in diff_text_lc:
-                base_score += 1
-            elif rationale and rationale[:80] and rationale[:80] in diff_text_lc:
-                base_score += 1
+    conn.execute("INSERT INTO fts_events(fts_events) VALUES('rebuild')")
+    counts["fts_events"] = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
 
-        if base_score == 0:
-            continue
+    conn.execute("INSERT INTO fts_sessions(fts_sessions) VALUES('rebuild')")
+    counts["fts_sessions"] = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
 
-        quality_score = calculate_decision_quality_score(outcome_counts_by_decision.get(decision_id, {}))
-        score = base_score + quality_score
-
-        scored.append(
-            {
-                "id": decision_id,
-                "title": d.get("title"),
-                "staleness_status": d.get("staleness_status"),
-                "updated_at": d.get("updated_at"),
-                "base_score": round(base_score, 3),
-                "quality_score": round(quality_score, 3),
-                "score": round(score, 3),
-            }
-        )
-
-    scored.sort(key=lambda item: (item["score"], item.get("updated_at", "")), reverse=True)
-    return scored[:limit]
+    conn.commit()
+    return counts

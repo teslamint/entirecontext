@@ -8,6 +8,10 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from .resolve import resolve_assessment_id as _resolve_assessment_id
+from .resolve import resolve_checkpoint_id as _resolve_checkpoint_id
+from .resolve import resolve_decision_id as _resolve_decision_id
+
 
 class _UnsetType:
     """Sentinel type for distinguishing 'not provided' from None."""
@@ -41,26 +45,6 @@ def _format_allowed(values: frozenset[str]) -> tuple[str, ...]:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _resolve_id(conn, table: str, id_value: str) -> str | None:
-    row = conn.execute(f"SELECT id FROM {table} WHERE id = ?", (id_value,)).fetchone()
-    if row is None:
-        escaped = id_value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        row = conn.execute(f"SELECT id FROM {table} WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
-    return row["id"] if row else None
-
-
-def _resolve_decision_id(conn, decision_id: str) -> str | None:
-    return _resolve_id(conn, "decisions", decision_id)
-
-
-def _resolve_checkpoint_id(conn, checkpoint_id: str) -> str | None:
-    return _resolve_id(conn, "checkpoints", checkpoint_id)
-
-
-def _resolve_assessment_id(conn, assessment_id: str) -> str | None:
-    return _resolve_id(conn, "assessments", assessment_id)
 
 
 def _escape_like_contains(value: str) -> str:
@@ -551,6 +535,114 @@ def unlink_decision_from_checkpoint(conn, decision_id: str, checkpoint_id: str) 
     )
     conn.commit()
     return cursor.rowcount > 0
+
+
+def rank_related_decisions(
+    conn,
+    *,
+    file_paths: list[str] | None = None,
+    assessment_ids: list[str] | None = None,
+    diff_text: str | None = None,
+    limit: int = 10,
+) -> list[dict]:
+    """Rank decisions by file overlap, assessment links, and recency.
+
+    Scoring rules:
+    - +4 per linked assessment match
+    - +2 per linked file path match
+    - +1 if title/rationale appears in diff text
+    - quality score adjustment from tracked outcomes, capped to [-4, +4]
+    """
+    file_paths = file_paths or []
+    assessment_ids = assessment_ids or []
+    diff_text_lc = (diff_text or "").lower()
+
+    decisions = [dict(r) for r in conn.execute("SELECT * FROM decisions ORDER BY updated_at DESC LIMIT 200").fetchall()]
+    if not decisions:
+        return []
+
+    resolved_assessment_ids: set[str] = set()
+    for assessment_id in assessment_ids:
+        full_assessment_id = _resolve_assessment_id(conn, assessment_id)
+        if full_assessment_id:
+            resolved_assessment_ids.add(full_assessment_id)
+
+    scored: list[dict] = []
+    decision_ids = [d["id"] for d in decisions]
+    file_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
+    assessment_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
+    outcome_counts_by_decision: dict[str, dict[str, int]] = {decision_id: {} for decision_id in decision_ids}
+
+    if decision_ids:
+        placeholders = ",".join("?" for _ in decision_ids)
+        file_rows = conn.execute(
+            f"SELECT decision_id, file_path FROM decision_files WHERE decision_id IN ({placeholders})",
+            decision_ids,
+        ).fetchall()
+        for row in file_rows:
+            file_links_by_decision[row["decision_id"]].add(row["file_path"])
+
+        assessment_rows = conn.execute(
+            f"SELECT decision_id, assessment_id FROM decision_assessments WHERE decision_id IN ({placeholders})",
+            decision_ids,
+        ).fetchall()
+        for row in assessment_rows:
+            assessment_links_by_decision[row["decision_id"]].add(row["assessment_id"])
+
+        outcome_rows = conn.execute(
+            (
+                "SELECT decision_id, outcome_type, COUNT(*) AS total "
+                f"FROM decision_outcomes WHERE decision_id IN ({placeholders}) "
+                "GROUP BY decision_id, outcome_type"
+            ),
+            decision_ids,
+        ).fetchall()
+        for row in outcome_rows:
+            counts = outcome_counts_by_decision.setdefault(row["decision_id"], {})
+            counts[row["outcome_type"]] = row["total"] or 0
+
+    for d in decisions:
+        decision_id = d["id"]
+        base_score = 0.0
+
+        if file_paths:
+            linked_files = file_links_by_decision.get(decision_id, set())
+            for file_path in file_paths:
+                if any(file_path in linked or linked in file_path for linked in linked_files):
+                    base_score += 2
+
+        if resolved_assessment_ids:
+            linked_assessment_ids = assessment_links_by_decision.get(decision_id, set())
+            base_score += 4 * len(linked_assessment_ids & resolved_assessment_ids)
+
+        if diff_text_lc:
+            title = (d.get("title") or "").lower()
+            rationale = (d.get("rationale") or "").lower()
+            if title and title in diff_text_lc:
+                base_score += 1
+            elif rationale and rationale[:80] and rationale[:80] in diff_text_lc:
+                base_score += 1
+
+        if base_score == 0:
+            continue
+
+        quality_score = calculate_decision_quality_score(outcome_counts_by_decision.get(decision_id, {}))
+        score = base_score + quality_score
+
+        scored.append(
+            {
+                "id": decision_id,
+                "title": d.get("title"),
+                "staleness_status": d.get("staleness_status"),
+                "updated_at": d.get("updated_at"),
+                "base_score": round(base_score, 3),
+                "quality_score": round(quality_score, 3),
+                "score": round(score, 3),
+            }
+        )
+
+    scored.sort(key=lambda item: (item["score"], item.get("updated_at", "")), reverse=True)
+    return scored[:limit]
 
 
 def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
