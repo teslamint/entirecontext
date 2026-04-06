@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from .resolve import resolve_assessment_id as _resolve_assessment_id
+
 VALID_VERDICTS = ("expand", "narrow", "neutral")
 VALID_FEEDBACKS = ("agree", "disagree")
 VALID_RELATIONSHIP_TYPES = ("causes", "fixes", "contradicts")
@@ -210,18 +212,6 @@ def auto_distill_lessons(repo_path: str | Path) -> bool:
     output_path = Path(repo_path) / output_name
     output_path.write_text(text, encoding="utf-8")
     return True
-
-
-def _resolve_assessment_id(conn, assessment_id: str) -> str | None:
-    """Resolve a full or prefix assessment ID. Returns full ID or None.
-
-    Escapes LIKE metacharacters so '%' and '_' in the input are treated literally.
-    """
-    row = conn.execute("SELECT id FROM assessments WHERE id = ?", (assessment_id,)).fetchone()
-    if row is None:
-        escaped = assessment_id.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        row = conn.execute("SELECT id FROM assessments WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
-    return row["id"] if row else None
 
 
 def add_assessment_relationship(

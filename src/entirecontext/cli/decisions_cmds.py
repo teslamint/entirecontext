@@ -8,26 +8,10 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from .helpers import get_repo_connection
+
 console = Console()
 decision_app = typer.Typer(help="Decision memory management")
-
-
-def _get_repo_connection():
-    from ..core.project import find_git_root
-    from ..db import check_and_migrate, get_db
-
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
-    conn = get_db(repo_path)
-    try:
-        check_and_migrate(conn)
-    except Exception:
-        conn.close()
-        raise
-    return conn
 
 
 @decision_app.command("create")
@@ -38,7 +22,7 @@ def decision_create(
 ):
     from ..core.decisions import create_decision
 
-    conn = _get_repo_connection()
+    conn, _ = get_repo_connection()
     try:
         decision = create_decision(conn, title=title, rationale=rationale, scope=scope)
     finally:
@@ -54,7 +38,7 @@ def decision_list(
 ):
     from ..core.decisions import list_decisions
 
-    conn = _get_repo_connection()
+    conn, _ = get_repo_connection()
     try:
         decisions = list_decisions(conn, staleness_status=status, file_path=file, limit=limit)
     except ValueError as exc:
@@ -81,7 +65,7 @@ def decision_list(
 def decision_show(decision_id: str = typer.Argument(..., help="Decision ID")):
     from ..core.decisions import get_decision
 
-    conn = _get_repo_connection()
+    conn, _ = get_repo_connection()
     try:
         decision = get_decision(conn, decision_id)
     finally:
@@ -143,7 +127,7 @@ def decision_link(
         console.print("[red]Exactly one of --assessment, --checkpoint, --commit, --file is required.[/red]")
         raise typer.Exit(1)
 
-    conn = _get_repo_connection()
+    conn, _ = get_repo_connection()
     try:
         if assessment:
             linked = link_decision_to_assessment(conn, decision_id, assessment, relation_type=relation_type)
@@ -179,9 +163,7 @@ def decision_stale(
     status: Optional[str] = typer.Option(None, "--status", help="Manually set: fresh|stale|superseded|contradicted"),
 ):
     """Check or set staleness for a decision. Without --status, auto-detects via git."""
-    from ..core.project import find_git_root
-
-    conn = _get_repo_connection()
+    conn, repo_path = get_repo_connection()
     try:
         if status:
             from ..core.decisions import update_decision_staleness
@@ -191,10 +173,6 @@ def decision_stale(
         else:
             from ..core.decisions import check_staleness
 
-            repo_path = find_git_root()
-            if not repo_path:
-                console.print("[red]Not in a git repository.[/red]")
-                raise typer.Exit(1)
             result = check_staleness(conn, decision_id, repo_path)
             if result["stale"]:
                 console.print(f"[yellow]STALE[/yellow] — {len(result['changed_files'])} linked file(s) changed:")
@@ -219,7 +197,7 @@ def decision_outcome(
     from ..core.decisions import record_decision_outcome
     from ..core.telemetry import detect_current_context
 
-    conn = _get_repo_connection()
+    conn, _ = get_repo_connection()
     try:
         session_id, turn_id = detect_current_context(conn)
         if turn_id is None:
@@ -254,7 +232,7 @@ def decision_update(
     """Update a decision's fields."""
     from ..core.decisions import update_decision
 
-    conn = _get_repo_connection()
+    conn, _ = get_repo_connection()
     try:
         d = update_decision(conn, decision_id, title=title, rationale=rationale, scope=scope)
     except ValueError as exc:
@@ -274,7 +252,7 @@ def decision_supersede(
     """Mark a decision as superseded by another."""
     from ..core.decisions import supersede_decision
 
-    conn = _get_repo_connection()
+    conn, _ = get_repo_connection()
     try:
         d = supersede_decision(conn, old_id, new_id)
     except ValueError as exc:
@@ -308,7 +286,7 @@ def decision_unlink(
         console.print("[red]Exactly one of --assessment, --checkpoint, --commit, --file is required.[/red]")
         raise typer.Exit(1)
 
-    conn = _get_repo_connection()
+    conn, _ = get_repo_connection()
     try:
         if assessment:
             removed = unlink_decision_from_assessment(conn, decision_id, assessment, relation_type)
@@ -331,18 +309,9 @@ def decision_unlink(
 def decision_stale_all():
     """Check staleness for all fresh decisions and persist results."""
     from ..core.decisions import check_staleness, list_decisions, update_decision_staleness
-    from ..core.project import find_git_root
 
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
-    from ..db import check_and_migrate, get_db
-
-    conn = get_db(repo_path)
+    conn, repo_path = get_repo_connection()
     try:
-        check_and_migrate(conn)
         decisions = list_decisions(conn, staleness_status="fresh", limit=1000)
         stale_count = 0
         for d in decisions:
@@ -478,14 +447,8 @@ def decision_extract_from_session(
     session_id: str = typer.Argument(..., help="Session ID to extract decisions from"),
 ):
     """Extract decisions from a session using LLM (background worker target)."""
-    conn = _get_repo_connection()
+    conn, repo_path = get_repo_connection()
     try:
-        from ..core.project import find_git_root
-
-        repo_path = find_git_root()
-        if not repo_path:
-            console.print("[red]Not in a git repository.[/red]")
-            raise typer.Exit(1)
         _extract_from_session_impl(conn, session_id, repo_path)
     except Exception as exc:
         console.print(f"[red]Extraction failed: {exc}[/red]")
