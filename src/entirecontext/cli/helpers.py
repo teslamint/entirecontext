@@ -25,6 +25,6 @@ def get_repo_connection(*, migrate: bool = True) -> tuple[sqlite3.Connection, st
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    if migrate and isinstance(conn, sqlite3.Connection):
+    if migrate:
         check_and_migrate(conn)
     return conn, repo_path

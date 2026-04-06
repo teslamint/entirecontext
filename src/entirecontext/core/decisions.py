@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from .resolve import escape_like as _escape_like
 from .resolve import resolve_assessment_id as _resolve_assessment_id
 from .resolve import resolve_checkpoint_id as _resolve_checkpoint_id
 from .resolve import resolve_decision_id as _resolve_decision_id
@@ -48,8 +49,7 @@ def _now_iso() -> str:
 
 
 def _escape_like_contains(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
+    return f"%{_escape_like(value)}%"
 
 
 def _parse_decision_json_fields(decision: dict[str, Any]) -> dict[str, Any]:

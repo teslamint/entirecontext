@@ -43,8 +43,8 @@ class TestResolveId:
 
         assert resolve_id(resolve_conn, "decisions", "abc123") == "abc123def456"
 
-    def test_prefix_ambiguous_returns_first(self, resolve_conn):
-        """When multiple rows share a prefix, one is returned (implementation detail)."""
+    def test_prefix_ambiguous_returns_a_match(self, resolve_conn):
+        """When multiple rows share a prefix, one matching row is returned (undefined which)."""
         from entirecontext.core.resolve import resolve_id
 
         result = resolve_id(resolve_conn, "decisions", "abc")
@@ -96,6 +96,28 @@ class TestResolveId:
         assert resolve_decision_id(resolve_conn, "abc123") == "abc123def456"
         assert resolve_checkpoint_id(resolve_conn, "chk-") == "chk-aabbccdd"
         assert resolve_assessment_id(resolve_conn, "aaa-") == "aaa-bbb-ccc"
+
+
+class TestEscapeLike:
+    def test_percent_escaped(self):
+        from entirecontext.core.resolve import escape_like
+
+        assert escape_like("a%b") == "a\\%b"
+
+    def test_underscore_escaped(self):
+        from entirecontext.core.resolve import escape_like
+
+        assert escape_like("a_b") == "a\\_b"
+
+    def test_backslash_escaped(self):
+        from entirecontext.core.resolve import escape_like
+
+        assert escape_like("a\\b") == "a\\\\b"
+
+    def test_no_metacharacters_unchanged(self):
+        from entirecontext.core.resolve import escape_like
+
+        assert escape_like("abc123") == "abc123"
 
 
 # ---------------------------------------------------------------------------

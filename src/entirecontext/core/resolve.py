@@ -5,6 +5,11 @@ from __future__ import annotations
 _ALLOWED_TABLES: frozenset[str] = frozenset({"decisions", "checkpoints", "assessments"})
 
 
+def escape_like(value: str) -> str:
+    """Escape LIKE metacharacters (%, _, \\) so they are treated literally in a LIKE query."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def resolve_id(conn, table: str, id_value: str) -> str | None:
     """Resolve a full or prefix ID from any table. Returns full ID or None.
 
@@ -17,8 +22,7 @@ def resolve_id(conn, table: str, id_value: str) -> str | None:
         raise ValueError(f"Table '{table}' is not allowed. Must be one of: {sorted(_ALLOWED_TABLES)}")
     row = conn.execute(f"SELECT id FROM {table} WHERE id = ?", (id_value,)).fetchone()
     if row is None:
-        escaped = id_value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        row = conn.execute(f"SELECT id FROM {table} WHERE id LIKE ? ESCAPE '\\'", (f"{escaped}%",)).fetchone()
+        row = conn.execute(f"SELECT id FROM {table} WHERE id LIKE ? ESCAPE '\\'", (f"{escape_like(id_value)}%",)).fetchone()
     return row["id"] if row else None
 
 
