@@ -5,8 +5,6 @@ See teslamint/entirecontext#27 for context. Callers to update:
   - cli/search_cmds.py
   - mcp/tools/search.py
   - core/cross_repo.py
-  - cli/import_cmds.py
-  - cli/index_cmds.py
 """
 
 from __future__ import annotations
