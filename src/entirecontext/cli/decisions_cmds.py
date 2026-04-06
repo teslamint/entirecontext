@@ -320,18 +320,10 @@ def decision_unlink(
 def decision_stale_all():
     """Check staleness for all fresh decisions and persist results."""
     from ..core.decisions import check_staleness, list_decisions, update_decision_staleness
-    from ..core.project import find_git_root
+    from .helpers import get_repo_connection
 
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
-    from ..db import check_and_migrate, get_db
-
-    conn = get_db(repo_path)
+    conn, repo_path = get_repo_connection()
     try:
-        check_and_migrate(conn)
         decisions = list_decisions(conn, staleness_status="fresh", limit=1000)
         stale_count = 0
         for d in decisions:

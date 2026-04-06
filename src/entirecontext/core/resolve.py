@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+_ALLOWED_TABLES: frozenset[str] = frozenset({"decisions", "checkpoints", "assessments"})
+
 
 def resolve_id(conn, table: str, id_value: str) -> str | None:
     """Resolve a full or prefix ID from any table. Returns full ID or None.
 
     First tries an exact match, then falls back to a prefix LIKE query.
     LIKE metacharacters (%, _) in the input are escaped so they are treated literally.
+
+    Raises ValueError if ``table`` is not in the allowed set, preventing SQL injection.
     """
+    if table not in _ALLOWED_TABLES:
+        raise ValueError(f"Table '{table}' is not allowed. Must be one of: {sorted(_ALLOWED_TABLES)}")
     row = conn.execute(f"SELECT id FROM {table} WHERE id = ?", (id_value,)).fetchone()
     if row is None:
         escaped = id_value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")

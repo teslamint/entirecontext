@@ -34,7 +34,7 @@ async def ec_decision_related(
     if not conn:
         return runtime.error_payload("Not in an EntireContext-initialized repo")
     try:
-        from ...core.search import rank_related_decisions
+        from ...core.decisions import rank_related_decisions
 
         started_at = time.perf_counter()
         decisions = rank_related_decisions(

@@ -21,3 +21,4 @@ htmlcov/
 coverage.json
 .claude
 .codex/
+*-export.json

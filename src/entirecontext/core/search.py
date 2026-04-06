@@ -16,8 +16,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from .decisions import rank_related_decisions  # noqa: F401  # re-export for backwards compat
-
 
 def _apply_query_redaction(results: list[dict], config: dict[str, Any] | None) -> list[dict]:
     """Apply query-time redaction to search results."""
