@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from ..core.context import RepoContext
-
 try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
@@ -16,10 +14,9 @@ else:
 
 
 def _get_repo_db():
-    context = RepoContext.from_cwd(require_project=True)
-    if not context:
-        return None, None
-    return context.conn, context.repo_path
+    from . import runtime
+
+    return runtime.get_repo_db()
 
 
 def _detect_current_session(conn) -> str | None:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(slots=True)
@@ -11,10 +14,84 @@ class ServiceRegistry:
     name: str = "entirecontext"
 
 
-def get_repo_db():
-    from . import server
+class RepoResolutionError(RuntimeError):
+    """Raised when the MCP runtime cannot resolve a target repo."""
 
-    return server._get_repo_db()
+
+def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite3.Connection, str]:
+    from ..core.context import RepoContext
+
+    context = RepoContext.from_cwd(repo_path, require_project=False)
+    if context is None:
+        raise RepoResolutionError(f"{source_label}={repo_path} does not exist or is not a git repo.")
+    if context.project is None:
+        resolved_path = context.repo_path
+        context.close()
+        raise RepoResolutionError(f"{source_label}={repo_path} points to a repo at {resolved_path} that is not initialized. Run 'ec init'.")
+    return context.conn, context.repo_path
+
+
+def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | None:
+    from ..core.context import RepoContext
+
+    context = RepoContext.from_cwd(require_project=False)
+    if context is None:
+        return None
+    if context.project is None:
+        repo_path = context.repo_path
+        context.close()
+        raise RepoResolutionError(f"Repo found at {repo_path} but not initialized. Run 'ec init'.")
+    return context.conn, context.repo_path
+
+
+def _list_valid_registered_repos() -> list[dict]:
+    from ..core.context import GlobalContext, RepoContext
+
+    global_context = GlobalContext.create()
+    try:
+        repos = global_context.list_registered_repos()
+    finally:
+        global_context.close()
+
+    valid_repos: list[dict] = []
+    for repo in repos:
+        repo_path = repo.get("repo_path")
+        if not repo_path or not Path(repo_path).exists():
+            continue
+        context = RepoContext.from_repo_path(repo_path, require_project=True)
+        if context is None:
+            continue
+        context.close()
+        valid_repos.append(repo)
+    return valid_repos
+
+
+def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
+    from ..core.context import RepoContext
+
+    if repo_hint:
+        return _resolve_explicit_repo(repo_hint, source_label="repo_hint")
+
+    env_repo_path = os.environ.get("ENTIRECONTEXT_REPO_PATH")
+    if env_repo_path:
+        return _resolve_explicit_repo(env_repo_path, source_label="ENTIRECONTEXT_REPO_PATH")
+
+    cwd_context = _resolve_from_cwd()
+    if cwd_context is not None:
+        return cwd_context
+
+    valid_repos = _list_valid_registered_repos()
+    if len(valid_repos) == 1:
+        repo_path = valid_repos[0]["repo_path"]
+        context = RepoContext.from_repo_path(repo_path, require_project=True)
+        if context is None:
+            raise RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+        return context.conn, context.repo_path
+    if len(valid_repos) > 1:
+        names = ", ".join(sorted(repo.get("repo_name") or Path(repo["repo_path"]).name for repo in valid_repos))
+        raise RepoResolutionError(f"Multiple repos registered. Set ENTIRECONTEXT_REPO_PATH to disambiguate: {names}")
+
+    raise RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
 
 
 def detect_current_session(conn):
