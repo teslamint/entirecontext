@@ -38,9 +38,8 @@ def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | None:
     if context is None:
         return None
     if context.project is None:
-        repo_path = context.repo_path
         context.close()
-        raise RepoResolutionError(f"Repo found at {repo_path} but not initialized. Run 'ec init'.")
+        return None
     return context.conn, context.repo_path
 
 
@@ -67,8 +66,6 @@ def _list_valid_registered_repos() -> list[dict]:
 
 
 def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
-    from ..core.context import RepoContext
-
     if repo_hint:
         return _resolve_explicit_repo(repo_hint, source_label="repo_hint")
 
@@ -82,16 +79,25 @@ def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
 
     valid_repos = _list_valid_registered_repos()
     if len(valid_repos) == 1:
+        from ..core.context import RepoContext
+
         repo_path = valid_repos[0]["repo_path"]
         context = RepoContext.from_repo_path(repo_path, require_project=True)
         if context is None:
-            raise RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+            raise RepoResolutionError(f"Repo at {repo_path} became unavailable. Set ENTIRECONTEXT_REPO_PATH.")
         return context.conn, context.repo_path
     if len(valid_repos) > 1:
         names = ", ".join(sorted(repo.get("repo_name") or Path(repo["repo_path"]).name for repo in valid_repos))
         raise RepoResolutionError(f"Multiple repos registered. Set ENTIRECONTEXT_REPO_PATH to disambiguate: {names}")
 
     raise RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+
+
+def resolve_repo():
+    try:
+        return get_repo_db(), None
+    except RepoResolutionError as exc:
+        return (None, None), error_payload(str(exc))
 
 
 def detect_current_session(conn):

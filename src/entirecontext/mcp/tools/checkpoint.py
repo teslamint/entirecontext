@@ -7,13 +7,6 @@ import json
 from .. import runtime
 
 
-def _resolve_repo():
-    try:
-        return runtime.get_repo_db(), None
-    except runtime.RepoResolutionError as exc:
-        return (None, None), runtime.error_payload(str(exc))
-
-
 async def ec_checkpoint_list(
     session_id: str | None = None,
     limit: int = 20,
@@ -52,7 +45,7 @@ async def ec_checkpoint_list(
             }
         )
 
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
 
@@ -123,7 +116,7 @@ async def ec_rewind(checkpoint_id: str, repos: list[str] | None = None) -> str:
             }
         )
 
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
 

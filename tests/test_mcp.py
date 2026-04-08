@@ -374,11 +374,18 @@ class TestMCPRepoResolver:
 
         monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
         context = FakeRepoContext(db, "/tmp/test")
-        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(lambda cls, cwd=".", require_project=False: context))
+        cwd_calls = []
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            cwd_calls.append(cwd)
+            return context
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
 
         conn, repo_path = runtime.get_repo_db()
         assert conn is db
         assert repo_path == "/tmp/test"
+        assert cwd_calls == ["."]
 
     def test_resolver_cwd_mismatch_with_env_override(self, db, monkeypatch):
         from entirecontext.core.context import RepoContext
@@ -447,14 +454,21 @@ class TestMCPRepoResolver:
                 )
             ),
         )
-        monkeypatch.setattr(
-            RepoContext,
-            "from_repo_path",
-            classmethod(lambda cls, repo_path_arg, require_project=False: FakeRepoContext(get_memory_db(), str(repo_path_arg))),
-        )
+        fake_dbs = []
 
-        with pytest.raises(runtime.RepoResolutionError, match="Set ENTIRECONTEXT_REPO_PATH"):
-            runtime.get_repo_db()
+        def make_fake_context(cls, repo_path_arg, require_project=False):
+            db = get_memory_db()
+            fake_dbs.append(db)
+            return FakeRepoContext(db, str(repo_path_arg))
+
+        monkeypatch.setattr(RepoContext, "from_repo_path", classmethod(make_fake_context))
+
+        try:
+            with pytest.raises(runtime.RepoResolutionError, match="Set ENTIRECONTEXT_REPO_PATH"):
+                runtime.get_repo_db()
+        finally:
+            for db in fake_dbs:
+                db.close()
 
     def test_resolver_ignores_deleted_repo_entries(self, db, monkeypatch, tmp_path):
         from entirecontext.core.context import GlobalContext, RepoContext
@@ -518,9 +532,12 @@ class TestMCPRepoResolver:
 
         monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
 
-        result = json.loads(asyncio.run(ec_search("auth")))
-        assert result["count"] >= 1
-        assert any("auth" in item["summary"].lower() for item in result["results"])
+        try:
+            result = json.loads(asyncio.run(ec_search("auth")))
+            assert result["count"] >= 1
+            assert any("auth" in item["summary"].lower() for item in result["results"])
+        finally:
+            db.close()
 
 
 class TestMCPAssessAndFeedback:

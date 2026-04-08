@@ -8,15 +8,8 @@ import time
 from .. import runtime
 
 
-def _resolve_repo():
-    try:
-        return runtime.get_repo_db(), None
-    except runtime.RepoResolutionError as exc:
-        return (None, None), runtime.error_payload(str(exc))
-
-
 async def ec_decision_get(decision_id: str) -> str:
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -37,7 +30,7 @@ async def ec_decision_related(
     limit: int = 10,
     retrieval_event_id: str | None = None,
 ) -> str:
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -94,7 +87,7 @@ async def ec_decision_outcome(
     enabling quality tracking. Falls back to the current session context when
     session_id and turn_id are not explicitly provided.
     """
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -140,7 +133,7 @@ async def ec_decision_create(
         rejected_alternatives: List of alternatives that were considered and rejected
         supporting_evidence: Evidence supporting the decision
     """
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -173,7 +166,7 @@ async def ec_decision_list(
         file_path: Filter by linked file path
         limit: Maximum results (default 20)
     """
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -196,7 +189,7 @@ async def ec_decision_stale(decision_id: str) -> str:
     Args:
         decision_id: Decision ID (supports prefix)
     """
-    (conn, repo_path), error = _resolve_repo()
+    (conn, repo_path), error = runtime.resolve_repo()
     if error:
         return error
     try:

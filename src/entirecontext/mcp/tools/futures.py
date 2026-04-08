@@ -7,15 +7,8 @@ import json
 from .. import runtime
 
 
-def _resolve_repo():
-    try:
-        return runtime.get_repo_db(), None
-    except runtime.RepoResolutionError as exc:
-        return (None, None), runtime.error_payload(str(exc))
-
-
 async def ec_assess(assessment_id: str | None = None, retrieval_event_id: str | None = None) -> str:
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -56,7 +49,7 @@ async def ec_assess_create(
     backend: str | None = None,
     model: str | None = None,
 ) -> str:
-    (conn, repo_path), error = _resolve_repo()
+    (conn, repo_path), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -137,7 +130,7 @@ async def ec_assess_create(
 
 
 async def ec_feedback(assessment_id: str, feedback: str, reason: str | None = None) -> str:
-    (conn, repo_path), error = _resolve_repo()
+    (conn, repo_path), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -160,7 +153,7 @@ async def ec_feedback(assessment_id: str, feedback: str, reason: str | None = No
 
 
 async def ec_lessons(limit: int = 50) -> str:
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
     try:

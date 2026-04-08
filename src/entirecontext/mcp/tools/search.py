@@ -8,13 +8,6 @@ import time
 from .. import runtime
 
 
-def _resolve_repo():
-    try:
-        return runtime.get_repo_db(), None
-    except runtime.RepoResolutionError as exc:
-        return (None, None), runtime.error_payload(str(exc))
-
-
 async def ec_search(
     query: str,
     search_type: str = "regex",
@@ -43,7 +36,7 @@ async def ec_search(
         )
         retrieval_event_id = None
     else:
-        (conn, repo_path), error = _resolve_repo()
+        (conn, repo_path), error = runtime.resolve_repo()
         if error:
             return error
 
@@ -174,7 +167,7 @@ async def ec_related(
         ]
         return json.dumps({"related": related, "count": len(related), "warnings": warnings})
 
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
 
@@ -229,7 +222,7 @@ async def ec_ast_search(
     file_filter: str | None = None,
     limit: int = 20,
 ) -> str:
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
 
@@ -252,7 +245,7 @@ async def ec_activate(
     if not seed_turn_id and not seed_session_id:
         return runtime.error_payload("Either seed_turn_id or seed_session_id is required")
 
-    (conn, _), error = _resolve_repo()
+    (conn, _), error = runtime.resolve_repo()
     if error:
         return error
 
