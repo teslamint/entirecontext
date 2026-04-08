@@ -21,6 +21,7 @@ class RepoResolutionError(RuntimeError):
 def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite3.Connection, str]:
     from ..core.context import RepoContext
 
+    # from_cwd accepts an explicit path argument; here it opens a repo at the given path, not necessarily the process cwd
     context = RepoContext.from_cwd(repo_path, require_project=False)
     if context is None:
         raise RepoResolutionError(f"{source_label}={repo_path} does not exist or is not a git repo.")

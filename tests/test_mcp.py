@@ -539,6 +539,33 @@ class TestMCPRepoResolver:
         finally:
             db.close()
 
+    def test_resolve_repo_success(self, db, monkeypatch):
+        from entirecontext.mcp import runtime
+
+        monkeypatch.setattr(runtime, "get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
+
+        (conn, path), error = runtime.resolve_repo()
+        assert conn is db
+        assert path == "/tmp/test"
+        assert error is None
+
+    def test_resolve_repo_failure(self, monkeypatch):
+        from entirecontext.mcp import runtime
+
+        monkeypatch.setattr(
+            runtime,
+            "get_repo_db",
+            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found.")),
+        )
+
+        (conn, path), error = runtime.resolve_repo()
+        assert conn is None
+        assert path is None
+        assert error is not None
+        parsed = json.loads(error)
+        assert "error" in parsed
+        assert "No repo found." in parsed["error"]
+
 
 class TestMCPAssessAndFeedback:
     """Tests for ec_assess_create and ec_feedback MCP tools."""
