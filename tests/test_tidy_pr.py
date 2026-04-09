@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
@@ -14,6 +17,15 @@ from entirecontext.core.tidy_pr import (
 )
 
 runner = CliRunner()
+
+
+def _load_assess_pr_module():
+    module_path = Path(__file__).resolve().parents[1] / ".github" / "tidy-pilot" / "assess_pr.py"
+    spec = importlib.util.spec_from_file_location("tidy_pilot_assess_pr", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 # ---------------------------------------------------------------------------
@@ -274,3 +286,61 @@ class TestFuturesTidyPrCLI:
         ):
             runner.invoke(app, ["futures", "tidy-pr", "--limit", "5"])
         assert mock_gen.call_args.kwargs.get("limit") == 5
+
+
+class _FakeResponse:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status = status
+
+    def read(self):
+        if isinstance(self._payload, bytes):
+            return self._payload
+        return self._payload.encode("utf-8")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class TestTidyPilotStickyComment:
+    def test_posts_comment_when_no_existing_sticky_comment(self, monkeypatch):
+        module = _load_assess_pr_module()
+        calls = []
+
+        def fake_urlopen(req):
+            calls.append(req)
+            if req.get_method() == "GET":
+                return _FakeResponse("[]")
+            return _FakeResponse("{}", status=201)
+
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+        with patch.object(module, "urlopen", side_effect=fake_urlopen):
+            module.comment_on_pr("owner/repo", 12, f"{module.COMMENT_MARKER}\nbody")
+
+        assert len(calls) == 2
+        assert calls[0].get_method() == "GET"
+        assert calls[1].get_method() == "POST"
+        assert calls[1].full_url == "https://api.github.com/repos/owner/repo/issues/12/comments"
+
+    def test_updates_existing_sticky_comment(self, monkeypatch):
+        module = _load_assess_pr_module()
+        calls = []
+
+        def fake_urlopen(req):
+            calls.append(req)
+            if req.get_method() == "GET":
+                body = json.dumps([{"id": 77, "body": f"old\n{module.COMMENT_MARKER}"}])
+                return _FakeResponse(body)
+            return _FakeResponse("{}", status=200)
+
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+        with patch.object(module, "urlopen", side_effect=fake_urlopen):
+            module.comment_on_pr("owner/repo", 12, f"{module.COMMENT_MARKER}\nbody")
+
+        assert len(calls) == 2
+        assert calls[0].get_method() == "GET"
+        assert calls[1].get_method() == "PATCH"
+        assert calls[1].full_url == "https://api.github.com/repos/owner/repo/issues/comments/77"

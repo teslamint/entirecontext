@@ -22,6 +22,8 @@ Respond with a JSON object (no markdown fences) with these fields:
 - roadmap_alignment: how this change aligns with the roadmap
 - tidy_suggestion: actionable suggestion (what to tidy, what to keep, what to reconsider)"""
 
+COMMENT_MARKER = "<!-- tidy-pilot:sticky-comment -->"
+
 
 def call_llm(system: str, user: str) -> dict:
     backend = os.environ.get("TIDY_PILOT_BACKEND", "github")
@@ -65,18 +67,47 @@ def call_llm(system: str, user: str) -> dict:
     return json.loads(content)
 
 
-def comment_on_pr(repo: str, pr_number: int, body: str) -> None:
-    token = os.environ["GITHUB_TOKEN"]
-    payload = json.dumps({"body": body}).encode()
+def github_api_request(url: str, token: str, *, method: str = "GET", payload: dict | None = None):
+    data = None if payload is None else json.dumps(payload).encode()
     req = Request(
-        f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments",
-        data=payload,
+        url,
+        data=data,
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
         },
+        method=method,
     )
-    with urlopen(req) as resp:
+    return urlopen(req)
+
+
+def find_existing_comment_id(repo: str, pr_number: int, token: str) -> int | None:
+    page = 1
+    while True:
+        with github_api_request(
+            f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments?per_page=100&page={page}",
+            token,
+        ) as resp:
+            comments = json.loads(resp.read())
+        if not comments:
+            return None
+        for comment in comments:
+            if COMMENT_MARKER in comment.get("body", ""):
+                return comment["id"]
+        page += 1
+
+
+def comment_on_pr(repo: str, pr_number: int, body: str) -> None:
+    token = os.environ["GITHUB_TOKEN"]
+    comment_id = find_existing_comment_id(repo, pr_number, token)
+    payload = {"body": body}
+    if comment_id is None:
+        url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
+        method = "POST"
+    else:
+        url = f"https://api.github.com/repos/{repo}/issues/comments/{comment_id}"
+        method = "PATCH"
+    with github_api_request(url, token, method=method, payload=payload) as resp:
         if resp.status >= 300:
             print(f"GitHub API error: {resp.status}", file=sys.stderr)
             sys.exit(1)
@@ -125,7 +156,8 @@ def main():
         return
 
     # Build comment
-    comment = f"""## \U0001f9f9 Tidy Pilot — Futures Assessment
+    comment = f"""{COMMENT_MARKER}
+## \U0001f9f9 Tidy Pilot — Futures Assessment
 
 **{icon} {verdict.upper()}**
 
