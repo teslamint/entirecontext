@@ -368,6 +368,49 @@ class FakeGlobalContext:
 
 
 class TestMCPRepoResolver:
+    def test_resolver_explicit_repo_hint(self, db, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        hint_path = "/tmp/hint-repo"
+        monkeypatch.setenv("ENTIRECONTEXT_REPO_PATH", "/tmp/env-repo-should-be-ignored")
+        context = FakeRepoContext(db, hint_path)
+        cwd_calls = []
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            cwd_calls.append(cwd)
+            return context
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        conn, repo_path = runtime.get_repo_db(repo_hint=hint_path)
+        assert conn is db
+        assert repo_path == hint_path
+        assert cwd_calls == [hint_path]
+
+    def test_resolver_repo_hint_nonexistent(self, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(lambda cls, cwd=".", require_project=False: None))
+
+        with pytest.raises(runtime.RepoResolutionError, match="does not exist or is not a git repo"):
+            runtime.get_repo_db(repo_hint="/tmp/nonexistent")
+
+    def test_resolver_repo_hint_uninitialized(self, db, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        hint_path = "/tmp/uninit-repo"
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            return FakeRepoContext(db, hint_path, initialized=False)
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        with pytest.raises(runtime.RepoResolutionError, match="not initialized"):
+            runtime.get_repo_db(repo_hint=hint_path)
+
     def test_resolver_cwd_match(self, db, monkeypatch):
         from entirecontext.core.context import RepoContext
         from entirecontext.mcp import runtime
