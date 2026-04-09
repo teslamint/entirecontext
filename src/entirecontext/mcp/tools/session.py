@@ -46,9 +46,9 @@ async def ec_session_context(
             }
         )
 
-    conn, repo_path = runtime.get_repo_db()
-    if not conn:
-        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    (conn, repo_path), error = runtime.resolve_repo()
+    if error:
+        return error
 
     try:
         if not session_id:
@@ -132,9 +132,9 @@ async def ec_attribution(
         ]
         return json.dumps({"file_path": file_path, "attributions": attributions, "warnings": warnings})
 
-    conn, _ = runtime.get_repo_db()
-    if not conn:
-        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    (conn, _), error = runtime.resolve_repo()
+    if error:
+        return error
 
     try:
         query = "SELECT * FROM attributions WHERE file_path = ?"
@@ -198,9 +198,9 @@ async def ec_turn_content(
             }
         )
 
-    conn, repo_path = runtime.get_repo_db()
-    if not conn:
-        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    (conn, repo_path), error = runtime.resolve_repo()
+    if error:
+        return error
 
     try:
         from ...core.turn import get_turn
@@ -254,9 +254,9 @@ async def ec_context_apply(
     session_id: str | None = None,
     turn_id: str | None = None,
 ) -> str:
-    conn, _ = runtime.get_repo_db()
-    if not conn:
-        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    (conn, _), error = runtime.resolve_repo()
+    if error:
+        return error
 
     try:
         from ...core.telemetry import detect_current_context, record_context_application

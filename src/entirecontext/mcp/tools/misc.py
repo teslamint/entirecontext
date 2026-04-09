@@ -8,9 +8,9 @@ from .. import runtime
 
 
 async def ec_graph(session_id: str | None = None, since: str | None = None, limit: int = 200) -> str:
-    conn, _ = runtime.get_repo_db()
-    if not conn:
-        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    (conn, _), error = runtime.resolve_repo()
+    if error:
+        return error
     try:
         from ...core.knowledge_graph import build_knowledge_graph, get_graph_stats
 
@@ -22,9 +22,9 @@ async def ec_graph(session_id: str | None = None, since: str | None = None, limi
 
 
 async def ec_dashboard(since: str | None = None, limit: int = 10) -> str:
-    conn, _ = runtime.get_repo_db()
-    if not conn:
-        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    (conn, _), error = runtime.resolve_repo()
+    if error:
+        return error
     try:
         from ...core.dashboard import get_dashboard_stats
 

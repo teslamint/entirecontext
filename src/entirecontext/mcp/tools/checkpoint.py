@@ -45,9 +45,9 @@ async def ec_checkpoint_list(
             }
         )
 
-    conn, _ = runtime.get_repo_db()
-    if not conn:
-        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    (conn, _), error = runtime.resolve_repo()
+    if error:
+        return error
 
     try:
         query = "SELECT * FROM checkpoints WHERE 1=1"
@@ -116,9 +116,9 @@ async def ec_rewind(checkpoint_id: str, repos: list[str] | None = None) -> str:
             }
         )
 
-    conn, _ = runtime.get_repo_db()
-    if not conn:
-        return runtime.error_payload("Not in an EntireContext-initialized repo")
+    (conn, _), error = runtime.resolve_repo()
+    if error:
+        return error
 
     try:
         checkpoint = conn.execute("SELECT * FROM checkpoints WHERE id = ?", (checkpoint_id,)).fetchone()

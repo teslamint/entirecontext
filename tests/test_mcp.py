@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 
 from entirecontext.db.connection import get_memory_db
 from entirecontext.db.migration import init_schema
+from entirecontext.mcp import runtime
 
 
 @pytest.fixture
@@ -117,8 +119,21 @@ class TestMCPToolIntegration:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_search_regex_hit(self, mock_repo_db):
         from entirecontext.mcp.server import ec_search
@@ -328,11 +343,284 @@ class TestMCPToolIntegration:
 
     def test_no_repo_returns_error(self, monkeypatch):
         from entirecontext.mcp.server import ec_search
+        from entirecontext.mcp.runtime import RepoResolutionError
 
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.get_repo_db",
+            lambda repo_hint=None: (_ for _ in ()).throw(
+                RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+            ),
+        )
         result = json.loads(asyncio.run(ec_search("test")))
         assert "error" in result
-        assert "Not in an EntireContext-initialized repo" in result["error"]
+        assert "set ENTIRECONTEXT_REPO_PATH" in result["error"]
+
+
+class FakeRepoContext:
+    def __init__(self, conn, repo_path: str, *, initialized: bool = True):
+        self.conn = conn
+        self.repo_path = repo_path
+        self.project = {"id": "p1", "name": Path(repo_path).name, "repo_path": repo_path} if initialized else None
+        self.current_session_id = "s1"
+
+    def close(self):
+        return None
+
+
+class FakeGlobalContext:
+    def __init__(self, repos: list[dict]):
+        self._repos = repos
+
+    def list_registered_repos(self, names=None):
+        if names is None:
+            return list(self._repos)
+        return [repo for repo in self._repos if repo["repo_name"] in names]
+
+    def close(self):
+        return None
+
+
+class TestMCPRepoResolver:
+    def test_resolver_explicit_repo_hint(self, db, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        hint_path = "/tmp/hint-repo"
+        monkeypatch.setenv("ENTIRECONTEXT_REPO_PATH", "/tmp/env-repo-should-be-ignored")
+        context = FakeRepoContext(db, hint_path)
+        cwd_calls = []
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            cwd_calls.append(cwd)
+            return context
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        conn, repo_path = runtime.get_repo_db(repo_hint=hint_path)
+        assert conn is db
+        assert repo_path == hint_path
+        assert cwd_calls == [hint_path]
+
+    def test_resolver_repo_hint_nonexistent(self, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(lambda cls, cwd=".", require_project=False: None))
+
+        with pytest.raises(runtime.RepoResolutionError, match="does not exist or is not a git repo"):
+            runtime.get_repo_db(repo_hint="/tmp/nonexistent")
+
+    def test_resolver_repo_hint_uninitialized(self, db, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        hint_path = "/tmp/uninit-repo"
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            return FakeRepoContext(db, hint_path, initialized=False)
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        with pytest.raises(runtime.RepoResolutionError, match="not initialized"):
+            runtime.get_repo_db(repo_hint=hint_path)
+
+    def test_resolver_cwd_match(self, db, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
+        context = FakeRepoContext(db, "/tmp/test")
+        cwd_calls = []
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            cwd_calls.append(cwd)
+            return context
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        conn, repo_path = runtime.get_repo_db()
+        assert conn is db
+        assert repo_path == "/tmp/test"
+        assert cwd_calls == ["."]
+
+    def test_resolver_cwd_mismatch_with_env_override(self, db, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        env_repo = "/tmp/env-repo"
+        monkeypatch.setenv("ENTIRECONTEXT_REPO_PATH", env_repo)
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            if cwd == env_repo:
+                return FakeRepoContext(db, env_repo)
+            return None
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        conn, repo_path = runtime.get_repo_db()
+        assert conn is db
+        assert repo_path == env_repo
+
+    def test_resolver_cwd_mismatch_single_registered_repo(self, db, monkeypatch, tmp_path):
+        from entirecontext.core.context import GlobalContext, RepoContext
+        from entirecontext.mcp import runtime
+
+        repo_path = tmp_path / "only-repo"
+        repo_path.mkdir()
+        monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(lambda cls, cwd=".", require_project=False: None))
+        monkeypatch.setattr(
+            GlobalContext,
+            "create",
+            classmethod(lambda cls: FakeGlobalContext([{"repo_name": "only-repo", "repo_path": str(repo_path)}])),
+        )
+        monkeypatch.setattr(
+            RepoContext,
+            "from_repo_path",
+            classmethod(
+                lambda cls, repo_path_arg, require_project=False: (
+                    FakeRepoContext(db, str(repo_path)) if str(repo_path_arg) == str(repo_path) else None
+                )
+            ),
+        )
+
+        conn, resolved_repo_path = runtime.get_repo_db()
+        assert conn is db
+        assert resolved_repo_path == str(repo_path)
+
+    def test_resolver_cwd_mismatch_multiple_registered_repos(self, monkeypatch, tmp_path):
+        from entirecontext.core.context import GlobalContext, RepoContext
+        from entirecontext.mcp import runtime
+
+        repo_a = tmp_path / "repo-a"
+        repo_b = tmp_path / "repo-b"
+        repo_a.mkdir()
+        repo_b.mkdir()
+        monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(lambda cls, cwd=".", require_project=False: None))
+        monkeypatch.setattr(
+            GlobalContext,
+            "create",
+            classmethod(
+                lambda cls: FakeGlobalContext(
+                    [
+                        {"repo_name": "repo-a", "repo_path": str(repo_a)},
+                        {"repo_name": "repo-b", "repo_path": str(repo_b)},
+                    ]
+                )
+            ),
+        )
+        fake_dbs = []
+
+        def make_fake_context(cls, repo_path_arg, require_project=False):
+            db = get_memory_db()
+            fake_dbs.append(db)
+            return FakeRepoContext(db, str(repo_path_arg))
+
+        monkeypatch.setattr(RepoContext, "from_repo_path", classmethod(make_fake_context))
+
+        try:
+            with pytest.raises(runtime.RepoResolutionError, match="Set ENTIRECONTEXT_REPO_PATH"):
+                runtime.get_repo_db()
+        finally:
+            for db in fake_dbs:
+                db.close()
+
+    def test_resolver_ignores_deleted_repo_entries(self, db, monkeypatch, tmp_path):
+        from entirecontext.core.context import GlobalContext, RepoContext
+        from entirecontext.mcp import runtime
+
+        valid_repo = tmp_path / "valid-repo"
+        deleted_repo = tmp_path / "deleted-repo"
+        valid_repo.mkdir()
+        monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(lambda cls, cwd=".", require_project=False: None))
+        monkeypatch.setattr(
+            GlobalContext,
+            "create",
+            classmethod(
+                lambda cls: FakeGlobalContext(
+                    [
+                        {"repo_name": "deleted-repo", "repo_path": str(deleted_repo)},
+                        {"repo_name": "valid-repo", "repo_path": str(valid_repo)},
+                    ]
+                )
+            ),
+        )
+        monkeypatch.setattr(
+            RepoContext,
+            "from_repo_path",
+            classmethod(
+                lambda cls, repo_path_arg, require_project=False: (
+                    FakeRepoContext(db, str(valid_repo)) if str(repo_path_arg) == str(valid_repo) else None
+                )
+            ),
+        )
+
+        conn, resolved_repo_path = runtime.get_repo_db()
+        assert conn is db
+        assert resolved_repo_path == str(valid_repo)
+
+    def test_ec_search_uses_runtime_resolver(self, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp.server import ec_search
+
+        db = get_memory_db()
+        init_schema(db)
+        db.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', '/tmp/env-repo')")
+        db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at, session_title, session_summary, total_turns) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01', 'Test Session', 'A test session', 1)"
+        )
+        db.execute(
+            "INSERT INTO turns (id, session_id, turn_number, user_message, assistant_summary, content_hash, timestamp) "
+            "VALUES ('t1', 's1', 1, 'fix auth bug', 'Fixed authentication', 'hash1', '2025-01-01')"
+        )
+        db.commit()
+
+        env_repo = "/tmp/env-repo"
+        monkeypatch.setenv("ENTIRECONTEXT_REPO_PATH", env_repo)
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            if cwd == env_repo:
+                return FakeRepoContext(db, env_repo)
+            return None
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        try:
+            result = json.loads(asyncio.run(ec_search("auth")))
+            assert result["count"] >= 1
+            assert any("auth" in item["summary"].lower() for item in result["results"])
+        finally:
+            db.close()
+
+    def test_resolve_repo_success(self, db, monkeypatch):
+        from entirecontext.mcp import runtime
+
+        monkeypatch.setattr(runtime, "get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
+
+        (conn, path), error = runtime.resolve_repo()
+        assert conn is db
+        assert path == "/tmp/test"
+        assert error is None
+
+    def test_resolve_repo_failure(self, monkeypatch):
+        from entirecontext.mcp import runtime
+
+        monkeypatch.setattr(
+            runtime,
+            "get_repo_db",
+            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found.")),
+        )
+
+        (conn, path), error = runtime.resolve_repo()
+        assert conn is None
+        assert path is None
+        assert error is not None
+        parsed = json.loads(error)
+        assert "error" in parsed
+        assert "No repo found." in parsed["error"]
 
 
 class TestMCPAssessAndFeedback:
@@ -344,8 +632,21 @@ class TestMCPAssessAndFeedback:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_ec_assess_create_direct(self, mock_repo_db):
         from entirecontext.mcp.server import ec_assess_create
@@ -426,7 +727,7 @@ class TestMCPAssessAndFeedback:
         from entirecontext.core.futures import create_assessment
         from entirecontext.mcp.server import ec_feedback
 
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (mock_repo_db, str(tmp_path)))
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (mock_repo_db, str(tmp_path)))
 
         distill_calls = []
 
@@ -478,7 +779,7 @@ class TestMCPAssessAndFeedback:
 
         roadmap_file = tmp_path / "ROADMAP.md"
         roadmap_file.write_text("# Roadmap\n- Phase 1: Auth\n- Phase 2: API", encoding="utf-8")
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (mock_repo_db, str(tmp_path)))
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (mock_repo_db, str(tmp_path)))
 
         fake_backend = MagicMock()
         fake_backend.complete.return_value = json.dumps(
@@ -536,8 +837,21 @@ class TestMCPHybridSearch:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_search_hybrid_hit(self, mock_repo_db):
         from entirecontext.mcp.server import ec_search
@@ -563,7 +877,7 @@ class TestMCPAstSearch:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
         db.execute(
             "INSERT INTO ast_symbols (id, file_path, symbol_type, name, qualified_name, start_line, end_line, docstring) "
             "VALUES ('sym1', 'src/auth.py', 'function', 'authenticate', 'auth.authenticate', 1, 10, 'Authenticate user')"
@@ -610,7 +924,10 @@ class TestMCPAstSearch:
         pytest.importorskip("mcp")
         from entirecontext.mcp.server import ec_ast_search
 
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.get_repo_db",
+            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")),
+        )
         result = json.loads(asyncio.run(ec_ast_search("test")))
         assert "error" in result
 
@@ -624,7 +941,7 @@ class TestMCPGraph:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
         db.execute(
             "UPDATE turns SET files_touched = ?, git_commit_hash = ? WHERE id = 't1'",
             (json.dumps(["src/auth.py"]), "abc123"),
@@ -656,7 +973,10 @@ class TestMCPGraph:
         pytest.importorskip("mcp")
         from entirecontext.mcp.server import ec_graph
 
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.get_repo_db",
+            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")),
+        )
         result = json.loads(asyncio.run(ec_graph()))
         assert "error" in result
 
@@ -670,8 +990,21 @@ class TestMCPDashboard:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_dashboard_basic(self, mock_repo_db):
         from entirecontext.mcp.server import ec_dashboard
@@ -692,7 +1025,10 @@ class TestMCPDashboard:
         pytest.importorskip("mcp")
         from entirecontext.mcp.server import ec_dashboard
 
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.get_repo_db",
+            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")),
+        )
         result = json.loads(asyncio.run(ec_dashboard()))
         assert "error" in result
 
@@ -724,8 +1060,21 @@ class TestMCPDecisionTools:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_decision_get_includes_quality_summary(self, mock_repo_db):
         from entirecontext.core.decisions import create_decision, record_decision_outcome
@@ -829,7 +1178,7 @@ class TestMCPActivate:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
         db.execute(
             "UPDATE turns SET files_touched = ? WHERE id = 't1'",
             (json.dumps(["src/auth.py"]),),
@@ -858,7 +1207,10 @@ class TestMCPActivate:
         pytest.importorskip("mcp")
         from entirecontext.mcp.server import ec_activate
 
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (None, None))
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.get_repo_db",
+            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")),
+        )
         result = json.loads(asyncio.run(ec_activate(seed_turn_id="t1")))
         assert "error" in result
 
@@ -874,7 +1226,7 @@ class TestMcpQueryRedaction:
             "UPDATE turns SET user_message = 'fix password=secret123', assistant_summary = 'Fixed token=abc123' WHERE id = 't1'"
         )
         db.commit()
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
         redaction_config = {
             "filtering": {
                 "query_redaction": {
