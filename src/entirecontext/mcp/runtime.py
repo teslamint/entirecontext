@@ -66,6 +66,22 @@ def _list_valid_registered_repos() -> list[dict]:
     return valid_repos
 
 
+def _open_single_registered_repo(valid_repos: list[dict]) -> tuple[sqlite3.Connection, str]:
+    """Open the sole registered repo, raising on ambiguity or absence."""
+    from ..core.context import RepoContext
+
+    if len(valid_repos) == 1:
+        repo_path = valid_repos[0]["repo_path"]
+        context = RepoContext.from_repo_path(repo_path, require_project=True)
+        if context is None:
+            raise RepoResolutionError(f"Repo at {repo_path} became unavailable. Set ENTIRECONTEXT_REPO_PATH.")
+        return context.conn, context.repo_path
+    if len(valid_repos) > 1:
+        names = ", ".join(sorted(repo.get("repo_name") or Path(repo["repo_path"]).name for repo in valid_repos))
+        raise RepoResolutionError(f"Multiple repos registered. Set ENTIRECONTEXT_REPO_PATH to disambiguate: {names}")
+    raise RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+
+
 def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
     if repo_hint:
         return _resolve_explicit_repo(repo_hint, source_label="repo_hint")
@@ -79,19 +95,7 @@ def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
         return cwd_context
 
     valid_repos = _list_valid_registered_repos()
-    if len(valid_repos) == 1:
-        from ..core.context import RepoContext
-
-        repo_path = valid_repos[0]["repo_path"]
-        context = RepoContext.from_repo_path(repo_path, require_project=True)
-        if context is None:
-            raise RepoResolutionError(f"Repo at {repo_path} became unavailable. Set ENTIRECONTEXT_REPO_PATH.")
-        return context.conn, context.repo_path
-    if len(valid_repos) > 1:
-        names = ", ".join(sorted(repo.get("repo_name") or Path(repo["repo_path"]).name for repo in valid_repos))
-        raise RepoResolutionError(f"Multiple repos registered. Set ENTIRECONTEXT_REPO_PATH to disambiguate: {names}")
-
-    raise RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+    return _open_single_registered_repo(valid_repos)
 
 
 def resolve_repo():

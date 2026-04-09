@@ -119,8 +119,21 @@ class TestMCPToolIntegration:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_search_regex_hit(self, mock_repo_db):
         from entirecontext.mcp.server import ec_search
@@ -619,8 +632,21 @@ class TestMCPAssessAndFeedback:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_ec_assess_create_direct(self, mock_repo_db):
         from entirecontext.mcp.server import ec_assess_create
@@ -811,8 +837,21 @@ class TestMCPHybridSearch:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_search_hybrid_hit(self, mock_repo_db):
         from entirecontext.mcp.server import ec_search
@@ -951,8 +990,21 @@ class TestMCPDashboard:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_dashboard_basic(self, mock_repo_db):
         from entirecontext.mcp.server import ec_dashboard
@@ -1008,8 +1060,21 @@ class TestMCPDecisionTools:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
-        return db
+        class _NoCloseConn:
+            """Proxy that prevents tool finally-blocks from closing the shared fixture connection."""
+
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
 
     def test_decision_get_includes_quality_summary(self, mock_repo_db):
         from entirecontext.core.decisions import create_decision, record_decision_outcome
