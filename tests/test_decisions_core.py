@@ -26,7 +26,7 @@ from entirecontext.core.decisions import (
 )
 from entirecontext.core.futures import create_assessment, list_assessments
 from entirecontext.core.project import get_project
-from entirecontext.core.search import rank_related_decisions
+from entirecontext.core.decisions import rank_related_decisions
 from entirecontext.core.session import create_session
 from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
 from entirecontext.core.turn import create_turn

@@ -273,7 +273,7 @@ class TestBuildKnowledgeGraphFilters:
         from entirecontext.core.turn import create_turn
 
         project = get_project(str(ec_repo))
-        s = create_session(ec_db, session_id="sess-since-test", project_id=project["id"])
+        create_session(ec_db, session_id="sess-since-test", project_id=project["id"])
 
         # Create a turn and then manually set its timestamp to a known old date
         t_old = create_turn(

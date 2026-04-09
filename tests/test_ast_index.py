@@ -299,7 +299,7 @@ class TestIndexFileAst:
         from entirecontext.core.turn import create_turn
 
         project = get_project(str(ec_repo))
-        s = create_session(ec_db, project["id"], session_id="ast-sess-1")
+        create_session(ec_db, project["id"], session_id="ast-sess-1")
         t = create_turn(ec_db, "ast-sess-1", 1, user_message="add auth")
 
         index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE, turn_id=t["id"])
