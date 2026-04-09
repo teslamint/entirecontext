@@ -144,7 +144,7 @@ def get_dashboard_stats(
     ).fetchall()
 
     anchored_assessment_count = conn.execute(
-        f"SELECT COUNT(*) AS total FROM assessments WHERE checkpoint_id IS NOT NULL"
+        "SELECT COUNT(*) AS total FROM assessments WHERE checkpoint_id IS NOT NULL"
         + (" AND created_at >= ?" if since is not None else ""),
         since_params,
     ).fetchone()["total"] or 0
