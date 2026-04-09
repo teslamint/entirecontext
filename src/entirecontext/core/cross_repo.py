@@ -98,12 +98,12 @@ class RepoExecutor:
         warnings: list[WarningEntry] = []
 
         for repo in repo_list:
+            conn = None
             try:
                 conn = sqlite3.connect(repo["db_path"])
                 _configure_connection(conn)
                 check_and_migrate(conn)
                 results = fn(conn, repo)
-                conn.close()
 
                 for result in results:
                     result["repo_name"] = repo["repo_name"]
@@ -112,6 +112,9 @@ class RepoExecutor:
             except Exception as exc:
                 warnings.append(self.policy.warning(repo, "query", exc))
                 logger.debug("Skipping repo %s", repo.get("repo_path"), exc_info=True)
+            finally:
+                if conn is not None:
+                    conn.close()
 
         return self.policy.sort_and_limit(all_results, sort_key=sort_key, limit=limit), warnings
 
@@ -129,12 +132,12 @@ class RepoExecutor:
         warnings: list[WarningEntry] = []
 
         for repo in repo_list:
+            conn = None
             try:
                 conn = sqlite3.connect(repo["db_path"])
                 _configure_connection(conn)
                 check_and_migrate(conn)
                 result = fn(conn, repo)
-                conn.close()
                 if result:
                     result["repo_name"] = repo["repo_name"]
                     result["repo_path"] = repo["repo_path"]
@@ -142,6 +145,9 @@ class RepoExecutor:
             except Exception as exc:
                 warnings.append(self.policy.warning(repo, "query", exc))
                 logger.debug("Skipping repo %s", repo.get("repo_path"), exc_info=True)
+            finally:
+                if conn is not None:
+                    conn.close()
 
         return None, warnings
 

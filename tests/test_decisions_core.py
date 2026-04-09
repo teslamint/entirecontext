@@ -26,7 +26,7 @@ from entirecontext.core.decisions import (
 )
 from entirecontext.core.futures import create_assessment, list_assessments
 from entirecontext.core.project import get_project
-from entirecontext.core.search import rank_related_decisions
+from entirecontext.core.decisions import rank_related_decisions
 from entirecontext.core.session import create_session
 from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
 from entirecontext.core.turn import create_turn
@@ -469,26 +469,89 @@ class TestFTSDecisions:
     def test_fts_search_by_title(self, ec_db):
         create_decision(ec_db, title="Adopt microservices architecture")
         create_decision(ec_db, title="Use monolith pattern")
-        rows = ec_db.execute(
-            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("microservices",)
-        ).fetchall()
+        rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("microservices",)).fetchall()
         assert len(rows) == 1
 
     def test_fts_search_by_rationale(self, ec_db):
         create_decision(ec_db, title="DB choice", rationale="PostgreSQL offers better JSON support")
-        rows = ec_db.execute(
-            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("PostgreSQL",)
-        ).fetchall()
+        rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("PostgreSQL",)).fetchall()
         assert len(rows) == 1
 
     def test_fts_updated_after_update_decision(self, ec_db):
         d = create_decision(ec_db, title="Old searchable title")
         update_decision(ec_db, d["id"], title="New searchable title")
-        old_rows = ec_db.execute(
-            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("Old",)
-        ).fetchall()
-        new_rows = ec_db.execute(
-            "SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("New",)
-        ).fetchall()
+        old_rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("Old",)).fetchall()
+        new_rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("New",)).fetchall()
         assert len(old_rows) == 0
         assert len(new_rows) == 1
+
+
+class TestDecisionsCoreExtended:
+    def test_update_decision_scope_and_evidence(self, ec_db):
+        d = create_decision(ec_db, title="Original", scope="old-scope")
+        updated = update_decision(
+            ec_db,
+            d["id"],
+            scope="new-scope",
+            rejected_alternatives=["option-a", "option-b"],
+            supporting_evidence=[{"kind": "benchmark", "url": "https://example.com"}],
+        )
+        assert updated["scope"] == "new-scope"
+        assert updated["rejected_alternatives"] == ["option-a", "option-b"]
+        assert updated["supporting_evidence"] == [{"kind": "benchmark", "url": "https://example.com"}]
+
+    def test_supersede_new_decision_not_found(self, ec_db):
+        old = create_decision(ec_db, title="Existing")
+        with pytest.raises(ValueError, match="not found"):
+            supersede_decision(ec_db, old["id"], "nonexistent-new-id")
+
+    def test_unlink_from_file_decision_not_found(self, ec_db):
+        assert unlink_decision_from_file(ec_db, "nonexistent-decision-id", "src/a.py") is False
+
+    def test_unlink_from_commit_decision_not_found(self, ec_db):
+        assert unlink_decision_from_commit(ec_db, "nonexistent-decision-id", "abc123") is False
+
+    def test_unlink_from_assessment_decision_not_found(self, ec_db):
+        assert unlink_decision_from_assessment(ec_db, "nonexistent-decision-id", "nonexistent-assessment-id") is False
+
+    def test_unlink_from_checkpoint_decision_not_found(self, ec_db):
+        assert unlink_decision_from_checkpoint(ec_db, "nonexistent-decision-id", "nonexistent-checkpoint-id") is False
+
+    def test_rank_decisions_diff_text_title_scoring(self, ec_db):
+        matching = create_decision(ec_db, title="Adopt queue retries")
+        other = create_decision(ec_db, title="Use monolith pattern")
+        link_decision_to_file(ec_db, matching["id"], "src/retry.py")
+        link_decision_to_file(ec_db, other["id"], "src/retry.py")
+
+        ranked = rank_related_decisions(
+            ec_db,
+            file_paths=["src/retry.py"],
+            diff_text="this change is about adopt queue retries in the service layer",
+        )
+
+        ids = [item["id"] for item in ranked]
+        assert matching["id"] in ids
+        assert other["id"] in ids
+        matching_item = next(item for item in ranked if item["id"] == matching["id"])
+        other_item = next(item for item in ranked if item["id"] == other["id"])
+        assert matching_item["base_score"] > other_item["base_score"]
+
+    def test_rank_decisions_diff_text_rationale_scoring(self, ec_db):
+        matching = create_decision(
+            ec_db,
+            title="Unique unrelated title xyz",
+            rationale="prevents retry storms in production environment",
+        )
+        other = create_decision(ec_db, title="Another unrelated title abc", rationale="improves code readability")
+        link_decision_to_file(ec_db, matching["id"], "src/service.py")
+        link_decision_to_file(ec_db, other["id"], "src/service.py")
+
+        ranked = rank_related_decisions(
+            ec_db,
+            file_paths=["src/service.py"],
+            diff_text="this diff prevents retry storms in production environment and adds resilience",
+        )
+
+        matching_item = next(item for item in ranked if item["id"] == matching["id"])
+        other_item = next(item for item in ranked if item["id"] == other["id"])
+        assert matching_item["base_score"] > other_item["base_score"]

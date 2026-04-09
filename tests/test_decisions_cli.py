@@ -321,3 +321,243 @@ class TestDecisionsCLI:
         assert result.exit_code == 1
         assert isinstance(result.exception, RuntimeError)
         assert conn.closed is True
+
+
+class TestDecisionsCLIExtended:
+    def test_decision_update_success(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Old title", rationale="Old rationale")
+        conn.close()
+
+        result = runner.invoke(
+            app, ["decision", "update", decision["id"][:12], "--title", "New Title", "--rationale", "New Rationale"]
+        )
+        assert result.exit_code == 0
+        assert "Updated decision:" in result.stdout
+        assert "New Title" in result.stdout
+
+    def test_decision_supersede_success(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        old = create_decision(conn, title="Old approach")
+        new = create_decision(conn, title="New approach")
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "supersede", old["id"][:12], new["id"][:12]])
+        assert result.exit_code == 0
+        assert "superseded" in result.stdout.lower()
+
+    def test_decision_unlink_file_success(self, ec_repo, monkeypatch):
+        from entirecontext.core.decisions import link_decision_to_file
+
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Unlink test")
+        link_decision_to_file(conn, decision["id"], "src/foo.py")
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "unlink", decision["id"][:12], "--file", "src/foo.py"])
+        assert result.exit_code == 0
+        assert "Link removed" in result.stdout
+
+    def test_decision_unlink_assessment_success(self, ec_repo, monkeypatch):
+        from entirecontext.core.decisions import link_decision_to_assessment
+
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Unlink assessment test")
+        assessment = create_assessment(conn, verdict="expand", impact_summary="test")
+        link_decision_to_assessment(conn, decision["id"], assessment["id"])
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "unlink", decision["id"][:12], "--assessment", assessment["id"][:12]])
+        assert result.exit_code == 0
+        assert "Link removed" in result.stdout
+
+    def test_decision_unlink_checkpoint_success(self, ec_repo, monkeypatch):
+        from entirecontext.core.decisions import link_decision_to_checkpoint
+
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Unlink checkpoint test")
+        project = get_project(str(ec_repo))
+        session = create_session(conn, project["id"], session_id="unlink-ckpt-session")
+        checkpoint = create_checkpoint(conn, session["id"], git_commit_hash="abc123", git_branch="main")
+        link_decision_to_checkpoint(conn, decision["id"], checkpoint["id"])
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "unlink", decision["id"][:12], "--checkpoint", checkpoint["id"][:12]])
+        assert result.exit_code == 0
+        assert "Link removed" in result.stdout
+
+    def test_decision_unlink_commit_success(self, ec_repo, monkeypatch):
+        from entirecontext.core.decisions import link_decision_to_commit
+
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Unlink commit test")
+        link_decision_to_commit(conn, decision["id"], "deadbeef")
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "unlink", decision["id"][:12], "--commit", "deadbeef"])
+        assert result.exit_code == 0
+        assert "Link removed" in result.stdout
+
+    def test_decision_unlink_no_args_error(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Unlink error test")
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "unlink", decision["id"][:12]])
+        assert result.exit_code == 1
+        assert "Exactly one" in result.stdout
+
+    def test_decision_stale_all_no_stale(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        create_decision(conn, title="Fresh decision")
+        conn.close()
+
+        monkeypatch.setattr(
+            "entirecontext.core.decisions.check_staleness",
+            lambda conn, did, rp: {"stale": False, "changed_files": []},
+        )
+
+        result = runner.invoke(app, ["decision", "stale-all"])
+        assert result.exit_code == 0
+        assert "up to date" in result.stdout
+
+    def test_decision_stale_all_found_stale(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        create_decision(conn, title="Stale candidate")
+        conn.close()
+
+        monkeypatch.setattr(
+            "entirecontext.core.decisions.check_staleness",
+            lambda conn, did, rp: {"stale": True, "changed_files": ["a.py"]},
+        )
+
+        result = runner.invoke(app, ["decision", "stale-all"])
+        assert result.exit_code == 0
+        assert "1/" in result.stdout
+        assert "stale" in result.stdout.lower()
+
+    def test_extract_from_session_success(self, ec_repo, monkeypatch):
+        import json
+
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        project = get_project(str(ec_repo))
+        session = create_session(conn, project["id"], session_id="extract-session")
+        create_turn(
+            conn,
+            session["id"],
+            1,
+            user_message="how to handle auth",
+            assistant_summary="Decided to use JWT over sessions",
+            files_touched=json.dumps(["src/auth.py"]),
+        )
+        conn.close()
+
+        llm_response = json.dumps([{"title": "Use JWT", "rationale": "Stateless auth", "scope": "auth"}])
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda summaries, repo_path: llm_response,
+        )
+
+        result = runner.invoke(app, ["decision", "extract-from-session", session["id"]])
+        assert result.exit_code == 0
+
+        conn = get_db(str(ec_repo))
+        row = conn.execute("SELECT * FROM decisions WHERE title = 'Use JWT'").fetchone()
+        assert row is not None
+
+        meta = json.loads(
+            conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()["metadata"]
+        )
+        assert meta.get("decisions_extracted") is True
+        conn.close()
+
+    def test_extract_from_session_idempotent(self, ec_repo, monkeypatch):
+        import json
+
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        project = get_project(str(ec_repo))
+        session = create_session(conn, project["id"], session_id="extract-idempotent")
+        create_turn(
+            conn,
+            session["id"],
+            1,
+            user_message="auth",
+            assistant_summary="Decided to use JWT",
+        )
+        conn.execute(
+            "UPDATE sessions SET metadata = ? WHERE id = ?",
+            (json.dumps({"decisions_extracted": True}), session["id"]),
+        )
+        conn.commit()
+        conn.close()
+
+        call_count = 0
+
+        def mock_llm(summaries, repo_path):
+            nonlocal call_count
+            call_count += 1
+            return "[]"
+
+        monkeypatch.setattr("entirecontext.cli.decisions_cmds._get_llm_response", mock_llm)
+
+        result = runner.invoke(app, ["decision", "extract-from-session", session["id"]])
+        assert result.exit_code == 0
+        assert call_count == 0
+
+    def test_extract_from_session_no_turns(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        project = get_project(str(ec_repo))
+        create_session(conn, project["id"], session_id="extract-empty")
+        conn.close()
+
+        call_count = 0
+
+        def mock_llm(summaries, repo_path):
+            nonlocal call_count
+            call_count += 1
+            return "[]"
+
+        monkeypatch.setattr("entirecontext.cli.decisions_cmds._get_llm_response", mock_llm)
+
+        result = runner.invoke(app, ["decision", "extract-from-session", "extract-empty"])
+        assert result.exit_code == 0
+        assert call_count == 0
+
+    def test_extract_from_session_invalid_llm_json(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        project = get_project(str(ec_repo))
+        session = create_session(conn, project["id"], session_id="extract-bad-json")
+        create_turn(
+            conn,
+            session["id"],
+            1,
+            user_message="test",
+            assistant_summary="Decided something important",
+        )
+        conn.close()
+
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda summaries, repo_path: "NOT VALID JSON {{{",
+        )
+
+        result = runner.invoke(app, ["decision", "extract-from-session", session["id"]])
+        assert result.exit_code == 0
+
+        conn = get_db(str(ec_repo))
+        count = conn.execute("SELECT count(*) as c FROM decisions").fetchone()["c"]
+        conn.close()
+        assert count == 0

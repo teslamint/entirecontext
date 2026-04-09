@@ -902,3 +902,196 @@ class TestMcpQueryRedaction:
         result = json.loads(asyncio.run(ec_turn_content("t1")))
         assert "secret123" not in result.get("user_message", "")
         assert "abc123" not in result.get("assistant_summary", "")
+
+
+class TestMCPDecisionToolsExtended:
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        return db
+
+    def test_ec_decision_related_with_files(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_related
+
+        decision = create_decision(mock_repo_db, title="Use WAL mode")
+        link_decision_to_file(mock_repo_db, decision["id"], "src/db.py")
+
+        result = json.loads(asyncio.run(ec_decision_related(files=["src/db.py"])))
+        assert result["count"] >= 1
+        ids = [d["id"] for d in result["decisions"]]
+        assert decision["id"] in ids
+
+    def test_ec_decision_related_records_selection(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_related
+
+        decision = create_decision(mock_repo_db, title="Index strategy")
+        link_decision_to_file(mock_repo_db, decision["id"], "src/index.py")
+
+        result = json.loads(asyncio.run(ec_decision_related(files=["src/index.py"])))
+        assert result["retrieval_event_id"] is not None
+        assert result["count"] >= 1
+        assert any(d["id"] == decision["id"] for d in result["decisions"])
+
+    def test_ec_decision_create_with_alternatives(self, mock_repo_db):
+        from entirecontext.mcp.tools.decisions import ec_decision_create
+
+        result = json.loads(
+            asyncio.run(
+                ec_decision_create(
+                    title="Use SQLite",
+                    rationale="Lightweight and embedded",
+                    scope="storage",
+                    rejected_alternatives=["PostgreSQL", "MySQL"],
+                    supporting_evidence=[{"source": "benchmark", "result": "fast"}],
+                )
+            )
+        )
+        assert result["title"] == "Use SQLite"
+        assert result["rationale"] == "Lightweight and embedded"
+        assert result["scope"] == "storage"
+        assert result["rejected_alternatives"] == ["PostgreSQL", "MySQL"]
+        assert result["supporting_evidence"] == [{"source": "benchmark", "result": "fast"}]
+
+    def test_ec_decision_list_with_file_filter(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_list
+
+        d1 = create_decision(mock_repo_db, title="Decision A")
+        d2 = create_decision(mock_repo_db, title="Decision B")
+        link_decision_to_file(mock_repo_db, d1["id"], "src/special.py")
+
+        result = json.loads(asyncio.run(ec_decision_list(file_path="src/special.py")))
+        ids = [d["id"] for d in result["decisions"]]
+        assert d1["id"] in ids
+        assert d2["id"] not in ids
+
+    def test_ec_decision_list_with_staleness_filter(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, update_decision_staleness
+        from entirecontext.mcp.tools.decisions import ec_decision_list
+
+        d_fresh = create_decision(mock_repo_db, title="Fresh decision")
+        d_stale = create_decision(mock_repo_db, title="Stale decision")
+        update_decision_staleness(mock_repo_db, d_stale["id"], "stale")
+
+        result = json.loads(asyncio.run(ec_decision_list(staleness_status="fresh")))
+        ids = [d["id"] for d in result["decisions"]]
+        assert d_fresh["id"] in ids
+        assert d_stale["id"] not in ids
+
+    def test_ec_decision_stale_check(self, mock_repo_db, monkeypatch):
+        from unittest.mock import patch
+
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_stale
+
+        decision = create_decision(mock_repo_db, title="Check staleness")
+        link_decision_to_file(mock_repo_db, decision["id"], "src/changed.py")
+
+        with patch("entirecontext.core.decisions.subprocess.run") as mock_git:
+            mock_git.return_value.returncode = 0
+            mock_git.return_value.stdout = "src/changed.py\n"
+            result = json.loads(asyncio.run(ec_decision_stale(decision["id"])))
+
+        assert "stale" in result
+        assert result["decision_id"] == decision["id"]
+        assert result["stale"] is True
+        assert "src/changed.py" in result["changed_files"]
+
+
+class TestMCPAssessTrends:
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        return db
+
+    def _seed_assessments(self, conn, count=3, verdict="expand", created_at="2025-06-01", feedback=None):
+        from uuid import uuid4
+
+        for _ in range(count):
+            aid = str(uuid4())
+            conn.execute(
+                "INSERT INTO assessments (id, verdict, impact_summary, created_at, feedback) VALUES (?, ?, ?, ?, ?)",
+                (aid, verdict, "test impact", created_at, feedback),
+            )
+        conn.commit()
+
+    def _mock_cross_repo(self, monkeypatch, db):
+        from unittest.mock import MagicMock
+
+        mock_registry = MagicMock()
+        mock_registry.list_repos.return_value = [{"repo_name": "test", "repo_path": "/tmp/test", "db_path": ":memory:"}]
+        mock_policy = MagicMock()
+        mock_policy.lazy_pull_repos.return_value = None
+
+        def patched_trends(repos=None, since=None, include_warnings=False):
+            from entirecontext.core.futures import list_assessments
+
+            assessments = list_assessments(db, limit=10000)
+            if since:
+                assessments = [a for a in assessments if a.get("created_at", "") >= since]
+
+            counts = {"expand": 0, "narrow": 0, "neutral": 0}
+            with_feedback = 0
+            for a in assessments:
+                v = a.get("verdict", "neutral")
+                if v in counts:
+                    counts[v] += 1
+                if a.get("feedback"):
+                    with_feedback += 1
+
+            result = {
+                "total_count": sum(counts.values()),
+                "with_feedback": with_feedback,
+                "overall": counts,
+                "by_repo": {},
+            }
+            if include_warnings:
+                return result, []
+            return result
+
+        monkeypatch.setattr("entirecontext.core.cross_repo.cross_repo_assessment_trends", patched_trends)
+
+    def test_ec_assess_trends_basic(self, mock_repo_db, monkeypatch):
+        from entirecontext.mcp.tools.futures import ec_assess_trends
+
+        self._seed_assessments(mock_repo_db, count=2, verdict="expand")
+        self._seed_assessments(mock_repo_db, count=1, verdict="narrow", feedback="agree")
+        self._mock_cross_repo(monkeypatch, mock_repo_db)
+
+        result = json.loads(asyncio.run(ec_assess_trends()))
+        assert result["total_count"] == 3
+        assert result["overall"]["expand"] == 2
+        assert result["overall"]["narrow"] == 1
+        assert result["with_feedback"] == 1
+
+    def test_ec_assess_trends_with_since(self, mock_repo_db, monkeypatch):
+        from entirecontext.mcp.tools.futures import ec_assess_trends
+
+        self._seed_assessments(mock_repo_db, count=2, verdict="expand", created_at="2025-01-01")
+        self._seed_assessments(mock_repo_db, count=1, verdict="neutral", created_at="2025-06-01")
+        self._mock_cross_repo(monkeypatch, mock_repo_db)
+
+        result = json.loads(asyncio.run(ec_assess_trends(since="2025-03-01")))
+        assert result["total_count"] == 1
+        assert result["overall"]["neutral"] == 1
+        assert result["overall"]["expand"] == 0
+
+    def test_ec_assess_trends_empty(self, mock_repo_db, monkeypatch):
+        from entirecontext.mcp.tools.futures import ec_assess_trends
+
+        self._mock_cross_repo(monkeypatch, mock_repo_db)
+
+        result = json.loads(asyncio.run(ec_assess_trends()))
+        assert result["total_count"] == 0
+        assert result["with_feedback"] == 0
+        assert result["overall"]["expand"] == 0
