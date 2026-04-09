@@ -1,0 +1,12 @@
+{
+  "id": "35a0b45c-c093-4f7c-a480-8f4984d28862",
+  "session_id": "3342eb6b-68ef-43c1-bb2b-cba4a0ebbcb2",
+  "git_commit_hash": "058e0f5fe34d916894b51b64f54488acba2e043a",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".github/tidy-pilot/assess_pr.py           |  46 ++++-\n .github/workflows/claude-code-review.yml  |   7 +-\n .gitignore                                |   1 +\n src/entirecontext/cli/decisions_cmds.py   |  63 ++-----\n src/entirecontext/cli/helpers.py          |  30 ++++\n src/entirecontext/core/decisions.py       | 136 ++++++++++++---\n src/entirecontext/core/embedding.py       |  94 +++++++++-\n src/entirecontext/core/futures.py         |  14 +-\n src/entirecontext/core/hybrid_search.py   | 161 +----------------\n src/entirecontext/core/indexing.py        | 120 ++-----------\n src/entirecontext/core/resolve.py         |  38 ++++\n src/entirecontext/core/search.py          | 217 ++++++++++++-----------\n src/entirecontext/mcp/runtime.py          |  90 +---------\n src/entirecontext/mcp/server.py           |   9 +-\n src/entirecontext/mcp/tools/checkpoint.py |  12 +-\n src/entirecontext/mcp/tools/decisions.py  |  38 ++--\n src/entirecontext/mcp/tools/futures.py    |  24 +--\n src/entirecontext/mcp/tools/misc.py       |  12 +-\n src/entirecontext/mcp/tools/search.py     |  24 +--\n src/entirecontext/mcp/tools/session.py    |  24 +--\n tests/test_mcp.py                         | 278 ++----------------------------\n tests/test_resolve_and_helpers.py         | 161 +++++++++++++++++\n tests/test_tidy_pr.py                     |  70 ++++++++\n uv.lock                                   |  90 +++++-----\n 24 files changed, 837 insertions(+), 922 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-09 02:44:17",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "b3dcf2a9-5927-4668-92f6-4a269d8260e9",
+  "session_id": "127b6799-169c-4e78-9c13-ca32002cf248",
+  "git_commit_hash": "d4b0651ea4ac53b8d86652dea28d415b55a561bf",
+  "git_branch": "codex/issue-28-mcp-repo-resolver",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/mcp/runtime.py          | 16 +++++++++----\n src/entirecontext/mcp/tools/checkpoint.py | 11 ++-------\n src/entirecontext/mcp/tools/decisions.py  | 19 +++++----------\n src/entirecontext/mcp/tools/futures.py    | 15 ++++--------\n src/entirecontext/mcp/tools/misc.py       | 11 ++-------\n src/entirecontext/mcp/tools/search.py     | 15 ++++--------\n src/entirecontext/mcp/tools/session.py    | 15 ++++--------\n tests/test_mcp.py                         | 39 ++++++++++++++++++++++---------\n 8 files changed, 61 insertions(+), 80 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-08 10:07:24",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

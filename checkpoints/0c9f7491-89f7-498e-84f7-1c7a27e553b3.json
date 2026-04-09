@@ -1,0 +1,12 @@
+{
+  "id": "0c9f7491-89f7-498e-84f7-1c7a27e553b3",
+  "session_id": "02bbf4cd-b7f3-4232-9873-bb318779320e",
+  "git_commit_hash": "52fef9994b912c9593d27f7dfe817655b434c455",
+  "git_branch": "test/structural-test-gap-resolution",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/cross_repo.py     |  10 +-\n tests/test_auto_sync.py                  |  75 ++++++++++\n tests/test_decisions_cli.py              | 240 +++++++++++++++++++++++++++++++\n tests/test_decisions_core.py             |  89 ++++++++++--\n tests/test_embedding.py                  | 138 ++++++++++++++++++\n tests/test_futures_cmds_assess.py        | 155 ++++++++++++++++++++\n tests/test_futures_cmds_relationships.py | 142 ++++++++++++++++++\n tests/test_handler.py                    |  98 +++++++++++++\n tests/test_hooks.py                      |  28 +++-\n tests/test_import_cmds.py                |  91 ++++++++++++\n tests/test_llm.py                        | 120 +++++++++++++++-\n tests/test_mcp.py                        | 193 +++++++++++++++++++++++++\n tests/test_search_redaction.py           | 143 ++++++++++++++++++\n 13 files changed, 1505 insertions(+), 17 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-09 13:36:38",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}
