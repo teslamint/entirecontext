@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-04-09
+
+### Fixed
+
+- **SQLite ResourceWarnings** — added context manager protocol to `RepoContext`/`GlobalContext`, converted all CLI and hook callers to guaranteed cleanup via `with` statements or `try/finally`
+
+### Changed
+
+- **Release workflow** — publish now gated on lint + test jobs; added install smoke test (`ec --help`) before artifact upload
+- **Package metadata** — added PyPI classifiers (Alpha, MIT, Python 3.12/3.13, Typed) and project URLs (Homepage, Repository, Issues, Changelog)
+- **Release artifacts** — LICENSE and CHANGELOG.md now explicitly included in sdist via `source-include`
+
 ## [0.1.0] - 2026-04-09
 
 Initial release of EntireContext: git-anchored decision memory for coding agents.

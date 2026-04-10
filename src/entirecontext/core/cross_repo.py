@@ -16,16 +16,13 @@ WarningEntry = dict[str, str]
 
 class RepoRegistry:
     def list_repos(self, names: list[str] | None = None) -> list[dict]:
-        context = GlobalContext.create()
-        try:
+        with GlobalContext.create() as context:
             repos = []
             for repo in context.list_registered_repos(names):
                 if not Path(repo["db_path"]).exists():
                     continue
                 repos.append(repo)
             return repos
-        finally:
-            context.close()
 
 
 class CrossRepoPolicy:

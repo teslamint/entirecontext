@@ -39,42 +39,41 @@ def checkpoint_create(
     git_branch = get_current_branch(repo_path)
 
     conn = get_db(repo_path)
+    try:
+        if session:
+            sess = get_session(conn, session)
+            if not sess:
+                console.print(f"[red]Session not found:[/red] {session}")
+                raise typer.Exit(1)
+            session_id = session
+        else:
+            sess = get_current_session(conn)
+            if not sess:
+                console.print("[red]No active session found. Use --session to specify one.[/red]")
+                raise typer.Exit(1)
+            session_id = sess["id"]
 
-    if session:
-        sess = get_session(conn, session)
-        if not sess:
-            console.print(f"[red]Session not found:[/red] {session}")
-            conn.close()
-            raise typer.Exit(1)
-        session_id = session
-    else:
-        sess = get_current_session(conn)
-        if not sess:
-            console.print("[red]No active session found. Use --session to specify one.[/red]")
-            conn.close()
-            raise typer.Exit(1)
-        session_id = sess["id"]
+        diff_summary = message
+        if not diff_summary:
+            prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
+            from_commit = prev_checkpoints[0]["git_commit_hash"] if prev_checkpoints else None
+            diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
 
-    diff_summary = message
-    if not diff_summary:
-        prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
-        from_commit = prev_checkpoints[0]["git_commit_hash"] if prev_checkpoints else None
-        diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
+        files_snapshot = None
+        if snapshot:
+            files_snapshot = get_tracked_files_snapshot(repo_path)
 
-    files_snapshot = None
-    if snapshot:
-        files_snapshot = get_tracked_files_snapshot(repo_path)
-
-    cp = create_checkpoint(
-        conn,
-        session_id=session_id,
-        git_commit_hash=git_commit,
-        git_branch=git_branch,
-        files_snapshot=files_snapshot,
-        diff_summary=diff_summary,
-        parent_checkpoint_id=parent,
-    )
-    conn.close()
+        cp = create_checkpoint(
+            conn,
+            session_id=session_id,
+            git_commit_hash=git_commit,
+            git_branch=git_branch,
+            files_snapshot=files_snapshot,
+            diff_summary=diff_summary,
+            parent_checkpoint_id=parent,
+        )
+    finally:
+        conn.close()
 
     console.print(f"[green]Checkpoint created:[/green] {cp['id'][:12]}")
     console.print(f"  Commit: {git_commit[:10]}")
@@ -138,8 +137,10 @@ def checkpoint_list(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    checkpoints = list_checkpoints(conn, session_id=session, limit=limit)
-    conn.close()
+    try:
+        checkpoints = list_checkpoints(conn, session_id=session, limit=limit)
+    finally:
+        conn.close()
 
     if not checkpoints:
         console.print("[dim]No checkpoints found.[/dim]")
@@ -223,12 +224,16 @@ def checkpoint_show(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    cp = get_checkpoint(conn, checkpoint_id)
+    try:
+        cp = get_checkpoint(conn, checkpoint_id)
 
-    if not cp:
-        console.print(f"[red]Checkpoint not found:[/red] {checkpoint_id}")
+        if not cp:
+            console.print(f"[red]Checkpoint not found:[/red] {checkpoint_id}")
+            raise typer.Exit(1)
+
+        session = get_session(conn, cp["session_id"])
+    finally:
         conn.close()
-        raise typer.Exit(1)
 
     console.print(f"\n[bold]Checkpoint:[/bold] {cp['id']}")
     console.print(f"  Commit: {cp.get('git_commit_hash', '')}")
@@ -239,7 +244,6 @@ def checkpoint_show(
     if cp.get("parent_checkpoint_id"):
         console.print(f"  Parent: {cp['parent_checkpoint_id'][:12]}")
 
-    session = get_session(conn, cp["session_id"])
     if session:
         console.print(f"\n[bold]Session:[/bold] {session['id'][:12]}")
         console.print(f"  Type: {session.get('session_type', '')}")
@@ -261,8 +265,6 @@ def checkpoint_show(
             if len(snapshot) > 50:
                 console.print(f"  ... and {len(snapshot) - 50} more")
 
-    conn.close()
-
 
 @checkpoint_app.command("diff")
 def checkpoint_diff(
@@ -280,8 +282,10 @@ def checkpoint_diff(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    result = diff_checkpoints(conn, id1, id2)
-    conn.close()
+    try:
+        result = diff_checkpoints(conn, id1, id2)
+    finally:
+        conn.close()
 
     if "error" in result:
         console.print(f"[red]{result['error']}[/red]")

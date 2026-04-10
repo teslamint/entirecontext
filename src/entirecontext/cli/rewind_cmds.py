@@ -76,12 +76,16 @@ def rewind(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    cp = get_checkpoint(conn, checkpoint_id)
+    try:
+        cp = get_checkpoint(conn, checkpoint_id)
 
-    if not cp:
-        console.print(f"[red]Checkpoint not found:[/red] {checkpoint_id}")
+        if not cp:
+            console.print(f"[red]Checkpoint not found:[/red] {checkpoint_id}")
+            raise typer.Exit(1)
+
+        session = get_session(conn, cp["session_id"])
+    finally:
         conn.close()
-        raise typer.Exit(1)
 
     console.print(f"\n[bold]Checkpoint:[/bold] {cp['id'][:12]}")
     console.print(f"  Commit: {cp.get('git_commit_hash', '')}")
@@ -91,7 +95,6 @@ def rewind(
     if cp.get("diff_summary"):
         console.print(f"  Diff Summary: {cp['diff_summary']}")
 
-    session = get_session(conn, cp["session_id"])
     if session:
         console.print(f"\n[bold]Session:[/bold] {session['id'][:12]}")
         console.print(f"  Type: {session.get('session_type', '')}")
@@ -112,8 +115,6 @@ def rewind(
                 console.print(f"  {path}")
             if len(snapshot) > 20:
                 console.print(f"  ... and {len(snapshot) - 20} more")
-
-    conn.close()
 
     if restore:
         try:

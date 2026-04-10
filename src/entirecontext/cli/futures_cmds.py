@@ -84,62 +84,60 @@ def futures_assess(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-
-    # Get diff
-    checkpoint_id = None
-    if checkpoint:
-        diff = _get_checkpoint_diff(conn, checkpoint)
-        if not diff:
-            console.print(f"[red]Checkpoint not found or has no diff: {checkpoint}[/red]")
-            conn.close()
-            raise typer.Exit(1)
-        # Resolve full checkpoint ID
-        row = conn.execute(
-            "SELECT id FROM checkpoints WHERE id = ? OR id LIKE ?", (checkpoint, f"{checkpoint}%")
-        ).fetchone()
-        checkpoint_id = row["id"] if row else None
-    else:
-        diff = _get_staged_diff()
-        if not diff.strip():
-            console.print("[yellow]No staged changes found. Stage changes with `git add` first.[/yellow]")
-            conn.close()
-            raise typer.Exit(1)
-
-    # Read roadmap
-    roadmap_text = ""
-    roadmap_path = Path(roadmap)
-    if roadmap_path.exists():
-        roadmap_text = roadmap_path.read_text(encoding="utf-8")
-    else:
-        console.print(f"[dim]Roadmap file not found: {roadmap}. Proceeding without it.[/dim]")
-
-    # Build user prompt
-    user_prompt = ""
-    if roadmap_text:
-        user_prompt += f"## ROADMAP\n\n{roadmap_text}\n\n"
-    user_prompt += f"## DIFF\n\n```diff\n{diff[:8000]}\n```"
-
-    # Call LLM
-    console.print("[dim]Analyzing with LLM...[/dim]")
     try:
-        result = _call_llm(backend, model, SYSTEM_PROMPT, user_prompt)
-    except Exception as e:
-        console.print(f"[red]LLM call failed: {e}[/red]")
-        conn.close()
-        raise typer.Exit(1)
+        # Get diff
+        checkpoint_id = None
+        if checkpoint:
+            diff = _get_checkpoint_diff(conn, checkpoint)
+            if not diff:
+                console.print(f"[red]Checkpoint not found or has no diff: {checkpoint}[/red]")
+                raise typer.Exit(1)
+            # Resolve full checkpoint ID
+            row = conn.execute(
+                "SELECT id FROM checkpoints WHERE id = ? OR id LIKE ?", (checkpoint, f"{checkpoint}%")
+            ).fetchone()
+            checkpoint_id = row["id"] if row else None
+        else:
+            diff = _get_staged_diff()
+            if not diff.strip():
+                console.print("[yellow]No staged changes found. Stage changes with `git add` first.[/yellow]")
+                raise typer.Exit(1)
 
-    # Save assessment
-    assessment = create_assessment(
-        conn,
-        checkpoint_id=checkpoint_id,
-        verdict=result.get("verdict", "neutral"),
-        impact_summary=result.get("impact_summary"),
-        roadmap_alignment=result.get("roadmap_alignment"),
-        tidy_suggestion=result.get("tidy_suggestion"),
-        diff_summary=diff[:2000],
-        model_name=model,
-    )
-    conn.close()
+        # Read roadmap
+        roadmap_text = ""
+        roadmap_path = Path(roadmap)
+        if roadmap_path.exists():
+            roadmap_text = roadmap_path.read_text(encoding="utf-8")
+        else:
+            console.print(f"[dim]Roadmap file not found: {roadmap}. Proceeding without it.[/dim]")
+
+        # Build user prompt
+        user_prompt = ""
+        if roadmap_text:
+            user_prompt += f"## ROADMAP\n\n{roadmap_text}\n\n"
+        user_prompt += f"## DIFF\n\n```diff\n{diff[:8000]}\n```"
+
+        # Call LLM
+        console.print("[dim]Analyzing with LLM...[/dim]")
+        try:
+            result = _call_llm(backend, model, SYSTEM_PROMPT, user_prompt)
+        except Exception as e:
+            console.print(f"[red]LLM call failed: {e}[/red]")
+            raise typer.Exit(1)
+
+        # Save assessment
+        assessment = create_assessment(
+            conn,
+            checkpoint_id=checkpoint_id,
+            verdict=result.get("verdict", "neutral"),
+            impact_summary=result.get("impact_summary"),
+            roadmap_alignment=result.get("roadmap_alignment"),
+            tidy_suggestion=result.get("tidy_suggestion"),
+            diff_summary=diff[:2000],
+            model_name=model,
+        )
+    finally:
+        conn.close()
 
     _render_assessment(assessment)
 
@@ -164,9 +162,9 @@ def futures_list(
         assessments = list_assessments(conn, verdict=verdict, limit=limit)
     except ValueError as e:
         console.print(f"[red]{e}[/red]")
-        conn.close()
         raise typer.Exit(1)
-    conn.close()
+    finally:
+        conn.close()
 
     if not assessments:
         console.print("[dim]No assessments found.[/dim]")
@@ -216,9 +214,9 @@ def futures_feedback(
         add_feedback(conn, assessment_id, feedback, feedback_reason=reason)
     except ValueError as e:
         console.print(f"[red]{e}[/red]")
-        conn.close()
         raise typer.Exit(1)
-    conn.close()
+    finally:
+        conn.close()
 
     console.print(f"[green]Feedback recorded:[/green] {feedback} on {assessment_id[:12]}")
 
@@ -248,8 +246,10 @@ def futures_lessons(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    lessons = get_lessons(conn)
-    conn.close()
+    try:
+        lessons = get_lessons(conn)
+    finally:
+        conn.close()
 
     if since:
         lessons = [item for item in lessons if (item.get("created_at") or "") >= since]
@@ -284,9 +284,9 @@ def futures_relate(
         rel = add_assessment_relationship(conn, source_id, target_id, relationship_type, note=note)
     except ValueError as e:
         console.print(f"[red]{e}[/red]")
-        conn.close()
         raise typer.Exit(1)
-    conn.close()
+    finally:
+        conn.close()
 
     type_colors = {"causes": "red", "fixes": "green", "contradicts": "yellow"}
     color = type_colors.get(relationship_type, "white")
@@ -313,8 +313,10 @@ def futures_relationships(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    rels = get_assessment_relationships(conn, assessment_id, direction=direction)
-    conn.close()
+    try:
+        rels = get_assessment_relationships(conn, assessment_id, direction=direction)
+    finally:
+        conn.close()
 
     if not rels:
         console.print("[dim]No relationships found.[/dim]")
@@ -371,8 +373,10 @@ def futures_unrelate(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    removed = remove_assessment_relationship(conn, source_id, target_id, relationship_type)
-    conn.close()
+    try:
+        removed = remove_assessment_relationship(conn, source_id, target_id, relationship_type)
+    finally:
+        conn.close()
 
     if removed:
         console.print(f"[green]Relationship removed:[/green] {source_id[:12]} {relationship_type} {target_id[:12]}")
@@ -466,10 +470,12 @@ def futures_report(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    # Pass `since` to SQL so LIMIT is applied after the date filter
-    assessments = list_assessments(conn, limit=limit, since=since)
-    project = get_project(repo_path)
-    conn.close()
+    try:
+        # Pass `since` to SQL so LIMIT is applied after the date filter
+        assessments = list_assessments(conn, limit=limit, since=since)
+        project = get_project(repo_path)
+    finally:
+        conn.close()
 
     project_name = project.get("name") if project else None
 

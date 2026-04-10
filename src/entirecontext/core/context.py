@@ -78,6 +78,12 @@ class RepoContext:
     def close(self) -> None:
         self.conn.close()
 
+    def __enter__(self) -> RepoContext:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
     def as_request_context(self, *, source: str, turn_id: str | None = None, agent_type: str | None = None) -> RequestContext:
         return RequestContext(
             source=source,
@@ -112,3 +118,9 @@ class GlobalContext:
 
     def close(self) -> None:
         self.conn.close()
+
+    def __enter__(self) -> GlobalContext:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()

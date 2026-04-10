@@ -379,6 +379,12 @@ class FakeGlobalContext:
     def close(self):
         return None
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
 
 class TestMCPRepoResolver:
     def test_resolver_explicit_repo_hint(self, db, monkeypatch):

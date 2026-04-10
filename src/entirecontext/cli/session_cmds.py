@@ -67,8 +67,10 @@ def session_list(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    sessions = list_sessions(conn, project_id=project["id"], limit=limit)
-    conn.close()
+    try:
+        sessions = list_sessions(conn, project_id=project["id"], limit=limit)
+    finally:
+        conn.close()
 
     if not sessions:
         console.print("[dim]No sessions found.[/dim]")
@@ -149,17 +151,20 @@ def session_show(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
+    try:
+        session = get_session(conn, session_id)
+        if not session:
+            row = conn.execute("SELECT * FROM sessions WHERE id LIKE ?", (f"{session_id}%",)).fetchone()
+            if row:
+                session = dict(row)
 
-    session = get_session(conn, session_id)
-    if not session:
-        row = conn.execute("SELECT * FROM sessions WHERE id LIKE ?", (f"{session_id}%",)).fetchone()
-        if row:
-            session = dict(row)
+        if not session:
+            console.print(f"[red]Session not found:[/red] {session_id}")
+            raise typer.Exit(1)
 
-    if not session:
-        console.print(f"[red]Session not found:[/red] {session_id}")
+        turns = list_turns(conn, session["id"])
+    finally:
         conn.close()
-        raise typer.Exit(1)
 
     console.print(f"\n[bold]Session:[/bold] {session['id']}")
     console.print(f"  Type: {session.get('session_type', '')}")
@@ -170,9 +175,6 @@ def session_show(
         console.print(f"  Title: {session['session_title']}")
     if session.get("session_summary"):
         console.print(f"  Summary: {session['session_summary']}")
-
-    turns = list_turns(conn, session["id"])
-    conn.close()
 
     if turns:
         console.print(f"\n[bold]Turns ({len(turns)}):[/bold]")
@@ -197,8 +199,10 @@ def session_current():
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    session = get_current_session(conn)
-    conn.close()
+    try:
+        session = get_current_session(conn)
+    finally:
+        conn.close()
 
     if not session:
         console.print("[dim]No active session.[/dim]")
@@ -229,23 +233,23 @@ def session_export(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
+    try:
+        session = get_session(conn, session_id)
+        if not session:
+            row = conn.execute("SELECT * FROM sessions WHERE id LIKE ?", (f"{session_id}%",)).fetchone()
+            if row:
+                session = dict(row)
 
-    session = get_session(conn, session_id)
-    if not session:
-        row = conn.execute("SELECT * FROM sessions WHERE id LIKE ?", (f"{session_id}%",)).fetchone()
-        if row:
-            session = dict(row)
+        if not session:
+            console.print(f"[red]Session not found:[/red] {session_id}")
+            raise typer.Exit(1)
 
-    if not session:
-        console.print(f"[red]Session not found:[/red] {session_id}")
+        project = get_project(repo_path)
+        project_name = project.get("name") if project else None
+
+        turns = list_turns(conn, session["id"])
+    finally:
         conn.close()
-        raise typer.Exit(1)
-
-    project = get_project(repo_path)
-    project_name = project.get("name") if project else None
-
-    turns = list_turns(conn, session["id"])
-    conn.close()
 
     markdown = export_session_markdown(session, turns, project_name=project_name)
 
@@ -286,15 +290,17 @@ def session_consolidate(
         before = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d")
 
     conn = get_db(repo_path)
-    stats = consolidate_old_turns(
-        conn,
-        repo_path,
-        before_date=before,
-        session_id=session_id,
-        limit=limit,
-        dry_run=not execute,
-    )
-    conn.close()
+    try:
+        stats = consolidate_old_turns(
+            conn,
+            repo_path,
+            before_date=before,
+            session_id=session_id,
+            limit=limit,
+            dry_run=not execute,
+        )
+    finally:
+        conn.close()
 
     if not execute:
         console.print(f"[dim]Dry-run:[/dim] {stats['candidates']} turns eligible for consolidation (before {before}).")
@@ -414,14 +420,16 @@ def session_activate(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    results = spread_activation(
-        conn,
-        seed_turn_id=turn,
-        seed_session_id=session_id,
-        max_hops=hops,
-        limit=limit,
-    )
-    conn.close()
+    try:
+        results = spread_activation(
+            conn,
+            seed_turn_id=turn,
+            seed_session_id=session_id,
+            max_hops=hops,
+            limit=limit,
+        )
+    finally:
+        conn.close()
 
     if not results:
         console.print("[dim]No related turns found.[/dim]")

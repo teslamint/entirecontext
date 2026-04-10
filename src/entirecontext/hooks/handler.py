@@ -50,7 +50,7 @@ def handle_hook(hook_type: str | None = None, *, data: dict[str, Any] | None = N
         cwd = data.get("cwd", ".") if data else "."
         context = RepoContext.from_cwd(cwd)
         if context is not None:
-            try:
+            with context:
                 from ..core.telemetry import record_operation_event
 
                 session_id, turn_id = None, None
@@ -67,8 +67,6 @@ def handle_hook(hook_type: str | None = None, *, data: dict[str, Any] | None = N
                     session_id=session_id,
                     turn_id=turn_id,
                 )
-            finally:
-                context.close()
         print(f"EntireContext hook error ({hook_type}): {e}", file=sys.stderr)
         return 0
 

@@ -68,8 +68,10 @@ def event_list(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
-    events = list_events(conn, status=status, event_type=event_type, limit=limit)
-    conn.close()
+    try:
+        events = list_events(conn, status=status, event_type=event_type, limit=limit)
+    finally:
+        conn.close()
 
     if not events:
         console.print("[dim]No events found.[/dim]")
@@ -108,17 +110,20 @@ def event_show(event_id: str = typer.Argument(..., help="Event ID")):
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
+    try:
+        event = get_event(conn, event_id)
+        if not event:
+            row = conn.execute("SELECT * FROM events WHERE id LIKE ?", (f"{event_id}%",)).fetchone()
+            if row:
+                event = dict(row)
 
-    event = get_event(conn, event_id)
-    if not event:
-        row = conn.execute("SELECT * FROM events WHERE id LIKE ?", (f"{event_id}%",)).fetchone()
-        if row:
-            event = dict(row)
+        if not event:
+            console.print(f"[red]Event not found:[/red] {event_id}")
+            raise typer.Exit(1)
 
-    if not event:
-        console.print(f"[red]Event not found:[/red] {event_id}")
+        sessions = get_event_sessions(conn, event["id"])
+    finally:
         conn.close()
-        raise typer.Exit(1)
 
     console.print(f"\n[bold]Event:[/bold] {event['id']}")
     console.print(f"  Title: {event.get('title', '')}")
@@ -127,9 +132,6 @@ def event_show(event_id: str = typer.Argument(..., help="Event ID")):
     console.print(f"  Created: {event.get('created_at', '')}")
     if event.get("description"):
         console.print(f"  Description: {event['description']}")
-
-    sessions = get_event_sessions(conn, event["id"])
-    conn.close()
 
     if sessions:
         console.print(f"\n[bold]Linked Sessions ({len(sessions)}):[/bold]")
@@ -159,9 +161,9 @@ def event_create(
         event = create_event(conn, title, event_type=event_type, description=description)
     except ValueError as e:
         console.print(f"[red]{e}[/red]")
-        conn.close()
         raise typer.Exit(1)
-    conn.close()
+    finally:
+        conn.close()
 
     console.print(f"[green]Created event:[/green] {event['id']}")
 
@@ -183,21 +185,20 @@ def event_link(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
+    try:
+        event = get_event(conn, event_id)
+        if not event:
+            console.print(f"[red]Event not found:[/red] {event_id}")
+            raise typer.Exit(1)
 
-    event = get_event(conn, event_id)
-    if not event:
-        console.print(f"[red]Event not found:[/red] {event_id}")
+        session = get_session(conn, session_id)
+        if not session:
+            console.print(f"[red]Session not found:[/red] {session_id}")
+            raise typer.Exit(1)
+
+        link_event_session(conn, event_id, session_id)
+    finally:
         conn.close()
-        raise typer.Exit(1)
-
-    session = get_session(conn, session_id)
-    if not session:
-        console.print(f"[red]Session not found:[/red] {session_id}")
-        conn.close()
-        raise typer.Exit(1)
-
-    link_event_session(conn, event_id, session_id)
-    conn.close()
 
     console.print(f"[green]Linked session {session_id[:12]} to event {event_id[:12]}[/green]")
 

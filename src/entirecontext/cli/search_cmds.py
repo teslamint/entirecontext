@@ -62,16 +62,38 @@ def search(
             raise typer.Exit(1)
 
         conn = get_db(repo_path)
-        if isinstance(conn, sqlite3.Connection):
-            check_and_migrate(conn)
-        if semantic:
-            try:
-                from ..core.embedding import semantic_search
+        try:
+            if isinstance(conn, sqlite3.Connection):
+                check_and_migrate(conn)
+            if semantic:
+                try:
+                    from ..core.embedding import semantic_search
+
+                    started_at = time.perf_counter()
+                    results = semantic_search(
+                        conn,
+                        query,
+                        file_filter=file,
+                        commit_filter=commit,
+                        agent_filter=agent,
+                        since=since,
+                        limit=limit,
+                    )
+                    latency_ms = int((time.perf_counter() - started_at) * 1000)
+                except ImportError:
+                    console.print(
+                        "[red]sentence-transformers is required for semantic search. "
+                        "Install with: pip install 'entirecontext[semantic]'[/red]"
+                    )
+                    raise typer.Exit(1)
+            elif hybrid:
+                from ..core.hybrid_search import hybrid_search as _hybrid_search
 
                 started_at = time.perf_counter()
-                results = semantic_search(
+                results = _hybrid_search(
                     conn,
                     query,
+                    target=target,
                     file_filter=file,
                     commit_filter=commit,
                     agent_filter=agent,
@@ -79,78 +101,56 @@ def search(
                     limit=limit,
                 )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)
-            except ImportError:
-                conn.close()
-                console.print(
-                    "[red]sentence-transformers is required for semantic search. "
-                    "Install with: pip install 'entirecontext[semantic]'[/red]"
+            elif fts:
+                from ..core.search import fts_search
+
+                started_at = time.perf_counter()
+                results = fts_search(
+                    conn,
+                    query,
+                    target=target,
+                    file_filter=file,
+                    commit_filter=commit,
+                    agent_filter=agent,
+                    since=since,
+                    limit=limit,
                 )
-                raise typer.Exit(1)
-        elif hybrid:
-            from ..core.hybrid_search import hybrid_search as _hybrid_search
+                latency_ms = int((time.perf_counter() - started_at) * 1000)
+            else:
+                from ..core.search import regex_search
 
-            started_at = time.perf_counter()
-            results = _hybrid_search(
+                started_at = time.perf_counter()
+                results = regex_search(
+                    conn,
+                    query,
+                    target=target,
+                    file_filter=file,
+                    commit_filter=commit,
+                    agent_filter=agent,
+                    since=since,
+                    limit=limit,
+                )
+                latency_ms = int((time.perf_counter() - started_at) * 1000)
+
+            session_id, turn_id = detect_current_context(conn)
+            retrieval_event = record_retrieval_event(
                 conn,
-                query,
+                source="cli",
+                search_type="semantic" if semantic else ("hybrid" if hybrid else ("fts" if fts else "regex")),
                 target=target,
+                query=query,
+                result_count=len(results),
+                latency_ms=latency_ms,
+                session_id=session_id,
+                turn_id=turn_id,
                 file_filter=file,
                 commit_filter=commit,
                 agent_filter=agent,
-                since=since,
-                limit=limit,
+                since_filter=since,
             )
-            latency_ms = int((time.perf_counter() - started_at) * 1000)
-        elif fts:
-            from ..core.search import fts_search
-
-            started_at = time.perf_counter()
-            results = fts_search(
-                conn,
-                query,
-                target=target,
-                file_filter=file,
-                commit_filter=commit,
-                agent_filter=agent,
-                since=since,
-                limit=limit,
-            )
-            latency_ms = int((time.perf_counter() - started_at) * 1000)
-        else:
-            from ..core.search import regex_search
-
-            started_at = time.perf_counter()
-            results = regex_search(
-                conn,
-                query,
-                target=target,
-                file_filter=file,
-                commit_filter=commit,
-                agent_filter=agent,
-                since=since,
-                limit=limit,
-            )
-            latency_ms = int((time.perf_counter() - started_at) * 1000)
-
-        session_id, turn_id = detect_current_context(conn)
-        retrieval_event = record_retrieval_event(
-            conn,
-            source="cli",
-            search_type="semantic" if semantic else ("hybrid" if hybrid else ("fts" if fts else "regex")),
-            target=target,
-            query=query,
-            result_count=len(results),
-            latency_ms=latency_ms,
-            session_id=session_id,
-            turn_id=turn_id,
-            file_filter=file,
-            commit_filter=commit,
-            agent_filter=agent,
-            since_filter=since,
-        )
-        retrieval_event_id = retrieval_event["id"]
-
-        conn.close()
+            retrieval_event_id = retrieval_event["id"]
+        finally:
+            conn.close()
 
     if not results:
         console.print("[dim]No results found.[/dim]")

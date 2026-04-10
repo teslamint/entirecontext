@@ -384,13 +384,15 @@ def status(
         from ..db import get_db
 
         conn = get_db(repo_path)
-        codex_sessions = conn.execute("SELECT COUNT(*) FROM sessions WHERE session_type = 'codex'").fetchone()[0]
-        codex_turns = conn.execute(
-            """SELECT COUNT(*)
-               FROM turns t JOIN sessions s ON s.id = t.session_id
-               WHERE s.session_type = 'codex'"""
-        ).fetchone()[0]
-        conn.close()
+        try:
+            codex_sessions = conn.execute("SELECT COUNT(*) FROM sessions WHERE session_type = 'codex'").fetchone()[0]
+            codex_turns = conn.execute(
+                """SELECT COUNT(*)
+                   FROM turns t JOIN sessions s ON s.id = t.session_id
+                   WHERE s.session_type = 'codex'"""
+            ).fetchone()[0]
+        finally:
+            conn.close()
         table.add_row("Codex Sessions", str(codex_sessions))
         table.add_row("Codex Turns", str(codex_turns))
 
@@ -451,20 +453,22 @@ def doctor(
             from ..db import SCHEMA_VERSION, get_current_version, get_db
 
             conn = get_db(repo_path)
-            v = get_current_version(conn)
-            if v < SCHEMA_VERSION:
-                warnings.append(f"Schema version {v} < {SCHEMA_VERSION}. Migration needed.")
+            try:
+                v = get_current_version(conn)
+                if v < SCHEMA_VERSION:
+                    warnings.append(f"Schema version {v} < {SCHEMA_VERSION}. Migration needed.")
 
-            unsynced = conn.execute(
-                """SELECT COUNT(*) FROM checkpoints
-                WHERE created_at > COALESCE(
-                    (SELECT last_export_at FROM sync_metadata WHERE id = 1),
-                    '1970-01-01'
-                )"""
-            ).fetchone()[0]
-            if unsynced > 0:
-                warnings.append(f"{unsynced} checkpoints not synced to shadow branch.")
-            conn.close()
+                unsynced = conn.execute(
+                    """SELECT COUNT(*) FROM checkpoints
+                    WHERE created_at > COALESCE(
+                        (SELECT last_export_at FROM sync_metadata WHERE id = 1),
+                        '1970-01-01'
+                    )"""
+                ).fetchone()[0]
+                if unsynced > 0:
+                    warnings.append(f"{unsynced} checkpoints not synced to shadow branch.")
+            finally:
+                conn.close()
 
     if agent in {"claude", "both"}:
         local_settings_path = Path(repo_path) / ".claude" / "settings.local.json"

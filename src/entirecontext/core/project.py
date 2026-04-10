@@ -46,38 +46,39 @@ def init_project(repo_path: str | Path | None = None) -> dict:
     (ec_dir / "content").mkdir(exist_ok=True)
 
     conn = get_db(repo_path)
-    check_and_migrate(conn)
+    try:
+        check_and_migrate(conn)
 
-    row = conn.execute("SELECT id, name FROM projects WHERE repo_path = ?", (repo_path,)).fetchone()
+        row = conn.execute("SELECT id, name FROM projects WHERE repo_path = ?", (repo_path,)).fetchone()
 
-    if row:
-        project_id = row["id"]
-        project_name = row["name"]
-    else:
-        project_id = str(uuid4())
-        project_name = Path(repo_path).name
+        if row:
+            project_id = row["id"]
+            project_name = row["name"]
+        else:
+            project_id = str(uuid4())
+            project_name = Path(repo_path).name
 
-        remote_url = None
-        try:
-            result = subprocess.run(
-                ["git", "config", "--get", "remote.origin.url"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                timeout=5,
+            remote_url = None
+            try:
+                result = subprocess.run(
+                    ["git", "config", "--get", "remote.origin.url"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    remote_url = result.stdout.strip()
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+            conn.execute(
+                "INSERT INTO projects (id, name, repo_path, remote_url) VALUES (?, ?, ?, ?)",
+                (project_id, project_name, repo_path, remote_url),
             )
-            if result.returncode == 0:
-                remote_url = result.stdout.strip()
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
-        conn.execute(
-            "INSERT INTO projects (id, name, repo_path, remote_url) VALUES (?, ?, ?, ?)",
-            (project_id, project_name, repo_path, remote_url),
-        )
-        conn.commit()
-
-    conn.close()
+            conn.commit()
+    finally:
+        conn.close()
 
     _register_in_global_db(repo_path, project_name)
 
@@ -89,14 +90,16 @@ def _register_in_global_db(repo_path: str, repo_name: str) -> None:
     db_path = str(Path(repo_path) / ".entirecontext" / "db" / "local.db")
     try:
         gconn = get_global_db()
-        init_global_schema(gconn)
-        gconn.execute(
-            """INSERT OR REPLACE INTO repo_index (repo_path, repo_name, db_path, last_indexed_at)
-            VALUES (?, ?, ?, datetime('now'))""",
-            (repo_path, repo_name, db_path),
-        )
-        gconn.commit()
-        gconn.close()
+        try:
+            init_global_schema(gconn)
+            gconn.execute(
+                """INSERT OR REPLACE INTO repo_index (repo_path, repo_name, db_path, last_indexed_at)
+                VALUES (?, ?, ?, datetime('now'))""",
+                (repo_path, repo_name, db_path),
+            )
+            gconn.commit()
+        finally:
+            gconn.close()
     except Exception:
         pass
 

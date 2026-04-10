@@ -1,6 +1,6 @@
 [project]
 name = "entirecontext"
-version = "0.1.0"
+version = "0.1.1"
 description = "Time-travel searchable agent memory anchored to your codebase"
 readme = "README.md"
 authors = [
@@ -8,6 +8,15 @@ authors = [
 ]
 license = {text = "MIT"}
 requires-python = ">=3.12"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Typing :: Typed",
+]
 dependencies = [
     "typer>=0.15.0",
     "rich>=13.0.0",
@@ -31,9 +40,18 @@ dev = [
 [project.scripts]
 ec = "entirecontext.cli:app"
 
+[project.urls]
+Homepage = "https://github.com/teslamint/entirecontext"
+Repository = "https://github.com/teslamint/entirecontext"
+Issues = "https://github.com/teslamint/entirecontext/issues"
+Changelog = "https://github.com/teslamint/entirecontext/blob/main/CHANGELOG.md"
+
 [build-system]
 requires = ["uv_build>=0.10.2,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+source-include = ["LICENSE", "CHANGELOG.md"]
 
 [tool.ruff]
 target-version = "py312"

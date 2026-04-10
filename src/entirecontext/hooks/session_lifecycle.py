@@ -84,55 +84,55 @@ def on_session_start(data: dict[str, Any]) -> None:
     from ..db import get_db, check_and_migrate
 
     conn = get_db(repo_path)
-    check_and_migrate(conn)
-
-    project_id = _ensure_project(conn, repo_path)
-    now = _now_iso()
-
-    if source == "resume" and session_id:
-        row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
-        if row:
-            conn.execute(
-                "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
-                (now, now, session_id),
-            )
-            conn.commit()
-            conn.close()
-            return
-
-    if not session_id:
-        session_id = str(uuid4())
-
-    conn.execute(
-        """INSERT OR IGNORE INTO sessions
-        (id, project_id, session_type, workspace_path, started_at, last_activity_at)
-        VALUES (?, ?, ?, ?, ?, ?)""",
-        (session_id, project_id, "claude", cwd, now, now),
-    )
-    conn.commit()
-
     try:
-        import json
+        check_and_migrate(conn)
 
-        git_result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=5,
+        project_id = _ensure_project(conn, repo_path)
+        now = _now_iso()
+
+        if source == "resume" and session_id:
+            row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
+                    (now, now, session_id),
+                )
+                conn.commit()
+                return
+
+        if not session_id:
+            session_id = str(uuid4())
+
+        conn.execute(
+            """INSERT OR IGNORE INTO sessions
+            (id, project_id, session_type, workspace_path, started_at, last_activity_at)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            (session_id, project_id, "claude", cwd, now, now),
         )
-        if git_result.returncode == 0:
-            start_git_commit = git_result.stdout.strip()
-            metadata = json.dumps({"start_git_commit": start_git_commit})
-            conn.execute(
-                "UPDATE sessions SET metadata = ? WHERE id = ? AND metadata IS NULL",
-                (metadata, session_id),
-            )
-            conn.commit()
-    except Exception as exc:
-        _record_hook_warning(repo_path, "session_start_metadata", exc)
+        conn.commit()
 
-    conn.close()
+        try:
+            import json
+
+            git_result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if git_result.returncode == 0:
+                start_git_commit = git_result.stdout.strip()
+                metadata = json.dumps({"start_git_commit": start_git_commit})
+                conn.execute(
+                    "UPDATE sessions SET metadata = ? WHERE id = ? AND metadata IS NULL",
+                    (metadata, session_id),
+                )
+                conn.commit()
+        except Exception as exc:
+            _record_hook_warning(repo_path, "session_start_metadata", exc)
+    finally:
+        conn.close()
 
 
 def _populate_session_summary(conn, session_id: str) -> None:
@@ -248,38 +248,38 @@ def on_session_end(data: dict[str, Any]) -> None:
     from ..db import get_db
 
     conn = get_db(repo_path)
-    now = _now_iso()
-
-    _populate_session_summary(conn, session_id)
-
-    conn.execute(
-        "UPDATE sessions SET ended_at = ?, updated_at = ? WHERE id = ?",
-        (now, now, session_id),
-    )
-    conn.commit()
-
     try:
+        now = _now_iso()
+
+        _populate_session_summary(conn, session_id)
+
+        conn.execute(
+            "UPDATE sessions SET ended_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, session_id),
+        )
+        conn.commit()
+
         session_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         turn_count = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+    finally:
         conn.close()
 
+    try:
         from ..db import get_global_db
         from ..db.global_schema import init_global_schema
 
         gconn = get_global_db()
-        init_global_schema(gconn)
-        gconn.execute(
-            "UPDATE repo_index SET session_count = ?, turn_count = ? WHERE repo_path = ?",
-            (session_count, turn_count, repo_path),
-        )
-        gconn.commit()
-        gconn.close()
+        try:
+            init_global_schema(gconn)
+            gconn.execute(
+                "UPDATE repo_index SET session_count = ?, turn_count = ? WHERE repo_path = ?",
+                (session_count, turn_count, repo_path),
+            )
+            gconn.commit()
+        finally:
+            gconn.close()
     except Exception as exc:
         _record_hook_warning(repo_path, "session_end_global_counts", exc)
-        try:
-            conn.close()
-        except Exception:
-            pass
 
     _maybe_auto_cleanup_no_changes(repo_path, session_id)
     _maybe_create_auto_checkpoint(repo_path, session_id)
@@ -368,31 +368,32 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
 
         git_branch = get_current_branch(repo_path)
         conn = get_db(repo_path)
+        try:
+            prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
+            if prev_checkpoints:
+                from_commit = prev_checkpoints[0]["git_commit_hash"]
+            else:
+                from_commit = None
+                session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+                if session_row and session_row["metadata"]:
+                    try:
+                        meta = json.loads(session_row["metadata"])
+                        from_commit = meta.get("start_git_commit")
+                    except Exception:
+                        pass
 
-        prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
-        if prev_checkpoints:
-            from_commit = prev_checkpoints[0]["git_commit_hash"]
-        else:
-            from_commit = None
-            session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
-            if session_row and session_row["metadata"]:
-                try:
-                    meta = json.loads(session_row["metadata"])
-                    from_commit = meta.get("start_git_commit")
-                except Exception:
-                    pass
+            diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
 
-        diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
-
-        create_checkpoint(
-            conn,
-            session_id=session_id,
-            git_commit_hash=git_commit,
-            git_branch=git_branch,
-            diff_summary=diff_summary,
-            metadata={"source": "auto_session_end"},
-        )
-        conn.close()
+            create_checkpoint(
+                conn,
+                session_id=session_id,
+                git_commit_hash=git_commit,
+                git_branch=git_branch,
+                diff_summary=diff_summary,
+                metadata={"source": "auto_session_end"},
+            )
+        finally:
+            conn.close()
     except Exception as exc:
         _record_hook_warning(repo_path, "auto_checkpoint", exc)
 
@@ -418,38 +419,39 @@ def on_post_commit(data: dict[str, Any]) -> None:
             return
 
         conn = get_db(repo_path)
-        session = get_current_session(conn)
-        if not session:
+        try:
+            session = get_current_session(conn)
+            if not session:
+                return
+
+            session_id = session["id"]
+            git_branch = get_current_branch(repo_path)
+
+            prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
+            if prev_checkpoints:
+                from_commit = prev_checkpoints[0]["git_commit_hash"]
+            else:
+                from_commit = None
+                session_meta = session.get("metadata")
+                if session_meta:
+                    try:
+                        meta = json.loads(session_meta) if isinstance(session_meta, str) else session_meta
+                        from_commit = meta.get("start_git_commit")
+                    except Exception:
+                        pass
+
+            diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
+
+            create_checkpoint(
+                conn,
+                session_id=session_id,
+                git_commit_hash=git_commit,
+                git_branch=git_branch,
+                diff_summary=diff_summary,
+                metadata={"source": "post_commit"},
+            )
+        finally:
             conn.close()
-            return
-
-        session_id = session["id"]
-        git_branch = get_current_branch(repo_path)
-
-        prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
-        if prev_checkpoints:
-            from_commit = prev_checkpoints[0]["git_commit_hash"]
-        else:
-            from_commit = None
-            session_meta = session.get("metadata")
-            if session_meta:
-                try:
-                    meta = json.loads(session_meta) if isinstance(session_meta, str) else session_meta
-                    from_commit = meta.get("start_git_commit")
-                except Exception:
-                    pass
-
-        diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
-
-        create_checkpoint(
-            conn,
-            session_id=session_id,
-            git_commit_hash=git_commit,
-            git_branch=git_branch,
-            diff_summary=diff_summary,
-            metadata={"source": "post_commit"},
-        )
-        conn.close()
     except Exception as exc:
         _record_hook_warning(repo_path, "post_commit", exc)
 

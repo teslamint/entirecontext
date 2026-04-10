@@ -24,26 +24,25 @@ def index_cmd(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
+    try:
+        from ..core.indexing import rebuild_fts_indexes
 
-    from ..core.indexing import rebuild_fts_indexes
+        counts = rebuild_fts_indexes(conn)
+        console.print("[green]FTS indexes rebuilt:[/green]")
+        for name, count in counts.items():
+            console.print(f"  {name}: {count} rows")
 
-    counts = rebuild_fts_indexes(conn)
-    console.print("[green]FTS indexes rebuilt:[/green]")
-    for name, count in counts.items():
-        console.print(f"  {name}: {count} rows")
+        if semantic:
+            try:
+                from ..core.indexing import generate_embeddings
 
-    if semantic:
-        try:
-            from ..core.indexing import generate_embeddings
-
-            count = generate_embeddings(conn, repo_path, model_name=model, force=force)
-            console.print(f"[green]Generated {count} embeddings[/green] (model: {model})")
-        except ImportError as e:
-            console.print(f"[red]{e}[/red]")
-            conn.close()
-            raise typer.Exit(1)
-
-    conn.close()
+                count = generate_embeddings(conn, repo_path, model_name=model, force=force)
+                console.print(f"[green]Generated {count} embeddings[/green] (model: {model})")
+            except ImportError as e:
+                console.print(f"[red]{e}[/red]")
+                raise typer.Exit(1)
+    finally:
+        conn.close()
 
 
 def register(app: typer.Typer) -> None:

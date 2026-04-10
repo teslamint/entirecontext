@@ -248,50 +248,52 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
     from ..core.turn import create_turn, save_turn_content
 
     conn = get_db(repo_path)
-    check_and_migrate(conn)
+    try:
+        check_and_migrate(conn)
 
-    project_id = _ensure_project(conn, repo_path)
-    session_id = meta["session_id"]
-    existing_session = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
-    now = _now_iso()
-    if not existing_session:
+        project_id = _ensure_project(conn, repo_path)
+        session_id = meta["session_id"]
+        existing_session = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        now = _now_iso()
+        if not existing_session:
+            conn.execute(
+                """INSERT INTO sessions
+                (id, project_id, session_type, workspace_path, started_at, last_activity_at)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (session_id, project_id, "codex", meta.get("cwd") or cwd, meta.get("started_at") or now, now),
+            )
+            conn.commit()
+
+        existing_turns = conn.execute("SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)).fetchone()[0]
+        pending = turns[existing_turns:]
+        turn_number = existing_turns + 1
+
+        for turn in pending:
+            created = create_turn(
+                conn,
+                session_id=session_id,
+                turn_number=turn_number,
+                user_message=turn["user_message"],
+                assistant_summary=turn["assistant_summary"],
+                turn_status="completed",
+                model_name="codex-agent",
+            )
+            content_blob = json.dumps(
+                {
+                    "user_message": turn["user_message"],
+                    "assistant_summary": turn["assistant_summary"],
+                    "timestamp": turn.get("timestamp", now),
+                    "source": "codex_notify",
+                },
+                ensure_ascii=False,
+            )
+            save_turn_content(repo_path, conn, created["id"], session_id, content_blob)
+            turn_number += 1
+
         conn.execute(
-            """INSERT INTO sessions
-            (id, project_id, session_type, workspace_path, started_at, last_activity_at)
-            VALUES (?, ?, ?, ?, ?, ?)""",
-            (session_id, project_id, "codex", meta.get("cwd") or cwd, meta.get("started_at") or now, now),
+            "UPDATE sessions SET total_turns = ?, last_activity_at = ?, updated_at = ? WHERE id = ?",
+            (existing_turns + len(pending), now, now, session_id),
         )
         conn.commit()
-
-    existing_turns = conn.execute("SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)).fetchone()[0]
-    pending = turns[existing_turns:]
-    turn_number = existing_turns + 1
-
-    for turn in pending:
-        created = create_turn(
-            conn,
-            session_id=session_id,
-            turn_number=turn_number,
-            user_message=turn["user_message"],
-            assistant_summary=turn["assistant_summary"],
-            turn_status="completed",
-            model_name="codex-agent",
-        )
-        content_blob = json.dumps(
-            {
-                "user_message": turn["user_message"],
-                "assistant_summary": turn["assistant_summary"],
-                "timestamp": turn.get("timestamp", now),
-                "source": "codex_notify",
-            },
-            ensure_ascii=False,
-        )
-        save_turn_content(repo_path, conn, created["id"], session_id, content_blob)
-        turn_number += 1
-
-    conn.execute(
-        "UPDATE sessions SET total_turns = ?, last_activity_at = ?, updated_at = ? WHERE id = ?",
-        (existing_turns + len(pending), now, now, session_id),
-    )
-    conn.commit()
-    conn.close()
+    finally:
+        conn.close()

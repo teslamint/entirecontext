@@ -25,24 +25,30 @@ def blame_cmd(
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
+    try:
+        start_line = None
+        end_line = None
+        if lines:
+            parts = lines.split(",")
+            if len(parts) == 2:
+                start_line = int(parts[0])
+                end_line = int(parts[1])
+            elif len(parts) == 1:
+                start_line = int(parts[0])
+                end_line = int(parts[0])
 
-    start_line = None
-    end_line = None
-    if lines:
-        parts = lines.split(",")
-        if len(parts) == 2:
-            start_line = int(parts[0])
-            end_line = int(parts[1])
-        elif len(parts) == 1:
-            start_line = int(parts[0])
-            end_line = int(parts[0])
+        if summary:
+            from ..core.attribution import get_file_attribution_summary
 
-    if summary:
-        from ..core.attribution import get_file_attribution_summary
+            stats = get_file_attribution_summary(conn, file)
+        else:
+            from ..core.attribution import get_file_attributions
 
-        stats = get_file_attribution_summary(conn, file)
+            attributions = get_file_attributions(conn, file, start_line=start_line, end_line=end_line)
+    finally:
         conn.close()
 
+    if summary:
         if stats["total_lines"] == 0:
             console.print(f"[dim]No attribution data for {file}[/dim]")
             return
@@ -57,11 +63,6 @@ def blame_cmd(
             for agent_name, line_count in stats["agents"].items():
                 console.print(f"    {agent_name}: {line_count} lines")
         return
-
-    from ..core.attribution import get_file_attributions
-
-    attributions = get_file_attributions(conn, file, start_line=start_line, end_line=end_line)
-    conn.close()
 
     if not attributions:
         console.print(f"[dim]No attribution data for {file}[/dim]")

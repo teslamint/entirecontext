@@ -21,7 +21,6 @@ class RepoResolutionError(RuntimeError):
 def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite3.Connection, str]:
     from ..core.context import RepoContext
 
-    # from_cwd accepts an explicit path argument; here it opens a repo at the given path, not necessarily the process cwd
     context = RepoContext.from_cwd(repo_path, require_project=False)
     if context is None:
         raise RepoResolutionError(f"{source_label}={repo_path} does not exist or is not a git repo.")
@@ -29,6 +28,7 @@ def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite
         resolved_path = context.repo_path
         context.close()
         raise RepoResolutionError(f"{source_label}={repo_path} points to a repo at {resolved_path} that is not initialized. Run 'ec init'.")
+    # Caller takes ownership of conn; context is intentionally not closed here
     return context.conn, context.repo_path
 
 
@@ -47,11 +47,8 @@ def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | None:
 def _list_valid_registered_repos() -> list[dict]:
     from ..core.context import GlobalContext, RepoContext
 
-    global_context = GlobalContext.create()
-    try:
+    with GlobalContext.create() as global_context:
         repos = global_context.list_registered_repos()
-    finally:
-        global_context.close()
 
     valid_repos: list[dict] = []
     for repo in repos:

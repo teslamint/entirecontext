@@ -69,32 +69,32 @@ def on_user_prompt(data: dict[str, Any]) -> None:
     import json as _json
 
     conn = get_db(repo_path)
+    try:
+        session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if session_row and session_row["metadata"]:
+            try:
+                meta = _json.loads(session_row["metadata"])
+                if meta.get("capture_disabled"):
+                    return
+            except (ValueError, TypeError):
+                pass
+        now = _now_iso()
+        turn_id = str(uuid4())
+        turn_number = _get_next_turn_number(conn, session_id)
 
-    session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
-    if session_row and session_row["metadata"]:
-        try:
-            meta = _json.loads(session_row["metadata"])
-            if meta.get("capture_disabled"):
-                conn.close()
-                return
-        except (ValueError, TypeError):
-            pass
-    now = _now_iso()
-    turn_id = str(uuid4())
-    turn_number = _get_next_turn_number(conn, session_id)
-
-    conn.execute(
-        """INSERT INTO turns
-        (id, session_id, turn_number, user_message, content_hash, timestamp, turn_status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (turn_id, session_id, turn_number, prompt, _content_hash(prompt, ""), now, "in_progress"),
-    )
-    conn.execute(
-        "UPDATE sessions SET last_activity_at = ?, total_turns = total_turns + 1, updated_at = ? WHERE id = ?",
-        (now, now, session_id),
-    )
-    conn.commit()
-    conn.close()
+        conn.execute(
+            """INSERT INTO turns
+            (id, session_id, turn_number, user_message, content_hash, timestamp, turn_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (turn_id, session_id, turn_number, prompt, _content_hash(prompt, ""), now, "in_progress"),
+        )
+        conn.execute(
+            "UPDATE sessions SET last_activity_at = ?, total_turns = total_turns + 1, updated_at = ? WHERE id = ?",
+            (now, now, session_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def on_stop(data: dict[str, Any]) -> None:
@@ -113,56 +113,57 @@ def on_stop(data: dict[str, Any]) -> None:
     from ..db import get_db
 
     conn = get_db(repo_path)
-    now = _now_iso()
+    try:
+        now = _now_iso()
 
-    row = conn.execute(
-        "SELECT id, user_message FROM turns WHERE session_id = ? AND turn_status = 'in_progress' ORDER BY turn_number DESC LIMIT 1",
-        (session_id,),
-    ).fetchone()
+        row = conn.execute(
+            "SELECT id, user_message FROM turns WHERE session_id = ? AND turn_status = 'in_progress' ORDER BY turn_number DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
 
-    if not row:
-        conn.close()
-        return
+        if not row:
+            return
 
-    turn_id = row["id"]
-    user_message = row["user_message"] or ""
+        turn_id = row["id"]
+        user_message = row["user_message"] or ""
 
-    summary = ""
-    content = ""
-    if transcript_path:
-        from .transcript_parser import extract_last_response, extract_transcript_content
+        summary = ""
+        content = ""
+        if transcript_path:
+            from .transcript_parser import extract_last_response, extract_transcript_content
 
-        summary = extract_last_response(transcript_path)
-        content = extract_transcript_content(transcript_path)
+            summary = extract_last_response(transcript_path)
+            content = extract_transcript_content(transcript_path)
 
-    from ..core.config import load_config
-    from ..core.content_filter import redact_content
+        from ..core.config import load_config
+        from ..core.content_filter import redact_content
 
-    config = load_config(repo_path)
-    summary = redact_content(summary, config)
-    if content:
-        content = redact_content(content, config)
+        config = load_config(repo_path)
+        summary = redact_content(summary, config)
+        if content:
+            content = redact_content(content, config)
 
-    c_hash = _content_hash(user_message, summary)
-    conn.execute(
-        "UPDATE turns SET assistant_summary = ?, content_hash = ?, turn_status = 'completed' WHERE id = ?",
-        (summary, c_hash, turn_id),
-    )
-
-    if content:
-        rel_path, size = _save_content_file(repo_path, session_id, turn_id, content)
-        file_hash = hashlib.md5(content.encode()).hexdigest()
+        c_hash = _content_hash(user_message, summary)
         conn.execute(
-            "INSERT OR REPLACE INTO turn_content (turn_id, content_path, content_size, content_hash) VALUES (?, ?, ?, ?)",
-            (turn_id, rel_path, size, file_hash),
+            "UPDATE turns SET assistant_summary = ?, content_hash = ?, turn_status = 'completed' WHERE id = ?",
+            (summary, c_hash, turn_id),
         )
 
-    conn.execute(
-        "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
-        (now, now, session_id),
-    )
-    conn.commit()
-    conn.close()
+        if content:
+            rel_path, size = _save_content_file(repo_path, session_id, turn_id, content)
+            file_hash = hashlib.md5(content.encode()).hexdigest()
+            conn.execute(
+                "INSERT OR REPLACE INTO turn_content (turn_id, content_path, content_size, content_hash) VALUES (?, ?, ?, ?)",
+                (turn_id, rel_path, size, file_hash),
+            )
+
+        conn.execute(
+            "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, session_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def on_tool_use(data: dict[str, Any]) -> None:
@@ -183,44 +184,43 @@ def on_tool_use(data: dict[str, Any]) -> None:
     import json
 
     conn = get_db(repo_path)
+    try:
+        row = conn.execute(
+            "SELECT id, tools_used, files_touched FROM turns WHERE session_id = ? AND turn_status = 'in_progress' ORDER BY turn_number DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
 
-    row = conn.execute(
-        "SELECT id, tools_used, files_touched FROM turns WHERE session_id = ? AND turn_status = 'in_progress' ORDER BY turn_number DESC LIMIT 1",
-        (session_id,),
-    ).fetchone()
+        if not row:
+            return
 
-    if not row:
+        turn_id = row["id"]
+        tools = json.loads(row["tools_used"]) if row["tools_used"] else []
+        files = json.loads(row["files_touched"]) if row["files_touched"] else []
+
+        from ..core.config import load_config
+        from ..core.content_filter import should_skip_file, should_skip_tool
+
+        config = load_config(repo_path)
+
+        if should_skip_tool(tool_name, config):
+            return
+
+        if tool_name not in tools:
+            tools.append(tool_name)
+
+        if isinstance(tool_input, dict):
+            for key in ("file_path", "path"):
+                if key in tool_input:
+                    fpath = tool_input[key]
+                    if should_skip_file(fpath, config):
+                        continue
+                    if fpath not in files:
+                        files.append(fpath)
+
+        conn.execute(
+            "UPDATE turns SET tools_used = ?, files_touched = ? WHERE id = ?",
+            (json.dumps(tools), json.dumps(files), turn_id),
+        )
+        conn.commit()
+    finally:
         conn.close()
-        return
-
-    turn_id = row["id"]
-    tools = json.loads(row["tools_used"]) if row["tools_used"] else []
-    files = json.loads(row["files_touched"]) if row["files_touched"] else []
-
-    from ..core.config import load_config
-    from ..core.content_filter import should_skip_file, should_skip_tool
-
-    config = load_config(repo_path)
-
-    if should_skip_tool(tool_name, config):
-        conn.close()
-        return
-
-    if tool_name not in tools:
-        tools.append(tool_name)
-
-    if isinstance(tool_input, dict):
-        for key in ("file_path", "path"):
-            if key in tool_input:
-                fpath = tool_input[key]
-                if should_skip_file(fpath, config):
-                    continue
-                if fpath not in files:
-                    files.append(fpath)
-
-    conn.execute(
-        "UPDATE turns SET tools_used = ?, files_touched = ? WHERE id = ?",
-        (json.dumps(tools), json.dumps(files), turn_id),
-    )
-    conn.commit()
-    conn.close()
