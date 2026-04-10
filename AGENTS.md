@@ -166,6 +166,15 @@ Prefer the strongest decision-aware path available in the current environment:
 - MCP: `ec_decision_related`, `ec_decision_get`, `ec_decision_list`
 - CLI fallback: `ec decision list`, `ec decision show`, plus targeted `ec search` if needed
 
+### MCP Call Discipline
+When using EntireContext MCP tools, treat the tool schema as strict and do not infer argument shapes from natural-language descriptions alone.
+
+- Verify parameter types before the first call when the shape is not obvious.
+- For repo filters, prefer `repos` as a list even when targeting a single repo.
+- Prefer `search_type="hybrid"` for natural-language or punctuation-heavy queries before falling back to FTS-specific forms.
+- If a schema validation or parser error occurs, stop and correct the argument shape or query form before retrying.
+- Do not repeat the same malformed MCP call pattern after a validation failure.
+
 When prior guidance materially affects the task, also record usage through the available context-application path:
 - MCP: `ec_context_apply(...)`
 - CLI fallback: use the corresponding `ec context ...` commands if available in the current installed version
