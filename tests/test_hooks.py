@@ -13,13 +13,27 @@ from entirecontext.hooks.transcript_parser import extract_last_response, extract
 
 
 class _NonClosingConnection:
-    """Wrapper around sqlite3.Connection that ignores close() calls."""
+    """Wrapper around sqlite3.Connection that ignores close() calls.
+
+    Hooks under test call conn.close(), but we need the connection to stay open
+    for assertions afterward.  The real connection is closed via ``real_close()``
+    or automatically when the wrapper is garbage-collected.
+    """
 
     def __init__(self, conn):
         self._conn = conn
 
     def close(self):
         pass
+
+    def real_close(self):
+        self._conn.close()
+
+    def __del__(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
@@ -195,6 +209,7 @@ class TestSessionLifecycle:
         session = conn.execute("SELECT * FROM sessions WHERE id = 'test-session-123'").fetchone()
         assert session is not None
         assert session["session_type"] == "claude"
+        conn.real_close()
 
     @patch("entirecontext.hooks.session_lifecycle._find_git_root")
     @patch("entirecontext.db.get_db")
@@ -217,6 +232,7 @@ class TestSessionLifecycle:
 
         session = conn.execute("SELECT * FROM sessions WHERE id = 's1'").fetchone()
         assert session["ended_at"] is not None
+        conn.real_close()
 
 
 class TestAutoCleanupNoChanges:
@@ -296,6 +312,7 @@ class TestAutoCleanupNoChanges:
         assert row is None
         turn = conn.execute("SELECT consolidated_at FROM turns WHERE id = ?", (turn_id,)).fetchone()
         assert turn["consolidated_at"] is not None
+        conn.real_close()
 
     @pytest.mark.parametrize(
         ("files_touched", "git_commit_hash", "with_checkpoint"),
@@ -346,6 +363,7 @@ class TestAutoCleanupNoChanges:
         assert row is not None
         turn = conn.execute("SELECT consolidated_at FROM turns WHERE id = ?", (turn_id,)).fetchone()
         assert turn["consolidated_at"] is None
+        conn.real_close()
 
     @patch("entirecontext.db.get_db")
     def test_auto_cleanup_noop_for_active_session_guard(self, mock_get_db, tmp_path):
@@ -362,6 +380,7 @@ class TestAutoCleanupNoChanges:
         assert row is not None
         turn = conn.execute("SELECT consolidated_at FROM turns WHERE id = ?", (turn_id,)).fetchone()
         assert turn["consolidated_at"] is None
+        conn.real_close()
 
 
 class TestIntentSummary:
@@ -521,6 +540,7 @@ class TestTurnCaptureFiltering:
 
         turn = conn.execute("SELECT * FROM turns WHERE session_id = 's1'").fetchone()
         assert turn is None
+        conn.real_close()
 
     @patch("entirecontext.hooks.turn_capture._find_git_root")
     @patch("entirecontext.db.get_db")
@@ -556,6 +576,7 @@ class TestTurnCaptureFiltering:
         assert turn is not None
         assert "secret123" not in turn["user_message"]
         assert "[FILTERED]" in turn["user_message"]
+        conn.real_close()
 
     @patch("entirecontext.hooks.turn_capture._find_git_root")
     @patch("entirecontext.db.get_db")
@@ -587,6 +608,7 @@ class TestTurnCaptureFiltering:
         turn = conn.execute("SELECT * FROM turns WHERE id = 't1'").fetchone()
         tools = json.loads(turn["tools_used"]) if turn["tools_used"] else []
         assert "Bash" not in tools
+        conn.real_close()
 
     @patch("entirecontext.hooks.turn_capture._find_git_root")
     @patch("entirecontext.db.get_db")
@@ -620,6 +642,7 @@ class TestTurnCaptureFiltering:
         assert ".env" not in files
         tools = json.loads(turn["tools_used"]) if turn["tools_used"] else []
         assert "Read" in tools
+        conn.real_close()
 
     @patch("entirecontext.hooks.turn_capture._find_git_root")
     @patch("entirecontext.db.get_db")
@@ -663,6 +686,7 @@ class TestTurnCaptureFiltering:
         turn = conn.execute("SELECT * FROM turns WHERE id = 't1'").fetchone()
         assert turn["assistant_summary"] is not None
         assert "secret123" not in (turn["assistant_summary"] or "")
+        conn.real_close()
 
 
 class TestTurnCapture:
@@ -695,6 +719,7 @@ class TestTurnCapture:
         assert turn is not None
         assert turn["user_message"] == "Fix the login bug"
         assert turn["turn_status"] == "in_progress"
+        conn.real_close()
 
     @patch("entirecontext.hooks.turn_capture._find_git_root")
     @patch("entirecontext.db.get_db")
@@ -732,3 +757,4 @@ class TestTurnCapture:
         files = json.loads(turn["files_touched"])
         assert "Edit" in tools
         assert "src/main.py" in files
+        conn.real_close()

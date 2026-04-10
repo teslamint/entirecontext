@@ -218,3 +218,78 @@ class TestSchemaMigrationV1ToV2:
         assert row["last_sync_duration_ms"] == 100
         assert row["sync_pid"] == 123
         conn.close()
+
+
+class TestRunSync:
+    def test_run_sync_success(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value = MagicMock()
+
+        with (
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.core.config.load_config", return_value={"sync": {}}),
+            patch("entirecontext.sync.auto_sync.acquire_sync_lock", return_value=True),
+            patch("entirecontext.sync.auto_sync.release_sync_lock") as mock_release,
+            patch("entirecontext.sync.engine.perform_sync", return_value={"error": None}) as mock_perform,
+        ):
+            from entirecontext.sync.auto_sync import run_sync
+
+            run_sync("/tmp/repo")
+
+            mock_perform.assert_called_once()
+            mock_release.assert_called_once_with(mock_conn)
+            mock_conn.close.assert_called_once()
+
+    def test_run_sync_lock_blocked(self):
+        mock_conn = MagicMock()
+
+        with (
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.core.config.load_config", return_value={"sync": {}}),
+            patch("entirecontext.sync.auto_sync.acquire_sync_lock", return_value=False),
+            patch("entirecontext.sync.engine.perform_sync") as mock_perform,
+        ):
+            from entirecontext.sync.auto_sync import run_sync
+
+            run_sync("/tmp/repo")
+
+            mock_perform.assert_not_called()
+            mock_conn.close.assert_called_once()
+
+    def test_run_sync_error_logged(self):
+        mock_conn = MagicMock()
+
+        with (
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.core.config.load_config", return_value={"sync": {}}),
+            patch("entirecontext.sync.auto_sync.acquire_sync_lock", return_value=True),
+            patch("entirecontext.sync.auto_sync.release_sync_lock") as mock_release,
+            patch("entirecontext.sync.engine.perform_sync", side_effect=Exception("boom")),
+        ):
+            from entirecontext.sync.auto_sync import run_sync
+
+            run_sync("/tmp/repo")
+
+            mock_conn.execute.assert_any_call(
+                "UPDATE sync_metadata SET last_sync_error = ? WHERE id = 1",
+                ("boom",),
+            )
+            mock_release.assert_called_once_with(mock_conn)
+            mock_conn.close.assert_called_once()
+
+
+class TestRunPull:
+    def test_run_pull_success(self):
+        mock_conn = MagicMock()
+
+        with (
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.core.config.load_config", return_value={"sync": {}}),
+            patch("entirecontext.sync.engine.perform_pull") as mock_pull,
+        ):
+            from entirecontext.sync.auto_sync import run_pull
+
+            run_pull("/tmp/repo")
+
+            mock_pull.assert_called_once()
+            mock_conn.close.assert_called_once()
