@@ -682,3 +682,70 @@ def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
 
     changed_in_scope = sorted(set(linked_files) & recently_changed)
     return {"stale": len(changed_in_scope) > 0, "changed_files": changed_in_scope, "decision_id": full_id}
+
+
+# ---------------------------------------------------------------------------
+# FTS / Hybrid keyword search for decisions
+# ---------------------------------------------------------------------------
+
+
+def fts_search_decisions(
+    conn,
+    query: str,
+    *,
+    since: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """FTS5 full-text search over decision title and rationale."""
+    sql = """
+        SELECT d.id, d.title, d.rationale, d.scope, d.staleness_status,
+               d.updated_at, d.created_at, rank
+        FROM fts_decisions fd
+        JOIN decisions d ON fd.rowid = d.rowid
+        WHERE fts_decisions MATCH ?
+        AND (? IS NULL OR d.updated_at >= ?)
+        ORDER BY rank LIMIT ?
+    """
+    params: list[Any] = [query, since, since, limit]
+
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    except Exception as exc:
+        msg = str(exc)
+        if "fts5: syntax error" in msg or "parse error" in msg.lower():
+            raise ValueError(f"Invalid FTS5 query syntax: {msg}") from exc
+        raise
+
+    return [dict(r) for r in rows]
+
+
+def hybrid_search_decisions(
+    conn,
+    query: str,
+    *,
+    since: str | None = None,
+    limit: int = 20,
+    k: int = 60,
+) -> list[dict]:
+    """Hybrid search combining FTS5 relevance and recency via RRF."""
+    from .search import rrf_fuse
+
+    fts_results = fts_search_decisions(conn, query, since=since, limit=limit * 3)
+    if not fts_results:
+        return []
+
+    fts_rank_list = [r["id"] for r in fts_results]
+    id_to_ts = {r["id"]: (r.get("updated_at") or "") for r in fts_results}
+    recency_rank_list = sorted(fts_rank_list, key=lambda rid: id_to_ts.get(rid, ""), reverse=True)
+
+    scores = rrf_fuse([fts_rank_list, recency_rank_list], k=k)
+    sorted_ids = sorted(scores, key=scores.__getitem__, reverse=True)[:limit]
+
+    id_to_doc = {r["id"]: r for r in fts_results}
+    results: list[dict] = []
+    for rid in sorted_ids:
+        if rid in id_to_doc:
+            doc = dict(id_to_doc[rid])
+            doc["hybrid_score"] = round(scores[rid], 6)
+            results.append(doc)
+    return results

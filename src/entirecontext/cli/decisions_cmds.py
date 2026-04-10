@@ -305,6 +305,51 @@ def decision_unlink(
         console.print("[yellow]Link not found.[/yellow]")
 
 
+@decision_app.command("search")
+def decision_search(
+    query: str = typer.Argument(..., help='FTS5 search query (supports AND, OR, NOT, prefix*, "phrase")'),
+    search_type: str = typer.Option("fts", "--search-type", "-t", help="fts|hybrid"),
+    since: Optional[str] = typer.Option(None, "--since", help="Only decisions updated after this ISO date"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
+):
+    """Search decisions by keyword."""
+    if search_type not in ("fts", "hybrid"):
+        console.print(f"[red]Invalid search_type '{search_type}'. Use 'fts' or 'hybrid'.[/red]")
+        raise typer.Exit(1)
+
+    from ..core.decisions import fts_search_decisions, hybrid_search_decisions
+
+    conn, _ = get_repo_connection()
+    try:
+        if search_type == "hybrid":
+            decisions = hybrid_search_decisions(conn, query, since=since, limit=limit)
+        else:
+            decisions = fts_search_decisions(conn, query, since=since, limit=limit)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+
+    if not decisions:
+        console.print("[dim]No decisions found.[/dim]")
+        return
+
+    table = Table(title=f"Decision Search: '{query}' ({len(decisions)} results)")
+    table.add_column("ID", style="dim", max_width=12)
+    table.add_column("Title")
+    table.add_column("Status")
+    table.add_column("Updated")
+    if search_type == "hybrid":
+        table.add_column("Score", justify="right")
+    for d in decisions:
+        row = [d["id"][:12], d.get("title", ""), d.get("staleness_status", ""), d.get("updated_at", "")]
+        if search_type == "hybrid":
+            row.append(f"{d.get('hybrid_score', 0):.4f}")
+        table.add_row(*row)
+    console.print(table)
+
+
 @decision_app.command("stale-all")
 def decision_stale_all():
     """Check staleness for all fresh decisions and persist results."""

@@ -203,6 +203,112 @@ async def ec_decision_stale(decision_id: str) -> str:
         conn.close()
 
 
+async def ec_decision_search(
+    query: str,
+    search_type: str = "fts",
+    since: str | None = None,
+    limit: int = 20,
+    repos: list[str] | None = None,
+) -> str:
+    """Search decisions by keyword using FTS5 full-text search.
+
+    Searches decision title and rationale fields. Use this when you need to find
+    decisions by keyword rather than by file/assessment context.
+
+    Args:
+        query: FTS5 search query (supports AND, OR, NOT, prefix*, "phrase")
+        search_type: "fts" for relevance-ranked or "hybrid" for relevance+recency
+        since: ISO date filter — only return decisions updated after this date
+        limit: Maximum results (default 20)
+        repos: Repo filter — null for current repo, ["*"] for all repos
+    """
+    if search_type not in ("fts", "hybrid"):
+        return runtime.error_payload(f"Invalid search_type '{search_type}'. Use 'fts' or 'hybrid'.")
+
+    is_cross_repo = repos is not None
+    if is_cross_repo:
+        repo_names = runtime.normalize_repo_names(repos)
+        from ...core.cross_repo import _for_each_repo
+        from ...core.decisions import fts_search_decisions, hybrid_search_decisions
+
+        def _query(conn, _repo):
+            if search_type == "hybrid":
+                return hybrid_search_decisions(conn, query, since=since, limit=limit)
+            return fts_search_decisions(conn, query, since=since, limit=limit)
+
+        cross_sort_key = "hybrid_score" if search_type == "hybrid" else None
+        all_results, _warnings = _for_each_repo(_query, repos=repo_names, sort_key=cross_sort_key, limit=limit)
+        formatted = _format_decision_results(all_results)
+        return json.dumps({"decisions": formatted, "count": len(formatted), "retrieval_event_id": None})
+
+    (conn, _), error = runtime.resolve_repo()
+    if error:
+        return error
+    try:
+        from ...core.decisions import fts_search_decisions, hybrid_search_decisions
+
+        started_at = time.perf_counter()
+        if search_type == "hybrid":
+            results = hybrid_search_decisions(conn, query, since=since, limit=limit)
+        else:
+            results = fts_search_decisions(conn, query, since=since, limit=limit)
+
+        tracked_event_id = runtime.record_search_event(
+            conn,
+            query=query,
+            search_type=f"decision_{search_type}",
+            target="decision",
+            result_count=len(results),
+            latency_ms=int((time.perf_counter() - started_at) * 1000),
+            since=since,
+        )
+        for idx, item in enumerate(results, start=1):
+            runtime.record_selection(
+                conn,
+                retrieval_event_id=tracked_event_id,
+                result_type="decision",
+                result_id=item["id"],
+                rank=idx,
+            )
+        formatted = _format_decision_results(results)
+        return json.dumps(
+            {
+                "decisions": formatted,
+                "count": len(formatted),
+                "retrieval_event_id": tracked_event_id,
+            }
+        )
+    except Exception as exc:
+        return runtime.error_payload(str(exc))
+    finally:
+        conn.close()
+
+
+def _truncate(text: str, max_len: int) -> str:
+    return text if len(text) <= max_len else text[:max_len] + "…"
+
+
+def _format_decision_results(results: list[dict]) -> list[dict]:
+    formatted = []
+    for r in results:
+        entry: dict = {
+            "id": r.get("id", ""),
+            "title": r.get("title", ""),
+            "rationale_excerpt": _truncate(r.get("rationale") or "", 200),
+            "scope": r.get("scope", ""),
+            "staleness_status": r.get("staleness_status", ""),
+            "updated_at": r.get("updated_at", ""),
+        }
+        if "hybrid_score" in r:
+            entry["hybrid_score"] = r["hybrid_score"]
+        if "rank" in r:
+            entry["rank"] = r["rank"]
+        if "repo_name" in r:
+            entry["repo_name"] = r["repo_name"]
+        formatted.append(entry)
+    return formatted
+
+
 def register_tools(mcp, services=None) -> None:
     for tool in (
         ec_decision_get,
@@ -211,5 +317,6 @@ def register_tools(mcp, services=None) -> None:
         ec_decision_create,
         ec_decision_list,
         ec_decision_stale,
+        ec_decision_search,
     ):
         mcp.tool()(tool)

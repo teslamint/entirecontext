@@ -7,8 +7,10 @@ import pytest
 from entirecontext.core.decisions import (
     check_staleness,
     create_decision,
+    fts_search_decisions,
     get_decision,
     get_decision_quality_summary,
+    hybrid_search_decisions,
     link_decision_to_assessment,
     link_decision_to_checkpoint,
     link_decision_to_commit,
@@ -555,3 +557,52 @@ class TestDecisionsCoreExtended:
         matching_item = next(item for item in ranked if item["id"] == matching["id"])
         other_item = next(item for item in ranked if item["id"] == other["id"])
         assert matching_item["base_score"] > other_item["base_score"]
+
+
+class TestDecisionFTSSearch:
+    def test_fts_search_by_title(self, ec_db):
+        create_decision(ec_db, title="Use queue based webhook retries", rationale="Prevent retry storms")
+        create_decision(ec_db, title="Cache invalidation strategy", rationale="TTL-based approach")
+
+        results = fts_search_decisions(ec_db, "webhook")
+        assert len(results) == 1
+        assert results[0]["title"] == "Use queue based webhook retries"
+
+    def test_fts_search_by_rationale(self, ec_db):
+        create_decision(ec_db, title="Caching approach", rationale="Use TTL-based cache invalidation")
+
+        results = fts_search_decisions(ec_db, "invalidation")
+        assert len(results) == 1
+        assert results[0]["title"] == "Caching approach"
+
+    def test_fts_search_no_match(self, ec_db):
+        create_decision(ec_db, title="Some decision", rationale="Some rationale")
+
+        results = fts_search_decisions(ec_db, "nonexistent")
+        assert results == []
+
+    def test_fts_search_since_filter(self, ec_db):
+        create_decision(ec_db, title="Old decision", rationale="Old rationale")
+        results = fts_search_decisions(ec_db, "decision", since="2099-01-01")
+        assert results == []
+
+    def test_fts_search_limit(self, ec_db):
+        for i in range(5):
+            create_decision(ec_db, title=f"Architecture decision {i}", rationale=f"Rationale {i}")
+
+        results = fts_search_decisions(ec_db, "Architecture", limit=3)
+        assert len(results) == 3
+
+    def test_fts_search_bad_query_raises_error(self, ec_db):
+        create_decision(ec_db, title="Some decision", rationale="Some rationale")
+        with pytest.raises(ValueError, match="Invalid FTS5 query syntax"):
+            fts_search_decisions(ec_db, "AND OR NOT")
+
+    def test_hybrid_search_returns_scores(self, ec_db):
+        create_decision(ec_db, title="Migration safety", rationale="Always use reversible migrations")
+        create_decision(ec_db, title="Migration strategy", rationale="Blue-green deployment for migrations")
+
+        results = hybrid_search_decisions(ec_db, "migration")
+        assert len(results) == 2
+        assert all("hybrid_score" in r for r in results)
+        assert results[0]["hybrid_score"] >= results[1]["hybrid_score"]
