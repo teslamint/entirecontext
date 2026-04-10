@@ -236,7 +236,7 @@ async def ec_decision_search(
                 return hybrid_search_decisions(conn, query, since=since, limit=limit)
             return fts_search_decisions(conn, query, since=since, limit=limit)
 
-        cross_sort_key = "hybrid_score" if search_type == "hybrid" else None
+        cross_sort_key = "hybrid_score" if search_type == "hybrid" else "relevance_score"
         all_results, _warnings = _for_each_repo(_query, repos=repo_names, sort_key=cross_sort_key, limit=limit)
         formatted = _format_decision_results(all_results)
         return json.dumps({"decisions": formatted, "count": len(formatted), "retrieval_event_id": None})

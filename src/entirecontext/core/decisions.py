@@ -699,7 +699,7 @@ def fts_search_decisions(
     """FTS5 full-text search over decision title and rationale."""
     sql = """
         SELECT d.id, d.title, d.rationale, d.scope, d.staleness_status,
-               d.updated_at, d.created_at, rank
+               d.updated_at, d.created_at, rank, -rank AS relevance_score
         FROM fts_decisions fd
         JOIN decisions d ON fd.rowid = d.rowid
         WHERE fts_decisions MATCH ?
