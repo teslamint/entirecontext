@@ -1,0 +1,12 @@
+{
+  "id": "82bc21c2-6001-4bc1-a13a-93ff65841b84",
+  "session_id": "8c0d1634-7689-45d5-9b91-7712bdd82756",
+  "git_commit_hash": "161e411eb8ee15647d53ecf999ba4c65c212c7df",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".github/workflows/release.yml                |   79 ++\n CHANGELOG.md                                 |   49 +\n pyproject.toml                               |   20 +-\n src/entirecontext/__init__.py                |    2 +-\n src/entirecontext/cli/blame_cmds.py          |   43 +-\n src/entirecontext/cli/checkpoint_cmds.py     |   98 +-\n src/entirecontext/cli/event_cmds.py          |   63 +-\n src/entirecontext/cli/futures_cmds.py        |  144 ++-\n src/entirecontext/cli/index_cmds.py          |   39 +-\n src/entirecontext/cli/project_cmds.py        |   46 +-\n src/entirecontext/cli/rewind_cmds.py         |   15 +-\n src/entirecontext/cli/search_cmds.py         |  138 +-\n src/entirecontext/cli/session_cmds.py        |  100 +-\n src/entirecontext/core/context.py            |   12 +\n src/entirecontext/core/cross_repo.py         |    5 +-\n src/entirecontext/core/project.py            |   81 +-\n src/entirecontext/hooks/codex_ingest.py      |   88 +-\n src/entirecontext/hooks/handler.py           |    4 +-\n src/entirecontext/hooks/session_lifecycle.py |  242 ++--\n src/entirecontext/hooks/turn_capture.py      |  198 +--\n src/entirecontext/mcp/runtime.py             |    7 +-\n tests/test_ast_index.py                      |    2 +-\n tests/test_decisions_core.py                 |    2 +-\n tests/test_import_aline.py                   |   11 +-\n tests/test_knowledge_graph.py                |    2 +-\n tests/test_mcp.py                            |    6 +\n uv.lock                                      | 1797 +++++++++++++-------------\n 27 files changed, 1755 insertions(+), 1538 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-10 01:04:52",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}
