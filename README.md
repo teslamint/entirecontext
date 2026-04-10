@@ -87,7 +87,8 @@ Scenarios to proactively use EntireContext:
 Preferred retrieval order:
 1. Decision-specific lookup (`ec_decision_related`, `ec_decision_list`, `ec_decision_get`)
 2. Broader repo memory lookup (`ec_related`, `ec_search`, `ec_session_context`)
-3. Deep inspection (`ec_turn_content`, `ec_checkpoint_list`, `ec_attribution`, `ec_lessons`, `ec_assess_trends`)
+3. Lesson retrieval (`ec_lessons`) — especially when debugging regressions, working in areas with prior narrow verdicts, or making structurally similar changes to previously assessed work
+4. Deep inspection (`ec_turn_content`, `ec_checkpoint_list`, `ec_attribution`, `ec_assess_trends`)
 
 If no relevant EntireContext records exist, state that explicitly before proceeding
 with new reasoning.
@@ -111,6 +112,20 @@ Capture timing:
 - Record **during** the session as decisions happen — do not defer to SessionEnd
 - SessionEnd auto-extraction (`maybe_extract_decisions`) is a fallback, not the primary path
 - If you realize a past session made an unrecorded decision, record it retroactively
+
+### Lesson Feedback — Building Lessons from Assessed Work
+
+Lessons accumulate from assessment feedback. Proactively provide feedback on
+assessed changes so the lesson pipeline has material to distill.
+
+When to provide feedback (`ec_feedback`):
+- Completed work was previously assessed and you can confirm or dispute the verdict
+- You observe that a past assessment's prediction was correct or incorrect
+- A debugging session reveals that a prior assessed change caused the issue
+
+Feedback timing:
+- Provide feedback as soon as you have evidence — do not defer to session end
+- Include a reason so the distilled lesson captures the context
 <!-- ENTIRECONTEXT:END -->
 ```
 
