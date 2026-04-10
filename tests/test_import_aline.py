@@ -294,10 +294,11 @@ class TestImportFromAline:
 
 
 class TestImportCLI:
-    def test_import_help(self):
+    def test_import_help(self, monkeypatch):
         from typer.testing import CliRunner
         from entirecontext.cli import app
 
+        monkeypatch.setenv("COLUMNS", "120")
         runner = CliRunner()
         result = runner.invoke(app, ["import", "--help"])
         assert result.exit_code == 0
