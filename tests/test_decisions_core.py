@@ -652,6 +652,31 @@ class TestRankingSignals:
             assert found[0]["score_breakdown"]["file_proximity"] == 0.0
             assert found[0]["score_breakdown"]["file_exact"] == 0.0
 
+    def test_file_exact_match_dotslash_stored_path(self, ec_db):
+        """Exact match must work when the stored path has a ./ prefix."""
+        d = create_decision(ec_db, title="Dotslash stored path")
+        # Simulate a path stored with ./ prefix (as some tooling produces)
+        link_decision_to_file(ec_db, d["id"], "./src/auth.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/auth.py"])
+        assert len(ranked) >= 1
+        item = next((r for r in ranked if r["id"] == d["id"]), None)
+        assert item is not None, "Decision with ./src/auth.py should match query for src/auth.py"
+        assert item["score_breakdown"]["file_exact"] == 3.0
+
+    def test_file_proximity_sibling_directory(self, ec_db):
+        """Decision in a sibling directory must be a candidate for proximity scoring."""
+        d = create_decision(ec_db, title="Sibling dir decision")
+        # Decision linked to src/service/y.py (sibling of src/service/sub/)
+        link_decision_to_file(ec_db, d["id"], "src/service/y.py")
+
+        # Changed file is src/service/sub/x.py — sibling should have proximity 0.75
+        ranked = rank_related_decisions(ec_db, file_paths=["src/service/sub/x.py"])
+        assert len(ranked) >= 1
+        item = next((r for r in ranked if r["id"] == d["id"]), None)
+        assert item is not None, "Decision in sibling dir should be a candidate"
+        assert item["score_breakdown"]["file_proximity"] == 0.75
+
     def test_assessment_match(self, ec_db):
         assessment = create_assessment(ec_db, verdict="expand", impact_summary="assessment signal test")
         d = create_decision(ec_db, title="Assessment linked")

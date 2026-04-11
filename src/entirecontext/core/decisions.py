@@ -731,22 +731,29 @@ def _gather_candidates_by_files(conn, file_paths: list[str]) -> set[str]:
     candidates: set[str] = set()
     normalized = [_normalize_path(p) for p in file_paths]
 
-    # Exact file matches
+    # Exact file matches — normalize stored paths at query time to handle ./prefix and backslashes
+    # so stored values like "./src/foo.py" or "src\foo.py" match normalized inputs.
     placeholders = ",".join("?" for _ in normalized)
     rows = conn.execute(
-        f"SELECT DISTINCT decision_id FROM decision_files WHERE file_path IN ({placeholders}) LIMIT ?",  # noqa: S608
+        f"SELECT DISTINCT decision_id FROM decision_files"  # noqa: S608
+        f" WHERE REPLACE(CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3) ELSE file_path END, '\\', '/') IN ({placeholders}) LIMIT ?",
         [*normalized, _PER_SOURCE_CAP],
     ).fetchall()
     candidates.update(r["decision_id"] for r in rows)
 
-    # Parent directory matches (for proximity scoring)
-    parent_dirs: set[str] = set()
+    # Ancestor directory matches (for proximity scoring up to 3 levels).
+    # _directory_proximity_score returns non-zero for depth_from_match <= 3, so we must gather
+    # candidates from ancestor dirs at each level to avoid silently excluding sibling/cousin files.
+    ancestor_dirs: set[str] = set()
     for p in normalized:
-        parent = str(PurePosixPath(p).parent)
-        if parent and parent != ".":
-            parent_dirs.add(parent)
-    for parent_dir in parent_dirs:
-        escaped = _escape_like(parent_dir)
+        parts = PurePosixPath(p).parts[:-1]  # directory components, excluding filename
+        for depth in range(min(len(parts), 3)):
+            ancestor_parts = parts[: len(parts) - depth]
+            ancestor = str(PurePosixPath(*ancestor_parts))
+            if ancestor and ancestor != ".":
+                ancestor_dirs.add(ancestor)
+    for ancestor_dir in ancestor_dirs:
+        escaped = _escape_like(ancestor_dir)
         rows = conn.execute(
             "SELECT DISTINCT decision_id FROM decision_files WHERE file_path LIKE ? ESCAPE '\\' LIMIT ?",
             (f"{escaped}/%", _PER_SOURCE_CAP),
