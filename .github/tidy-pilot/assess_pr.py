@@ -20,7 +20,7 @@ Respond with a JSON object (no markdown fences) with these fields:
 - verdict: "expand" | "narrow" | "neutral"
 - impact_summary: one-sentence summary of the change's impact on future options
 - roadmap_alignment: how this change aligns with the roadmap
-- tidy_suggestion: actionable suggestion (what to tidy, what to keep, what to reconsider)"""
+- tidy_suggestion: actionable suggestion grounded in specific project files, structures, or patterns observed in the diff. Do not suggest actions referencing structures that are not present in the project context."""
 
 COMMENT_MARKER = "<!-- tidy-pilot:sticky-comment -->"
 
@@ -134,12 +134,18 @@ def main():
     if Path("LESSONS.md").exists():
         lessons = Path("LESSONS.md").read_text(encoding="utf-8")
 
+    claude_md = ""
+    if Path("CLAUDE.md").exists():
+        claude_md = Path("CLAUDE.md").read_text(encoding="utf-8")
+
     # Build prompt
     user_prompt = f"## PR #{args.pr_number}: {args.pr_title}\n\n"
     if roadmap:
         user_prompt += f"### ROADMAP\n```markdown\n{roadmap}\n```\n\n"
     if lessons:
         user_prompt += f"### LESSONS LEARNED\n```markdown\n{lessons}\n```\n\n"
+    if claude_md:
+        user_prompt += f"### PROJECT CONVENTIONS (CLAUDE.md)\n```markdown\n{claude_md}\n```\n\n"
     user_prompt += f"### DIFF\n```diff\n{diff}\n```"
 
     # Call LLM
