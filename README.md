@@ -21,6 +21,14 @@ EntireContext turns session history into reusable engineering memory tied to com
 - **Retrieve** — search, graph traversal, attribution, and rewind surface the most relevant prior context
 - **Intervene** — agents and humans can apply past decisions before the next related change lands
 
+## How Decision Memory Works
+
+- **Decision** — reusable engineering intent (what was chosen, why, what was rejected), linked to files, checkpoints, and assessments
+- **Assessment** — point-in-time evaluation of a diff or checkpoint (expand / narrow / neutral) using Tidy First framing
+- **Lesson** — assessment + feedback distilled into guidance for future changes
+
+Decisions accumulate during sessions. Assessments evaluate their impact. Feedback closes the loop and distills lessons that surface before the next related change.
+
 ## What Makes EntireContext Different
 
 - **Git-anchored memory** — context is tied to commits, branches, diffs, and checkpoints
@@ -30,11 +38,16 @@ EntireContext turns session history into reusable engineering memory tied to com
 
 ## Key Capabilities
 
-- **Decision capture and assessment** — futures assessments, typed relationships, feedback loops, and lessons
-- **Git time-travel** — checkpoints, rewind, blame, and historical inspection
+### Core Capability: Decision Memory
+- **Decision capture** — rationale, rejected alternatives, scope, and staleness tracking
+- **Assessments and lessons** — futures evaluations, feedback loops, and distilled guidance
+- **Proactive retrieval** — relevant past decisions surfaced when similar files or diffs appear
+
+### Supporting Capabilities
+- **Git time-travel** — checkpoints, rewind, blame, and attribution
 - **Context retrieval** — regex, FTS5, semantic, and hybrid search across sessions and repos
-- **Agent-facing interfaces** — MCP tools for search, checkpoints, assessments, graph traversal, and trends
-- **Operational support** — sync, filtering, consolidation, dashboarding, export, and migration tools
+- **Agent interfaces** — MCP tools for search, checkpoints, assessments, graph traversal, and trends
+- **Operational tooling** — sync, filtering, consolidation, dashboarding, export, and migration
 
 ## Who It's For
 
@@ -42,92 +55,13 @@ EntireContext turns session history into reusable engineering memory tied to com
 - Small teams that want decisions and lessons to accumulate instead of disappearing into chat history
 - Repositories where historical intent matters as much as the final diff
 
-## AGENTS.md Templates
+## Agent Setup Templates
 
-If you want agents to reuse stored decisions consistently, start from these templates:
+Templates for configuring agents to proactively reuse stored decisions and lessons.
 
-- `entirecontext` maintainers: [docs/templates/entirecontext-maintainer-decision-reuse-template.md](docs/templates/entirecontext-maintainer-decision-reuse-template.md)
-- Projects using EntireContext: [docs/templates/entirecontext-user-decision-reuse-template.md](docs/templates/entirecontext-user-decision-reuse-template.md)
-
-### Adding Proactive EntireContext Guidance
-
-If you also want agents to proactively check broader EntireContext memory, add a repository-specific section to your `AGENTS.md`.
-
-Recommended placement:
-
-- Near other agent workflow rules or memory lookup rules
-- Immediately after any OneContext/Aline history-search block if you already have one
-- Keep the `<!-- ENTIRECONTEXT:START -->` and `<!-- ENTIRECONTEXT:END -->` markers so the block is easy to find and update later
-
-This complements the decision-reuse templates above. Use it when you want agents to check not only decisions, but also assessments, lessons, checkpoints, attribution, sessions, and turns before answering or implementing non-trivial work.
-
-Example block to add:
-
-```md
-<!-- ENTIRECONTEXT:START -->
-## EntireContext - Proactive Memory Reuse
-
-When the repository has EntireContext available, **proactively** use EntireContext
-before answering questions about existing code, prior decisions, debugging context,
-historical implementation details, repeated regressions, or earlier agent work.
-Do not wait for the user to explicitly ask for a memory lookup.
-
-Prefer EntireContext first for repository-scoped memory such as decisions,
-assessments, lessons, checkpoints, attribution, sessions, and turns.
-Use OneContext/Aline as a fallback when the user explicitly asks for Aline history
-or when EntireContext does not contain the needed context.
-
-Scenarios to proactively use EntireContext:
-- User asks "why was X implemented this way?" or asks for prior rationale
-- User is debugging behavior that may have previous fixes, regressions, or lessons
-- User references a function, file, subsystem, checkpoint, session, or decision that may already exist in memory
-- The task changes behavior, policy, schema, interface, lifecycle, sync, ranking, hooks, telemetry, or other long-lived system behavior
-- You need prior assessments, lessons, attribution, or related turns before proposing non-trivial changes
-
-Preferred retrieval order:
-1. Decision-specific lookup (`ec_decision_related`, `ec_decision_list`, `ec_decision_get`)
-2. Broader repo memory lookup (`ec_related`, `ec_search`, `ec_session_context`)
-3. Lesson retrieval (`ec_lessons`) — especially when debugging regressions, working in areas with prior narrow verdicts, or making structurally similar changes to previously assessed work
-4. Deep inspection (`ec_turn_content`, `ec_checkpoint_list`, `ec_attribution`, `ec_assess_trends`)
-
-If no relevant EntireContext records exist, state that explicitly before proceeding
-with new reasoning.
-
-### Decision Capture — Recording What Was Decided
-
-Retrieval alone loses decisions that were never recorded. Proactively **create**
-decision records during the session, not only at the end.
-
-When to record a decision (`ec_decision_create`):
-- You compared alternatives and chose one (record what was rejected and why)
-- You changed architecture, module boundaries, data flow, or public interfaces
-- You established a convention, policy, or constraint that future work should follow
-- A debugging session revealed a root cause that changes how the system should behave
-
-When to record a decision outcome (`ec_decision_outcome`):
-- Completed work confirmed, contradicted, refined, or replaced a prior decision
-- A decision was applied and the result validated or invalidated its rationale
-
-Capture timing:
-- Record **during** the session as decisions happen — do not defer to SessionEnd
-- SessionEnd auto-extraction (`maybe_extract_decisions`) is a fallback, not the primary path
-- If you realize a past session made an unrecorded decision, record it retroactively
-
-### Lesson Feedback — Building Lessons from Assessed Work
-
-Lessons accumulate from assessment feedback. Proactively provide feedback on
-assessed changes so the lesson pipeline has material to distill.
-
-When to provide feedback (`ec_feedback`):
-- Completed work was previously assessed and you can confirm or dispute the verdict
-- You observe that a past assessment's prediction was correct or incorrect
-- A debugging session reveals that a prior assessed change caused the issue
-
-Feedback timing:
-- Provide feedback as soon as you have evidence — do not defer to session end
-- Include a reason so the distilled lesson captures the context
-<!-- ENTIRECONTEXT:END -->
-```
+- Maintainers: [entirecontext-maintainer-decision-reuse-template.md](docs/templates/entirecontext-maintainer-decision-reuse-template.md)
+- Users: [entirecontext-user-decision-reuse-template.md](docs/templates/entirecontext-user-decision-reuse-template.md)
+- Proactive guidance: [entirecontext-proactive-guidance.md](docs/templates/entirecontext-proactive-guidance.md) — broader memory reuse beyond decisions (assessments, lessons, checkpoints, attribution)
 
 ## Quick Start
 
@@ -365,6 +299,9 @@ ec mcp serve
 
 | Tool | Description |
 |------|-------------|
+| `ec_decision_create` | Create a decision record (title, rationale, rejected alternatives, scope) |
+| `ec_decision_get` | Resolve decision by full or prefix ID |
+| `ec_decision_related` | Rank linked decisions by file overlap, assessment relations, and diff text match |
 | `ec_search` | Search turns/sessions with regex or FTS5. Filters: `file_filter`, `commit_filter`, `agent_filter`, `since` |
 | `ec_checkpoint_list` | List checkpoints, optionally filtered by `session_id` and `since` |
 | `ec_session_context` | Get session details with recent turns. Auto-detects current session if `session_id` omitted |
@@ -596,13 +533,3 @@ EntireContext was inspired by:
 [MIT](LICENSE)
 
 
-### Decision / Assessment / Lesson roles
-
-- **Decision**: reusable engineering intent (what/why/scope), linked to files, checkpoints, and assessments.
-- **Assessment**: point-in-time evaluation of a diff/checkpoint (expand/narrow/neutral) using Tidy First framing.
-- **Lesson**: assessment + feedback distilled into guidance for future changes.
-
-### MCP Decision Tools
-
-- `ec_decision_get(decision_id)` — resolve decision by full or prefix ID.
-- `ec_decision_related(files?, assessment_ids?, diff_text?, limit?)` — rank linked decisions by file overlap, assessment relations, and diff text match.
