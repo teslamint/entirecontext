@@ -594,7 +594,6 @@ _CODE_STOPWORDS: frozenset[str] = frozenset(
     }
 )
 
-_PER_SOURCE_CAP = 100
 _FALLBACK_RECENT_COUNT = 20
 _MIN_CANDIDATE_THRESHOLD = 5
 
@@ -721,7 +720,8 @@ def _fts_rank_decisions_from_diff(conn, diff_text: str, limit: int = 50) -> dict
         for rowid, raw in raw_scores.items():
             did = rowid_to_id.get(rowid)
             if did:
-                result[did] = 4.0 * (raw - min_score) / score_range
+                # Floor at 0.5 so the weakest FTS hit still contributes signal
+                result[did] = 0.5 + 3.5 * (raw - min_score) / score_range
     return result
 
 
@@ -737,8 +737,8 @@ def _gather_candidates_by_files(conn, file_paths: list[str]) -> set[str]:
     placeholders = ",".join("?" for _ in normalized)
     rows = conn.execute(
         f"SELECT DISTINCT decision_id FROM decision_files"  # noqa: S608
-        f" WHERE REPLACE(CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3) ELSE file_path END, '\\', '/') IN ({placeholders}) LIMIT ?",
-        [*normalized, _PER_SOURCE_CAP],
+        f" WHERE REPLACE(CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3) ELSE file_path END, '\\', '/') IN ({placeholders})",
+        normalized,
     ).fetchall()
     candidates.update(r["decision_id"] for r in rows)
 
@@ -758,8 +758,8 @@ def _gather_candidates_by_files(conn, file_paths: list[str]) -> set[str]:
         rows = conn.execute(
             "SELECT DISTINCT decision_id FROM decision_files"
             " WHERE REPLACE(CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3)"
-            " ELSE file_path END, '\\', '/') LIKE ? ESCAPE '\\' LIMIT ?",
-            (f"{escaped}/%", _PER_SOURCE_CAP),
+            " ELSE file_path END, '\\', '/') LIKE ? ESCAPE '\\'",
+            (f"{escaped}/%",),
         ).fetchall()
         candidates.update(r["decision_id"] for r in rows)
     return candidates
@@ -771,8 +771,8 @@ def _gather_candidates_by_commits(conn, commit_shas: list[str]) -> set[str]:
         return set()
     placeholders = ",".join("?" for _ in commit_shas)
     rows = conn.execute(
-        f"SELECT DISTINCT decision_id FROM decision_commits WHERE commit_sha IN ({placeholders}) LIMIT ?",  # noqa: S608
-        [*commit_shas, _PER_SOURCE_CAP],
+        f"SELECT DISTINCT decision_id FROM decision_commits WHERE commit_sha IN ({placeholders})",  # noqa: S608
+        commit_shas,
     ).fetchall()
     return {r["decision_id"] for r in rows}
 
@@ -819,8 +819,8 @@ def rank_related_decisions(
     if resolved_assessment_ids:
         placeholders = ",".join("?" for _ in resolved_assessment_ids)
         rows = conn.execute(
-            f"SELECT DISTINCT decision_id FROM decision_assessments WHERE assessment_id IN ({placeholders}) LIMIT ?",  # noqa: S608
-            [*resolved_assessment_ids, _PER_SOURCE_CAP],
+            f"SELECT DISTINCT decision_id FROM decision_assessments WHERE assessment_id IN ({placeholders})",  # noqa: S608
+            list(resolved_assessment_ids),
         ).fetchall()
         candidate_ids.update(r["decision_id"] for r in rows)
 
