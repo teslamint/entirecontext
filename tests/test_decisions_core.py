@@ -338,7 +338,7 @@ class TestDecisionsCore:
 
         assert [item["id"] for item in ranked[:2]] == [promoted["id"], demoted["id"]]
         assert ranked[0]["quality_score"] > ranked[1]["quality_score"]
-        assert ranked[0]["base_score"] == ranked[1]["base_score"] == 2.0
+        assert ranked[0]["base_score"] == ranked[1]["base_score"] == 3.0
 
 
 class TestUpdateDecision:
@@ -519,7 +519,7 @@ class TestDecisionsCoreExtended:
     def test_unlink_from_checkpoint_decision_not_found(self, ec_db):
         assert unlink_decision_from_checkpoint(ec_db, "nonexistent-decision-id", "nonexistent-checkpoint-id") is False
 
-    def test_rank_decisions_diff_text_title_scoring(self, ec_db):
+    def test_rank_decisions_diff_fts_title_scoring(self, ec_db):
         matching = create_decision(ec_db, title="Adopt queue retries")
         other = create_decision(ec_db, title="Use monolith pattern")
         link_decision_to_file(ec_db, matching["id"], "src/retry.py")
@@ -528,7 +528,7 @@ class TestDecisionsCoreExtended:
         ranked = rank_related_decisions(
             ec_db,
             file_paths=["src/retry.py"],
-            diff_text="this change is about adopt queue retries in the service layer",
+            diff_text="+adopt queue retries in the service layer\n+retry handler setup",
         )
 
         ids = [item["id"] for item in ranked]
@@ -536,9 +536,9 @@ class TestDecisionsCoreExtended:
         assert other["id"] in ids
         matching_item = next(item for item in ranked if item["id"] == matching["id"])
         other_item = next(item for item in ranked if item["id"] == other["id"])
-        assert matching_item["base_score"] > other_item["base_score"]
+        assert matching_item["score"] > other_item["score"]
 
-    def test_rank_decisions_diff_text_rationale_scoring(self, ec_db):
+    def test_rank_decisions_diff_fts_rationale_scoring(self, ec_db):
         matching = create_decision(
             ec_db,
             title="Unique unrelated title xyz",
@@ -551,12 +551,12 @@ class TestDecisionsCoreExtended:
         ranked = rank_related_decisions(
             ec_db,
             file_paths=["src/service.py"],
-            diff_text="this diff prevents retry storms in production environment and adds resilience",
+            diff_text="+prevents retry storms in production environment\n+adds resilience layer",
         )
 
         matching_item = next(item for item in ranked if item["id"] == matching["id"])
         other_item = next(item for item in ranked if item["id"] == other["id"])
-        assert matching_item["base_score"] > other_item["base_score"]
+        assert matching_item["score"] > other_item["score"]
 
 
 class TestDecisionFTSSearch:
@@ -606,3 +606,235 @@ class TestDecisionFTSSearch:
         assert len(results) == 2
         assert all("hybrid_score" in r for r in results)
         assert results[0]["hybrid_score"] >= results[1]["hybrid_score"]
+
+
+class TestRankingSignals:
+    """Tests for multi-signal decision ranking (issue #40)."""
+
+    # --- Signal isolation ---
+
+    def test_file_exact_match(self, ec_db):
+        d = create_decision(ec_db, title="Exact file decision")
+        link_decision_to_file(ec_db, d["id"], "src/auth.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/auth.py"])
+        assert len(ranked) >= 1
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["file_exact"] == 3.0
+        assert item["score_breakdown"]["file_proximity"] == 0.0
+
+    def test_file_proximity_same_directory(self, ec_db):
+        d = create_decision(ec_db, title="Nearby file decision")
+        link_decision_to_file(ec_db, d["id"], "src/service/handler.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/service/router.py"])
+        assert len(ranked) >= 1
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["file_exact"] == 0.0
+        assert item["score_breakdown"]["file_proximity"] == 1.5
+
+    def test_file_proximity_parent_directory(self, ec_db):
+        d = create_decision(ec_db, title="Parent dir decision")
+        link_decision_to_file(ec_db, d["id"], "src/service/sub/deep.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/service/other.py"])
+        assert len(ranked) >= 1
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["file_proximity"] == 0.75
+
+    def test_file_proximity_different_tree(self, ec_db):
+        d = create_decision(ec_db, title="Unrelated dir")
+        link_decision_to_file(ec_db, d["id"], "tests/unit/test_auth.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/service/auth.py"])
+        found = [r for r in ranked if r["id"] == d["id"]]
+        if found:
+            assert found[0]["score_breakdown"]["file_proximity"] == 0.0
+            assert found[0]["score_breakdown"]["file_exact"] == 0.0
+
+    def test_assessment_match(self, ec_db):
+        assessment = create_assessment(ec_db, verdict="expand", impact_summary="assessment signal test")
+        d = create_decision(ec_db, title="Assessment linked")
+        link_decision_to_assessment(ec_db, d["id"], assessment["id"])
+
+        ranked = rank_related_decisions(ec_db, assessment_ids=[assessment["id"]])
+        assert len(ranked) >= 1
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["assessment"] == 4.0
+
+    def test_assessment_contradicts_weight(self, ec_db):
+        assessment = create_assessment(ec_db, verdict="narrow", impact_summary="contradicts test")
+        d = create_decision(ec_db, title="Contradicted decision")
+        link_decision_to_assessment(ec_db, d["id"], assessment["id"], relation_type="contradicts")
+
+        ranked = rank_related_decisions(ec_db, assessment_ids=[assessment["id"]])
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["assessment"] == 5.0
+
+    def test_assessment_dedupe_max_weight(self, ec_db):
+        assessment = create_assessment(ec_db, verdict="expand", impact_summary="dedupe test")
+        d = create_decision(ec_db, title="Multi-relation")
+        link_decision_to_assessment(ec_db, d["id"], assessment["id"], relation_type="supports")
+        link_decision_to_assessment(ec_db, d["id"], assessment["id"], relation_type="contradicts")
+
+        ranked = rank_related_decisions(ec_db, assessment_ids=[assessment["id"]])
+        item = next(r for r in ranked if r["id"] == d["id"])
+        # Should use max weight (contradicts=5.0), not sum (4.0+5.0)
+        assert item["score_breakdown"]["assessment"] == 5.0
+
+    def test_diff_fts_match(self, ec_db):
+        d = create_decision(ec_db, title="Queue retry backoff strategy")
+
+        ranked = rank_related_decisions(
+            ec_db,
+            diff_text="+implement queue retry backoff\n+exponential delay strategy",
+        )
+        found = [r for r in ranked if r["id"] == d["id"]]
+        assert len(found) >= 1
+        assert found[0]["score_breakdown"]["diff_relevance"] > 0
+
+    def test_diff_fts_no_match(self, ec_db):
+        create_decision(ec_db, title="Cache invalidation policy")
+
+        ranked = rank_related_decisions(
+            ec_db,
+            diff_text="+authentication middleware refactor\n+jwt token validation",
+        )
+        found = [r for r in ranked if r["title"] == "Cache invalidation policy"]
+        if found:
+            assert found[0]["score_breakdown"]["diff_relevance"] == 0.0
+
+    def test_commit_match(self, ec_db):
+        d = create_decision(ec_db, title="Commit-linked decision")
+        link_decision_to_commit(ec_db, d["id"], "abc123def")
+
+        ranked = rank_related_decisions(ec_db, commit_shas=["abc123def"])
+        assert len(ranked) >= 1
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["git_commit"] == 3.0
+
+    # --- Staleness penalty ---
+
+    def test_stale_penalty(self, ec_db):
+        fresh = create_decision(ec_db, title="Fresh decision")
+        stale = create_decision(ec_db, title="Stale decision")
+        update_decision_staleness(ec_db, stale["id"], "stale")
+        link_decision_to_file(ec_db, fresh["id"], "src/api.py")
+        link_decision_to_file(ec_db, stale["id"], "src/api.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/api.py"])
+        ids = [r["id"] for r in ranked]
+        assert ids.index(fresh["id"]) < ids.index(stale["id"])
+        fresh_item = next(r for r in ranked if r["id"] == fresh["id"])
+        stale_item = next(r for r in ranked if r["id"] == stale["id"])
+        assert fresh_item["score_breakdown"]["staleness_factor"] == 1.0
+        assert stale_item["score_breakdown"]["staleness_factor"] == 0.85
+
+    def test_superseded_penalty(self, ec_db):
+        fresh = create_decision(ec_db, title="Fresh")
+        superseded = create_decision(ec_db, title="Superseded")
+        update_decision_staleness(ec_db, superseded["id"], "superseded")
+        link_decision_to_file(ec_db, fresh["id"], "src/core.py")
+        link_decision_to_file(ec_db, superseded["id"], "src/core.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/core.py"])
+        fresh_item = next(r for r in ranked if r["id"] == fresh["id"])
+        sup_item = next(r for r in ranked if r["id"] == superseded["id"])
+        assert fresh_item["score"] > sup_item["score"]
+        assert sup_item["score_breakdown"]["staleness_factor"] == 0.5
+
+    # --- Scenario tests ---
+
+    def test_repeated_task_scenario(self, ec_db):
+        """Simulates revisiting the same files — decision should surface."""
+        d = create_decision(ec_db, title="Retry strategy for webhook service")
+        link_decision_to_file(ec_db, d["id"], "src/webhook/handler.py")
+        link_decision_to_file(ec_db, d["id"], "src/webhook/retry.py")
+
+        ranked = rank_related_decisions(
+            ec_db,
+            file_paths=["src/webhook/handler.py", "src/webhook/retry.py"],
+        )
+        assert len(ranked) >= 1
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["file_exact"] == 6.0  # 3.0 * 2 files
+
+    def test_regression_fix_scenario(self, ec_db):
+        """Simulates fixing regression in area covered by a prior decision."""
+        d = create_decision(ec_db, title="Connection pool sizing")
+        link_decision_to_file(ec_db, d["id"], "src/db/pool.py")
+        link_decision_to_commit(ec_db, d["id"], "fix123abc")
+
+        ranked = rank_related_decisions(
+            ec_db,
+            file_paths=["src/db/pool.py"],
+            commit_shas=["fix123abc"],
+        )
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["file_exact"] == 3.0
+        assert item["score_breakdown"]["git_commit"] == 3.0
+        assert item["base_score"] >= 6.0
+
+    def test_candidate_beyond_200_recency(self, ec_db):
+        """Old decision linked to a specific file must surface (no 200-row ceiling)."""
+        old = create_decision(ec_db, title="Ancient decision")
+        link_decision_to_file(ec_db, old["id"], "src/legacy/ancient.py")
+
+        # Create 201 newer decisions to push `old` beyond old 200-row limit
+        for i in range(201):
+            create_decision(ec_db, title=f"Padding decision {i}")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/legacy/ancient.py"])
+        ids = [r["id"] for r in ranked]
+        assert old["id"] in ids
+
+    def test_no_signals_returns_empty(self, ec_db):
+        create_decision(ec_db, title="Some decision")
+        ranked = rank_related_decisions(ec_db)
+        # With no signals, only fallback candidates exist but all score 0 → filtered
+        assert ranked == []
+
+    # --- Observability ---
+
+    def test_score_breakdown_keys_present(self, ec_db):
+        d = create_decision(ec_db, title="Breakdown test")
+        link_decision_to_file(ec_db, d["id"], "src/test.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/test.py"])
+        item = next(r for r in ranked if r["id"] == d["id"])
+        expected_keys = {
+            "file_exact",
+            "file_proximity",
+            "assessment",
+            "diff_relevance",
+            "git_commit",
+            "quality",
+            "staleness_factor",
+        }
+        assert set(item["score_breakdown"].keys()) == expected_keys
+
+    def test_score_breakdown_sums_correctly(self, ec_db):
+        d = create_decision(ec_db, title="Sum test")
+        link_decision_to_file(ec_db, d["id"], "src/sum.py")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/sum.py"])
+        item = next(r for r in ranked if r["id"] == d["id"])
+        bd = item["score_breakdown"]
+        expected_base = (
+            bd["file_exact"] + bd["file_proximity"] + bd["assessment"] + bd["diff_relevance"] + bd["git_commit"]
+        )
+        assert abs(item["base_score"] - round(expected_base, 3)) < 0.01
+        expected_score = expected_base * bd["staleness_factor"] + bd["quality"]
+        assert abs(item["score"] - round(expected_score, 3)) < 0.01
+
+    # --- Backward compatibility ---
+
+    def test_return_format_backward_compat(self, ec_db):
+        d = create_decision(ec_db, title="Compat test")
+        link_decision_to_file(ec_db, d["id"], "src/compat.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/compat.py"])
+        item = ranked[0]
+        for key in ("id", "title", "staleness_status", "updated_at", "base_score", "quality_score", "score"):
+            assert key in item
