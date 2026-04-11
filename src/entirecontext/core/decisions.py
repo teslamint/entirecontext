@@ -648,10 +648,11 @@ def _tokenize_diff_for_fts(diff_text: str, max_tokens: int = 30) -> str | None:
         # Skip diff metadata
         if stripped.startswith(("@@", "---", "+++", "diff --git")):
             continue
-        # Only process added/removed lines
-        if not stripped.startswith(("+", "-")):
-            continue
-        content = stripped[1:].strip()
+        # Prefer added/removed lines; fall back to all lines for plain-text input
+        if stripped.startswith(("+", "-")):
+            content = stripped[1:].strip()
+        else:
+            content = stripped
         # Split camelCase and snake_case
         parts = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\b)|[a-z]+", content)
         words = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]{2,}", content)
@@ -755,7 +756,9 @@ def _gather_candidates_by_files(conn, file_paths: list[str]) -> set[str]:
     for ancestor_dir in ancestor_dirs:
         escaped = _escape_like(ancestor_dir)
         rows = conn.execute(
-            "SELECT DISTINCT decision_id FROM decision_files WHERE file_path LIKE ? ESCAPE '\\' LIMIT ?",
+            "SELECT DISTINCT decision_id FROM decision_files"
+            " WHERE REPLACE(CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3)"
+            " ELSE file_path END, '\\', '/') LIKE ? ESCAPE '\\' LIMIT ?",
             (f"{escaped}/%", _PER_SOURCE_CAP),
         ).fetchall()
         candidates.update(r["decision_id"] for r in rows)
