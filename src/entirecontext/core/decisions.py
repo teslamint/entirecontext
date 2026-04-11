@@ -748,7 +748,7 @@ def _gather_candidates_by_files(conn, file_paths: list[str]) -> set[str]:
     ancestor_dirs: set[str] = set()
     for p in normalized:
         parts = PurePosixPath(p).parts[:-1]  # directory components, excluding filename
-        for depth in range(min(len(parts), 3)):
+        for depth in range(min(len(parts), 4)):
             ancestor_parts = parts[: len(parts) - depth]
             ancestor = str(PurePosixPath(*ancestor_parts))
             if ancestor and ancestor != ".":
