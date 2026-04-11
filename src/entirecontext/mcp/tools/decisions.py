@@ -27,6 +27,7 @@ async def ec_decision_related(
     files: list[str] | None = None,
     assessment_ids: list[str] | None = None,
     diff_text: str | None = None,
+    commit_shas: list[str] | None = None,
     limit: int = 10,
     retrieval_event_id: str | None = None,
 ) -> str:
@@ -42,6 +43,7 @@ async def ec_decision_related(
             file_paths=files or [],
             assessment_ids=assessment_ids or [],
             diff_text=diff_text,
+            commit_shas=commit_shas or [],
             limit=limit,
         )
         tracked_event_id = runtime.record_search_event(
