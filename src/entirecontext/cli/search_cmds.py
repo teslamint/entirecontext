@@ -12,6 +12,7 @@ from rich.table import Table
 
 console = Console()
 
+
 def search(
     query: str = typer.Argument(..., help="Search query"),
     fts: bool = typer.Option(False, "--fts", help="Use FTS5 full-text search"),
@@ -40,17 +41,21 @@ def search(
         if hybrid:
             console.print("[yellow]--hybrid is not supported for cross-repo search; falling back to FTS5.[/yellow]")
         search_type = "semantic" if semantic else ("fts" if fts or hybrid else "regex")
-        results = cross_repo_search(
-            query,
-            search_type=search_type,
-            target=target,
-            repos=repo,
-            file_filter=file,
-            commit_filter=commit,
-            agent_filter=agent,
-            since=since,
-            limit=limit,
-        )
+        try:
+            results = cross_repo_search(
+                query,
+                search_type=search_type,
+                target=target,
+                repos=repo,
+                file_filter=file,
+                commit_filter=commit,
+                agent_filter=agent,
+                since=since,
+                limit=limit,
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise typer.Exit(1)
     else:
         from ..core.project import find_git_root
         from ..core.telemetry import detect_current_context, record_retrieval_event
