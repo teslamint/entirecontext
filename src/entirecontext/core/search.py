@@ -182,14 +182,20 @@ def _regex_search_content(conn, pattern: str, limit: int) -> list[dict]:
     return results
 
 
+class FTSQueryError(ValueError):
+    """Raised when an FTS5 query has invalid syntax."""
+
+
 _FTS5_ERROR_PATTERNS = ("fts5: syntax error", "no such column", "unterminated string", "parse error")
 
 
 def _raise_fts_query_error(exc: sqlite3.OperationalError) -> None:
-    """Convert FTS5 query-related OperationalError to a ValueError with actionable message."""
+    """Convert FTS5 query-related OperationalError to FTSQueryError with actionable message."""
     msg = str(exc).lower()
     if any(p in msg for p in _FTS5_ERROR_PATTERNS):
-        raise ValueError(f"Invalid FTS query: {exc}. Wrap punctuation in double-quotes or simplify the query.") from exc
+        raise FTSQueryError(
+            f"Invalid FTS query: {exc}. Wrap punctuation in double-quotes or simplify the query."
+        ) from exc
 
 
 def fts_search(

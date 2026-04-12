@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .context import GlobalContext
+from .search import FTSQueryError
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ class RepoExecutor:
                     result["repo_name"] = repo["repo_name"]
                     result["repo_path"] = repo["repo_path"]
                 all_results.extend(results)
-            except ValueError:
+            except FTSQueryError:
                 raise
             except Exception as exc:
                 warnings.append(self.policy.warning(repo, "query", exc))
@@ -141,7 +142,7 @@ class RepoExecutor:
                     result["repo_name"] = repo["repo_name"]
                     result["repo_path"] = repo["repo_path"]
                     return result, warnings
-            except ValueError:
+            except FTSQueryError:
                 raise
             except Exception as exc:
                 warnings.append(self.policy.warning(repo, "query", exc))
