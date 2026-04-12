@@ -27,7 +27,9 @@ def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite
     if context.project is None:
         resolved_path = context.repo_path
         context.close()
-        raise RepoResolutionError(f"{source_label}={repo_path} points to a repo at {resolved_path} that is not initialized. Run 'ec init'.")
+        raise RepoResolutionError(
+            f"{source_label}={repo_path} points to a repo at {resolved_path} that is not initialized. Run 'ec init'."
+        )
     # Caller takes ownership of conn; context is intentionally not closed here
     return context.conn, context.repo_path
 
@@ -120,7 +122,9 @@ def record_selection(conn, **kwargs):
     return server._record_selection(conn, **kwargs)
 
 
-def normalize_repo_names(repos: list[str] | None) -> list[str] | None:
+def normalize_repo_names(repos: str | list[str] | None) -> list[str] | None:
+    if isinstance(repos, str):
+        repos = [repos] if repos else []
     return None if not repos or repos == ["*"] else repos
 
 
