@@ -23,6 +23,8 @@ uv run pytest --cov=entirecontext # coverage
 
 Tests use real git repos via fixtures (`git_repo`, `ec_repo`, `ec_db`, `isolated_global_db`). External deps are isolated with `monkeypatch`. See `tests/conftest.py`.
 
+When modifying a source module, always run the existing tests for that module before committing — not just newly written tests. Test verification scope must match the change scope.
+
 ## Lint & Format
 
 ```bash
