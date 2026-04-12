@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
 import json
 import subprocess
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any
 from uuid import uuid4
 
@@ -537,107 +539,430 @@ def unlink_decision_from_checkpoint(conn, decision_id: str, checkpoint_id: str) 
     return cursor.rowcount > 0
 
 
+# ---------------------------------------------------------------------------
+# Ranking helpers
+# ---------------------------------------------------------------------------
+
+_STALENESS_FACTORS: dict[str, float] = {
+    "fresh": 1.0,
+    "stale": 0.85,
+    "superseded": 0.5,
+    "contradicted": 0.25,
+}
+
+_ASSESSMENT_RELATION_WEIGHTS: dict[str, float] = {
+    "supports": 4.0,
+    "informed_by": 4.0,
+    "contradicts": 5.0,
+    "supersedes": 3.0,
+}
+
+_CODE_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "function",
+        "return",
+        "class",
+        "import",
+        "const",
+        "null",
+        "true",
+        "false",
+        "test",
+        "self",
+        "def",
+        "var",
+        "let",
+        "src",
+        "none",
+        "this",
+        "from",
+        "async",
+        "await",
+        "yield",
+        "with",
+        "elif",
+        "else",
+        "pass",
+        "raise",
+        "except",
+        "finally",
+        "try",
+        "for",
+        "while",
+        "break",
+        "continue",
+    }
+)
+
+_FALLBACK_RECENT_COUNT = 20
+_MIN_CANDIDATE_THRESHOLD = 5
+
+
+def _normalize_path(path: str) -> str:
+    """Normalize a file path for consistent matching."""
+    p = path.replace("\\", "/")
+    if p.startswith("./"):
+        p = p[2:]
+    return p
+
+
+def _directory_proximity_score(path_a: str, path_b: str) -> float:
+    """Score directory proximity between two file paths.
+
+    Same directory = 1.5, parent = 0.75, grandparent = 0.375 (halves per level, cap 3).
+    Returns 0.0 if paths share no directory components.
+    """
+    parts_a = PurePosixPath(_normalize_path(path_a)).parts[:-1]
+    parts_b = PurePosixPath(_normalize_path(path_b)).parts[:-1]
+    if not parts_a or not parts_b:
+        return 0.0
+    shared = 0
+    for a, b in zip(parts_a, parts_b):
+        if a != b:
+            break
+        shared += 1
+    if shared == 0:
+        return 0.0
+    depth_from_match = max(len(parts_a), len(parts_b)) - shared
+    if depth_from_match > 3:
+        return 0.0
+    return 1.5 * (0.5**depth_from_match)
+
+
+def _tokenize_diff_for_fts(diff_text: str, max_tokens: int = 30) -> str | None:
+    """Extract meaningful tokens from diff text for FTS5 query.
+
+    Only processes added/removed lines. Filters code stopwords,
+    numeric-only tokens, and short tokens. Returns an FTS5 OR query
+    or None if too few tokens remain.
+    """
+    if not diff_text:
+        return None
+    text = diff_text[:5000]
+    tokens: dict[str, int] = {}
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if not stripped:
+            continue
+        # Skip diff metadata
+        if stripped.startswith(("@@", "---", "+++", "diff --git")):
+            continue
+        # Prefer added/removed lines; fall back to all lines for plain-text input
+        if stripped.startswith(("+", "-")):
+            content = stripped[1:].strip()
+        else:
+            content = stripped
+        # Split camelCase and snake_case
+        parts = re.findall(r"[A-Z]?[a-z]+|[A-Z]+(?=[A-Z][a-z]|\b)|[a-z]+", content)
+        words = re.findall(r"[a-zA-Z_][a-zA-Z0-9_]{2,}", content)
+        all_tokens = {t.lower() for t in parts + words}
+        for t in all_tokens:
+            if len(t) < 3:
+                continue
+            if t in _CODE_STOPWORDS:
+                continue
+            if re.fullmatch(r"[0-9a-f]+", t):
+                continue
+            tokens[t] = tokens.get(t, 0) + 1
+
+    if len(tokens) < 2:
+        return None
+    sorted_tokens = sorted(tokens, key=tokens.__getitem__, reverse=True)[:max_tokens]
+    # Quote tokens that could conflict with FTS5 syntax
+    safe = []
+    for t in sorted_tokens:
+        if t.upper() in ("AND", "OR", "NOT", "NEAR"):
+            safe.append(f'"{t}"')
+        else:
+            safe.append(t)
+    return " OR ".join(safe)
+
+
+def _fts_rank_decisions_from_diff(conn, diff_text: str, limit: int = 50) -> dict[str, float]:
+    """Search fts_decisions with tokenized diff text and return normalized relevance scores.
+
+    Returns {decision_id: score} where score is in [0.0, 4.0].
+    """
+    fts_query = _tokenize_diff_for_fts(diff_text)
+    if fts_query is None:
+        return {}
+    try:
+        rows = conn.execute(
+            "SELECT rowid, rank FROM fts_decisions WHERE fts_decisions MATCH ? ORDER BY rank LIMIT ?",
+            (fts_query, limit),
+        ).fetchall()
+    except Exception:
+        return {}
+    if not rows:
+        return {}
+    # Map rowid back to decision id
+    rowids = [r["rowid"] for r in rows]
+    placeholders = ",".join("?" for _ in rowids)
+    id_rows = conn.execute(
+        f"SELECT rowid, id FROM decisions WHERE rowid IN ({placeholders})",  # noqa: S608
+        rowids,
+    ).fetchall()
+    rowid_to_id = {r["rowid"]: r["id"] for r in id_rows}
+
+    # FTS5 rank is negative (more negative = better match); normalize to [0, 4]
+    raw_scores = {r["rowid"]: -r["rank"] for r in rows}
+    max_score = max(raw_scores.values()) if raw_scores else 1.0
+    min_score = min(raw_scores.values()) if raw_scores else 0.0
+
+    result: dict[str, float] = {}
+    if max_score == min_score:
+        for rowid in raw_scores:
+            did = rowid_to_id.get(rowid)
+            if did:
+                result[did] = 2.0
+    else:
+        score_range = max_score - min_score
+        for rowid, raw in raw_scores.items():
+            did = rowid_to_id.get(rowid)
+            if did:
+                # Floor at 0.5 so the weakest FTS hit still contributes signal
+                result[did] = 0.5 + 3.5 * (raw - min_score) / score_range
+    return result
+
+
+def _gather_candidates_by_files(conn, file_paths: list[str]) -> set[str]:
+    """Find decision IDs linked to the given files or sharing a parent directory."""
+    if not file_paths:
+        return set()
+    candidates: set[str] = set()
+    normalized = [_normalize_path(p) for p in file_paths]
+
+    # Exact file matches — normalize stored paths at query time to handle ./prefix and backslashes
+    # so stored values like "./src/foo.py" or "src\foo.py" match normalized inputs.
+    placeholders = ",".join("?" for _ in normalized)
+    rows = conn.execute(
+        f"SELECT DISTINCT decision_id FROM decision_files"  # noqa: S608
+        f" WHERE REPLACE(CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3) ELSE file_path END, '\\', '/') IN ({placeholders})",
+        normalized,
+    ).fetchall()
+    candidates.update(r["decision_id"] for r in rows)
+
+    # Ancestor directory matches (for proximity scoring up to 3 levels).
+    # _directory_proximity_score returns non-zero for depth_from_match <= 3, so we must gather
+    # candidates from ancestor dirs at each level to avoid silently excluding sibling/cousin files.
+    ancestor_dirs: set[str] = set()
+    for p in normalized:
+        parts = PurePosixPath(p).parts[:-1]  # directory components, excluding filename
+        for depth in range(min(len(parts), 4)):
+            ancestor_parts = parts[: len(parts) - depth]
+            ancestor = str(PurePosixPath(*ancestor_parts))
+            if ancestor and ancestor != ".":
+                ancestor_dirs.add(ancestor)
+    for ancestor_dir in ancestor_dirs:
+        escaped = _escape_like(ancestor_dir)
+        rows = conn.execute(
+            "SELECT DISTINCT decision_id FROM decision_files"
+            " WHERE REPLACE(CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3)"
+            " ELSE file_path END, '\\', '/') LIKE ? ESCAPE '\\'",
+            (f"{escaped}/%",),
+        ).fetchall()
+        candidates.update(r["decision_id"] for r in rows)
+    return candidates
+
+
+def _gather_candidates_by_commits(conn, commit_shas: list[str]) -> set[str]:
+    """Find decision IDs linked to the given commit SHAs."""
+    if not commit_shas:
+        return set()
+    placeholders = ",".join("?" for _ in commit_shas)
+    rows = conn.execute(
+        f"SELECT DISTINCT decision_id FROM decision_commits WHERE commit_sha IN ({placeholders})",  # noqa: S608
+        commit_shas,
+    ).fetchall()
+    return {r["decision_id"] for r in rows}
+
+
 def rank_related_decisions(
     conn,
     *,
     file_paths: list[str] | None = None,
     assessment_ids: list[str] | None = None,
     diff_text: str | None = None,
+    commit_shas: list[str] | None = None,
     limit: int = 10,
 ) -> list[dict]:
-    """Rank decisions by file overlap, assessment links, and recency.
+    """Rank decisions by current-change relevance using multi-signal scoring.
 
-    Scoring rules:
-    - +4 per linked assessment match
-    - +2 per linked file path match
-    - +1 if title/rationale appears in diff text
-    - quality score adjustment from tracked outcomes, capped to [-4, +4]
+    Candidate-first architecture: gathers candidate decisions from each signal
+    source (files, assessments, diff FTS5, commits), then scores the union.
+
+    Signals:
+    - file_exact: +3.0 per exact file match
+    - file_proximity: +1.5/0.75/0.375 for directory proximity (same/parent/grandparent)
+    - assessment: +3.0 to +5.0 per assessment match (max weight per assessment_id)
+    - diff_relevance: 0.0-4.0 from FTS5 match of diff text against title/rationale
+    - git_commit: +3.0 per matching commit SHA
+    - quality: from outcome tracking (accepted/ignored/contradicted), capped [-4, +4]
+    - staleness_factor: multiplicative on base_score only (fresh=1.0, stale=0.85, etc.)
+
+    Score formula: score = base_score * staleness_factor + quality_score
     """
-    file_paths = file_paths or []
+    file_paths = [_normalize_path(p) for p in (file_paths or [])]
     assessment_ids = assessment_ids or []
-    diff_text_lc = (diff_text or "").lower()
+    commit_shas = commit_shas or []
 
-    decisions = [dict(r) for r in conn.execute("SELECT * FROM decisions ORDER BY updated_at DESC LIMIT 200").fetchall()]
+    # --- 1. Gather candidates from each signal source ---
+    candidate_ids: set[str] = set()
+    candidate_ids |= _gather_candidates_by_files(conn, file_paths)
+    candidate_ids |= _gather_candidates_by_commits(conn, commit_shas)
+
+    resolved_assessment_ids: set[str] = set()
+    for aid in assessment_ids:
+        full_id = _resolve_assessment_id(conn, aid)
+        if full_id:
+            resolved_assessment_ids.add(full_id)
+    if resolved_assessment_ids:
+        placeholders = ",".join("?" for _ in resolved_assessment_ids)
+        rows = conn.execute(
+            f"SELECT DISTINCT decision_id FROM decision_assessments WHERE assessment_id IN ({placeholders})",  # noqa: S608
+            list(resolved_assessment_ids),
+        ).fetchall()
+        candidate_ids.update(r["decision_id"] for r in rows)
+
+    diff_fts_scores: dict[str, float] = {}
+    if diff_text:
+        diff_fts_scores = _fts_rank_decisions_from_diff(conn, diff_text)
+        candidate_ids.update(diff_fts_scores.keys())
+
+    # Fallback: if too few candidates, pad with recent decisions
+    if len(candidate_ids) < _MIN_CANDIDATE_THRESHOLD:
+        recent = conn.execute(
+            "SELECT id FROM decisions ORDER BY updated_at DESC LIMIT ?",
+            (_FALLBACK_RECENT_COUNT,),
+        ).fetchall()
+        candidate_ids.update(r["id"] for r in recent)
+
+    if not candidate_ids:
+        return []
+
+    # --- 2. Bulk-fetch decision data ---
+    id_list = list(candidate_ids)
+    placeholders = ",".join("?" for _ in id_list)
+    decisions = [
+        dict(r)
+        for r in conn.execute(
+            f"SELECT * FROM decisions WHERE id IN ({placeholders})",  # noqa: S608
+            id_list,
+        ).fetchall()
+    ]
     if not decisions:
         return []
 
-    resolved_assessment_ids: set[str] = set()
-    for assessment_id in assessment_ids:
-        full_assessment_id = _resolve_assessment_id(conn, assessment_id)
-        if full_assessment_id:
-            resolved_assessment_ids.add(full_assessment_id)
-
-    scored: list[dict] = []
     decision_ids = [d["id"] for d in decisions]
-    file_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
-    assessment_links_by_decision: dict[str, set[str]] = {decision_id: set() for decision_id in decision_ids}
-    outcome_counts_by_decision: dict[str, dict[str, int]] = {decision_id: {} for decision_id in decision_ids}
+    ph = ",".join("?" for _ in decision_ids)
 
-    if decision_ids:
-        placeholders = ",".join("?" for _ in decision_ids)
-        file_rows = conn.execute(
-            f"SELECT decision_id, file_path FROM decision_files WHERE decision_id IN ({placeholders})",
+    # File links
+    file_links_by_decision: dict[str, set[str]] = {did: set() for did in decision_ids}
+    for row in conn.execute(
+        f"SELECT decision_id, file_path FROM decision_files WHERE decision_id IN ({ph})",  # noqa: S608
+        decision_ids,
+    ).fetchall():
+        file_links_by_decision[row["decision_id"]].add(row["file_path"])
+
+    # Assessment links (with relation_type for weighted scoring)
+    assessment_links_by_decision: dict[str, dict[str, str]] = {did: {} for did in decision_ids}
+    for row in conn.execute(
+        f"SELECT decision_id, assessment_id, relation_type FROM decision_assessments WHERE decision_id IN ({ph})",  # noqa: S608
+        decision_ids,
+    ).fetchall():
+        existing = assessment_links_by_decision[row["decision_id"]]
+        aid = row["assessment_id"]
+        rtype = row["relation_type"]
+        # Keep max weight per assessment_id
+        if aid not in existing or _ASSESSMENT_RELATION_WEIGHTS.get(rtype, 0) > _ASSESSMENT_RELATION_WEIGHTS.get(
+            existing[aid], 0
+        ):
+            existing[aid] = rtype
+
+    # Commit links
+    commit_links_by_decision: dict[str, set[str]] = {did: set() for did in decision_ids}
+    if commit_shas:
+        for row in conn.execute(
+            f"SELECT decision_id, commit_sha FROM decision_commits WHERE decision_id IN ({ph})",  # noqa: S608
             decision_ids,
-        ).fetchall()
-        for row in file_rows:
-            file_links_by_decision[row["decision_id"]].add(row["file_path"])
+        ).fetchall():
+            commit_links_by_decision[row["decision_id"]].add(row["commit_sha"])
 
-        assessment_rows = conn.execute(
-            f"SELECT decision_id, assessment_id FROM decision_assessments WHERE decision_id IN ({placeholders})",
-            decision_ids,
-        ).fetchall()
-        for row in assessment_rows:
-            assessment_links_by_decision[row["decision_id"]].add(row["assessment_id"])
+    # Outcome counts
+    outcome_counts_by_decision: dict[str, dict[str, int]] = {did: {} for did in decision_ids}
+    for row in conn.execute(
+        f"SELECT decision_id, outcome_type, COUNT(*) AS total FROM decision_outcomes WHERE decision_id IN ({ph}) GROUP BY decision_id, outcome_type",  # noqa: S608
+        decision_ids,
+    ).fetchall():
+        outcome_counts_by_decision.setdefault(row["decision_id"], {})[row["outcome_type"]] = row["total"] or 0
 
-        outcome_rows = conn.execute(
-            (
-                "SELECT decision_id, outcome_type, COUNT(*) AS total "
-                f"FROM decision_outcomes WHERE decision_id IN ({placeholders}) "
-                "GROUP BY decision_id, outcome_type"
-            ),
-            decision_ids,
-        ).fetchall()
-        for row in outcome_rows:
-            counts = outcome_counts_by_decision.setdefault(row["decision_id"], {})
-            counts[row["outcome_type"]] = row["total"] or 0
-
+    # --- 3. Score each candidate ---
+    commit_set = set(commit_shas)
+    scored: list[dict] = []
     for d in decisions:
-        decision_id = d["id"]
-        base_score = 0.0
+        did = d["id"]
+        file_exact = 0.0
+        file_proximity = 0.0
+        assessment_score = 0.0
+        diff_relevance = diff_fts_scores.get(did, 0.0)
+        git_commit = 0.0
 
+        # File signals
         if file_paths:
-            linked_files = file_links_by_decision.get(decision_id, set())
-            for file_path in file_paths:
-                if any(file_path in linked or linked in file_path for linked in linked_files):
-                    base_score += 2
+            linked_files = file_links_by_decision.get(did, set())
+            for fp in file_paths:
+                exact_matched = False
+                for linked in linked_files:
+                    if _normalize_path(linked) == fp:
+                        file_exact += 3.0
+                        exact_matched = True
+                        break
+                if not exact_matched:
+                    best_prox = 0.0
+                    for linked in linked_files:
+                        prox = _directory_proximity_score(fp, linked)
+                        if prox > best_prox:
+                            best_prox = prox
+                    file_proximity += best_prox
 
+        # Assessment signal (deduplicated by assessment_id, max weight)
         if resolved_assessment_ids:
-            linked_assessment_ids = assessment_links_by_decision.get(decision_id, set())
-            base_score += 4 * len(linked_assessment_ids & resolved_assessment_ids)
+            links = assessment_links_by_decision.get(did, {})
+            for aid, rtype in links.items():
+                if aid in resolved_assessment_ids:
+                    assessment_score += _ASSESSMENT_RELATION_WEIGHTS.get(rtype, 4.0)
 
-        if diff_text_lc:
-            title = (d.get("title") or "").lower()
-            rationale = (d.get("rationale") or "").lower()
-            if title and title in diff_text_lc:
-                base_score += 1
-            elif rationale and rationale[:80] and rationale[:80] in diff_text_lc:
-                base_score += 1
+        # Git commit signal
+        if commit_set:
+            linked_commits = commit_links_by_decision.get(did, set())
+            git_commit = 3.0 * len(linked_commits & commit_set)
 
-        if base_score == 0:
+        base_score = file_exact + file_proximity + assessment_score + diff_relevance + git_commit
+        if base_score <= 0:
             continue
 
-        quality_score = calculate_decision_quality_score(outcome_counts_by_decision.get(decision_id, {}))
-        score = base_score + quality_score
+        quality_score = calculate_decision_quality_score(outcome_counts_by_decision.get(did, {}))
+        staleness_factor = _STALENESS_FACTORS.get(d.get("staleness_status", "fresh"), 1.0)
+        score = base_score * staleness_factor + quality_score
 
         scored.append(
             {
-                "id": decision_id,
+                "id": did,
                 "title": d.get("title"),
                 "staleness_status": d.get("staleness_status"),
                 "updated_at": d.get("updated_at"),
                 "base_score": round(base_score, 3),
                 "quality_score": round(quality_score, 3),
                 "score": round(score, 3),
+                "score_breakdown": {
+                    "file_exact": round(file_exact, 3),
+                    "file_proximity": round(file_proximity, 3),
+                    "assessment": round(assessment_score, 3),
+                    "diff_relevance": round(diff_relevance, 3),
+                    "git_commit": round(git_commit, 3),
+                    "quality": round(quality_score, 3),
+                    "staleness_factor": round(staleness_factor, 3),
+                },
             }
         )
 
