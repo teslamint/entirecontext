@@ -1036,9 +1036,9 @@ def fts_search_decisions(
     try:
         rows = conn.execute(sql, params).fetchall()
     except Exception as exc:
-        msg = str(exc)
-        if "fts5: syntax error" in msg or "parse error" in msg.lower():
-            raise ValueError(f"Invalid FTS5 query syntax: {msg}") from exc
+        from .search import _raise_fts_query_error
+
+        _raise_fts_query_error(exc)
         raise
 
     return [dict(r) for r in rows]

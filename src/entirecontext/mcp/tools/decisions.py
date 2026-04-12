@@ -244,7 +244,7 @@ async def ec_decision_search(
         return runtime.error_payload(f"Invalid search_type '{search_type}'. Use 'fts' or 'hybrid'.")
 
     repo_names = runtime.normalize_repo_names(repos)
-    is_cross_repo = bool(repos)
+    is_cross_repo = repos is not None and repos != ""
     if is_cross_repo:
         from ...core.cross_repo import _for_each_repo
         from ...core.decisions import fts_search_decisions, hybrid_search_decisions

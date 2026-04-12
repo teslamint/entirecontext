@@ -13,7 +13,7 @@ async def ec_session_context(
     retrieval_event_id: str | None = None,
 ) -> str:
     repo_names = runtime.normalize_repo_names(repos)
-    if bool(repos):
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_session_detail
 
         if not session_id:
@@ -108,7 +108,7 @@ async def ec_attribution(
     repos: str | list[str] | None = None,
 ) -> str:
     repo_names = runtime.normalize_repo_names(repos)
-    if bool(repos):
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_attribution
 
         results, warnings = cross_repo_attribution(
@@ -178,7 +178,7 @@ async def ec_turn_content(
     retrieval_event_id: str | None = None,
 ) -> str:
     repo_names = runtime.normalize_repo_names(repos)
-    if bool(repos):
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_turn_content
 
         result, warnings = cross_repo_turn_content(turn_id, repos=repo_names, include_warnings=True)

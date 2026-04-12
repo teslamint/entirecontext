@@ -19,7 +19,7 @@ async def ec_search(
     repos: str | list[str] | None = None,
 ) -> str:
     repo_names = runtime.normalize_repo_names(repos)
-    is_cross_repo = bool(repos)
+    is_cross_repo = repos is not None and repos != ""
 
     if is_cross_repo:
         from ...core.cross_repo import cross_repo_search
@@ -149,7 +149,7 @@ async def ec_related(
     repos: str | list[str] | None = None,
 ) -> str:
     repo_names = runtime.normalize_repo_names(repos)
-    if bool(repos):
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_related
 
         try:

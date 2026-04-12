@@ -15,7 +15,7 @@ async def ec_checkpoint_list(
     retrieval_event_id: str | None = None,
 ) -> str:
     repo_names = runtime.normalize_repo_names(repos)
-    if bool(repos):
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_checkpoints
 
         results, warnings = cross_repo_checkpoints(
@@ -98,7 +98,7 @@ async def ec_checkpoint_list(
 
 async def ec_rewind(checkpoint_id: str, repos: str | list[str] | None = None) -> str:
     repo_names = runtime.normalize_repo_names(repos)
-    if bool(repos):
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_rewind
 
         result, warnings = cross_repo_rewind(checkpoint_id, repos=repo_names, include_warnings=True)
