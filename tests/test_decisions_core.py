@@ -595,7 +595,7 @@ class TestDecisionFTSSearch:
 
     def test_fts_search_bad_query_raises_error(self, ec_db):
         create_decision(ec_db, title="Some decision", rationale="Some rationale")
-        with pytest.raises(ValueError, match="Invalid FTS5 query syntax"):
+        with pytest.raises(ValueError, match="Invalid FTS query"):
             fts_search_decisions(ec_db, "AND OR NOT")
 
     def test_hybrid_search_returns_scores(self, ec_db):
