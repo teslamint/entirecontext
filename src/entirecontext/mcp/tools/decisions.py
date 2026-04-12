@@ -136,7 +136,7 @@ async def ec_decision_create(
     title: str,
     rationale: str | None = None,
     scope: str | None = None,
-    rejected_alternatives: list[str] | str | None = None,
+    rejected_alternatives: list[str] | str | dict | None = None,
     supporting_evidence: list | str | dict | None = None,
 ) -> str:
     """Create a new decision record.
