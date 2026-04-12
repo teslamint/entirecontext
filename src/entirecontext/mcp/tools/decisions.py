@@ -8,7 +8,7 @@ import time
 from .. import runtime
 
 
-def _ensure_list(value, field_name: str) -> list | None:
+def _ensure_list(value: str | dict | list | None, field_name: str) -> list | None:
     """Coerce common agent input shapes for list fields into proper lists."""
     if value is None:
         return None
