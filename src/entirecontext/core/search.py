@@ -189,8 +189,8 @@ class FTSQueryError(ValueError):
 _FTS5_ERROR_PATTERNS = ("fts5: syntax error", "no such column", "unterminated string", "parse error")
 
 
-def _raise_fts_query_error(exc: sqlite3.OperationalError) -> None:
-    """Convert FTS5 query-related OperationalError to FTSQueryError with actionable message."""
+def _raise_fts_query_error(exc: Exception) -> None:
+    """Convert FTS5 query-related exceptions to FTSQueryError with actionable message."""
     msg = str(exc).lower()
     if any(p in msg for p in _FTS5_ERROR_PATTERNS):
         raise FTSQueryError(
