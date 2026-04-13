@@ -1,0 +1,12 @@
+{
+  "id": "91e3723c-b9c4-4592-accc-0d1f22ab0918",
+  "session_id": "b183a75e-f2f5-4d6f-995b-4b949788a821",
+  "git_commit_hash": "a2a229e018d1cb623b279f9050db9feda25e393f",
+  "git_branch": "fix/sleepy-leavitt-review",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/decisions.py | 3 +++\n tests/test_decisions_core.py        | 5 +++++\n 2 files changed, 8 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-03-31 07:27:21",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

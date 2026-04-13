@@ -1,0 +1,12 @@
+{
+  "id": "8aca2556-d74e-4fa0-9555-8264e8be8e78",
+  "session_id": "bdd29076-5ec5-4264-9710-d10af2c7cd4c",
+  "git_commit_hash": "b4aa894a24608a2ea6384126ed5afebee45c244b",
+  "git_branch": "feat/issue-40-decision-relevance-ranking",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/mcp/server.py | 4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-11 10:15:59",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "6aa2649a-cf36-4e35-853f-62a95f852499",
+  "session_id": "b183a75e-f2f5-4d6f-995b-4b949788a821",
+  "git_commit_hash": "590ec1a4ef7ba1dc2d6acbf006f8a8124721e0e2",
+  "git_branch": "fix/sleepy-leavitt-review",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".github/workflows/claude-code-review.yml    |   2 +-\n .github/workflows/claude.yml                |   2 +-\n src/entirecontext/cli/decisions_cmds.py     | 149 +++++++++++++++++++++-\n src/entirecontext/core/decisions.py         | 172 +++++++++++++++++++++++++\n src/entirecontext/core/git_utils.py         |  20 +++\n src/entirecontext/db/migrations/__init__.py |   2 +-\n src/entirecontext/db/migrations/v011.py     |  35 ++++++\n src/entirecontext/db/schema.py              |  34 ++++-\n src/entirecontext/mcp/server.py             |  12 +-\n src/entirecontext/mcp/tools/decisions.py    |  95 +++++++++++++-\n tests/test_db_schema.py                     |   2 +-\n tests/test_decisions_core.py                | 188 ++++++++++++++++++++++++++++\n tests/test_mcp_registration.py              |   3 +\n 13 files changed, 704 insertions(+), 12 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-03-31 06:58:17",
+  "metadata": "{\"source\": \"post_commit\"}"
+}
