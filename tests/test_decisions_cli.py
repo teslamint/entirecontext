@@ -348,6 +348,22 @@ class TestDecisionsCLIExtended:
         assert result.exit_code == 0
         assert "superseded" in result.stdout.lower()
 
+    def test_decision_chain_includes_terminal_at_depth_cap(self, ec_repo, monkeypatch):
+        from entirecontext.core.decisions import _SUCCESSOR_CHAIN_DEPTH_CAP, supersede_decision
+
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        chain = [create_decision(conn, title=f"Decision {idx}") for idx in range(_SUCCESSOR_CHAIN_DEPTH_CAP + 1)]
+        for old, new in zip(chain, chain[1:]):
+            supersede_decision(conn, old["id"], new["id"])
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "chain", chain[0]["id"][:12]])
+
+        assert result.exit_code == 0
+        assert chain[-1]["id"][:12] in result.stdout
+        assert f"Decision {_SUCCESSOR_CHAIN_DEPTH_CAP}" in result.stdout
+
     def test_decision_unlink_file_success(self, ec_repo, monkeypatch):
         from entirecontext.core.decisions import link_decision_to_file
 

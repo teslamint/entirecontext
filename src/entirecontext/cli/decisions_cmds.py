@@ -403,7 +403,7 @@ def decision_chain(
         current_id: Optional[str] = full_id
         visited: set[str] = set()
         hop = 0
-        while current_id is not None and hop < _SUCCESSOR_CHAIN_DEPTH_CAP:
+        while current_id is not None and hop <= _SUCCESSOR_CHAIN_DEPTH_CAP:
             if current_id in visited:
                 table.add_row(str(hop), current_id[:12], "[red]<cycle detected>[/red]", "")
                 break
