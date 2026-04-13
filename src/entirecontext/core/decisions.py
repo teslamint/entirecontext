@@ -683,6 +683,10 @@ def resolve_successor_chain(conn, decision_id: str) -> tuple[str, str]:
 
     Returns (terminal_id, terminal_staleness_status). If the decision is not
     superseded, returns itself. Depth cap prevents runaway cycles.
+
+    The loop counter walks one node past the nominal depth cap so a chain
+    of length exactly `cap + 1` nodes (cap hops) resolves cleanly instead of
+    exiting one hop early with the penultimate node as a misreported terminal.
     """
     full_id = _resolve_decision_id(conn, decision_id)
     if full_id is None:
@@ -690,7 +694,7 @@ def resolve_successor_chain(conn, decision_id: str) -> tuple[str, str]:
 
     current_id = full_id
     visited: set[str] = set()
-    for _ in range(_SUCCESSOR_CHAIN_DEPTH_CAP):
+    for _ in range(_SUCCESSOR_CHAIN_DEPTH_CAP + 1):
         if current_id in visited:
             break
         visited.add(current_id)
@@ -705,7 +709,9 @@ def resolve_successor_chain(conn, decision_id: str) -> tuple[str, str]:
         if not successor:
             return current_id, status
         current_id = successor
-    # Hit depth cap: return current node's status as best-effort terminal.
+    # Hit depth cap without finding a terminal node. Return the current node's
+    # status as best-effort terminal; chains deeper than the cap intentionally
+    # drop downstream (treated as superseded / unresolved).
     row = conn.execute("SELECT staleness_status FROM decisions WHERE id = ?", (current_id,)).fetchone()
     return current_id, (row["staleness_status"] if row else "fresh")
 
@@ -723,9 +729,11 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
         raise ValueError("A decision cannot supersede itself")
 
     # Multi-hop cycle check: walking new_full's chain must not lead back to old_full.
+    # Iterates one step past the nominal depth cap so a chain of length cap + 1
+    # nodes still exposes the old_full position before the loop exits.
     probe_id: str | None = new_full
     visited: set[str] = set()
-    for _ in range(_SUCCESSOR_CHAIN_DEPTH_CAP):
+    for _ in range(_SUCCESSOR_CHAIN_DEPTH_CAP + 1):
         if probe_id is None or probe_id in visited:
             break
         if probe_id == old_full:

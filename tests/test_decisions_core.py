@@ -991,6 +991,43 @@ class TestStalenessHardening:
         with pytest.raises(ValueError, match="cycle"):
             supersede_decision(ec_db, b["id"], a["id"])
 
+    def test_supersede_detects_cycle_at_depth_cap(self, ec_db):
+        """PR #55 review: off-by-one regression — build a chain of length
+        _SUCCESSOR_CHAIN_DEPTH_CAP + 1 (11 nodes, 10 hops) then attempt a
+        supersede that would close it into a cycle of the same depth.
+        The cycle-check loop must walk the full chain, not exit one hop early.
+        """
+        from entirecontext.core.decisions import _SUCCESSOR_CHAIN_DEPTH_CAP
+
+        cap_plus_one = _SUCCESSOR_CHAIN_DEPTH_CAP + 1
+        nodes = [create_decision(ec_db, title=f"node-{i}") for i in range(cap_plus_one)]
+        # Build chain: nodes[0] → nodes[1] → ... → nodes[cap]  (cap hops, cap+1 nodes)
+        for i in range(cap_plus_one - 1):
+            supersede_decision(ec_db, nodes[i]["id"], nodes[i + 1]["id"])
+
+        # Now the chain looks like: nodes[0] .. nodes[-1] (terminal, fresh).
+        # Attempting to make nodes[-1] → nodes[0] must be detected as a cycle.
+        # Without the +1 fix, probe walker exits before reaching nodes[0] and
+        # the UPDATE would silently create a cycle.
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, nodes[-1]["id"], nodes[0]["id"])
+
+    def test_resolve_successor_chain_reaches_depth_cap_terminal(self, ec_db):
+        """PR #55 review: build the longest chain the walker is supposed to
+        resolve (cap + 1 nodes, cap hops) and verify the terminal is returned
+        correctly rather than dropped one hop early with 'superseded' status.
+        """
+        from entirecontext.core.decisions import _SUCCESSOR_CHAIN_DEPTH_CAP, resolve_successor_chain
+
+        cap_plus_one = _SUCCESSOR_CHAIN_DEPTH_CAP + 1
+        nodes = [create_decision(ec_db, title=f"chain-{i}") for i in range(cap_plus_one)]
+        for i in range(cap_plus_one - 1):
+            supersede_decision(ec_db, nodes[i]["id"], nodes[i + 1]["id"])
+
+        terminal_id, status = resolve_successor_chain(ec_db, nodes[0]["id"])
+        assert terminal_id == nodes[-1]["id"]
+        assert status == "fresh"
+
     def test_fts_search_default_excludes_superseded(self, ec_db):
         fresh = create_decision(ec_db, title="freshkeywordalpha")
         sup = create_decision(ec_db, title="freshkeywordalpha also")
