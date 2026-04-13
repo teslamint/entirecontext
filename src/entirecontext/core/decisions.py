@@ -536,16 +536,8 @@ def _infer_repo_path_from_conn(conn) -> str | None:
     except sqlite3.Error:
         return None
     for row in rows:
-        # PRAGMA database_list columns: (seq, name, file)
-        try:
-            name = row["name"]
-            file_path = row["file"]
-        except (KeyError, TypeError, IndexError):
-            try:
-                name = row[1]
-                file_path = row[2]
-            except (IndexError, TypeError):
-                continue
+        name = row["name"]
+        file_path = row["file"]
         if name != "main" or not file_path:
             continue
         db_path = Path(file_path)
