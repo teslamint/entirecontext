@@ -263,7 +263,16 @@ def list_decisions(
     staleness_status: str | None = None,
     file_path: str | None = None,
     limit: int = 20,
+    include_contradicted: bool = True,
 ) -> list[dict]:
+    """List decisions with optional filters.
+
+    include_contradicted: default True for backward compatibility. When False,
+    contradicted decisions are excluded at the SQL level so downstream callers
+    (e.g. the session-start hook) do not lose fresh/stale/superseded results
+    behind a wall of contradicted rows that hit the row-count limit first.
+    The flag is ignored when `staleness_status` explicitly selects one status.
+    """
     if staleness_status and staleness_status not in VALID_STALENESS:
         raise ValueError(
             f"Invalid staleness_status '{staleness_status}'. Must be one of: {_format_allowed(VALID_STALENESS)}"
@@ -281,6 +290,8 @@ def list_decisions(
     if staleness_status:
         conditions.append("d.staleness_status = ?")
         params.append(staleness_status)
+    elif not include_contradicted:
+        conditions.append("d.staleness_status != 'contradicted'")
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -732,14 +743,14 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
         raise ValueError("A decision cannot supersede itself")
 
     # Multi-hop cycle check: walking new_full's chain must not lead back to old_full.
-    # Iterates one step past the nominal depth cap so a chain of length cap + 1
-    # nodes still exposes the old_full position before the loop exits.
+    # Cycle detection is a graph property independent of the nominal depth cap —
+    # a visited set bounds the walk naturally because the decisions table is
+    # finite, and pre-seeding the visited set with old_full means old_full
+    # appearing anywhere in new_full's existing chain trips the cycle check.
     probe_id: str | None = new_full
-    visited: set[str] = set()
-    for _ in range(_SUCCESSOR_CHAIN_DEPTH_CAP + 1):
-        if probe_id is None or probe_id in visited:
-            break
-        if probe_id == old_full:
+    visited: set[str] = {old_full}
+    while probe_id is not None:
+        if probe_id in visited:
             raise ValueError(
                 f"Supersession would create a cycle: decision '{old_full}' already appears in the successor chain of '{new_full}'"
             )

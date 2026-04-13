@@ -129,8 +129,11 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     if len(seen_ids) >= display_limit:
                         break
 
+                    # Push contradicted-exclusion down to SQL so the limit=10
+                    # row cap can't hide fresh/superseded candidates behind a
+                    # wall of contradicted rows (PR #55 Codex review).
                     file_rows: list[dict] = []
-                    for d in list_decisions(conn, file_path=f, limit=10):
+                    for d in list_decisions(conn, file_path=f, limit=10, include_contradicted=False):
                         if d["id"] in raw_seen:
                             continue
                         raw_seen.add(d["id"])
@@ -139,10 +142,10 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     if not file_rows:
                         continue
 
-                    # include_superseded=True lets supersededs survive so the chain
-                    # collapse branch below can substitute each one with its terminal
-                    # successor. include_contradicted=False still drops contradicted
-                    # rows up-front.
+                    # SQL already dropped contradicted rows; the policy call
+                    # still enforces `include_superseded=True` so the chain
+                    # collapse branch below can substitute each one with its
+                    # terminal successor.
                     kept, _stats = _apply_staleness_policy(
                         file_rows,
                         include_stale=True,

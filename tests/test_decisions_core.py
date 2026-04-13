@@ -991,6 +991,24 @@ class TestStalenessHardening:
         with pytest.raises(ValueError, match="cycle"):
             supersede_decision(ec_db, b["id"], a["id"])
 
+    def test_supersede_detects_cycle_deeper_than_depth_cap(self, ec_db):
+        """PR #55 Codex review: cycle detection must work beyond the nominal
+        depth cap. Build a chain of 2*cap+2 nodes (far deeper than +1) and
+        verify that closing it into a cycle is rejected — independent of cap.
+        """
+        from entirecontext.core.decisions import _SUCCESSOR_CHAIN_DEPTH_CAP
+
+        chain_len = _SUCCESSOR_CHAIN_DEPTH_CAP * 2 + 2  # well beyond the old +1 limit
+        nodes = [create_decision(ec_db, title=f"deep-{i}") for i in range(chain_len)]
+        for i in range(chain_len - 1):
+            supersede_decision(ec_db, nodes[i]["id"], nodes[i + 1]["id"])
+
+        # The tail is the current terminal (fresh). Attempting tail → head must
+        # be detected as a cycle even though head sits at depth chain_len - 1,
+        # which is far deeper than _SUCCESSOR_CHAIN_DEPTH_CAP.
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, nodes[-1]["id"], nodes[0]["id"])
+
     def test_supersede_detects_cycle_at_depth_cap(self, ec_db):
         """PR #55 review: off-by-one regression — build a chain of length
         _SUCCESSOR_CHAIN_DEPTH_CAP + 1 (11 nodes, 10 hops) then attempt a

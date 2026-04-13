@@ -213,10 +213,22 @@ class TestOnSessionStartDecisions:
 
         file_path_calls: list[str] = []
 
-        def spy_list_decisions(conn, staleness_status=None, file_path=None, limit=20):
+        def spy_list_decisions(
+            conn,
+            staleness_status=None,
+            file_path=None,
+            limit=20,
+            include_contradicted=True,
+        ):
             if file_path is not None:
                 file_path_calls.append(file_path)
-            return core_list_decisions(conn, staleness_status=staleness_status, file_path=file_path, limit=limit)
+            return core_list_decisions(
+                conn,
+                staleness_status=staleness_status,
+                file_path=file_path,
+                limit=limit,
+                include_contradicted=include_contradicted,
+            )
 
         monkeypatch.setattr("entirecontext.core.decisions.list_decisions", spy_list_decisions)
 
@@ -275,6 +287,50 @@ class TestOnSessionStartDecisions:
         assert result is not None
         assert "Good choice" in result
         assert "Contradicted choice" not in result
+
+    def test_session_start_hot_file_with_many_contradicted_still_surfaces_fresh(self, ec_repo, ec_db, monkeypatch):
+        """PR #55 Codex review: when a hot file has more than list_decisions'
+        row cap of contradicted entries, a fresh decision just beyond that
+        cap must still surface — the filter has to push down into SQL so the
+        10-row cap can't hide valid guidance.
+        """
+        from entirecontext.core.decisions import update_decision_staleness
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+
+        hot_file = "src/hot.py"
+        # Create 15 contradicted decisions linked to the hot file — more than
+        # the list_decisions limit (10). Without SQL-side filtering, these
+        # would fill the bucket first and crowd out the fresh row.
+        for i in range(15):
+            d = create_decision(ec_db, title=f"Bad call #{i}")
+            link_decision_to_file(ec_db, d["id"], hot_file)
+            update_decision_staleness(ec_db, d["id"], "contradicted")
+
+        # One fresh decision — must surface in the session-start hook output.
+        fresh = create_decision(ec_db, title="Current architecture choice")
+        link_decision_to_file(ec_db, fresh["id"], hot_file)
+
+        test_file = ec_repo / "src" / "hot.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add hot"],
+            check=True,
+            capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Current architecture choice" in result
+        # No contradicted titles should appear in the output.
+        assert "Bad call" not in result
 
     def test_session_start_surfaces_successor_for_superseded(self, ec_repo, ec_db, monkeypatch):
         """Superseded decisions are replaced by their terminal successor in session-start output."""
