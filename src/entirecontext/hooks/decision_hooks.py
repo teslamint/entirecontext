@@ -117,8 +117,9 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             # Use `list_decisions(file_path=f)` per changed file so path matching
             # preserves the existing LIKE-contains semantics (handles `./src/app.py`
             # vs `src/app.py` divergence between git output and stored decision_files).
-            # Central staleness filter is still applied post-fetch; chain collapse
-            # substitutes the terminal successor when the stored row is superseded.
+            # Staleness policy: contradicted rows are dropped by the policy filter,
+            # but superseded rows are intentionally kept so the loop below can walk
+            # their supersession chain and substitute the terminal successor.
             changed_files = _get_recently_changed_files(repo_path)
             file_related = []
             if changed_files:
@@ -131,21 +132,31 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                         raw_seen.add(d["id"])
                         raw_rows.append(d)
 
+                # include_superseded=True lets supersededs survive so the chain
+                # collapse branch below can substitute each one with its terminal
+                # successor. include_contradicted=False still drops contradicted
+                # rows up-front.
                 kept, _stats = _apply_staleness_policy(
                     raw_rows,
                     include_stale=True,
-                    include_superseded=False,
+                    include_superseded=True,
                     include_contradicted=False,
                 )
                 for row in kept:
                     if row["id"] in seen_ids:
                         continue
                     effective_id = row["id"]
-                    if row.get("staleness_status") == "superseded" and row.get("superseded_by_id"):
+                    if row.get("staleness_status") == "superseded":
+                        if not row.get("superseded_by_id"):
+                            # No successor pointer — hide this orphaned record.
+                            continue
                         terminal_id, terminal_status = resolve_successor_chain(conn, row["id"])
-                        if terminal_status in ("contradicted", "superseded"):
+                        if terminal_id == row["id"] or terminal_status in ("contradicted", "superseded"):
+                            # Unresolved chain or terminal is also filtered — skip.
                             continue
                         effective_id = terminal_id
+                        if effective_id in seen_ids:
+                            continue
                     full = get_decision(conn, effective_id)
                     if full:
                         file_related.append(full)

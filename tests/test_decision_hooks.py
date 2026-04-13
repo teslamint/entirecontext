@@ -274,6 +274,43 @@ class TestOnSessionStartDecisions:
         assert "Updated auth decision" in result
         assert "Original auth decision" not in result
 
+    def test_session_start_chain_collapse_when_only_ancestor_is_linked(self, ec_repo, ec_db, monkeypatch):
+        """PR #55 review regression: link ONLY the ancestor to the changed file.
+
+        This is the migration state where a replacement (new) exists but hasn't
+        had its file links copied over yet. The chain-collapse branch in the
+        hook must still substitute `new` for `old` — otherwise the PR's claim
+        that "superseded decisions are replaced with their successor" is vacuous.
+        """
+        from entirecontext.core.decisions import supersede_decision
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        old = create_decision(ec_db, title="Original payments decision")
+        new = create_decision(ec_db, title="Current payments decision")
+        # ONLY the ancestor has the file link — mimics the in-flight migration.
+        link_decision_to_file(ec_db, old["id"], "src/payments.py")
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        test_file = ec_repo / "src" / "payments.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add payments"],
+            check=True,
+            capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Current payments decision" in result
+        assert "Original payments decision" not in result
+
 
 class TestMaybeExtractDecisions:
     def _setup_session_with_summaries(self, ec_db, summaries):

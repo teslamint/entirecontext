@@ -1112,3 +1112,40 @@ class TestStalenessHardening:
             "WHERE superseded_by_id IS NOT NULL AND staleness_status != 'superseded'"
         ).fetchone()
         assert row["n"] == 0
+
+    def test_record_outcome_rolls_back_on_dml_failure(self, ec_db, monkeypatch):
+        """PR #55 review: when DML inside the BEGIN IMMEDIATE block fails, the
+        transaction must be explicitly rolled back so subsequent calls on the
+        same connection are not blocked by a stale open write transaction.
+        """
+        d = create_decision(ec_db, title="Outcome rollback target")
+
+        # Force a failure mid-transaction by patching the auto-promotion helper
+        # to raise. This simulates any exception happening between BEGIN IMMEDIATE
+        # and commit (e.g. FK violation, OperationalError, unexpected runtime error).
+        def boom(_conn, _decision_id, _now):
+            raise RuntimeError("simulated auto-promotion failure")
+
+        monkeypatch.setattr(
+            "entirecontext.core.decisions._maybe_auto_promote_contradicted",
+            boom,
+        )
+
+        # outcome_type="contradicted" is required to route through the patched helper.
+        with pytest.raises(RuntimeError, match="simulated auto-promotion failure"):
+            record_decision_outcome(ec_db, d["id"], "contradicted")
+
+        # Undo the patch so the follow-up call uses the real implementation.
+        monkeypatch.undo()
+
+        # If rollback worked, the same connection must still be usable —
+        # proving the write transaction was rolled back instead of left open.
+        follow_up = record_decision_outcome(ec_db, d["id"], "accepted")
+        assert follow_up["decision_id"] == d["id"]
+
+        # The failed contradicted outcome must not have persisted.
+        row = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchone()
+        assert row["n"] == 1  # only the successful `accepted` outcome

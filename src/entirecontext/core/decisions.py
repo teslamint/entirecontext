@@ -412,23 +412,38 @@ def record_decision_outcome(
         # an outer caller already opened one. Stay nested; do not commit below.
         started_tx = False
 
-    conn.execute(
-        """
-        INSERT INTO decision_outcomes (
-            id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (outcome_id, full_decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, now),
-    )
-    conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (now, full_decision_id))
+    # Explicit rollback on any DML failure: Python's sqlite3 does not auto-rollback
+    # transactions started with an explicit BEGIN IMMEDIATE, so without this guard
+    # an exception in INSERT/UPDATE/auto-promote would leave the write transaction
+    # open on the connection — cascading into "cannot start a transaction within a
+    # transaction" errors on subsequent calls that would then silently drop into
+    # the nested-path branch and write into a stale uncommitted tx.
+    try:
+        conn.execute(
+            """
+            INSERT INTO decision_outcomes (
+                id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (outcome_id, full_decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, now),
+        )
+        conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (now, full_decision_id))
 
-    # Auto-promotion: if a contradicted outcome pushes the decision past threshold,
-    # promote its staleness_status. One-way ratchet — never reverts to fresh.
-    if outcome_type == "contradicted":
-        _maybe_auto_promote_contradicted(conn, full_decision_id, now)
+        # Auto-promotion: if a contradicted outcome pushes the decision past threshold,
+        # promote its staleness_status. One-way ratchet — never reverts to fresh.
+        if outcome_type == "contradicted":
+            _maybe_auto_promote_contradicted(conn, full_decision_id, now)
 
-    if started_tx:
-        conn.commit()
+        if started_tx:
+            conn.commit()
+    except Exception:
+        if started_tx:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+        raise
+
     row = conn.execute(
         """
         SELECT id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
