@@ -196,6 +196,51 @@ class TestOnSessionStartDecisions:
         entries = [line for line in result.split("\n") if line.strip().startswith("- [")]
         assert len(entries) <= 5
 
+    def test_session_start_stops_querying_changed_files_after_display_cap(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+
+        changed_files = [f"src/file_{i}.py" for i in range(8)]
+        for i, file_path in enumerate(changed_files):
+            decision = create_decision(ec_db, title=f"Decision {i}")
+            link_decision_to_file(ec_db, decision["id"], file_path)
+
+        monkeypatch.setattr("entirecontext.hooks.decision_hooks._get_recently_changed_files", lambda _: changed_files)
+
+        from entirecontext.core.decisions import list_decisions as core_list_decisions
+
+        file_path_calls: list[str] = []
+
+        def spy_list_decisions(
+            conn,
+            staleness_status=None,
+            file_path=None,
+            limit=20,
+            include_contradicted=True,
+        ):
+            if file_path is not None:
+                file_path_calls.append(file_path)
+            return core_list_decisions(
+                conn,
+                staleness_status=staleness_status,
+                file_path=file_path,
+                limit=limit,
+                include_contradicted=include_contradicted,
+            )
+
+        monkeypatch.setattr("entirecontext.core.decisions.list_decisions", spy_list_decisions)
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+
+        assert result is not None
+        assert file_path_calls == changed_files[:5]
+        entries = [line for line in result.split("\n") if line.strip().startswith("- [")]
+        assert len(entries) == 5
+
     def test_git_failure_returns_none(self, ec_repo, ec_db, monkeypatch):
         from unittest.mock import MagicMock
 
@@ -211,6 +256,149 @@ class TestOnSessionStartDecisions:
 
         result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
         assert result is None
+
+    def test_session_start_excludes_contradicted_decisions(self, ec_repo, ec_db, monkeypatch):
+        """Issue #39 regression: contradicted decisions must not appear in session-start output."""
+        from entirecontext.core.decisions import update_decision_staleness
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        good = create_decision(ec_db, title="Good choice")
+        bad = create_decision(ec_db, title="Contradicted choice")
+        link_decision_to_file(ec_db, good["id"], "src/handler.py")
+        link_decision_to_file(ec_db, bad["id"], "src/handler.py")
+        update_decision_staleness(ec_db, bad["id"], "contradicted")
+
+        test_file = ec_repo / "src" / "handler.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add handler"],
+            check=True,
+            capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Good choice" in result
+        assert "Contradicted choice" not in result
+
+    def test_session_start_hot_file_with_many_contradicted_still_surfaces_fresh(self, ec_repo, ec_db, monkeypatch):
+        """PR #55 Codex review: when a hot file has more than list_decisions'
+        row cap of contradicted entries, a fresh decision just beyond that
+        cap must still surface — the filter has to push down into SQL so the
+        10-row cap can't hide valid guidance.
+        """
+        from entirecontext.core.decisions import update_decision_staleness
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+
+        hot_file = "src/hot.py"
+        # Create 15 contradicted decisions linked to the hot file — more than
+        # the list_decisions limit (10). Without SQL-side filtering, these
+        # would fill the bucket first and crowd out the fresh row.
+        for i in range(15):
+            d = create_decision(ec_db, title=f"Bad call #{i}")
+            link_decision_to_file(ec_db, d["id"], hot_file)
+            update_decision_staleness(ec_db, d["id"], "contradicted")
+
+        # One fresh decision — must surface in the session-start hook output.
+        fresh = create_decision(ec_db, title="Current architecture choice")
+        link_decision_to_file(ec_db, fresh["id"], hot_file)
+
+        test_file = ec_repo / "src" / "hot.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add hot"],
+            check=True,
+            capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Current architecture choice" in result
+        # No contradicted titles should appear in the output.
+        assert "Bad call" not in result
+
+    def test_session_start_surfaces_successor_for_superseded(self, ec_repo, ec_db, monkeypatch):
+        """Superseded decisions are replaced by their terminal successor in session-start output."""
+        from entirecontext.core.decisions import supersede_decision
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        old = create_decision(ec_db, title="Original auth decision")
+        new = create_decision(ec_db, title="Updated auth decision")
+        link_decision_to_file(ec_db, old["id"], "src/auth.py")
+        link_decision_to_file(ec_db, new["id"], "src/auth.py")
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        test_file = ec_repo / "src" / "auth.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add auth"],
+            check=True,
+            capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Updated auth decision" in result
+        assert "Original auth decision" not in result
+
+    def test_session_start_chain_collapse_when_only_ancestor_is_linked(self, ec_repo, ec_db, monkeypatch):
+        """PR #55 review regression: link ONLY the ancestor to the changed file.
+
+        This is the migration state where a replacement (new) exists but hasn't
+        had its file links copied over yet. The chain-collapse branch in the
+        hook must still substitute `new` for `old` — otherwise the PR's claim
+        that "superseded decisions are replaced with their successor" is vacuous.
+        """
+        from entirecontext.core.decisions import supersede_decision
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        old = create_decision(ec_db, title="Original payments decision")
+        new = create_decision(ec_db, title="Current payments decision")
+        # ONLY the ancestor has the file link — mimics the in-flight migration.
+        link_decision_to_file(ec_db, old["id"], "src/payments.py")
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        test_file = ec_repo / "src" / "payments.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add payments"],
+            check=True,
+            capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Current payments decision" in result
+        assert "Original payments decision" not in result
 
 
 class TestMaybeExtractDecisions:

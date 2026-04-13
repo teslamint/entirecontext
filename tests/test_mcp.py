@@ -733,7 +733,9 @@ class TestMCPAssessAndFeedback:
         from entirecontext.core.futures import create_assessment
         from entirecontext.mcp.server import ec_feedback
 
-        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (mock_repo_db, str(tmp_path)))
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (mock_repo_db, str(tmp_path))
+        )
 
         distill_calls = []
 
@@ -785,7 +787,9 @@ class TestMCPAssessAndFeedback:
 
         roadmap_file = tmp_path / "ROADMAP.md"
         roadmap_file.write_text("# Roadmap\n- Phase 1: Auth\n- Phase 2: API", encoding="utf-8")
-        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (mock_repo_db, str(tmp_path)))
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (mock_repo_db, str(tmp_path))
+        )
 
         fake_backend = MagicMock()
         fake_backend.complete.return_value = json.dumps(
@@ -932,7 +936,9 @@ class TestMCPAstSearch:
 
         monkeypatch.setattr(
             "entirecontext.mcp.runtime.get_repo_db",
-            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")),
+            lambda repo_hint=None: (_ for _ in ()).throw(
+                runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+            ),
         )
         result = json.loads(asyncio.run(ec_ast_search("test")))
         assert "error" in result
@@ -981,7 +987,9 @@ class TestMCPGraph:
 
         monkeypatch.setattr(
             "entirecontext.mcp.runtime.get_repo_db",
-            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")),
+            lambda repo_hint=None: (_ for _ in ()).throw(
+                runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+            ),
         )
         result = json.loads(asyncio.run(ec_graph()))
         assert "error" in result
@@ -1033,7 +1041,9 @@ class TestMCPDashboard:
 
         monkeypatch.setattr(
             "entirecontext.mcp.runtime.get_repo_db",
-            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")),
+            lambda repo_hint=None: (_ for _ in ()).throw(
+                runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+            ),
         )
         result = json.loads(asyncio.run(ec_dashboard()))
         assert "error" in result
@@ -1215,7 +1225,9 @@ class TestMCPActivate:
 
         monkeypatch.setattr(
             "entirecontext.mcp.runtime.get_repo_db",
-            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")),
+            lambda repo_hint=None: (_ for _ in ()).throw(
+                runtime.RepoResolutionError("No repo found. Run 'ec init' in your repo or set ENTIRECONTEXT_REPO_PATH.")
+            ),
         )
         result = json.loads(asyncio.run(ec_activate(seed_turn_id="t1")))
         assert "error" in result
@@ -1360,6 +1372,89 @@ class TestMCPDecisionToolsExtended:
         assert result["decision_id"] == decision["id"]
         assert result["stale"] is True
         assert "src/changed.py" in result["changed_files"]
+
+
+class TestMCPStalenessHardening:
+    """Issue #39 regression: MCP-level validation of staleness filtering."""
+
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def mock_repo_db(self, db, monkeypatch):
+        class _NoCloseConn:
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
+
+    def test_ec_decision_related_excludes_superseded(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, link_decision_to_file, supersede_decision
+        from entirecontext.mcp.tools.decisions import ec_decision_related
+
+        a = create_decision(mock_repo_db, title="Old")
+        b = create_decision(mock_repo_db, title="New")
+        link_decision_to_file(mock_repo_db, a["id"], "src/config.py")
+        link_decision_to_file(mock_repo_db, b["id"], "src/config.py")
+        supersede_decision(mock_repo_db, a["id"], b["id"])
+
+        result = json.loads(asyncio.run(ec_decision_related(files=["src/config.py"])))
+        ids = [d["id"] for d in result["decisions"]]
+        assert b["id"] in ids
+        assert a["id"] not in ids
+
+    def test_ec_decision_related_returns_filter_stats(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, link_decision_to_file, update_decision_staleness
+        from entirecontext.mcp.tools.decisions import ec_decision_related
+
+        fresh = create_decision(mock_repo_db, title="Keep")
+        bad = create_decision(mock_repo_db, title="Drop")
+        link_decision_to_file(mock_repo_db, fresh["id"], "src/router.py")
+        link_decision_to_file(mock_repo_db, bad["id"], "src/router.py")
+        update_decision_staleness(mock_repo_db, bad["id"], "contradicted")
+
+        result = json.loads(asyncio.run(ec_decision_related(files=["src/router.py"], include_filter_stats=True)))
+        assert "filter_stats" in result
+        assert result["filter_stats"]["filtered_count"] >= 1
+
+    def test_ec_decision_get_includes_successor(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, supersede_decision
+        from entirecontext.mcp.tools.decisions import ec_decision_get
+
+        a = create_decision(mock_repo_db, title="Pre")
+        b = create_decision(mock_repo_db, title="Post")
+        supersede_decision(mock_repo_db, a["id"], b["id"])
+
+        result = json.loads(asyncio.run(ec_decision_get(a["id"])))
+        assert result.get("successor") == {"id": b["id"], "title": "Post"}
+
+    def test_ec_decision_search_opt_in_contradicted(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, update_decision_staleness
+        from entirecontext.mcp.tools.decisions import ec_decision_search
+
+        d = create_decision(mock_repo_db, title="searchkeywordxray")
+        update_decision_staleness(mock_repo_db, d["id"], "contradicted")
+
+        # Default (deprecation window): include_contradicted=True → decision is returned.
+        default_result = json.loads(asyncio.run(ec_decision_search(query="searchkeywordxray", search_type="fts")))
+        default_ids = [r["id"] for r in default_result["decisions"]]
+        assert d["id"] in default_ids
+
+        # Opt in to future default: contradicted excluded.
+        strict_result = json.loads(
+            asyncio.run(ec_decision_search(query="searchkeywordxray", search_type="fts", include_contradicted=False))
+        )
+        strict_ids = [r["id"] for r in strict_result["decisions"]]
+        assert d["id"] not in strict_ids
 
 
 class TestMCPAssessTrends:

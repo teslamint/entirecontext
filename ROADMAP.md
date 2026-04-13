@@ -62,10 +62,11 @@ The main implementation hardening gap still on the table is sync merge/retry pol
   - Present "read these past decisions first" suggestions before new work starts
   - Verify usefulness on repeated-task and regression-fix scenarios
 
-- [ ] **Staleness and contradiction handling**
-  - Detect when old guidance no longer matches current code or newer decisions
-  - Extend relationship handling around contradiction, replacement, or supersession
-  - Prevent stale memory from dominating retrieval results
+- [x] **Staleness and contradiction handling** (#39)
+  - Retrieval hard-filters superseded/contradicted via central `_apply_staleness_policy` helper
+  - Supersession chain collapse substitutes terminal successors; cycle-safe via multi-hop detection and depth cap
+  - Auto-promotion of `contradicted` status from outcome feedback (configurable threshold, one-way ratchet)
+  - Documented retrieval policy matrix and deprecation window in README § Staleness Policy
 
 ## Later (1-3 months)
 

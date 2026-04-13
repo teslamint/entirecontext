@@ -70,9 +70,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_stale_check": False,
         "auto_extract": False,
         "show_related_on_start": False,
+        "auto_promotion_contradicted_threshold": 2,
         "extract_keywords": [
-            "결정", "선택", "방식으로",
-            "decided", "chose", "approach", "instead of",
+            "결정",
+            "선택",
+            "방식으로",
+            "decided",
+            "chose",
+            "approach",
+            "instead of",
         ],
     },
 }

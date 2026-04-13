@@ -43,7 +43,18 @@ async def ec_decision_related(
     commit_shas: list[str] | None = None,
     limit: int = 10,
     retrieval_event_id: str | None = None,
+    include_stale: bool = True,
+    include_superseded: bool = False,
+    include_contradicted: bool = False,
+    include_filter_stats: bool = False,
 ) -> str:
+    """Rank decisions related to current change context.
+
+    Staleness policy (issue #39):
+    - Superseded and contradicted decisions are excluded by default.
+    - Superseded candidates collapse to their terminal successor when it passes the filter.
+    - Set include_filter_stats=True to receive a breakdown of what was filtered.
+    """
     (conn, _), error = runtime.resolve_repo()
     if error:
         return error
@@ -51,13 +62,17 @@ async def ec_decision_related(
         from ...core.decisions import rank_related_decisions
 
         started_at = time.perf_counter()
-        decisions = rank_related_decisions(
+        decisions, filter_stats = rank_related_decisions(
             conn,
             file_paths=files or [],
             assessment_ids=assessment_ids or [],
             diff_text=diff_text,
             commit_shas=commit_shas or [],
             limit=limit,
+            include_stale=include_stale,
+            include_superseded=include_superseded,
+            include_contradicted=include_contradicted,
+            _return_stats=True,
         )
         tracked_event_id = runtime.record_search_event(
             conn,
@@ -77,13 +92,14 @@ async def ec_decision_related(
                 result_id=item["id"],
                 rank=idx,
             )
-        return json.dumps(
-            {
-                "decisions": decisions,
-                "count": len(decisions),
-                "retrieval_event_id": tracked_event_id,
-            }
-        )
+        payload = {
+            "decisions": decisions,
+            "count": len(decisions),
+            "retrieval_event_id": tracked_event_id,
+        }
+        if include_filter_stats:
+            payload["filter_stats"] = filter_stats
+        return json.dumps(payload)
     finally:
         conn.close()
 
@@ -227,6 +243,9 @@ async def ec_decision_search(
     since: str | None = None,
     limit: int = 20,
     repos: str | list[str] | None = None,
+    include_stale: bool = True,
+    include_superseded: bool = False,
+    include_contradicted: bool = True,
 ) -> str:
     """Search decisions by keyword using FTS5 full-text search.
 
@@ -240,6 +259,11 @@ async def ec_decision_search(
         limit: Maximum results (default 20)
         repos: Repo filter — null for current repo, "*" or ["*"] for all repos,
                or a plain repo name string (coerced to a single-element list)
+        include_stale: Include decisions marked stale (default True)
+        include_superseded: Include decisions that have been superseded (default False)
+        include_contradicted: Include decisions marked contradicted.
+               Defaults True for v0.2.x backward compat; will flip to False in v0.3.0.
+               Pass include_contradicted=False now to opt in to the future default.
     """
     if search_type not in ("fts", "hybrid"):
         return runtime.error_payload(f"Invalid search_type '{search_type}'. Use 'fts' or 'hybrid'.")
@@ -252,8 +276,24 @@ async def ec_decision_search(
 
         def _query(conn, _repo):
             if search_type == "hybrid":
-                return hybrid_search_decisions(conn, query, since=since, limit=limit)
-            return fts_search_decisions(conn, query, since=since, limit=limit)
+                return hybrid_search_decisions(
+                    conn,
+                    query,
+                    since=since,
+                    limit=limit,
+                    include_stale=include_stale,
+                    include_superseded=include_superseded,
+                    include_contradicted=include_contradicted,
+                )
+            return fts_search_decisions(
+                conn,
+                query,
+                since=since,
+                limit=limit,
+                include_stale=include_stale,
+                include_superseded=include_superseded,
+                include_contradicted=include_contradicted,
+            )
 
         cross_sort_key = "hybrid_score" if search_type == "hybrid" else "relevance_score"
         try:
@@ -271,9 +311,25 @@ async def ec_decision_search(
 
         started_at = time.perf_counter()
         if search_type == "hybrid":
-            results = hybrid_search_decisions(conn, query, since=since, limit=limit)
+            results = hybrid_search_decisions(
+                conn,
+                query,
+                since=since,
+                limit=limit,
+                include_stale=include_stale,
+                include_superseded=include_superseded,
+                include_contradicted=include_contradicted,
+            )
         else:
-            results = fts_search_decisions(conn, query, since=since, limit=limit)
+            results = fts_search_decisions(
+                conn,
+                query,
+                since=since,
+                limit=limit,
+                include_stale=include_stale,
+                include_superseded=include_superseded,
+                include_contradicted=include_contradicted,
+            )
 
         tracked_event_id = runtime.record_search_event(
             conn,

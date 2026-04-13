@@ -68,6 +68,10 @@ class TestSchemaCreation:
         result = db.execute("PRAGMA foreign_keys").fetchone()
         assert result[0] == 1
 
+    def test_decisions_table_has_auto_promotion_reset_at(self, db):
+        columns = {row[1] for row in db.execute("PRAGMA table_info(decisions)").fetchall()}
+        assert "auto_promotion_reset_at" in columns
+
 
 class TestFTSTriggers:
     def _insert_session(self, db):
@@ -242,6 +246,35 @@ class TestMigration:
             "SELECT name FROM sqlite_master WHERE type='table' AND name = 'decision_outcomes'"
         ).fetchone()
         assert table is not None
+        assert get_current_version(conn) == SCHEMA_VERSION
+        conn.close()
+
+    def test_migrate_v11_to_v12_adds_auto_promotion_reset_at(self):
+        conn = get_memory_db()
+        conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
+        conn.execute("INSERT INTO schema_version (version, description) VALUES (11, 'v11')")
+        conn.execute(
+            """
+            CREATE TABLE decisions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                rationale TEXT,
+                scope TEXT,
+                staleness_status TEXT NOT NULL DEFAULT 'fresh',
+                superseded_by_id TEXT,
+                rejected_alternatives TEXT,
+                supporting_evidence TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        conn.commit()
+
+        check_and_migrate(conn)
+
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(decisions)").fetchall()}
+        assert "auto_promotion_reset_at" in columns
         assert get_current_version(conn) == SCHEMA_VERSION
         conn.close()
 

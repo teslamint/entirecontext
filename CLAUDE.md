@@ -63,7 +63,7 @@ cli/             business    SQLite     Claude Code   shadow branch
 
 **Per-repo DB**: `.entirecontext/db/local.db`
 **Global DB**: `~/.entirecontext/db/ec.db`
-**Schema version**: 6
+**Schema version**: 12
 
 Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`
 
@@ -83,7 +83,7 @@ Return codes: 0=success, 2=block.
 
 TOML deep merge: defaults ← `~/.entirecontext/config.toml` (global) ← `.entirecontext/config.toml` (per-repo)
 
-Sections: `capture`, `capture.exclusions`, `search`, `sync`, `display`, `security`, `filtering.query_redaction`, `index`, `futures`
+Sections: `capture`, `capture.exclusions`, `search`, `sync`, `display`, `security`, `filtering.query_redaction`, `index`, `futures`, `decisions`
 
 ## Code Conventions
 

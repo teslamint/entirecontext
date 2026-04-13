@@ -311,6 +311,15 @@ def decision_search(
     search_type: str = typer.Option("fts", "--search-type", "-t", help="fts|hybrid"),
     since: Optional[str] = typer.Option(None, "--since", help="Only decisions updated after this ISO date"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
+    include_stale: bool = typer.Option(True, "--include-stale/--no-include-stale", help="Include stale decisions"),
+    include_superseded: bool = typer.Option(
+        False, "--include-superseded/--no-include-superseded", help="Include superseded decisions"
+    ),
+    include_contradicted: bool = typer.Option(
+        True,
+        "--include-contradicted/--no-include-contradicted",
+        help="Include contradicted decisions (default True; will flip to False in v0.3.0)",
+    ),
 ):
     """Search decisions by keyword."""
     if search_type not in ("fts", "hybrid"):
@@ -322,9 +331,25 @@ def decision_search(
     conn, _ = get_repo_connection()
     try:
         if search_type == "hybrid":
-            decisions = hybrid_search_decisions(conn, query, since=since, limit=limit)
+            decisions = hybrid_search_decisions(
+                conn,
+                query,
+                since=since,
+                limit=limit,
+                include_stale=include_stale,
+                include_superseded=include_superseded,
+                include_contradicted=include_contradicted,
+            )
         else:
-            decisions = fts_search_decisions(conn, query, since=since, limit=limit)
+            decisions = fts_search_decisions(
+                conn,
+                query,
+                since=since,
+                limit=limit,
+                include_stale=include_stale,
+                include_superseded=include_superseded,
+                include_contradicted=include_contradicted,
+            )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
@@ -348,6 +373,62 @@ def decision_search(
             row.append(f"{d.get('hybrid_score', 0):.4f}")
         table.add_row(*row)
     console.print(table)
+
+
+@decision_app.command("chain")
+def decision_chain(
+    decision_id: str = typer.Argument(..., help="Decision ID (prefix supported)"),
+):
+    """Walk a decision's supersession chain for debugging.
+
+    Prints each hop from the starting decision to the terminal successor,
+    showing id, title, and staleness_status at each step.
+    """
+    from ..core.decisions import _SUCCESSOR_CHAIN_DEPTH_CAP
+    from ..core.resolve import resolve_decision_id
+
+    conn, _ = get_repo_connection()
+    try:
+        full_id = resolve_decision_id(conn, decision_id)
+        if full_id is None:
+            console.print(f"[red]Decision '{decision_id}' not found[/red]")
+            raise typer.Exit(1)
+
+        table = Table(title=f"Supersession chain for {full_id[:12]}")
+        table.add_column("Hop", justify="right", style="dim")
+        table.add_column("ID", style="dim", max_width=12)
+        table.add_column("Title")
+        table.add_column("Status")
+
+        current_id: Optional[str] = full_id
+        visited: set[str] = set()
+        hop = 0
+        while current_id is not None and hop <= _SUCCESSOR_CHAIN_DEPTH_CAP:
+            if current_id in visited:
+                table.add_row(str(hop), current_id[:12], "[red]<cycle detected>[/red]", "")
+                break
+            visited.add(current_id)
+            row = conn.execute(
+                "SELECT id, title, staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+                (current_id,),
+            ).fetchone()
+            if row is None:
+                break
+            table.add_row(
+                str(hop),
+                row["id"][:12],
+                row["title"] or "",
+                row["staleness_status"] or "fresh",
+            )
+            successor = row["superseded_by_id"]
+            if not successor:
+                break
+            current_id = successor
+            hop += 1
+
+        console.print(table)
+    finally:
+        conn.close()
 
 
 @decision_app.command("stale-all")

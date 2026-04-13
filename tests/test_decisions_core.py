@@ -332,7 +332,10 @@ class TestDecisionsCore:
         link_decision_to_file(ec_db, demoted["id"], "src/service/retry.py")
         record_decision_outcome(ec_db, promoted["id"], "accepted")
         record_decision_outcome(ec_db, promoted["id"], "accepted")
-        record_decision_outcome(ec_db, demoted["id"], "contradicted")
+        # Use `ignored` instead of `contradicted` — under new staleness policy,
+        # contradicted decisions are excluded from ranking results by default,
+        # so this test now validates quality-score demotion via ignored signal.
+        record_decision_outcome(ec_db, demoted["id"], "ignored")
 
         ranked = rank_related_decisions(ec_db, file_paths=["src/service/retry.py"], limit=10)
 
@@ -398,6 +401,41 @@ class TestSupersedeDecision:
         new = create_decision(ec_db, title="New")
         with pytest.raises(ValueError, match="not found"):
             supersede_decision(ec_db, "nonexistent", new["id"])
+
+    def test_supersede_respects_outer_transaction(self, ec_db):
+        old = create_decision(ec_db, title="Old approach")
+        new = create_decision(ec_db, title="New approach")
+
+        ec_db.execute("BEGIN IMMEDIATE")
+        try:
+            result = supersede_decision(ec_db, old["id"], new["id"])
+            assert result["superseded_by_id"] == new["id"]
+            assert ec_db.in_transaction
+        finally:
+            ec_db.rollback()
+
+        row = ec_db.execute(
+            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+            (old["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "fresh"
+        assert row["superseded_by_id"] is None
+
+    def test_supersede_rolls_back_started_transaction_on_cycle_error(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, b["id"], a["id"])
+
+        assert ec_db.in_transaction is False
+        row = ec_db.execute(
+            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+            (b["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "fresh"
+        assert row["superseded_by_id"] is None
 
 
 class TestUnlinkDecision:
@@ -762,7 +800,8 @@ class TestRankingSignals:
         link_decision_to_file(ec_db, fresh["id"], "src/core.py")
         link_decision_to_file(ec_db, superseded["id"], "src/core.py")
 
-        ranked = rank_related_decisions(ec_db, file_paths=["src/core.py"])
+        # Must opt in; default policy excludes superseded decisions.
+        ranked = rank_related_decisions(ec_db, file_paths=["src/core.py"], include_superseded=True)
         fresh_item = next(r for r in ranked if r["id"] == fresh["id"])
         sup_item = next(r for r in ranked if r["id"] == superseded["id"])
         assert fresh_item["score"] > sup_item["score"]
@@ -863,3 +902,395 @@ class TestRankingSignals:
         item = ranked[0]
         for key in ("id", "title", "staleness_status", "updated_at", "base_score", "quality_score", "score"):
             assert key in item
+
+
+# ---------------------------------------------------------------------------
+# Issue #39: staleness/contradiction hardening regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestStalenessHardening:
+    def test_rank_related_excludes_superseded_by_default(self, ec_db):
+        """A→B chain: ranking surfaces B, hides A."""
+        a = create_decision(ec_db, title="Original")
+        b = create_decision(ec_db, title="Replacement")
+        link_decision_to_file(ec_db, a["id"], "src/auth.py")
+        link_decision_to_file(ec_db, b["id"], "src/auth.py")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/auth.py"])
+        ids = [r["id"] for r in ranked]
+        assert b["id"] in ids
+        assert a["id"] not in ids
+
+    def test_rank_related_excludes_contradicted_by_default(self, ec_db):
+        fresh = create_decision(ec_db, title="Fresh")
+        contradicted = create_decision(ec_db, title="Contradicted")
+        link_decision_to_file(ec_db, fresh["id"], "src/api.py")
+        link_decision_to_file(ec_db, contradicted["id"], "src/api.py")
+        update_decision_staleness(ec_db, contradicted["id"], "contradicted")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/api.py"])
+        ids = [r["id"] for r in ranked]
+        assert fresh["id"] in ids
+        assert contradicted["id"] not in ids
+
+    def test_rank_related_fallback_padding_respects_filter(self, ec_db):
+        """Padding path (line 833-838) must not smuggle in superseded decisions."""
+        # Create a single fresh candidate via file link; no signal-matched others.
+        signal = create_decision(ec_db, title="Signal match")
+        link_decision_to_file(ec_db, signal["id"], "src/only.py")
+        # Create many superseded decisions that would be recent but should be filtered
+        # out by the padding fallback path.
+        for i in range(10):
+            sup = create_decision(ec_db, title=f"Superseded {i}")
+            update_decision_staleness(ec_db, sup["id"], "superseded")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/only.py"])
+        for r in ranked:
+            assert r.get("staleness_status") != "superseded"
+
+    def test_chain_collapse_substitutes_terminal(self, ec_db):
+        """A→B→C: ranking A's signal surfaces C (terminal)."""
+        a = create_decision(ec_db, title="Gen 1")
+        b = create_decision(ec_db, title="Gen 2")
+        c = create_decision(ec_db, title="Gen 3")
+        link_decision_to_file(ec_db, a["id"], "src/model.py")
+        link_decision_to_file(ec_db, b["id"], "src/model.py")
+        link_decision_to_file(ec_db, c["id"], "src/model.py")
+        supersede_decision(ec_db, a["id"], b["id"])
+        supersede_decision(ec_db, b["id"], c["id"])
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/model.py"])
+        ids = [r["id"] for r in ranked]
+        assert c["id"] in ids
+        assert a["id"] not in ids
+        assert b["id"] not in ids
+
+    def test_chain_collapse_inherits_signals_from_ancestor(self, ec_db):
+        """Review P1 regression: A matches by file, B has no file link yet.
+
+        Expected behavior: B (terminal) appears in results by inheriting A's file
+        signal. Previously, B would get base_score=0 and be dropped entirely.
+        """
+        a = create_decision(ec_db, title="Original with file link")
+        b = create_decision(ec_db, title="Replacement without file link yet")
+        link_decision_to_file(ec_db, a["id"], "src/migration.py")
+        # NOTE: intentionally not linking B to the file — common migration state.
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/migration.py"])
+        ids = [r["id"] for r in ranked]
+        assert b["id"] in ids
+        assert a["id"] not in ids
+        b_item = next(r for r in ranked if r["id"] == b["id"])
+        assert b_item["base_score"] >= 3.0  # file_exact contributes 3.0
+
+    def test_chain_collapse_drops_when_terminal_contradicted(self, ec_db):
+        """A→B, B contradicted: empty result + stats reason."""
+        a = create_decision(ec_db, title="Original")
+        b = create_decision(ec_db, title="Broken replacement")
+        link_decision_to_file(ec_db, a["id"], "src/payment.py")
+        link_decision_to_file(ec_db, b["id"], "src/payment.py")
+        supersede_decision(ec_db, a["id"], b["id"])
+        update_decision_staleness(ec_db, b["id"], "contradicted")
+
+        ranked, stats = rank_related_decisions(ec_db, file_paths=["src/payment.py"], _return_stats=True)
+        ids = [r["id"] for r in ranked]
+        assert a["id"] not in ids
+        assert b["id"] not in ids
+        assert stats["filtered_count"] >= 1
+        assert "chain_terminal_contradicted" in stats["by_reason"] or "contradicted" in stats["by_reason"]
+
+    def test_resolve_successor_chain_depth_cap(self, ec_db):
+        """A self-referential pointer must not loop forever."""
+        from entirecontext.core.decisions import resolve_successor_chain
+
+        a = create_decision(ec_db, title="Loop candidate")
+        # Construct a chain of 3: A→B→C (no cycle), verify terminal is C
+        b = create_decision(ec_db, title="B")
+        c = create_decision(ec_db, title="C")
+        supersede_decision(ec_db, a["id"], b["id"])
+        supersede_decision(ec_db, b["id"], c["id"])
+
+        terminal_id, status = resolve_successor_chain(ec_db, a["id"])
+        assert terminal_id == c["id"]
+        assert status == "fresh"
+
+    def test_supersede_detects_cycle(self, ec_db):
+        """supersede(B, A) after supersede(A, B) must raise."""
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, b["id"], a["id"])
+
+    def test_supersede_detects_cycle_deeper_than_depth_cap(self, ec_db):
+        """PR #55 Codex review: cycle detection must work beyond the nominal
+        depth cap. Build a chain of 2*cap+2 nodes (far deeper than +1) and
+        verify that closing it into a cycle is rejected — independent of cap.
+        """
+        from entirecontext.core.decisions import _SUCCESSOR_CHAIN_DEPTH_CAP
+
+        chain_len = _SUCCESSOR_CHAIN_DEPTH_CAP * 2 + 2  # well beyond the old +1 limit
+        nodes = [create_decision(ec_db, title=f"deep-{i}") for i in range(chain_len)]
+        for i in range(chain_len - 1):
+            supersede_decision(ec_db, nodes[i]["id"], nodes[i + 1]["id"])
+
+        # The tail is the current terminal (fresh). Attempting tail → head must
+        # be detected as a cycle even though head sits at depth chain_len - 1,
+        # which is far deeper than _SUCCESSOR_CHAIN_DEPTH_CAP.
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, nodes[-1]["id"], nodes[0]["id"])
+
+    def test_supersede_detects_cycle_at_depth_cap(self, ec_db):
+        """PR #55 review: off-by-one regression — build a chain of length
+        _SUCCESSOR_CHAIN_DEPTH_CAP + 1 (11 nodes, 10 hops) then attempt a
+        supersede that would close it into a cycle of the same depth.
+        The cycle-check loop must walk the full chain, not exit one hop early.
+        """
+        from entirecontext.core.decisions import _SUCCESSOR_CHAIN_DEPTH_CAP
+
+        cap_plus_one = _SUCCESSOR_CHAIN_DEPTH_CAP + 1
+        nodes = [create_decision(ec_db, title=f"node-{i}") for i in range(cap_plus_one)]
+        # Build chain: nodes[0] → nodes[1] → ... → nodes[cap]  (cap hops, cap+1 nodes)
+        for i in range(cap_plus_one - 1):
+            supersede_decision(ec_db, nodes[i]["id"], nodes[i + 1]["id"])
+
+        # Now the chain looks like: nodes[0] .. nodes[-1] (terminal, fresh).
+        # Attempting to make nodes[-1] → nodes[0] must be detected as a cycle.
+        # Without the +1 fix, probe walker exits before reaching nodes[0] and
+        # the UPDATE would silently create a cycle.
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, nodes[-1]["id"], nodes[0]["id"])
+
+    def test_resolve_successor_chain_reaches_depth_cap_terminal(self, ec_db):
+        """PR #55 review: build the longest chain the walker is supposed to
+        resolve (cap + 1 nodes, cap hops) and verify the terminal is returned
+        correctly rather than dropped one hop early with 'superseded' status.
+        """
+        from entirecontext.core.decisions import _SUCCESSOR_CHAIN_DEPTH_CAP, resolve_successor_chain
+
+        cap_plus_one = _SUCCESSOR_CHAIN_DEPTH_CAP + 1
+        nodes = [create_decision(ec_db, title=f"chain-{i}") for i in range(cap_plus_one)]
+        for i in range(cap_plus_one - 1):
+            supersede_decision(ec_db, nodes[i]["id"], nodes[i + 1]["id"])
+
+        terminal_id, status = resolve_successor_chain(ec_db, nodes[0]["id"])
+        assert terminal_id == nodes[-1]["id"]
+        assert status == "fresh"
+
+    def test_fts_search_default_excludes_superseded(self, ec_db):
+        fresh = create_decision(ec_db, title="freshkeywordalpha")
+        sup = create_decision(ec_db, title="freshkeywordalpha also")
+        update_decision_staleness(ec_db, sup["id"], "superseded")
+
+        results = fts_search_decisions(ec_db, "freshkeywordalpha")
+        ids = [r["id"] for r in results]
+        assert fresh["id"] in ids
+        assert sup["id"] not in ids
+
+    def test_fts_search_include_superseded_flag(self, ec_db):
+        fresh = create_decision(ec_db, title="keywordzulu")
+        sup = create_decision(ec_db, title="keywordzulu alternate")
+        update_decision_staleness(ec_db, sup["id"], "superseded")
+
+        results = fts_search_decisions(ec_db, "keywordzulu", include_superseded=True)
+        ids = [r["id"] for r in results]
+        assert fresh["id"] in ids
+        assert sup["id"] in ids
+
+    def test_fts_search_include_contradicted_default_and_opt_out(self, ec_db):
+        c = create_decision(ec_db, title="keywordbravo")
+        update_decision_staleness(ec_db, c["id"], "contradicted")
+
+        # Default: include_contradicted=True during the v0.2.x deprecation window.
+        default_results = fts_search_decisions(ec_db, "keywordbravo")
+        assert any(r["id"] == c["id"] for r in default_results)
+
+        # Opt-in to future default.
+        strict_results = fts_search_decisions(ec_db, "keywordbravo", include_contradicted=False)
+        assert not any(r["id"] == c["id"] for r in strict_results)
+
+    def test_hybrid_search_inherits_filter(self, ec_db):
+        fresh = create_decision(ec_db, title="keywordindia")
+        sup = create_decision(ec_db, title="keywordindia replaced")
+        update_decision_staleness(ec_db, sup["id"], "superseded")
+
+        results = hybrid_search_decisions(ec_db, "keywordindia")
+        ids = [r["id"] for r in results]
+        assert fresh["id"] in ids
+        assert sup["id"] not in ids
+
+    def test_get_decision_successor_field(self, ec_db):
+        a = create_decision(ec_db, title="Old")
+        b = create_decision(ec_db, title="New")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        full = get_decision(ec_db, a["id"])
+        assert full is not None
+        assert full.get("successor") == {"id": b["id"], "title": "New"}
+
+    def test_get_decision_no_successor_field_when_fresh(self, ec_db):
+        d = create_decision(ec_db, title="Still fresh")
+        full = get_decision(ec_db, d["id"])
+        assert full is not None
+        assert "successor" not in full
+
+    def test_auto_promotion_crosses_threshold(self, ec_db):
+        d = create_decision(ec_db, title="Will be auto-promoted")
+        assert d["staleness_status"] == "fresh"
+
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        # After 1 contradicted: still below threshold (default = 2)
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "fresh"
+
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        # After 2 contradicted: meets threshold AND > accepted (0) → auto-promoted
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "contradicted"
+
+    def test_auto_promotion_respects_accepted_majority(self, ec_db):
+        d = create_decision(ec_db, title="Mostly accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+
+        # 2 contradicted vs 3 accepted: accepted still wins → no promotion
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "fresh"
+
+    def test_auto_promotion_is_one_way_ratchet(self, ec_db):
+        d = create_decision(ec_db, title="Promote and revert?")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+
+        # Promoted after 2 contradicted
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "contradicted"
+
+        # Adding many accepts does NOT revert
+        for _ in range(10):
+            record_decision_outcome(ec_db, d["id"], "accepted")
+
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "contradicted"
+
+    def test_auto_promotion_skips_already_superseded(self, ec_db):
+        a = create_decision(ec_db, title="Superseded original")
+        b = create_decision(ec_db, title="Replacement")
+        supersede_decision(ec_db, a["id"], b["id"])
+        # A is now 'superseded'
+        record_decision_outcome(ec_db, a["id"], "contradicted")
+        record_decision_outcome(ec_db, a["id"], "contradicted")
+
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (a["id"],)).fetchone()
+        assert row["staleness_status"] == "superseded"
+
+    def test_manual_fresh_reset_restarts_auto_promotion_window(self, ec_db):
+        d = create_decision(ec_db, title="Recoverable contradiction")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+
+        row = ec_db.execute(
+            "SELECT staleness_status, auto_promotion_reset_at FROM decisions WHERE id = ?",
+            (d["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "contradicted"
+        assert row["auto_promotion_reset_at"] is None
+
+        update_decision_staleness(ec_db, d["id"], "fresh")
+
+        row = ec_db.execute(
+            "SELECT staleness_status, auto_promotion_reset_at FROM decisions WHERE id = ?",
+            (d["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "fresh"
+        assert row["auto_promotion_reset_at"] is not None
+
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "fresh"
+
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "contradicted"
+
+    def test_data_integrity_superseded_requires_status(self, ec_db):
+        """Invariant: superseded_by_id set implies staleness_status='superseded'."""
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        row = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decisions "
+            "WHERE superseded_by_id IS NOT NULL AND staleness_status != 'superseded'"
+        ).fetchone()
+        assert row["n"] == 0
+
+    def test_record_outcome_respects_outer_transaction(self, ec_db):
+        """PR #55 review: when the caller already owns a transaction,
+        record_decision_outcome must NOT commit on its own. The outer
+        scope decides the atomic boundary, and a caller rollback must
+        still be able to undo the nested write.
+        """
+        d = create_decision(ec_db, title="Outer tx target")
+
+        # Caller opens an outer transaction, calls record_decision_outcome
+        # (which must detect the nested case and skip its own commit),
+        # then rolls back the outer scope. The nested INSERT must also
+        # disappear — proving no implicit commit happened inside.
+        ec_db.execute("BEGIN IMMEDIATE")
+        try:
+            result = record_decision_outcome(ec_db, d["id"], "accepted")
+            assert result["decision_id"] == d["id"]
+            assert ec_db.in_transaction  # outer tx still owns the boundary
+        finally:
+            ec_db.rollback()
+
+        row = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchone()
+        assert row["n"] == 0
+
+    def test_record_outcome_rolls_back_on_dml_failure(self, ec_db, monkeypatch):
+        """PR #55 review: when DML inside the BEGIN IMMEDIATE block fails, the
+        transaction must be explicitly rolled back so subsequent calls on the
+        same connection are not blocked by a stale open write transaction.
+        """
+        d = create_decision(ec_db, title="Outcome rollback target")
+
+        # Force a failure mid-transaction by patching the auto-promotion helper
+        # to raise. This simulates any exception happening between BEGIN IMMEDIATE
+        # and commit (e.g. FK violation, OperationalError, unexpected runtime error).
+        def boom(_conn, _decision_id, _now):
+            raise RuntimeError("simulated auto-promotion failure")
+
+        monkeypatch.setattr(
+            "entirecontext.core.decisions._maybe_auto_promote_contradicted",
+            boom,
+        )
+
+        # outcome_type="contradicted" is required to route through the patched helper.
+        with pytest.raises(RuntimeError, match="simulated auto-promotion failure"):
+            record_decision_outcome(ec_db, d["id"], "contradicted")
+
+        # Undo the patch so the follow-up call uses the real implementation.
+        monkeypatch.undo()
+
+        # If rollback worked, the same connection must still be usable —
+        # proving the write transaction was rolled back instead of left open.
+        follow_up = record_decision_outcome(ec_db, d["id"], "accepted")
+        assert follow_up["decision_id"] == d["id"]
+
+        # The failed contradicted outcome must not have persisted.
+        row = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchone()
+        assert row["n"] == 1  # only the successful `accepted` outcome
