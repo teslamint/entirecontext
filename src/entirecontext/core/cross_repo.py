@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .context import GlobalContext
+from .search import FTSQueryError
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +107,8 @@ class RepoExecutor:
                     result["repo_name"] = repo["repo_name"]
                     result["repo_path"] = repo["repo_path"]
                 all_results.extend(results)
+            except FTSQueryError:
+                raise
             except Exception as exc:
                 warnings.append(self.policy.warning(repo, "query", exc))
                 logger.debug("Skipping repo %s", repo.get("repo_path"), exc_info=True)
@@ -139,6 +142,8 @@ class RepoExecutor:
                     result["repo_name"] = repo["repo_name"]
                     result["repo_path"] = repo["repo_path"]
                     return result, warnings
+            except FTSQueryError:
+                raise
             except Exception as exc:
                 warnings.append(self.policy.warning(repo, "query", exc))
                 logger.debug("Skipping repo %s", repo.get("repo_path"), exc_info=True)
@@ -348,7 +353,9 @@ def cross_repo_related(
             results.extend(fts_search(conn, query, target="turn", limit=limit * 2))
         if files:
             for file_pattern in files:
-                results.extend(regex_search(conn, file_pattern, target="turn", file_filter=file_pattern, limit=limit * 2))
+                results.extend(
+                    regex_search(conn, file_pattern, target="turn", file_filter=file_pattern, limit=limit * 2)
+                )
         return results
 
     results, warnings = RepoExecutor().execute(fn, repos=repos, sort_key="timestamp", limit=limit)

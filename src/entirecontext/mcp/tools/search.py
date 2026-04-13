@@ -16,24 +16,27 @@ async def ec_search(
     agent_filter: str | None = None,
     since: str | None = None,
     limit: int = 20,
-    repos: list[str] | None = None,
+    repos: str | list[str] | None = None,
 ) -> str:
-    is_cross_repo = repos is not None
     repo_names = runtime.normalize_repo_names(repos)
+    is_cross_repo = repos is not None and repos != ""
 
     if is_cross_repo:
         from ...core.cross_repo import cross_repo_search
 
-        results = cross_repo_search(
-            query,
-            search_type=search_type,
-            repos=repo_names,
-            file_filter=file_filter,
-            commit_filter=commit_filter,
-            agent_filter=agent_filter,
-            since=since,
-            limit=limit,
-        )
+        try:
+            results = cross_repo_search(
+                query,
+                search_type=search_type,
+                repos=repo_names,
+                file_filter=file_filter,
+                commit_filter=commit_filter,
+                agent_filter=agent_filter,
+                since=since,
+                limit=limit,
+            )
+        except ValueError as exc:
+            return runtime.error_payload(str(exc))
         retrieval_event_id = None
     else:
         (conn, repo_path), error = runtime.resolve_repo()
@@ -114,6 +117,8 @@ async def ec_search(
                 agent_filter=agent_filter,
                 since=since,
             )
+        except ValueError as exc:
+            return runtime.error_payload(str(exc))
         finally:
             conn.close()
 
@@ -141,18 +146,22 @@ async def ec_related(
     query: str | None = None,
     files: list[str] | None = None,
     limit: int = 20,
-    repos: list[str] | None = None,
+    repos: str | list[str] | None = None,
 ) -> str:
-    if repos is not None:
+    repo_names = runtime.normalize_repo_names(repos)
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_related
 
-        results, warnings = cross_repo_related(
-            query=query,
-            files=files,
-            repos=runtime.normalize_repo_names(repos),
-            limit=limit,
-            include_warnings=True,
-        )
+        try:
+            results, warnings = cross_repo_related(
+                query=query,
+                files=files,
+                repos=repo_names,
+                limit=limit,
+                include_warnings=True,
+            )
+        except ValueError as exc:
+            return runtime.error_payload(str(exc))
         related = [
             {
                 "type": "turn",

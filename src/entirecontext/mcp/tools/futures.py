@@ -165,11 +165,12 @@ async def ec_lessons(limit: int = 50) -> str:
         conn.close()
 
 
-async def ec_assess_trends(repos: list[str] | None = None, since: str | None = None) -> str:
+async def ec_assess_trends(repos: str | list[str] | None = None, since: str | None = None) -> str:
     from ...core.cross_repo import cross_repo_assessment_trends
 
+    repo_names = runtime.normalize_repo_names(repos)
     trends, warnings = cross_repo_assessment_trends(
-        repos=runtime.normalize_repo_names(repos),
+        repos=repo_names,
         since=since,
         include_warnings=True,
     )

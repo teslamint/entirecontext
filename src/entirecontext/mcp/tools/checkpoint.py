@@ -11,14 +11,15 @@ async def ec_checkpoint_list(
     session_id: str | None = None,
     limit: int = 20,
     since: str | None = None,
-    repos: list[str] | None = None,
+    repos: str | list[str] | None = None,
     retrieval_event_id: str | None = None,
 ) -> str:
-    if repos is not None:
+    repo_names = runtime.normalize_repo_names(repos)
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_checkpoints
 
         results, warnings = cross_repo_checkpoints(
-            repos=runtime.normalize_repo_names(repos),
+            repos=repo_names,
             session_id=session_id,
             since=since,
             limit=limit,
@@ -95,11 +96,12 @@ async def ec_checkpoint_list(
         conn.close()
 
 
-async def ec_rewind(checkpoint_id: str, repos: list[str] | None = None) -> str:
-    if repos is not None:
+async def ec_rewind(checkpoint_id: str, repos: str | list[str] | None = None) -> str:
+    repo_names = runtime.normalize_repo_names(repos)
+    if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_rewind
 
-        result, warnings = cross_repo_rewind(checkpoint_id, repos=runtime.normalize_repo_names(repos), include_warnings=True)
+        result, warnings = cross_repo_rewind(checkpoint_id, repos=repo_names, include_warnings=True)
         if not result:
             return runtime.error_payload(f"Checkpoint not found: {checkpoint_id}", warnings=warnings)
         return json.dumps(

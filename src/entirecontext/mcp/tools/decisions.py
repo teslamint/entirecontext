@@ -8,6 +8,19 @@ import time
 from .. import runtime
 
 
+def _ensure_list(value: str | dict | list | None, field_name: str) -> list | None:
+    """Coerce common agent input shapes for list fields into proper lists."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, list):
+        return value
+    raise ValueError(f"'{field_name}' must be a list, string, or null. Got {type(value).__name__}.")
+
+
 async def ec_decision_get(decision_id: str) -> str:
     (conn, _), error = runtime.resolve_repo()
     if error:
@@ -123,8 +136,8 @@ async def ec_decision_create(
     title: str,
     rationale: str | None = None,
     scope: str | None = None,
-    rejected_alternatives: list[str] | None = None,
-    supporting_evidence: list | None = None,
+    rejected_alternatives: list[str] | str | dict | None = None,
+    supporting_evidence: list | str | dict | None = None,
 ) -> str:
     """Create a new decision record.
 
@@ -139,6 +152,9 @@ async def ec_decision_create(
     if error:
         return error
     try:
+        rejected_alternatives = _ensure_list(rejected_alternatives, "rejected_alternatives")
+        supporting_evidence = _ensure_list(supporting_evidence, "supporting_evidence")
+
         from ...core.decisions import create_decision
 
         d = create_decision(
@@ -210,7 +226,7 @@ async def ec_decision_search(
     search_type: str = "fts",
     since: str | None = None,
     limit: int = 20,
-    repos: list[str] | None = None,
+    repos: str | list[str] | None = None,
 ) -> str:
     """Search decisions by keyword using FTS5 full-text search.
 
@@ -222,14 +238,15 @@ async def ec_decision_search(
         search_type: "fts" for relevance-ranked or "hybrid" for relevance+recency
         since: ISO date filter — only return decisions updated after this date
         limit: Maximum results (default 20)
-        repos: Repo filter — null for current repo, ["*"] for all repos
+        repos: Repo filter — null for current repo, "*" or ["*"] for all repos,
+               or a plain repo name string (coerced to a single-element list)
     """
     if search_type not in ("fts", "hybrid"):
         return runtime.error_payload(f"Invalid search_type '{search_type}'. Use 'fts' or 'hybrid'.")
 
-    is_cross_repo = repos is not None
+    repo_names = runtime.normalize_repo_names(repos)
+    is_cross_repo = repos is not None and repos != ""
     if is_cross_repo:
-        repo_names = runtime.normalize_repo_names(repos)
         from ...core.cross_repo import _for_each_repo
         from ...core.decisions import fts_search_decisions, hybrid_search_decisions
 
@@ -239,7 +256,10 @@ async def ec_decision_search(
             return fts_search_decisions(conn, query, since=since, limit=limit)
 
         cross_sort_key = "hybrid_score" if search_type == "hybrid" else "relevance_score"
-        all_results, _warnings = _for_each_repo(_query, repos=repo_names, sort_key=cross_sort_key, limit=limit)
+        try:
+            all_results, _warnings = _for_each_repo(_query, repos=repo_names, sort_key=cross_sort_key, limit=limit)
+        except ValueError as exc:
+            return runtime.error_payload(str(exc))
         formatted = _format_decision_results(all_results)
         return json.dumps({"decisions": formatted, "count": len(formatted), "retrieval_event_id": None})
 
