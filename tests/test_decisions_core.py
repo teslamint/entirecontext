@@ -932,6 +932,25 @@ class TestStalenessHardening:
         assert a["id"] not in ids
         assert b["id"] not in ids
 
+    def test_chain_collapse_inherits_signals_from_ancestor(self, ec_db):
+        """Review P1 regression: A matches by file, B has no file link yet.
+
+        Expected behavior: B (terminal) appears in results by inheriting A's file
+        signal. Previously, B would get base_score=0 and be dropped entirely.
+        """
+        a = create_decision(ec_db, title="Original with file link")
+        b = create_decision(ec_db, title="Replacement without file link yet")
+        link_decision_to_file(ec_db, a["id"], "src/migration.py")
+        # NOTE: intentionally not linking B to the file — common migration state.
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/migration.py"])
+        ids = [r["id"] for r in ranked]
+        assert b["id"] in ids
+        assert a["id"] not in ids
+        b_item = next(r for r in ranked if r["id"] == b["id"])
+        assert b_item["base_score"] >= 3.0  # file_exact contributes 3.0
+
     def test_chain_collapse_drops_when_terminal_contradicted(self, ec_db):
         """A→B, B contradicted: empty result + stats reason."""
         a = create_decision(ec_db, title="Original")

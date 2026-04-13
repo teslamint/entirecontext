@@ -114,29 +114,29 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             seen_ids: set[str] = set()
 
             # 1. Recently changed files → linked decisions.
-            # Single batched query avoids the previous per-file N+1 pattern.
+            # Use `list_decisions(file_path=f)` per changed file so path matching
+            # preserves the existing LIKE-contains semantics (handles `./src/app.py`
+            # vs `src/app.py` divergence between git output and stored decision_files).
+            # Central staleness filter is still applied post-fetch; chain collapse
+            # substitutes the terminal successor when the stored row is superseded.
             changed_files = _get_recently_changed_files(repo_path)
             file_related = []
             if changed_files:
-                placeholders = ",".join("?" for _ in changed_files)
-                # Fetch all decisions linked to any changed file in one pass.
-                rows = conn.execute(
-                    "SELECT DISTINCT d.id, d.staleness_status, d.superseded_by_id "
-                    "FROM decisions d JOIN decision_files df ON df.decision_id = d.id "
-                    f"WHERE df.file_path IN ({placeholders}) "  # noqa: S608
-                    "ORDER BY d.updated_at DESC LIMIT 25",
-                    list(changed_files),
-                ).fetchall()
+                raw_rows: list[dict] = []
+                raw_seen: set[str] = set()
+                for f in changed_files:
+                    for d in list_decisions(conn, file_path=f, limit=10):
+                        if d["id"] in raw_seen:
+                            continue
+                        raw_seen.add(d["id"])
+                        raw_rows.append(d)
 
-                # Apply central staleness policy (hide superseded/contradicted).
                 kept, _stats = _apply_staleness_policy(
-                    [dict(r) for r in rows],
+                    raw_rows,
                     include_stale=True,
                     include_superseded=False,
                     include_contradicted=False,
                 )
-                # For any row still marked 'superseded' (policy would have removed it;
-                # defensive check), substitute the terminal successor when safe.
                 for row in kept:
                     if row["id"] in seen_ids:
                         continue

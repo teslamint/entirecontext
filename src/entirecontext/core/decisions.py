@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import re
 import json
+import re
+import sqlite3
 import subprocess
 from datetime import datetime, timezone
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
@@ -399,14 +400,17 @@ def record_decision_outcome(
 
     # Wrap outcome insert + updated_at bump + potential auto-promotion in a single
     # BEGIN IMMEDIATE transaction so concurrent contradicted outcomes can't double-promote
-    # or miss the threshold.
+    # or miss the threshold. When an outer transaction already owns the connection
+    # (`started_tx == False`), leave commit/rollback to the caller — committing here
+    # would flush the caller's in-flight work.
+    started_tx = False
     try:
         conn.execute("BEGIN IMMEDIATE")
-    except Exception:
-        # Already in a transaction (e.g. nested call from hooks) — let the outer
-        # scope own the atomic boundary. Autocommit will still batch up to the
-        # single commit below.
-        pass
+        started_tx = True
+    except sqlite3.OperationalError:
+        # Most commonly "cannot start a transaction within a transaction" —
+        # an outer caller already opened one. Stay nested; do not commit below.
+        started_tx = False
 
     conn.execute(
         """
@@ -423,7 +427,8 @@ def record_decision_outcome(
     if outcome_type == "contradicted":
         _maybe_auto_promote_contradicted(conn, full_decision_id, now)
 
-    conn.commit()
+    if started_tx:
+        conn.commit()
     row = conn.execute(
         """
         SELECT id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
@@ -444,7 +449,7 @@ def _maybe_auto_promote_contradicted(conn, full_decision_id: str, now: str) -> N
     - contradicted_count >= threshold
     - contradicted_count > accepted_count
     """
-    threshold = _get_auto_promotion_threshold()
+    threshold = _get_auto_promotion_threshold(conn)
     current_row = conn.execute("SELECT staleness_status FROM decisions WHERE id = ?", (full_decision_id,)).fetchone()
     if current_row is None:
         return
@@ -467,12 +472,49 @@ def _maybe_auto_promote_contradicted(conn, full_decision_id: str, now: str) -> N
         )
 
 
-def _get_auto_promotion_threshold() -> int:
-    """Read threshold from [decisions] config section with sensible fallback."""
+def _infer_repo_path_from_conn(conn) -> str | None:
+    """Best-effort extraction of the repo root from the SQLite connection.
+
+    EntireContext stores per-repo DBs at `<repo>/.entirecontext/db/local.db`,
+    so walking two levels up from the main database file recovers the repo.
+    Returns None for the global DB or any connection we cannot map.
+    """
+    try:
+        rows = conn.execute("PRAGMA database_list").fetchall()
+    except sqlite3.Error:
+        return None
+    for row in rows:
+        # PRAGMA database_list columns: (seq, name, file)
+        try:
+            name = row["name"]
+            file_path = row["file"]
+        except (KeyError, TypeError, IndexError):
+            try:
+                name = row[1]
+                file_path = row[2]
+            except (IndexError, TypeError):
+                continue
+        if name != "main" or not file_path:
+            continue
+        db_path = Path(file_path)
+        parts = db_path.parts
+        if len(parts) >= 3 and parts[-3] == ".entirecontext" and parts[-2] == "db":
+            return str(db_path.parent.parent.parent)
+        return None
+    return None
+
+
+def _get_auto_promotion_threshold(conn=None) -> int:
+    """Read threshold from [decisions] config section with sensible fallback.
+
+    When a connection is supplied, load the repo-scoped config so
+    `.entirecontext/config.toml` values take precedence over global defaults.
+    """
     try:
         from .config import load_config
 
-        cfg = load_config()
+        repo_path = _infer_repo_path_from_conn(conn) if conn is not None else None
+        cfg = load_config(repo_path)
         decisions_cfg = cfg.get("decisions", {}) if isinstance(cfg, dict) else {}
         raw = decisions_cfg.get("auto_promotion_contradicted_threshold")
         if isinstance(raw, int) and raw >= 1:
@@ -1075,6 +1117,11 @@ def rank_related_decisions(
 
     # --- 2a. Apply central staleness policy + chain collapse ---
     decisions_by_id = {d["id"]: d for d in decisions_raw}
+    # Map each surviving terminal to the set of ancestor ids that collapsed into it.
+    # Signals (file/assessment/commit/diff) from ancestors are later unioned onto the
+    # terminal so an A→B collapse doesn't drop A's matched file/assessment evidence
+    # when B has not yet been relinked. Fixes #55 review P1.
+    chain_ancestors: dict[str, set[str]] = {}
 
     # First pass: apply filter, track what was removed
     kept_ids: set[str] = set()
@@ -1113,6 +1160,7 @@ def rank_related_decisions(
                     continue
                 decisions_by_id[terminal_id] = dict(row)
             kept_ids.add(terminal_id)
+            chain_ancestors.setdefault(terminal_id, set()).add(d["id"])
             continue
         if status == "contradicted" and not include_contradicted:
             _bump_stat("contradicted")
@@ -1128,21 +1176,28 @@ def rank_related_decisions(
     decisions = [decisions_by_id[did] for did in kept_ids]
 
     decision_ids = [d["id"] for d in decisions]
-    ph = ",".join("?" for _ in decision_ids)
+    # Signal queries must include ancestors so their matched evidence reaches the
+    # substituted terminal. Ancestors may not be in kept_ids but still need their
+    # decision_files / decision_assessments / decision_commits fetched.
+    signal_query_ids: set[str] = set(decision_ids)
+    for ancestor_ids in chain_ancestors.values():
+        signal_query_ids |= ancestor_ids
+    signal_id_list = list(signal_query_ids)
+    ph = ",".join("?" for _ in signal_id_list)
 
     # File links
-    file_links_by_decision: dict[str, set[str]] = {did: set() for did in decision_ids}
+    file_links_by_decision: dict[str, set[str]] = {did: set() for did in signal_id_list}
     for row in conn.execute(
         f"SELECT decision_id, file_path FROM decision_files WHERE decision_id IN ({ph})",  # noqa: S608
-        decision_ids,
+        signal_id_list,
     ).fetchall():
         file_links_by_decision[row["decision_id"]].add(row["file_path"])
 
     # Assessment links (with relation_type for weighted scoring)
-    assessment_links_by_decision: dict[str, dict[str, str]] = {did: {} for did in decision_ids}
+    assessment_links_by_decision: dict[str, dict[str, str]] = {did: {} for did in signal_id_list}
     for row in conn.execute(
         f"SELECT decision_id, assessment_id, relation_type FROM decision_assessments WHERE decision_id IN ({ph})",  # noqa: S608
-        decision_ids,
+        signal_id_list,
     ).fetchall():
         existing = assessment_links_by_decision[row["decision_id"]]
         aid = row["assessment_id"]
@@ -1154,18 +1209,45 @@ def rank_related_decisions(
             existing[aid] = rtype
 
     # Commit links
-    commit_links_by_decision: dict[str, set[str]] = {did: set() for did in decision_ids}
+    commit_links_by_decision: dict[str, set[str]] = {did: set() for did in signal_id_list}
     if commit_shas:
         for row in conn.execute(
             f"SELECT decision_id, commit_sha FROM decision_commits WHERE decision_id IN ({ph})",  # noqa: S608
-            decision_ids,
+            signal_id_list,
         ).fetchall():
             commit_links_by_decision[row["decision_id"]].add(row["commit_sha"])
 
-    # Outcome counts
+    # Merge ancestor signals onto their terminal so scoring sees the collapsed evidence.
+    for terminal_id, ancestor_ids in chain_ancestors.items():
+        merged_files = set(file_links_by_decision.get(terminal_id, set()))
+        merged_assessments = dict(assessment_links_by_decision.get(terminal_id, {}))
+        merged_commits = set(commit_links_by_decision.get(terminal_id, set()))
+        for anc_id in ancestor_ids:
+            merged_files |= file_links_by_decision.get(anc_id, set())
+            for aid, rtype in assessment_links_by_decision.get(anc_id, {}).items():
+                if aid not in merged_assessments or _ASSESSMENT_RELATION_WEIGHTS.get(
+                    rtype, 0
+                ) > _ASSESSMENT_RELATION_WEIGHTS.get(merged_assessments[aid], 0):
+                    merged_assessments[aid] = rtype
+            merged_commits |= commit_links_by_decision.get(anc_id, set())
+        file_links_by_decision[terminal_id] = merged_files
+        assessment_links_by_decision[terminal_id] = merged_assessments
+        commit_links_by_decision[terminal_id] = merged_commits
+
+    # Propagate ancestor diff FTS scores onto the terminal (max).
+    for terminal_id, ancestor_ids in chain_ancestors.items():
+        best = diff_fts_scores.get(terminal_id, 0.0)
+        for anc_id in ancestor_ids:
+            best = max(best, diff_fts_scores.get(anc_id, 0.0))
+        if best > 0.0:
+            diff_fts_scores[terminal_id] = best
+
+    # Outcome counts — scored against terminal only (ancestor outcomes are a
+    # separate signal chain and not transferred to successors).
     outcome_counts_by_decision: dict[str, dict[str, int]] = {did: {} for did in decision_ids}
+    ph_kept = ",".join("?" for _ in decision_ids)
     for row in conn.execute(
-        f"SELECT decision_id, outcome_type, COUNT(*) AS total FROM decision_outcomes WHERE decision_id IN ({ph}) GROUP BY decision_id, outcome_type",  # noqa: S608
+        f"SELECT decision_id, outcome_type, COUNT(*) AS total FROM decision_outcomes WHERE decision_id IN ({ph_kept}) GROUP BY decision_id, outcome_type",  # noqa: S608
         decision_ids,
     ).fetchall():
         outcome_counts_by_decision.setdefault(row["decision_id"], {})[row["outcome_type"]] = row["total"] or 0
