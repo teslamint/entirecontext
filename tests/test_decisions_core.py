@@ -1150,6 +1150,32 @@ class TestStalenessHardening:
         ).fetchone()
         assert row["n"] == 0
 
+    def test_record_outcome_respects_outer_transaction(self, ec_db):
+        """PR #55 review: when the caller already owns a transaction,
+        record_decision_outcome must NOT commit on its own. The outer
+        scope decides the atomic boundary, and a caller rollback must
+        still be able to undo the nested write.
+        """
+        d = create_decision(ec_db, title="Outer tx target")
+
+        # Caller opens an outer transaction, calls record_decision_outcome
+        # (which must detect the nested case and skip its own commit),
+        # then rolls back the outer scope. The nested INSERT must also
+        # disappear — proving no implicit commit happened inside.
+        ec_db.execute("BEGIN IMMEDIATE")
+        try:
+            result = record_decision_outcome(ec_db, d["id"], "accepted")
+            assert result["decision_id"] == d["id"]
+            assert ec_db.in_transaction  # outer tx still owns the boundary
+        finally:
+            ec_db.rollback()
+
+        row = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchone()
+        assert row["n"] == 0
+
     def test_record_outcome_rolls_back_on_dml_failure(self, ec_db, monkeypatch):
         """PR #55 review: when DML inside the BEGIN IMMEDIATE block fails, the
         transaction must be explicitly rolled back so subsequent calls on the

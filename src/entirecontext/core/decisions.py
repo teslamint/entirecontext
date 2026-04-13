@@ -400,17 +400,20 @@ def record_decision_outcome(
 
     # Wrap outcome insert + updated_at bump + potential auto-promotion in a single
     # BEGIN IMMEDIATE transaction so concurrent contradicted outcomes can't double-promote
-    # or miss the threshold. When an outer transaction already owns the connection
-    # (`started_tx == False`), leave commit/rollback to the caller — committing here
-    # would flush the caller's in-flight work.
-    started_tx = False
-    try:
+    # or miss the threshold. When an outer transaction already owns the connection,
+    # leave commit/rollback to the caller — committing here would flush the caller's
+    # in-flight work.
+    #
+    # Use `conn.in_transaction` to distinguish the nested case *before* attempting
+    # BEGIN IMMEDIATE. Going through `try/except sqlite3.OperationalError` would
+    # swallow unrelated lock-contention failures ("database is locked" after
+    # busy_timeout), leaving the caller to silently drop writes into an
+    # uncommitted implicit transaction.
+    if conn.in_transaction:
+        started_tx = False
+    else:
         conn.execute("BEGIN IMMEDIATE")
         started_tx = True
-    except sqlite3.OperationalError:
-        # Most commonly "cannot start a transaction within a transaction" —
-        # an outer caller already opened one. Stay nested; do not commit below.
-        started_tx = False
 
     # Explicit rollback on any DML failure: Python's sqlite3 does not auto-rollback
     # transactions started with an explicit BEGIN IMMEDIATE, so without this guard
