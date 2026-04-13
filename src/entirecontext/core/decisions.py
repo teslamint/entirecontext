@@ -311,9 +311,17 @@ def update_decision_staleness(conn, decision_id: str, status: str) -> dict:
     if full_id is None:
         raise ValueError(f"Decision '{decision_id}' not found")
 
-    conn.execute(
-        "UPDATE decisions SET staleness_status = ?, updated_at = ? WHERE id = ?", (status, _now_iso(), full_id)
-    )
+    now = _now_iso()
+    if status == "fresh":
+        conn.execute(
+            "UPDATE decisions SET staleness_status = ?, auto_promotion_reset_at = ?, updated_at = ? WHERE id = ?",
+            (status, now, now, full_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE decisions SET staleness_status = ?, updated_at = ? WHERE id = ?",
+            (status, now, full_id),
+        )
     conn.commit()
     return get_decision(conn, full_id) or {}
 
@@ -479,17 +487,32 @@ def _maybe_auto_promote_contradicted(conn, full_decision_id: str, now: str) -> N
     - contradicted_count > accepted_count
     """
     threshold = _get_auto_promotion_threshold(conn)
-    current_row = conn.execute("SELECT staleness_status FROM decisions WHERE id = ?", (full_decision_id,)).fetchone()
+    current_row = conn.execute(
+        "SELECT staleness_status, auto_promotion_reset_at FROM decisions WHERE id = ?",
+        (full_decision_id,),
+    ).fetchone()
     if current_row is None:
         return
     current_status = current_row["staleness_status"] or "fresh"
     if current_status in ("contradicted", "superseded"):
         return
 
-    count_rows = conn.execute(
-        "SELECT outcome_type, COUNT(*) AS total FROM decision_outcomes WHERE decision_id = ? GROUP BY outcome_type",
-        (full_decision_id,),
-    ).fetchall()
+    baseline_at = current_row["auto_promotion_reset_at"]
+    if baseline_at:
+        count_rows = conn.execute(
+            """
+            SELECT outcome_type, COUNT(*) AS total
+            FROM decision_outcomes
+            WHERE decision_id = ? AND created_at > ?
+            GROUP BY outcome_type
+            """,
+            (full_decision_id, baseline_at),
+        ).fetchall()
+    else:
+        count_rows = conn.execute(
+            "SELECT outcome_type, COUNT(*) AS total FROM decision_outcomes WHERE decision_id = ? GROUP BY outcome_type",
+            (full_decision_id,),
+        ).fetchall()
     counts = {r["outcome_type"]: r["total"] for r in count_rows}
     contradicted_count = counts.get("contradicted", 0)
     accepted_count = counts.get("accepted", 0)
@@ -742,28 +765,38 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
     if old_full == new_full:
         raise ValueError("A decision cannot supersede itself")
 
-    # Multi-hop cycle check: walking new_full's chain must not lead back to old_full.
-    # Cycle detection is a graph property independent of the nominal depth cap —
-    # a visited set bounds the walk naturally because the decisions table is
-    # finite, and pre-seeding the visited set with old_full means old_full
-    # appearing anywhere in new_full's existing chain trips the cycle check.
-    probe_id: str | None = new_full
-    visited: set[str] = {old_full}
-    while probe_id is not None:
-        if probe_id in visited:
-            raise ValueError(
-                f"Supersession would create a cycle: decision '{old_full}' already appears in the successor chain of '{new_full}'"
-            )
-        visited.add(probe_id)
-        row = conn.execute("SELECT superseded_by_id FROM decisions WHERE id = ?", (probe_id,)).fetchone()
-        probe_id = row["superseded_by_id"] if row else None
+    if conn.in_transaction:
+        started_tx = False
+    else:
+        conn.execute("BEGIN IMMEDIATE")
+        started_tx = True
 
-    now = _now_iso()
-    conn.execute(
-        "UPDATE decisions SET staleness_status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE id = ?",
-        (new_full, now, old_full),
-    )
-    conn.commit()
+    try:
+        probe_id: str | None = new_full
+        visited: set[str] = {old_full}
+        while probe_id is not None:
+            if probe_id in visited:
+                raise ValueError(
+                    f"Supersession would create a cycle: decision '{old_full}' already appears in the successor chain of '{new_full}'"
+                )
+            visited.add(probe_id)
+            row = conn.execute("SELECT superseded_by_id FROM decisions WHERE id = ?", (probe_id,)).fetchone()
+            probe_id = row["superseded_by_id"] if row else None
+
+        now = _now_iso()
+        conn.execute(
+            "UPDATE decisions SET staleness_status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE id = ?",
+            (new_full, now, old_full),
+        )
+        if started_tx:
+            conn.commit()
+    except Exception:
+        if started_tx:
+            try:
+                conn.rollback()
+            except sqlite3.Error:
+                pass
+        raise
     return get_decision(conn, old_full) or {}
 
 

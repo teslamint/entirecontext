@@ -68,7 +68,7 @@ When a decision is superseded, retrieval follows `superseded_by_id` to the termi
 
 ### Auto-promotion from outcome tracking
 
-`record_decision_outcome` recognizes usage feedback. When a decision accumulates ≥2 `contradicted` outcomes **and** contradicted > accepted, its `staleness_status` is automatically promoted to `contradicted`. This is a **one-way ratchet** — later accepted outcomes never auto-revert the status; a manual `ec decision stale --status fresh` is required to recover.
+`record_decision_outcome` recognizes usage feedback. When a decision accumulates ≥2 `contradicted` outcomes **and** contradicted > accepted, its `staleness_status` is automatically promoted to `contradicted`. This is a **one-way ratchet** — later accepted outcomes never auto-revert the status; a manual `ec decision stale --status fresh` is required to recover, and that manual reset also restarts the auto-promotion window so only post-reset outcomes count toward the next promotion.
 
 Note: `decision_outcomes.outcome_type='contradicted'` (usage feedback) is distinct from `decision_assessments.relation_type='contradicts'` (metadata). The latter does not trigger auto-promotion.
 
@@ -585,5 +585,4 @@ EntireContext was inspired by:
 ## License
 
 [MIT](LICENSE)
-
 

@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     superseded_by_id TEXT,
     rejected_alternatives TEXT,
     supporting_evidence TEXT,
+    auto_promotion_reset_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (superseded_by_id) REFERENCES decisions(id) ON DELETE SET NULL

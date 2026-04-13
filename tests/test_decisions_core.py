@@ -402,6 +402,41 @@ class TestSupersedeDecision:
         with pytest.raises(ValueError, match="not found"):
             supersede_decision(ec_db, "nonexistent", new["id"])
 
+    def test_supersede_respects_outer_transaction(self, ec_db):
+        old = create_decision(ec_db, title="Old approach")
+        new = create_decision(ec_db, title="New approach")
+
+        ec_db.execute("BEGIN IMMEDIATE")
+        try:
+            result = supersede_decision(ec_db, old["id"], new["id"])
+            assert result["superseded_by_id"] == new["id"]
+            assert ec_db.in_transaction
+        finally:
+            ec_db.rollback()
+
+        row = ec_db.execute(
+            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+            (old["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "fresh"
+        assert row["superseded_by_id"] is None
+
+    def test_supersede_rolls_back_started_transaction_on_cycle_error(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, b["id"], a["id"])
+
+        assert ec_db.in_transaction is False
+        row = ec_db.execute(
+            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+            (b["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "fresh"
+        assert row["superseded_by_id"] is None
+
 
 class TestUnlinkDecision:
     def test_unlink_file(self, ec_db):
@@ -1155,6 +1190,35 @@ class TestStalenessHardening:
 
         row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (a["id"],)).fetchone()
         assert row["staleness_status"] == "superseded"
+
+    def test_manual_fresh_reset_restarts_auto_promotion_window(self, ec_db):
+        d = create_decision(ec_db, title="Recoverable contradiction")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+
+        row = ec_db.execute(
+            "SELECT staleness_status, auto_promotion_reset_at FROM decisions WHERE id = ?",
+            (d["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "contradicted"
+        assert row["auto_promotion_reset_at"] is None
+
+        update_decision_staleness(ec_db, d["id"], "fresh")
+
+        row = ec_db.execute(
+            "SELECT staleness_status, auto_promotion_reset_at FROM decisions WHERE id = ?",
+            (d["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "fresh"
+        assert row["auto_promotion_reset_at"] is not None
+
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "fresh"
+
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "contradicted"
 
     def test_data_integrity_superseded_requires_status(self, ec_db):
         """Invariant: superseded_by_id set implies staleness_status='superseded'."""
