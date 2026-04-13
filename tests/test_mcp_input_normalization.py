@@ -144,6 +144,14 @@ class TestFtsQueryErrorHandling:
         assert "error" in result
         assert "Invalid FTS query" in result["error"]
 
+    def test_ec_search_foo_colon_bar_returns_error_payload(self, mock_repo_db):
+        """Matches PR test plan: ec_search(query='foo:bar', search_type='fts')."""
+        from entirecontext.mcp.tools.search import ec_search
+
+        result = json.loads(asyncio.run(ec_search("foo:bar", search_type="fts")))
+        assert "error" in result
+        assert "Invalid FTS query" in result["error"]
+
 
 # ---------------------------------------------------------------------------
 # Part 3: Decision field coercion
@@ -208,3 +216,17 @@ class TestDecisionCreateCoercion:
         )
         assert "error" in result
         assert "rejected_alternatives" in result["error"]
+
+    def test_plain_single_string_coerced(self, mock_repo_db):
+        """Matches PR test plan: rejected_alternatives='single string' -> ['single string']."""
+        from entirecontext.mcp.tools.decisions import ec_decision_create
+
+        result = json.loads(
+            asyncio.run(
+                ec_decision_create(
+                    title="Test decision",
+                    rejected_alternatives="single string",
+                )
+            )
+        )
+        assert result["rejected_alternatives"] == ["single string"]
