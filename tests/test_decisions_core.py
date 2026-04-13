@@ -332,7 +332,10 @@ class TestDecisionsCore:
         link_decision_to_file(ec_db, demoted["id"], "src/service/retry.py")
         record_decision_outcome(ec_db, promoted["id"], "accepted")
         record_decision_outcome(ec_db, promoted["id"], "accepted")
-        record_decision_outcome(ec_db, demoted["id"], "contradicted")
+        # Use `ignored` instead of `contradicted` — under new staleness policy,
+        # contradicted decisions are excluded from ranking results by default,
+        # so this test now validates quality-score demotion via ignored signal.
+        record_decision_outcome(ec_db, demoted["id"], "ignored")
 
         ranked = rank_related_decisions(ec_db, file_paths=["src/service/retry.py"], limit=10)
 
@@ -762,7 +765,8 @@ class TestRankingSignals:
         link_decision_to_file(ec_db, fresh["id"], "src/core.py")
         link_decision_to_file(ec_db, superseded["id"], "src/core.py")
 
-        ranked = rank_related_decisions(ec_db, file_paths=["src/core.py"])
+        # Must opt in; default policy excludes superseded decisions.
+        ranked = rank_related_decisions(ec_db, file_paths=["src/core.py"], include_superseded=True)
         fresh_item = next(r for r in ranked if r["id"] == fresh["id"])
         sup_item = next(r for r in ranked if r["id"] == superseded["id"])
         assert fresh_item["score"] > sup_item["score"]
@@ -863,3 +867,229 @@ class TestRankingSignals:
         item = ranked[0]
         for key in ("id", "title", "staleness_status", "updated_at", "base_score", "quality_score", "score"):
             assert key in item
+
+
+# ---------------------------------------------------------------------------
+# Issue #39: staleness/contradiction hardening regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestStalenessHardening:
+    def test_rank_related_excludes_superseded_by_default(self, ec_db):
+        """A→B chain: ranking surfaces B, hides A."""
+        a = create_decision(ec_db, title="Original")
+        b = create_decision(ec_db, title="Replacement")
+        link_decision_to_file(ec_db, a["id"], "src/auth.py")
+        link_decision_to_file(ec_db, b["id"], "src/auth.py")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/auth.py"])
+        ids = [r["id"] for r in ranked]
+        assert b["id"] in ids
+        assert a["id"] not in ids
+
+    def test_rank_related_excludes_contradicted_by_default(self, ec_db):
+        fresh = create_decision(ec_db, title="Fresh")
+        contradicted = create_decision(ec_db, title="Contradicted")
+        link_decision_to_file(ec_db, fresh["id"], "src/api.py")
+        link_decision_to_file(ec_db, contradicted["id"], "src/api.py")
+        update_decision_staleness(ec_db, contradicted["id"], "contradicted")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/api.py"])
+        ids = [r["id"] for r in ranked]
+        assert fresh["id"] in ids
+        assert contradicted["id"] not in ids
+
+    def test_rank_related_fallback_padding_respects_filter(self, ec_db):
+        """Padding path (line 833-838) must not smuggle in superseded decisions."""
+        # Create a single fresh candidate via file link; no signal-matched others.
+        signal = create_decision(ec_db, title="Signal match")
+        link_decision_to_file(ec_db, signal["id"], "src/only.py")
+        # Create many superseded decisions that would be recent but should be filtered
+        # out by the padding fallback path.
+        for i in range(10):
+            sup = create_decision(ec_db, title=f"Superseded {i}")
+            update_decision_staleness(ec_db, sup["id"], "superseded")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/only.py"])
+        for r in ranked:
+            assert r.get("staleness_status") != "superseded"
+
+    def test_chain_collapse_substitutes_terminal(self, ec_db):
+        """A→B→C: ranking A's signal surfaces C (terminal)."""
+        a = create_decision(ec_db, title="Gen 1")
+        b = create_decision(ec_db, title="Gen 2")
+        c = create_decision(ec_db, title="Gen 3")
+        link_decision_to_file(ec_db, a["id"], "src/model.py")
+        link_decision_to_file(ec_db, b["id"], "src/model.py")
+        link_decision_to_file(ec_db, c["id"], "src/model.py")
+        supersede_decision(ec_db, a["id"], b["id"])
+        supersede_decision(ec_db, b["id"], c["id"])
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/model.py"])
+        ids = [r["id"] for r in ranked]
+        assert c["id"] in ids
+        assert a["id"] not in ids
+        assert b["id"] not in ids
+
+    def test_chain_collapse_drops_when_terminal_contradicted(self, ec_db):
+        """A→B, B contradicted: empty result + stats reason."""
+        a = create_decision(ec_db, title="Original")
+        b = create_decision(ec_db, title="Broken replacement")
+        link_decision_to_file(ec_db, a["id"], "src/payment.py")
+        link_decision_to_file(ec_db, b["id"], "src/payment.py")
+        supersede_decision(ec_db, a["id"], b["id"])
+        update_decision_staleness(ec_db, b["id"], "contradicted")
+
+        ranked, stats = rank_related_decisions(ec_db, file_paths=["src/payment.py"], _return_stats=True)
+        ids = [r["id"] for r in ranked]
+        assert a["id"] not in ids
+        assert b["id"] not in ids
+        assert stats["filtered_count"] >= 1
+        assert "chain_terminal_contradicted" in stats["by_reason"] or "contradicted" in stats["by_reason"]
+
+    def test_resolve_successor_chain_depth_cap(self, ec_db):
+        """A self-referential pointer must not loop forever."""
+        from entirecontext.core.decisions import resolve_successor_chain
+
+        a = create_decision(ec_db, title="Loop candidate")
+        # Construct a chain of 3: A→B→C (no cycle), verify terminal is C
+        b = create_decision(ec_db, title="B")
+        c = create_decision(ec_db, title="C")
+        supersede_decision(ec_db, a["id"], b["id"])
+        supersede_decision(ec_db, b["id"], c["id"])
+
+        terminal_id, status = resolve_successor_chain(ec_db, a["id"])
+        assert terminal_id == c["id"]
+        assert status == "fresh"
+
+    def test_supersede_detects_cycle(self, ec_db):
+        """supersede(B, A) after supersede(A, B) must raise."""
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, b["id"], a["id"])
+
+    def test_fts_search_default_excludes_superseded(self, ec_db):
+        fresh = create_decision(ec_db, title="freshkeywordalpha")
+        sup = create_decision(ec_db, title="freshkeywordalpha also")
+        update_decision_staleness(ec_db, sup["id"], "superseded")
+
+        results = fts_search_decisions(ec_db, "freshkeywordalpha")
+        ids = [r["id"] for r in results]
+        assert fresh["id"] in ids
+        assert sup["id"] not in ids
+
+    def test_fts_search_include_superseded_flag(self, ec_db):
+        fresh = create_decision(ec_db, title="keywordzulu")
+        sup = create_decision(ec_db, title="keywordzulu alternate")
+        update_decision_staleness(ec_db, sup["id"], "superseded")
+
+        results = fts_search_decisions(ec_db, "keywordzulu", include_superseded=True)
+        ids = [r["id"] for r in results]
+        assert fresh["id"] in ids
+        assert sup["id"] in ids
+
+    def test_fts_search_include_contradicted_default_and_opt_out(self, ec_db):
+        c = create_decision(ec_db, title="keywordbravo")
+        update_decision_staleness(ec_db, c["id"], "contradicted")
+
+        # Default: include_contradicted=True during the v0.2.x deprecation window.
+        default_results = fts_search_decisions(ec_db, "keywordbravo")
+        assert any(r["id"] == c["id"] for r in default_results)
+
+        # Opt-in to future default.
+        strict_results = fts_search_decisions(ec_db, "keywordbravo", include_contradicted=False)
+        assert not any(r["id"] == c["id"] for r in strict_results)
+
+    def test_hybrid_search_inherits_filter(self, ec_db):
+        fresh = create_decision(ec_db, title="keywordindia")
+        sup = create_decision(ec_db, title="keywordindia replaced")
+        update_decision_staleness(ec_db, sup["id"], "superseded")
+
+        results = hybrid_search_decisions(ec_db, "keywordindia")
+        ids = [r["id"] for r in results]
+        assert fresh["id"] in ids
+        assert sup["id"] not in ids
+
+    def test_get_decision_successor_field(self, ec_db):
+        a = create_decision(ec_db, title="Old")
+        b = create_decision(ec_db, title="New")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        full = get_decision(ec_db, a["id"])
+        assert full is not None
+        assert full.get("successor") == {"id": b["id"], "title": "New"}
+
+    def test_get_decision_no_successor_field_when_fresh(self, ec_db):
+        d = create_decision(ec_db, title="Still fresh")
+        full = get_decision(ec_db, d["id"])
+        assert full is not None
+        assert "successor" not in full
+
+    def test_auto_promotion_crosses_threshold(self, ec_db):
+        d = create_decision(ec_db, title="Will be auto-promoted")
+        assert d["staleness_status"] == "fresh"
+
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        # After 1 contradicted: still below threshold (default = 2)
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "fresh"
+
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        # After 2 contradicted: meets threshold AND > accepted (0) → auto-promoted
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "contradicted"
+
+    def test_auto_promotion_respects_accepted_majority(self, ec_db):
+        d = create_decision(ec_db, title="Mostly accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+
+        # 2 contradicted vs 3 accepted: accepted still wins → no promotion
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "fresh"
+
+    def test_auto_promotion_is_one_way_ratchet(self, ec_db):
+        d = create_decision(ec_db, title="Promote and revert?")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+        record_decision_outcome(ec_db, d["id"], "contradicted")
+
+        # Promoted after 2 contradicted
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "contradicted"
+
+        # Adding many accepts does NOT revert
+        for _ in range(10):
+            record_decision_outcome(ec_db, d["id"], "accepted")
+
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert row["staleness_status"] == "contradicted"
+
+    def test_auto_promotion_skips_already_superseded(self, ec_db):
+        a = create_decision(ec_db, title="Superseded original")
+        b = create_decision(ec_db, title="Replacement")
+        supersede_decision(ec_db, a["id"], b["id"])
+        # A is now 'superseded'
+        record_decision_outcome(ec_db, a["id"], "contradicted")
+        record_decision_outcome(ec_db, a["id"], "contradicted")
+
+        row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (a["id"],)).fetchone()
+        assert row["staleness_status"] == "superseded"
+
+    def test_data_integrity_superseded_requires_status(self, ec_db):
+        """Invariant: superseded_by_id set implies staleness_status='superseded'."""
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        row = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decisions "
+            "WHERE superseded_by_id IS NOT NULL AND staleness_status != 'superseded'"
+        ).fetchone()
+        assert row["n"] == 0

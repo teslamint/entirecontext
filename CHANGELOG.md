@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Staleness hardening in retrieval** (#39) — `rank_related_decisions` hard-filters superseded and contradicted decisions by default, collapses supersession chains to their terminal successor, and fixes fallback padding to respect the same policy. FTS and hybrid decision search now accept `include_stale`, `include_superseded`, and `include_contradicted` flags. `get_decision` surfaces an immediate `successor` pointer when the decision is superseded. New CLI command `ec decision chain <id>` walks the supersession chain for debugging. Session-start hook uses a single batched query and applies the same central filter policy.
+- **Auto-promotion from outcome feedback** (#39) — `record_decision_outcome` now runs inside a `BEGIN IMMEDIATE` transaction and auto-promotes `staleness_status` to `contradicted` when a decision accumulates ≥2 contradicted outcomes that outnumber accepted outcomes. One-way ratchet — recovery requires manual `ec decision stale --status fresh`. Threshold configurable via `[decisions] auto_promotion_contradicted_threshold`.
+- **Supersession cycle detection** (#39) — `supersede_decision` walks the target's chain before writing and rejects inputs that would create a multi-hop cycle. `resolve_successor_chain` is also defended by a depth cap.
+
+### Deprecated
+
+- **`fts_search_decisions` / `hybrid_search_decisions` / `ec decision search` include_contradicted default** — currently defaults to `True` for backward compatibility during v0.2.x. The default will flip to `False` in **v0.3.0**. Pass `include_contradicted=False` (or `--no-include-contradicted` from the CLI) now to opt into the future default.
+
 ## [0.1.1] - 2026-04-09
 
 ### Fixed

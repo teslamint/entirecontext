@@ -41,6 +41,84 @@ VALID_DECISION_OUTCOME_TYPES = frozenset(("accepted", "ignored", "contradicted")
 # multiple typed links (e.g. informed_by + contradicts) when historically true.
 VALID_DECISION_ASSESSMENT_RELATION_TYPES = frozenset(("supports", "informed_by", "contradicts", "supersedes"))
 
+# Max hops walked when resolving a superseded_by_id chain; cycle defense-in-depth.
+_SUCCESSOR_CHAIN_DEPTH_CAP = 10
+
+# Auto-promotion threshold: a decision with this many "contradicted" outcomes
+# (and more contradicted than accepted) will be automatically promoted to
+# staleness_status='contradicted'. Configurable via [decisions] TOML section.
+_DEFAULT_AUTO_PROMOTION_CONTRADICTED_THRESHOLD = 2
+
+
+def _excluded_statuses(
+    *,
+    include_stale: bool = True,
+    include_superseded: bool = False,
+    include_contradicted: bool = False,
+) -> tuple[str, ...]:
+    excluded: list[str] = []
+    if not include_stale:
+        excluded.append("stale")
+    if not include_superseded:
+        excluded.append("superseded")
+    if not include_contradicted:
+        excluded.append("contradicted")
+    return tuple(excluded)
+
+
+def _staleness_sql_predicate(
+    *,
+    include_stale: bool = True,
+    include_superseded: bool = False,
+    include_contradicted: bool = False,
+    column: str = "staleness_status",
+) -> tuple[str, list[str]]:
+    """Build a SQL predicate fragment + params for pushdown filtering.
+
+    Returns (predicate, params) where predicate is empty when all statuses pass.
+    """
+    excluded = _excluded_statuses(
+        include_stale=include_stale,
+        include_superseded=include_superseded,
+        include_contradicted=include_contradicted,
+    )
+    if not excluded:
+        return "", []
+    placeholders = ",".join("?" * len(excluded))
+    return f"{column} NOT IN ({placeholders})", list(excluded)
+
+
+def _apply_staleness_policy(
+    rows: list[dict[str, Any]],
+    *,
+    include_stale: bool = True,
+    include_superseded: bool = False,
+    include_contradicted: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Filter decision rows by staleness policy; return (kept, stats).
+
+    stats shape: {"filtered_count": N, "by_reason": {"stale": x, "superseded": y, "contradicted": z}}
+    """
+    excluded = set(
+        _excluded_statuses(
+            include_stale=include_stale,
+            include_superseded=include_superseded,
+            include_contradicted=include_contradicted,
+        )
+    )
+    if not excluded:
+        return rows, {"filtered_count": 0, "by_reason": {}}
+
+    kept: list[dict[str, Any]] = []
+    by_reason: dict[str, int] = {}
+    for row in rows:
+        status = row.get("staleness_status") or "fresh"
+        if status in excluded:
+            by_reason[status] = by_reason.get(status, 0) + 1
+            continue
+        kept.append(row)
+    return kept, {"filtered_count": sum(by_reason.values()), "by_reason": by_reason}
+
 
 def _format_allowed(values: frozenset[str]) -> tuple[str, ...]:
     return tuple(sorted(values))
@@ -168,6 +246,14 @@ def get_decision(conn, decision_id: str) -> dict | None:
     ]
     decision["quality_summary"] = _get_decision_quality_summary_resolved(conn, full_id)
     decision["recent_outcomes"] = _list_decision_outcomes_resolved(conn, full_id, limit=10)
+
+    # Surface the immediate successor when this decision has been superseded.
+    successor_id = decision.get("superseded_by_id")
+    if successor_id:
+        succ_row = conn.execute("SELECT id, title FROM decisions WHERE id = ?", (successor_id,)).fetchone()
+        if succ_row is not None:
+            decision["successor"] = {"id": succ_row["id"], "title": succ_row["title"]}
+
     return decision
 
 
@@ -310,6 +396,18 @@ def record_decision_outcome(
 
     outcome_id = str(uuid4())
     now = _now_iso()
+
+    # Wrap outcome insert + updated_at bump + potential auto-promotion in a single
+    # BEGIN IMMEDIATE transaction so concurrent contradicted outcomes can't double-promote
+    # or miss the threshold.
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+    except Exception:
+        # Already in a transaction (e.g. nested call from hooks) — let the outer
+        # scope own the atomic boundary. Autocommit will still batch up to the
+        # single commit below.
+        pass
+
     conn.execute(
         """
         INSERT INTO decision_outcomes (
@@ -319,6 +417,12 @@ def record_decision_outcome(
         (outcome_id, full_decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, now),
     )
     conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (now, full_decision_id))
+
+    # Auto-promotion: if a contradicted outcome pushes the decision past threshold,
+    # promote its staleness_status. One-way ratchet — never reverts to fresh.
+    if outcome_type == "contradicted":
+        _maybe_auto_promote_contradicted(conn, full_decision_id, now)
+
     conn.commit()
     row = conn.execute(
         """
@@ -329,6 +433,53 @@ def record_decision_outcome(
         (outcome_id,),
     ).fetchone()
     return dict(row) if row else {}
+
+
+def _maybe_auto_promote_contradicted(conn, full_decision_id: str, now: str) -> None:
+    """Promote a decision to staleness_status='contradicted' when usage feedback
+    crosses the configured threshold.
+
+    Conditions (all must hold):
+    - current status NOT IN ('contradicted', 'superseded')  — one-way ratchet
+    - contradicted_count >= threshold
+    - contradicted_count > accepted_count
+    """
+    threshold = _get_auto_promotion_threshold()
+    current_row = conn.execute("SELECT staleness_status FROM decisions WHERE id = ?", (full_decision_id,)).fetchone()
+    if current_row is None:
+        return
+    current_status = current_row["staleness_status"] or "fresh"
+    if current_status in ("contradicted", "superseded"):
+        return
+
+    count_rows = conn.execute(
+        "SELECT outcome_type, COUNT(*) AS total FROM decision_outcomes WHERE decision_id = ? GROUP BY outcome_type",
+        (full_decision_id,),
+    ).fetchall()
+    counts = {r["outcome_type"]: r["total"] for r in count_rows}
+    contradicted_count = counts.get("contradicted", 0)
+    accepted_count = counts.get("accepted", 0)
+
+    if contradicted_count >= threshold and contradicted_count > accepted_count:
+        conn.execute(
+            "UPDATE decisions SET staleness_status = 'contradicted', updated_at = ? WHERE id = ?",
+            (now, full_decision_id),
+        )
+
+
+def _get_auto_promotion_threshold() -> int:
+    """Read threshold from [decisions] config section with sensible fallback."""
+    try:
+        from .config import load_config
+
+        cfg = load_config()
+        decisions_cfg = cfg.get("decisions", {}) if isinstance(cfg, dict) else {}
+        raw = decisions_cfg.get("auto_promotion_contradicted_threshold")
+        if isinstance(raw, int) and raw >= 1:
+            return raw
+    except Exception:
+        pass
+    return _DEFAULT_AUTO_PROMOTION_CONTRADICTED_THRESHOLD
 
 
 def link_decision_to_assessment(conn, decision_id: str, assessment_id: str, relation_type: str = "supports") -> dict:
@@ -470,6 +621,38 @@ def update_decision(
     return get_decision(conn, full_id) or {}
 
 
+def resolve_successor_chain(conn, decision_id: str) -> tuple[str, str]:
+    """Walk superseded_by_id to the terminal decision.
+
+    Returns (terminal_id, terminal_staleness_status). If the decision is not
+    superseded, returns itself. Depth cap prevents runaway cycles.
+    """
+    full_id = _resolve_decision_id(conn, decision_id)
+    if full_id is None:
+        raise ValueError(f"Decision '{decision_id}' not found")
+
+    current_id = full_id
+    visited: set[str] = set()
+    for _ in range(_SUCCESSOR_CHAIN_DEPTH_CAP):
+        if current_id in visited:
+            break
+        visited.add(current_id)
+        row = conn.execute(
+            "SELECT superseded_by_id, staleness_status FROM decisions WHERE id = ?",
+            (current_id,),
+        ).fetchone()
+        if row is None:
+            break
+        successor = row["superseded_by_id"]
+        status = row["staleness_status"] or "fresh"
+        if not successor:
+            return current_id, status
+        current_id = successor
+    # Hit depth cap: return current node's status as best-effort terminal.
+    row = conn.execute("SELECT staleness_status FROM decisions WHERE id = ?", (current_id,)).fetchone()
+    return current_id, (row["staleness_status"] if row else "fresh")
+
+
 def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict:
     old_full = _resolve_decision_id(conn, old_decision_id)
     if old_full is None:
@@ -481,6 +664,20 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
 
     if old_full == new_full:
         raise ValueError("A decision cannot supersede itself")
+
+    # Multi-hop cycle check: walking new_full's chain must not lead back to old_full.
+    probe_id: str | None = new_full
+    visited: set[str] = set()
+    for _ in range(_SUCCESSOR_CHAIN_DEPTH_CAP):
+        if probe_id is None or probe_id in visited:
+            break
+        if probe_id == old_full:
+            raise ValueError(
+                f"Supersession would create a cycle: decision '{old_full}' already appears in the successor chain of '{new_full}'"
+            )
+        visited.add(probe_id)
+        row = conn.execute("SELECT superseded_by_id FROM decisions WHERE id = ?", (probe_id,)).fetchone()
+        probe_id = row["superseded_by_id"] if row else None
 
     now = _now_iso()
     conn.execute(
@@ -785,7 +982,11 @@ def rank_related_decisions(
     diff_text: str | None = None,
     commit_shas: list[str] | None = None,
     limit: int = 10,
-) -> list[dict]:
+    include_stale: bool = True,
+    include_superseded: bool = False,
+    include_contradicted: bool = False,
+    _return_stats: bool = False,
+) -> list[dict] | tuple[list[dict], dict]:
     """Rank decisions by current-change relevance using multi-signal scoring.
 
     Candidate-first architecture: gathers candidate decisions from each signal
@@ -801,6 +1002,13 @@ def rank_related_decisions(
     - staleness_factor: multiplicative on base_score only (fresh=1.0, stale=0.85, etc.)
 
     Score formula: score = base_score * staleness_factor + quality_score
+
+    Staleness policy:
+    - By default, excludes superseded and contradicted decisions. Stale passes through
+      (with multiplicative demotion via _STALENESS_FACTORS).
+    - Superseded candidates are collapsed to their terminal successor when that
+      successor passes the filter; otherwise the entire chain is dropped.
+    - Set _return_stats=True to get (results, filter_stats).
     """
     file_paths = [_normalize_path(p) for p in (file_paths or [])]
     assessment_ids = assessment_ids or []
@@ -829,29 +1037,95 @@ def rank_related_decisions(
         diff_fts_scores = _fts_rank_decisions_from_diff(conn, diff_text)
         candidate_ids.update(diff_fts_scores.keys())
 
-    # Fallback: if too few candidates, pad with recent decisions
+    # Fallback: if too few candidates, pad with recent decisions.
+    # Apply staleness predicate at the SQL level so the padding path can't smuggle in
+    # superseded/contradicted entries.
     if len(candidate_ids) < _MIN_CANDIDATE_THRESHOLD:
-        recent = conn.execute(
-            "SELECT id FROM decisions ORDER BY updated_at DESC LIMIT ?",
-            (_FALLBACK_RECENT_COUNT,),
-        ).fetchall()
+        pad_predicate, pad_params = _staleness_sql_predicate(
+            include_stale=include_stale,
+            include_superseded=include_superseded,
+            include_contradicted=include_contradicted,
+        )
+        pad_where = f"WHERE {pad_predicate}" if pad_predicate else ""
+        pad_sql = f"SELECT id FROM decisions {pad_where} ORDER BY updated_at DESC LIMIT ?"  # noqa: S608
+        recent = conn.execute(pad_sql, [*pad_params, _FALLBACK_RECENT_COUNT]).fetchall()
         candidate_ids.update(r["id"] for r in recent)
 
+    filter_stats: dict[str, Any] = {"filtered_count": 0, "by_reason": {}}
+
+    def _bump_stat(reason: str, n: int = 1) -> None:
+        filter_stats["by_reason"][reason] = filter_stats["by_reason"].get(reason, 0) + n
+        filter_stats["filtered_count"] += n
+
     if not candidate_ids:
-        return []
+        return ([], filter_stats) if _return_stats else []
 
     # --- 2. Bulk-fetch decision data ---
     id_list = list(candidate_ids)
     placeholders = ",".join("?" for _ in id_list)
-    decisions = [
+    decisions_raw = [
         dict(r)
         for r in conn.execute(
             f"SELECT * FROM decisions WHERE id IN ({placeholders})",  # noqa: S608
             id_list,
         ).fetchall()
     ]
-    if not decisions:
-        return []
+    if not decisions_raw:
+        return ([], filter_stats) if _return_stats else []
+
+    # --- 2a. Apply central staleness policy + chain collapse ---
+    decisions_by_id = {d["id"]: d for d in decisions_raw}
+
+    # First pass: apply filter, track what was removed
+    kept_ids: set[str] = set()
+    for d in decisions_raw:
+        status = d.get("staleness_status") or "fresh"
+        if status == "superseded":
+            # Explicit opt-in keeps the original (no chain collapse).
+            if include_superseded:
+                kept_ids.add(d["id"])
+                continue
+            # Default path: try chain collapse when a successor pointer exists.
+            successor_ptr = d.get("superseded_by_id")
+            if not successor_ptr:
+                _bump_stat("superseded")
+                continue
+            terminal_id, terminal_status = resolve_successor_chain(conn, d["id"])
+            if terminal_id == d["id"]:
+                # Unresolved (cycle or missing chain link)
+                _bump_stat("superseded")
+                continue
+            if terminal_status == "contradicted" and not include_contradicted:
+                _bump_stat("chain_terminal_contradicted")
+                continue
+            if terminal_status == "superseded":
+                # Terminal itself is marked superseded without a forward pointer — policy filter.
+                _bump_stat("chain_terminal_superseded")
+                continue
+            if terminal_status == "stale" and not include_stale:
+                _bump_stat("chain_terminal_stale")
+                continue
+            # Fetch the terminal if not already in our candidate set
+            if terminal_id not in decisions_by_id:
+                row = conn.execute("SELECT * FROM decisions WHERE id = ?", (terminal_id,)).fetchone()
+                if row is None:
+                    _bump_stat("chain_terminal_missing")
+                    continue
+                decisions_by_id[terminal_id] = dict(row)
+            kept_ids.add(terminal_id)
+            continue
+        if status == "contradicted" and not include_contradicted:
+            _bump_stat("contradicted")
+            continue
+        if status == "stale" and not include_stale:
+            _bump_stat("stale")
+            continue
+        kept_ids.add(d["id"])
+
+    if not kept_ids:
+        return ([], filter_stats) if _return_stats else []
+
+    decisions = [decisions_by_id[did] for did in kept_ids]
 
     decision_ids = [d["id"] for d in decisions]
     ph = ",".join("?" for _ in decision_ids)
@@ -967,7 +1241,10 @@ def rank_related_decisions(
         )
 
     scored.sort(key=lambda item: (item["score"], item.get("updated_at", "")), reverse=True)
-    return scored[:limit]
+    top = scored[:limit]
+    if _return_stats:
+        return top, filter_stats
+    return top
 
 
 def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
@@ -1020,18 +1297,36 @@ def fts_search_decisions(
     *,
     since: str | None = None,
     limit: int = 20,
+    include_stale: bool = True,
+    include_superseded: bool = False,
+    include_contradicted: bool = True,
 ) -> list[dict]:
-    """FTS5 full-text search over decision title and rationale."""
-    sql = """
-        SELECT d.id, d.title, d.rationale, d.scope, d.staleness_status,
-               d.updated_at, d.created_at, rank, -rank AS relevance_score
-        FROM fts_decisions fd
-        JOIN decisions d ON fd.rowid = d.rowid
-        WHERE fts_decisions MATCH ?
-        AND (? IS NULL OR d.updated_at >= ?)
-        ORDER BY rank LIMIT ?
+    """FTS5 full-text search over decision title and rationale.
+
+    Staleness policy (issue #39):
+    - Superseded is excluded by default; set include_superseded=True to include.
+    - Contradicted defaults to True for the v0.2.x deprecation window; it will
+      flip to False in v0.3.0. Pass include_contradicted=False now to opt in
+      to the future default.
+    - Stale decisions are included by default.
     """
-    params: list[Any] = [query, since, since, limit]
+    staleness_predicate, staleness_params = _staleness_sql_predicate(
+        include_stale=include_stale,
+        include_superseded=include_superseded,
+        include_contradicted=include_contradicted,
+        column="d.staleness_status",
+    )
+    where_clauses = ["fts_decisions MATCH ?", "(? IS NULL OR d.updated_at >= ?)"]
+    if staleness_predicate:
+        where_clauses.append(staleness_predicate)
+    where_sql = " AND ".join(where_clauses)
+    sql = (
+        "SELECT d.id, d.title, d.rationale, d.scope, d.staleness_status, "
+        "d.updated_at, d.created_at, rank, -rank AS relevance_score "
+        "FROM fts_decisions fd JOIN decisions d ON fd.rowid = d.rowid "
+        f"WHERE {where_sql} ORDER BY rank LIMIT ?"  # noqa: S608
+    )
+    params: list[Any] = [query, since, since, *staleness_params, limit]
 
     try:
         rows = conn.execute(sql, params).fetchall()
@@ -1051,11 +1346,27 @@ def hybrid_search_decisions(
     since: str | None = None,
     limit: int = 20,
     k: int = 60,
+    include_stale: bool = True,
+    include_superseded: bool = False,
+    include_contradicted: bool = True,
 ) -> list[dict]:
-    """Hybrid search combining FTS5 relevance and recency via RRF."""
+    """Hybrid search combining FTS5 relevance and recency via RRF.
+
+    Staleness flags are passed through to fts_search_decisions so the RRF
+    baseline is already filtered — preventing stale content from boosting
+    to the top through recency.
+    """
     from .search import rrf_fuse
 
-    fts_results = fts_search_decisions(conn, query, since=since, limit=limit * 3)
+    fts_results = fts_search_decisions(
+        conn,
+        query,
+        since=since,
+        limit=limit * 3,
+        include_stale=include_stale,
+        include_superseded=include_superseded,
+        include_contradicted=include_contradicted,
+    )
     if not fts_results:
         return []
 

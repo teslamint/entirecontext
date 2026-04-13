@@ -29,6 +29,60 @@ EntireContext turns session history into reusable engineering memory tied to com
 
 Decisions accumulate during sessions. Assessments evaluate their impact. Feedback closes the loop and distills lessons that surface before the next related change.
 
+## Staleness Policy
+
+Decisions carry a `staleness_status` so old guidance can be prevented from dominating retrieval when the code or newer decisions no longer agree with it.
+
+### The four states
+
+| Status | Meaning | Who sets it |
+|---|---|---|
+| `fresh` | Current, actively applicable | Default on create |
+| `stale` | Linked files changed since creation; may still apply | `ec decision stale` or session-end hook |
+| `superseded` | Replaced by a newer decision | `ec decision supersede <old> <new>` |
+| `contradicted` | Usage feedback shows the decision was wrong | Manual `ec decision stale --status contradicted`, or auto-promoted after ≥2 `contradicted` outcomes when they exceed `accepted` outcomes |
+
+### Retrieval defaults per entry point
+
+| Entry point | fresh | stale | superseded | contradicted |
+|---|---|---|---|---|
+| `ec_decision_related` / `rank_related_decisions` | shown | demoted 0.85× | hidden (successor substituted) | hidden |
+| `ec_decision_search` / `fts_search_decisions` / `hybrid_search_decisions` | shown | shown | hidden | shown (v0.2.x) / hidden (v0.3.0) |
+| `ec_decision_list` / `ec decision list` | shown | shown | shown | shown (inventory — explicit status filter) |
+| `ec_decision_get(id)` | shown (no successor) | shown | shown + `successor` pointer | shown |
+| Session-start hook | shown | shown | replaced by successor | hidden |
+
+Opt in to include filtered decisions via flags:
+- `include_stale` (default `True`) — stale decisions pass through with 0.85× demotion
+- `include_superseded` (default `False`) — returns the original without chain collapse
+- `include_contradicted` (default `False` in `rank_related_decisions`; `True` in FTS/hybrid during the v0.2.x deprecation window)
+
+### Supersession chain behavior
+
+When a decision is superseded, retrieval follows `superseded_by_id` to the terminal successor:
+
+- **Terminal is usable** → ranking substitutes the terminal; the old ancestors are dropped.
+- **Terminal is contradicted** → the entire chain is filtered out and reported in `filter_stats.by_reason["chain_terminal_contradicted"]`.
+- **Cycle protection** — `supersede_decision` rejects inputs that would create a cycle; walks are also bounded by a depth cap (10 hops).
+- **Debugging** — `ec decision chain <id>` prints the full walk (id, title, status) from origin to terminal.
+
+### Auto-promotion from outcome tracking
+
+`record_decision_outcome` recognizes usage feedback. When a decision accumulates ≥2 `contradicted` outcomes **and** contradicted > accepted, its `staleness_status` is automatically promoted to `contradicted`. This is a **one-way ratchet** — later accepted outcomes never auto-revert the status; a manual `ec decision stale --status fresh` is required to recover.
+
+Note: `decision_outcomes.outcome_type='contradicted'` (usage feedback) is distinct from `decision_assessments.relation_type='contradicts'` (metadata). The latter does not trigger auto-promotion.
+
+Configure the threshold via `[decisions]` in `.entirecontext/config.toml`:
+
+```toml
+[decisions]
+auto_promotion_contradicted_threshold = 2
+```
+
+### Deprecation window
+
+During the v0.2.x release, `fts_search_decisions` / `hybrid_search_decisions` / `ec decision search` default to `include_contradicted=True` to preserve existing caller behavior. The default will flip to `False` in **v0.3.0**. Pass `include_contradicted=False` now (or `--no-include-contradicted` from the CLI) to opt into the future default.
+
 ## What Makes EntireContext Different
 
 - **Git-anchored memory** — context is tied to commits, branches, diffs, and checkpoints

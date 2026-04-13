@@ -100,7 +100,12 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         if not config.get("show_related_on_start", False):
             return None
 
-        from ..core.decisions import get_decision, list_decisions
+        from ..core.decisions import (
+            _apply_staleness_policy,
+            get_decision,
+            list_decisions,
+            resolve_successor_chain,
+        )
         from ..db import get_db
 
         conn = get_db(repo_path)
@@ -108,18 +113,43 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             sections = []
             seen_ids: set[str] = set()
 
-            # 1. Recently changed files → linked decisions (DB-level file_path filter)
+            # 1. Recently changed files → linked decisions.
+            # Single batched query avoids the previous per-file N+1 pattern.
             changed_files = _get_recently_changed_files(repo_path)
             file_related = []
             if changed_files:
-                for f in changed_files:
-                    for d in list_decisions(conn, file_path=f, limit=10):
-                        if d["id"] not in seen_ids:
-                            full = get_decision(conn, d["id"]) or d
-                            file_related.append(full)
-                            seen_ids.add(d["id"])
-                        if len(seen_ids) >= 5:
-                            break
+                placeholders = ",".join("?" for _ in changed_files)
+                # Fetch all decisions linked to any changed file in one pass.
+                rows = conn.execute(
+                    "SELECT DISTINCT d.id, d.staleness_status, d.superseded_by_id "
+                    "FROM decisions d JOIN decision_files df ON df.decision_id = d.id "
+                    f"WHERE df.file_path IN ({placeholders}) "  # noqa: S608
+                    "ORDER BY d.updated_at DESC LIMIT 25",
+                    list(changed_files),
+                ).fetchall()
+
+                # Apply central staleness policy (hide superseded/contradicted).
+                kept, _stats = _apply_staleness_policy(
+                    [dict(r) for r in rows],
+                    include_stale=True,
+                    include_superseded=False,
+                    include_contradicted=False,
+                )
+                # For any row still marked 'superseded' (policy would have removed it;
+                # defensive check), substitute the terminal successor when safe.
+                for row in kept:
+                    if row["id"] in seen_ids:
+                        continue
+                    effective_id = row["id"]
+                    if row.get("staleness_status") == "superseded" and row.get("superseded_by_id"):
+                        terminal_id, terminal_status = resolve_successor_chain(conn, row["id"])
+                        if terminal_status in ("contradicted", "superseded"):
+                            continue
+                        effective_id = terminal_id
+                    full = get_decision(conn, effective_id)
+                    if full:
+                        file_related.append(full)
+                        seen_ids.add(effective_id)
                     if len(seen_ids) >= 5:
                         break
 
@@ -130,7 +160,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                         "The following decisions are linked to recently changed files:\n\n" + "\n\n".join(entries)
                     )
 
-            # 2. Stale decisions
+            # 2. Stale decisions — explicit status filter; separate from default policy.
             stale = list_decisions(conn, staleness_status="stale", limit=10)
             stale_new = [d for d in stale if d["id"] not in seen_ids]
             remaining = 5 - len(seen_ids)

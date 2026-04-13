@@ -212,6 +212,68 @@ class TestOnSessionStartDecisions:
         result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
         assert result is None
 
+    def test_session_start_excludes_contradicted_decisions(self, ec_repo, ec_db, monkeypatch):
+        """Issue #39 regression: contradicted decisions must not appear in session-start output."""
+        from entirecontext.core.decisions import update_decision_staleness
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        good = create_decision(ec_db, title="Good choice")
+        bad = create_decision(ec_db, title="Contradicted choice")
+        link_decision_to_file(ec_db, good["id"], "src/handler.py")
+        link_decision_to_file(ec_db, bad["id"], "src/handler.py")
+        update_decision_staleness(ec_db, bad["id"], "contradicted")
+
+        test_file = ec_repo / "src" / "handler.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add handler"],
+            check=True,
+            capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Good choice" in result
+        assert "Contradicted choice" not in result
+
+    def test_session_start_surfaces_successor_for_superseded(self, ec_repo, ec_db, monkeypatch):
+        """Superseded decisions are replaced by their terminal successor in session-start output."""
+        from entirecontext.core.decisions import supersede_decision
+
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        old = create_decision(ec_db, title="Original auth decision")
+        new = create_decision(ec_db, title="Updated auth decision")
+        link_decision_to_file(ec_db, old["id"], "src/auth.py")
+        link_decision_to_file(ec_db, new["id"], "src/auth.py")
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        test_file = ec_repo / "src" / "auth.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(
+            ["git", "-C", str(ec_repo), "commit", "-m", "add auth"],
+            check=True,
+            capture_output=True,
+        )
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        assert result is not None
+        assert "Updated auth decision" in result
+        assert "Original auth decision" not in result
+
 
 class TestMaybeExtractDecisions:
     def _setup_session_with_summaries(self, ec_db, summaries):
