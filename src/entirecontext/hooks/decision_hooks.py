@@ -112,6 +112,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         try:
             sections = []
             seen_ids: set[str] = set()
+            display_limit = 5
 
             # 1. Recently changed files → linked decisions.
             # Use `list_decisions(file_path=f)` per changed file so path matching
@@ -123,49 +124,55 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             changed_files = _get_recently_changed_files(repo_path)
             file_related = []
             if changed_files:
-                raw_rows: list[dict] = []
                 raw_seen: set[str] = set()
                 for f in changed_files:
+                    if len(seen_ids) >= display_limit:
+                        break
+
+                    file_rows: list[dict] = []
                     for d in list_decisions(conn, file_path=f, limit=10):
                         if d["id"] in raw_seen:
                             continue
                         raw_seen.add(d["id"])
-                        raw_rows.append(d)
+                        file_rows.append(d)
+
+                    if not file_rows:
+                        continue
 
                 # include_superseded=True lets supersededs survive so the chain
                 # collapse branch below can substitute each one with its terminal
                 # successor. include_contradicted=False still drops contradicted
                 # rows up-front.
-                kept, _stats = _apply_staleness_policy(
-                    raw_rows,
-                    include_stale=True,
-                    include_superseded=True,
-                    include_contradicted=False,
-                )
-                for row in kept:
-                    if row["id"] in seen_ids:
-                        continue
-                    effective_id = row["id"]
-                    if row.get("staleness_status") == "superseded":
-                        if not row.get("superseded_by_id"):
-                            # No successor pointer — hide this orphaned record.
+                    kept, _stats = _apply_staleness_policy(
+                        file_rows,
+                        include_stale=True,
+                        include_superseded=True,
+                        include_contradicted=False,
+                    )
+                    for row in kept:
+                        if row["id"] in seen_ids:
                             continue
-                        terminal_id, terminal_status = resolve_successor_chain(conn, row["id"])
-                        if terminal_id == row["id"] or terminal_status in ("contradicted", "superseded"):
-                            # Unresolved chain or terminal is also filtered — skip.
-                            continue
-                        effective_id = terminal_id
-                        if effective_id in seen_ids:
-                            continue
-                    full = get_decision(conn, effective_id)
-                    if full:
-                        file_related.append(full)
-                        seen_ids.add(effective_id)
-                    if len(seen_ids) >= 5:
-                        break
+                        effective_id = row["id"]
+                        if row.get("staleness_status") == "superseded":
+                            if not row.get("superseded_by_id"):
+                                # No successor pointer — hide this orphaned record.
+                                continue
+                            terminal_id, terminal_status = resolve_successor_chain(conn, row["id"])
+                            if terminal_id == row["id"] or terminal_status in ("contradicted", "superseded"):
+                                # Unresolved chain or terminal is also filtered — skip.
+                                continue
+                            effective_id = terminal_id
+                            if effective_id in seen_ids:
+                                continue
+                        full = get_decision(conn, effective_id)
+                        if full:
+                            file_related.append(full)
+                            seen_ids.add(effective_id)
+                        if len(seen_ids) >= display_limit:
+                            break
 
                 if file_related:
-                    entries = [_format_decision_entry(d) for d in file_related[:5]]
+                    entries = [_format_decision_entry(d) for d in file_related[:display_limit]]
                     sections.append(
                         "## Related Decisions\n\n"
                         "The following decisions are linked to recently changed files:\n\n" + "\n\n".join(entries)
@@ -174,7 +181,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             # 2. Stale decisions — explicit status filter; separate from default policy.
             stale = list_decisions(conn, staleness_status="stale", limit=10)
             stale_new = [d for d in stale if d["id"] not in seen_ids]
-            remaining = 5 - len(seen_ids)
+            remaining = display_limit - len(seen_ids)
             if stale_new and remaining > 0:
                 stale_entries = []
                 for d in stale_new[:remaining]:

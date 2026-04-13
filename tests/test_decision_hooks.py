@@ -196,6 +196,39 @@ class TestOnSessionStartDecisions:
         entries = [line for line in result.split("\n") if line.strip().startswith("- [")]
         assert len(entries) <= 5
 
+    def test_session_start_stops_querying_changed_files_after_display_cap(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+
+        changed_files = [f"src/file_{i}.py" for i in range(8)]
+        for i, file_path in enumerate(changed_files):
+            decision = create_decision(ec_db, title=f"Decision {i}")
+            link_decision_to_file(ec_db, decision["id"], file_path)
+
+        monkeypatch.setattr("entirecontext.hooks.decision_hooks._get_recently_changed_files", lambda _: changed_files)
+
+        from entirecontext.core.decisions import list_decisions as core_list_decisions
+
+        file_path_calls: list[str] = []
+
+        def spy_list_decisions(conn, staleness_status=None, file_path=None, limit=20):
+            if file_path is not None:
+                file_path_calls.append(file_path)
+            return core_list_decisions(conn, staleness_status=staleness_status, file_path=file_path, limit=limit)
+
+        monkeypatch.setattr("entirecontext.core.decisions.list_decisions", spy_list_decisions)
+
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+
+        assert result is not None
+        assert file_path_calls == changed_files[:5]
+        entries = [line for line in result.split("\n") if line.strip().startswith("- [")]
+        assert len(entries) == 5
+
     def test_git_failure_returns_none(self, ec_repo, ec_db, monkeypatch):
         from unittest.mock import MagicMock
 
