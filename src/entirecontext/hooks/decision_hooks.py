@@ -139,10 +139,10 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     if not file_rows:
                         continue
 
-                # include_superseded=True lets supersededs survive so the chain
-                # collapse branch below can substitute each one with its terminal
-                # successor. include_contradicted=False still drops contradicted
-                # rows up-front.
+                    # include_superseded=True lets supersededs survive so the chain
+                    # collapse branch below can substitute each one with its terminal
+                    # successor. include_contradicted=False still drops contradicted
+                    # rows up-front.
                     kept, _stats = _apply_staleness_policy(
                         file_rows,
                         include_stale=True,
