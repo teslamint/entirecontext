@@ -238,7 +238,8 @@ async def ec_decision_search(
         search_type: "fts" for relevance-ranked or "hybrid" for relevance+recency
         since: ISO date filter — only return decisions updated after this date
         limit: Maximum results (default 20)
-        repos: Repo filter — null for current repo, ["*"] for all repos
+        repos: Repo filter — null for current repo, "*" or ["*"] for all repos,
+               or a plain repo name string (coerced to a single-element list)
     """
     if search_type not in ("fts", "hybrid"):
         return runtime.error_payload(f"Invalid search_type '{search_type}'. Use 'fts' or 'hybrid'.")
