@@ -758,8 +758,9 @@ class TestOnPostToolUseDecisions:
 
     def test_handles_legacy_relative_path(self, ec_repo, ec_db, monkeypatch):
         """P0-2 regression: decision linked with `./src/app.py`, tool payload
-        sends `src/app.py` — must surface via _gather_candidates_by_files
-        normalization.
+        sends `src/app.py` — must surface via _gather_exact_file_matches
+        normalization (inline SQL `SUBSTR` strips `./` prefixes and normalizes
+        backslashes before the IN check).
         """
         from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
 

@@ -367,9 +367,10 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
     """Surface decisions linked to just-edited files mid-session.
 
     Fires on PostToolUse. Must stay within the 3-second hook budget; uses a
-    lightweight direct path (reusing ``_gather_candidates_by_files`` for path
-    normalization) and deliberately avoids ``_find_git_root`` and the full
-    ranker.
+    lightweight direct path (``_gather_exact_file_matches`` — exact-match
+    only, deliberately narrower than the full ranker's
+    ``_gather_candidates_by_files`` which also returns ancestor/proximity
+    hits) and avoids ``_find_git_root``.
 
     Primary delivery is the file fallback
     ``.entirecontext/decisions-context-tooluse.md`` — stdout is a
