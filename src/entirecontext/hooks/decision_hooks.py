@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import subprocess
 from typing import Any
 
 from ..core.async_worker import launch_worker, worker_status
 from .session_lifecycle import _find_git_root, _record_hook_warning
+
+# Two distinct files so SessionStart and PostToolUse never clobber each
+# other. Agents read both; PR #56 review round 3 flagged that a shared
+# path lets PostToolUse cleanup destroy SessionStart context.
+_SESSION_START_FALLBACK_NAME = "decisions-context.md"
+_POST_TOOL_FALLBACK_NAME = "decisions-context-tooluse.md"
 
 
 def _load_decisions_config(repo_path: str) -> dict:
@@ -200,7 +207,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             # Write fallback file for agents that don't capture stdout
             from pathlib import Path
 
-            fallback_path = Path(repo_path) / ".entirecontext" / "decisions-context.md"
+            fallback_path = Path(repo_path) / ".entirecontext" / _SESSION_START_FALLBACK_NAME
             if sections:
                 output = "\n\n".join(sections)
                 fallback_path.parent.mkdir(parents=True, exist_ok=True)
@@ -243,7 +250,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         return None
 
 
-def _gather_exact_file_matches(conn, normalized_files: list[str]) -> set[str]:
+def _gather_exact_file_matches(conn: sqlite3.Connection, normalized_files: list[str]) -> set[str]:
     """Return decision IDs that have an EXACT file link to one of the inputs.
 
     Unlike ``_gather_candidates_by_files`` (which the full ranker uses),
@@ -325,7 +332,7 @@ def _extract_tool_files(tool_input: Any, config: dict) -> list[str]:
     return collected
 
 
-def _load_session_metadata(conn, session_id: str) -> dict:
+def _load_session_metadata(conn: sqlite3.Connection, session_id: str) -> dict:
     """Load sessions.metadata JSON; return empty dict on NULL/parse failure."""
     import json as _json
 
@@ -339,7 +346,7 @@ def _load_session_metadata(conn, session_id: str) -> dict:
         return {}
 
 
-def _write_session_metadata_patch(conn, session_id: str, patch: dict) -> None:
+def _write_session_metadata_patch(conn: sqlite3.Connection, session_id: str, patch: dict) -> None:
     """Merge patch into sessions.metadata via json_set + COALESCE null-safe pattern.
 
     We intentionally write one key at a time using json_set so we don't lose
@@ -364,8 +371,11 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
     normalization) and deliberately avoids ``_find_git_root`` and the full
     ranker.
 
-    Primary delivery is the file fallback ``.entirecontext/decisions-context.md``
-    — stdout is a secondary, non-guaranteed convenience channel.
+    Primary delivery is the file fallback
+    ``.entirecontext/decisions-context-tooluse.md`` — stdout is a
+    secondary, non-guaranteed convenience channel. Note the tool-use
+    file is distinct from the SessionStart file so the two writers
+    never clobber each other.
     """
     try:
         cwd = data.get("cwd") or "."
@@ -441,7 +451,7 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
 
             # fallback_root is the repo root recovered above; write the
             # rolling Markdown there so nested-cwd invocations still land at
-            # `<repo>/.entirecontext/decisions-context.md`.
+            # `<repo>/.entirecontext/decisions-context-tooluse.md`.
             fallback_root = repo_path
 
             # Exact-match only (PR #56 Codex review P2): sibling/proximity
@@ -450,15 +460,20 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             # directory siblings outrank direct hits when the limit is small.
             normalized_files = [_normalize_path(f) for f in files if _normalize_path(f)]
             candidate_ids = _gather_exact_file_matches(conn, normalized_files)
-            candidate_ids -= surfaced_session_wide
             if not candidate_ids:
-                _cleanup_fallback_file(fallback_root)
+                _cleanup_post_tool_fallback(fallback_root)
                 return None
 
             # Fetch candidates INCLUDING superseded rows (PR #56 Codex review P1):
             # we need to walk each superseded decision to its terminal successor
             # before applying the limit, rather than dropping the chain outright.
             # Contradicted rows are still hard-excluded.
+            #
+            # NOTE: do NOT subtract `surfaced_session_wide` from candidate_ids
+            # here. A superseded ancestor may be in that set (SessionStart
+            # already showed it), but we still need to resolve its chain to
+            # expose the fresh successor. Dedup is applied per-entry inside
+            # the loop below, after chain resolution.
             limit = max(int(decisions_cfg.get("surface_on_tool_use_limit", 3) or 3), 1)
             placeholders = ",".join("?" for _ in candidate_ids)
             raw_rows = conn.execute(
@@ -473,7 +488,7 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             ).fetchall()
 
             if not raw_rows:
-                _cleanup_fallback_file(fallback_root)
+                _cleanup_post_tool_fallback(fallback_root)
                 return None
 
             # Chain-collapse: substitute superseded rows with their terminal
@@ -515,7 +530,12 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
                     )
                     emitted.add(term_row["id"])
                     continue
-                if r["id"] in emitted:
+                # Non-superseded path: enforce session-wide dedup here, after
+                # the (now-skipped) superseded branch. This keeps the chain
+                # discovery path reachable for superseded ancestors whose IDs
+                # are in surfaced_session_wide, while still suppressing repeat
+                # surfacing of already-shown fresh/stale rows.
+                if r["id"] in emitted or r["id"] in surfaced_session_wide:
                     continue
                 decisions_out.append(
                     {
@@ -530,16 +550,20 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
                 emitted.add(r["id"])
 
             if not decisions_out:
-                _cleanup_fallback_file(fallback_root)
+                _cleanup_post_tool_fallback(fallback_root)
                 return None
             entries = [_format_decision_entry(d) for d in decisions_out]
             header = "## Related Decisions (current edit)\n\nThe file(s) you just edited are linked to the following prior decisions:\n\n"
             body = header + "\n\n".join(entries)
 
-            # Write primary delivery channel at the repo root (not cwd).
+            # Write the PostToolUse-specific fallback file. A separate path
+            # from the SessionStart fallback keeps the two writers independent
+            # — deleting our file on empty results can never destroy the
+            # SessionStart context the agent may still be reading (PR #56
+            # Codex review round 3).
             from pathlib import Path as _Path
 
-            fallback_path = _Path(fallback_root) / ".entirecontext" / "decisions-context.md"
+            fallback_path = _Path(fallback_root) / ".entirecontext" / _POST_TOOL_FALLBACK_NAME
             try:
                 fallback_path.parent.mkdir(parents=True, exist_ok=True)
                 fallback_path.write_text(body, encoding="utf-8")
@@ -589,20 +613,42 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
         return None
 
 
-def _cleanup_fallback_file(root: str) -> None:
-    """Delete the rolling decisions-context.md under ``root/.entirecontext/``
-    if it exists — empty surface events must not leave stale context behind
-    (PR #55 Codex review P2-2). ``root`` should be the repo root recovered
-    from the DB connection, not the hook cwd, so nested subdirectory
-    invocations still target the repo-level file."""
+def _cleanup_session_start_fallback(root: str) -> None:
+    """Delete the SessionStart-written ``decisions-context.md`` if it exists.
+
+    Used only by ``on_session_start_decisions``. The PR #55 cleanup-on-empty
+    semantics apply to the SessionStart writer's own file — never to the
+    PostToolUse file (see ``_cleanup_post_tool_fallback``).
+    """
     from pathlib import Path as _Path
 
     try:
-        fallback_path = _Path(root) / ".entirecontext" / "decisions-context.md"
-        if fallback_path.exists():
-            fallback_path.unlink()
+        path = _Path(root) / ".entirecontext" / _SESSION_START_FALLBACK_NAME
+        if path.exists():
+            path.unlink()
     except OSError:
         pass
+
+
+def _cleanup_post_tool_fallback(root: str) -> None:
+    """Delete the PostToolUse-written ``decisions-context-tooluse.md`` if it
+    exists. Keeps the SessionStart file untouched so that cross-channel dedup
+    hits don't destroy content the agent has not yet consumed (PR #56 review
+    round 3)."""
+    from pathlib import Path as _Path
+
+    try:
+        path = _Path(root) / ".entirecontext" / _POST_TOOL_FALLBACK_NAME
+        if path.exists():
+            path.unlink()
+    except OSError:
+        pass
+
+
+# Backwards-compatible alias — external callers that may have imported the
+# old name still work. Points at the SessionStart cleanup, which is the
+# pre-split semantics everyone expected.
+_cleanup_fallback_file = _cleanup_session_start_fallback
 
 
 def _session_has_extraction_marker(conn, session_id: str) -> bool:

@@ -38,7 +38,7 @@ Preferred retrieval order:
 4. Lesson retrieval (`ec_lessons`) — especially when debugging regressions, working in areas with prior narrow verdicts, or making structurally similar changes to previously assessed work
 5. Deep inspection (`ec_turn_content`, `ec_checkpoint_list`, `ec_attribution`, `ec_assess_trends`)
 
-**Mid-session decision surfacing** — when `decisions.surface_on_tool_use` is enabled (see README § Proactive Retrieval), decisions linked to files you just edited appear as a `## Related Decisions (current edit)` block after tool results, and are also written to `.entirecontext/decisions-context.md`. Read that file whenever you edit decision-linked code. The hook deduplicates per-turn and session-wide, so the same decision will not be re-surfaced during a single session — if you need to re-check it, call `ec_decision_get` explicitly.
+**Mid-session decision surfacing** — when `decisions.surface_on_tool_use` is enabled (see README § Proactive Retrieval), decisions linked to files you just edited appear as a `## Related Decisions (current edit)` block after tool results, and are also written to `.entirecontext/decisions-context-tooluse.md`. Read that file whenever you edit decision-linked code. SessionStart keeps writing to `.entirecontext/decisions-context.md` (a separate file), so read both when you want full context. The hook deduplicates per-turn and session-wide, so the same decision will not be re-surfaced during a single session — if you need to re-check it, call `ec_decision_get` explicitly.
 
 If no relevant EntireContext records exist, state that explicitly before proceeding
 with new reasoning.

@@ -474,8 +474,9 @@ class TestOnPostToolUseDecisions:
         assert result is not None
         assert "Routing strategy" in result
 
-        # Fallback file written
-        fallback = ec_repo / ".entirecontext" / "decisions-context.md"
+        # Fallback file written (PostToolUse-specific — distinct from
+        # SessionStart's `decisions-context.md`).
+        fallback = ec_repo / ".entirecontext" / "decisions-context-tooluse.md"
         assert fallback.exists()
         assert "Routing strategy" in fallback.read_text(encoding="utf-8")
 
@@ -809,6 +810,77 @@ class TestOnPostToolUseDecisions:
         assert d["id"] in meta.get("surfaced_decisions", [])
         assert "post_tool_surfaced_turns" in meta
 
+    def test_chain_collapse_reachable_when_ancestor_already_surfaced(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 review round 3 — Bug 1: the session-wide dedup set may
+        contain a superseded ancestor (because SessionStart surfaced it).
+        The hook must still walk the chain and surface the fresh terminal
+        successor; subtracting the ancestor from ``candidate_ids`` before
+        chain resolution would hide the new decision entirely.
+        """
+        import json as _json
+
+        from entirecontext.core.decisions import supersede_decision
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+
+        old = create_decision(ec_db, title="Ancestor D1")
+        new = create_decision(ec_db, title="Fresh successor D2")
+        link_decision_to_file(ec_db, old["id"], "src/migration.py")
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        # Pretend SessionStart already surfaced the ancestor; the hook
+        # must not short-circuit before chain resolution.
+        ec_db.execute(
+            "UPDATE sessions SET metadata = ? WHERE id = ?",
+            (_json.dumps({"surfaced_decisions": [old["id"]]}), session_id),
+        )
+        ec_db.commit()
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/migration.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Fresh successor D2" in result
+        assert "Ancestor D1" not in result
+
+    def test_post_tool_cleanup_does_not_touch_session_start_file(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 review round 3 — Bug 2: when PostToolUse returns None on
+        an empty/deduped result, it must only clean its own fallback file
+        (``decisions-context-tooluse.md``) and leave the SessionStart file
+        (``decisions-context.md``) alone.
+        """
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+
+        # SessionStart has written its file; PostToolUse must not touch it.
+        session_start_file = ec_repo / ".entirecontext" / "decisions-context.md"
+        session_start_file.parent.mkdir(parents=True, exist_ok=True)
+        session_start_file.write_text("important session-start context", encoding="utf-8")
+
+        # Edit a file with no linked decisions → empty result → cleanup fires
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/unlinked.py"},
+            }
+        )
+        assert result is None
+        # SessionStart file untouched
+        assert session_start_file.exists()
+        assert session_start_file.read_text(encoding="utf-8") == "important session-start context"
+
     def test_chain_collapse_substitutes_terminal_successor(self, ec_repo, ec_db, monkeypatch):
         """PR #56 Codex review P1: when the file link is on the superseded
         ancestor (common migration state — old linked, new not yet linked),
@@ -907,9 +979,10 @@ class TestOnPostToolUseDecisions:
         assert result is not None
         assert "Nested cwd rule" in result
 
-        # Fallback file lives at the REPO root, not in the nested subdirectory.
-        repo_fallback = ec_repo / ".entirecontext" / "decisions-context.md"
-        nested_fallback = nested_dir / ".entirecontext" / "decisions-context.md"
+        # PostToolUse fallback file lives at the REPO root, not in the
+        # nested subdirectory.
+        repo_fallback = ec_repo / ".entirecontext" / "decisions-context-tooluse.md"
+        nested_fallback = nested_dir / ".entirecontext" / "decisions-context-tooluse.md"
         assert repo_fallback.exists()
         assert not nested_fallback.exists()
 
@@ -919,18 +992,23 @@ class TestOnPostToolUseDecisions:
         assert d["id"] in meta["surfaced_decisions"]
 
     def test_empty_result_cleans_up_fallback_file(self, ec_repo, ec_db, monkeypatch):
-        """P2-2 regression: stale decisions-context.md is removed when the
-        current surface event returns no results.
-        """
+        """Stale PostToolUse fallback is removed when the current surface
+        event returns no results. Only the tool-use file is cleaned; the
+        SessionStart file (if present) is never touched by this path
+        (PR #56 review round 3 — cross-channel cleanup bug)."""
         from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
 
         self._enable_surface_on_tool_use(monkeypatch)
         session_id, _turn_id = self._setup_session_and_turn(ec_db)
         create_decision(ec_db, title="Not linked")
 
-        fallback = ec_repo / ".entirecontext" / "decisions-context.md"
+        fallback = ec_repo / ".entirecontext" / "decisions-context-tooluse.md"
         fallback.parent.mkdir(parents=True, exist_ok=True)
-        fallback.write_text("stale context", encoding="utf-8")
+        fallback.write_text("stale tool-use context", encoding="utf-8")
+
+        # Seed SessionStart file too so we can confirm it survives cleanup.
+        session_start_fallback = ec_repo / ".entirecontext" / "decisions-context.md"
+        session_start_fallback.write_text("session start context", encoding="utf-8")
 
         # Edit file not linked to any decision → empty result
         result = on_post_tool_use_decisions(
@@ -942,7 +1020,11 @@ class TestOnPostToolUseDecisions:
             }
         )
         assert result is None
+        # PostToolUse fallback file removed
         assert not fallback.exists()
+        # SessionStart file must NOT be touched by PostToolUse cleanup
+        assert session_start_fallback.exists()
+        assert session_start_fallback.read_text(encoding="utf-8") == "session start context"
 
 
 class TestMaybeExtractDecisions:

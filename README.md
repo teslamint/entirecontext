@@ -95,7 +95,7 @@ Enable the hook so that decisions linked to just-edited files appear inline afte
 ec config set decisions.surface_on_tool_use true
 ```
 
-When enabled, the PostToolUse hook writes the following Markdown to `.entirecontext/decisions-context.md` (primary delivery, readable by any agent) and also prints it to stdout (secondary convenience):
+When enabled, the PostToolUse hook writes the following Markdown to `.entirecontext/decisions-context-tooluse.md` (primary delivery, readable by any agent) and also prints it to stdout (secondary convenience). SessionStart keeps writing to `.entirecontext/decisions-context.md` — the two files are deliberately separate so cross-channel dedup never causes one writer to destroy the other's context:
 
 ```
 ## Related Decisions (current edit)
