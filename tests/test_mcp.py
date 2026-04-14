@@ -1598,6 +1598,36 @@ class TestEcDecisionContext:
         assert result["count"] == 0
         assert result["decisions"] == []
 
+    def test_git_diff_non_zero_exit_records_warning(self, mock_repo_db, monkeypatch):
+        """PR #56 round 6: non-zero `git diff HEAD` exits (e.g. pre-first-commit
+        repo) must surface as an explicit warning, not silently drop the
+        diff/file signals. `subprocess.run(check=False)` swallows the
+        non-zero exit, so the code path has to inspect `returncode`
+        explicitly.
+        """
+        import subprocess
+
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db)
+
+        def fake_run(args, **kwargs):
+            # Simulate `git diff HEAD` exiting 128 with a typical
+            # pre-first-commit error on stderr.
+            return subprocess.CompletedProcess(
+                args,
+                128,
+                stdout="",
+                stderr="fatal: bad revision 'HEAD'\n",
+            )
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = json.loads(asyncio.run(ec_decision_context()))
+        assert "error" not in result
+        assert result["signal_summary"]["has_diff"] is False
+        assert any("non-zero" in w for w in result.get("warnings", []))
+
     def test_honors_include_stale_false(self, mock_repo_db, no_git_subprocess):
         from entirecontext.core.decisions import create_decision, link_decision_to_file, update_decision_staleness
         from entirecontext.mcp.tools.decisions import ec_decision_context

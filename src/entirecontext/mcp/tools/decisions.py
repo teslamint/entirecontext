@@ -189,8 +189,17 @@ async def ec_decision_context(
             warnings.append("No active session; falling back to repo-state signals only.")
 
         # --- 2. Git diff (diff_text + file union) ---
+        # Both git calls use `check=False`, so non-zero exits (e.g. a
+        # pre-first-commit repo where `HEAD` doesn't exist, a broken
+        # worktree, or a missing `.git` directory) surface here as
+        # `returncode != 0` rather than as exceptions. Detect that case
+        # explicitly and attach a warning — otherwise callers see
+        # `signal_summary.has_diff=False` with no indication of *why*
+        # the diff path was skipped, which can produce unexpectedly
+        # empty rankings that look like a bug in the ranker.
         diff_text: str | None = None
         has_diff = False
+        git_diff_available = False
         if repo_path:
             try:
                 diff_result = subprocess.run(
@@ -201,23 +210,39 @@ async def ec_decision_context(
                     timeout=3,
                     check=False,
                 )
-                if diff_result.returncode == 0 and diff_result.stdout:
-                    diff_text = diff_result.stdout[:8192]
-                    has_diff = True
-                name_result = subprocess.run(
-                    ["git", "diff", "--name-only", "HEAD"],
-                    cwd=repo_path,
-                    capture_output=True,
-                    text=True,
-                    timeout=3,
-                    check=False,
-                )
-                if name_result.returncode == 0 and name_result.stdout:
-                    for line in name_result.stdout.strip().splitlines():
-                        normalized = _normalize_path(line.strip())
-                        if normalized and normalized not in seen_files:
-                            seen_files.add(normalized)
-                            file_paths.append(normalized)
+                if diff_result.returncode != 0:
+                    warnings.append(
+                        "git diff HEAD returned non-zero; commit/diff signal skipped "
+                        "(typical in a pre-first-commit repo or broken worktree)."
+                    )
+                else:
+                    git_diff_available = True
+                    if diff_result.stdout:
+                        diff_text = diff_result.stdout[:8192]
+                        has_diff = True
+
+                # Only run the --name-only pass when the first call was
+                # healthy; otherwise we already recorded a warning and
+                # there's nothing new to learn.
+                if git_diff_available:
+                    name_result = subprocess.run(
+                        ["git", "diff", "--name-only", "HEAD"],
+                        cwd=repo_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                        check=False,
+                    )
+                    if name_result.returncode != 0:
+                        warnings.append(
+                            "git diff --name-only HEAD returned non-zero; diff-derived file signals skipped."
+                        )
+                    elif name_result.stdout:
+                        for line in name_result.stdout.strip().splitlines():
+                            normalized = _normalize_path(line.strip())
+                            if normalized and normalized not in seen_files:
+                                seen_files.add(normalized)
+                                file_paths.append(normalized)
             except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                 warnings.append("git diff HEAD unavailable; commit/diff signal skipped.")
 
