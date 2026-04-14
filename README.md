@@ -83,6 +83,70 @@ auto_promotion_contradicted_threshold = 2
 
 During the v0.2.x release, `fts_search_decisions` / `hybrid_search_decisions` / `ec decision search` default to `include_contradicted=True` to preserve existing caller behavior. The default will flip to `False` in **v0.3.0**. Pass `include_contradicted=False` now (or `--no-include-contradicted` from the CLI) to opt into the future default.
 
+## Proactive Retrieval
+
+Decision retrieval does not have to be query-only. EntireContext can surface relevant past decisions automatically when you start a task, when you edit decision-linked files mid-session, and through a single MCP convenience call.
+
+### Mid-session surfacing (PostToolUse hook)
+
+Enable the hook so that decisions linked to just-edited files appear inline after every file edit:
+
+```bash
+ec config set decisions.surface_on_tool_use true
+```
+
+When enabled, the PostToolUse hook writes the following Markdown to `.entirecontext/decisions-context.md` (primary delivery, readable by any agent) and also prints it to stdout (secondary convenience):
+
+```
+## Related Decisions (current edit)
+
+The file(s) you just edited are linked to the following prior decisions:
+
+- [7f791f28] Use retry queue for webhook delivery
+  Status: fresh
+  Rationale: Direct calls cause retry storms under partial outages...
+```
+
+The hook is deduplicated per-turn and session-wide, so the same decision will not be re-surfaced across tool calls within the same user turn, and it will not be re-surfaced after the SessionStart hook already showed it. Additional knobs:
+
+```toml
+[decisions]
+surface_on_tool_use = true
+surface_on_tool_use_turn_interval = 1   # surface every N user turns (default: every turn)
+surface_on_tool_use_limit = 3           # max decisions per surface event
+```
+
+### One-call MCP retrieval: `ec_decision_context`
+
+Agents can call `ec_decision_context` once at the start of a task to get decisions ranked against the current session context — no manual signal assembly required. It auto-unions files from recent turns + files in the uncommitted git diff + the most recent checkpoint SHA, then runs the full multi-signal ranker:
+
+```json
+{
+  "decisions": [
+    {
+      "id": "7f791f28-...",
+      "title": "Use retry queue for webhook delivery",
+      "score": 6.42,
+      "selection_id": "sel-...",
+      "staleness_status": "fresh"
+    }
+  ],
+  "count": 1,
+  "retrieval_event_id": "evt-...",
+  "signal_summary": {
+    "file_count": 3,
+    "has_diff": true,
+    "commit_count": 1,
+    "turn_window": 5,
+    "active_session": true
+  }
+}
+```
+
+Each returned decision carries a `selection_id` you can pass directly to `ec_decision_outcome` or `ec_context_apply` without a follow-up lookup. The tool degrades gracefully when there's no active session — it falls back to git-diff-only signals and returns `active_session: false` with a warning.
+
+Prefer `ec_decision_context()` over `ec_decision_related` when you want zero-argument proactive retrieval. Use `ec_decision_related` when you need to pass explicit file lists, assessment IDs, or a specific diff you're about to apply.
+
 ## What Makes EntireContext Different
 
 - **Git-anchored memory** — context is tied to commits, branches, diffs, and checkpoints

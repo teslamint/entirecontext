@@ -1457,6 +1457,224 @@ class TestMCPStalenessHardening:
         assert d["id"] not in strict_ids
 
 
+class TestEcDecisionContext:
+    """Issue #42 regression: one-call proactive retrieval from session context.
+
+    Uses a fresh in-memory DB fixture (not the shared ``db`` fixture) so the
+    test controls sessions and turns exactly and can exercise the no-session
+    graceful-degradation path.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    @pytest.fixture
+    def empty_db(self):
+        conn = get_memory_db()
+        init_schema(conn)
+        conn.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', '/tmp/test')")
+        conn.commit()
+        yield conn
+        conn.close()
+
+    @pytest.fixture
+    def mock_repo_db(self, empty_db, monkeypatch):
+        class _NoCloseConn:
+            def __init__(self, conn):
+                object.__setattr__(self, "_conn", conn)
+
+            def close(self):
+                pass
+
+            def __getattr__(self, name):
+                return getattr(object.__getattribute__(self, "_conn"), name)
+
+        wrapper = _NoCloseConn(empty_db)
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (wrapper, "/tmp/test"))
+        return wrapper
+
+    @pytest.fixture
+    def no_git_subprocess(self, monkeypatch):
+        """Stub subprocess.run so the tool doesn't spawn real git against /tmp/test."""
+        import subprocess
+
+        def fake_run(*args, **kwargs):
+            raise FileNotFoundError("git not available in test")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+        return fake_run
+
+    def _create_session(self, db, session_id="s1"):
+        db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at, "
+            "session_title, session_summary, total_turns) "
+            "VALUES (?, 'p1', 'claude', '2025-01-01', '2025-01-01', 'ctx', 'ctx', 0)",
+            (session_id,),
+        )
+        db.commit()
+        return session_id
+
+    def _create_turn(self, db, turn_id, session_id, turn_number, files_touched):
+        db.execute(
+            "INSERT INTO turns (id, session_id, turn_number, user_message, assistant_summary, "
+            "content_hash, timestamp, files_touched, turn_status) "
+            "VALUES (?, ?, ?, 'u', 'a', 'h', '2025-01-01', ?, 'completed')",
+            (turn_id, session_id, turn_number, json.dumps(files_touched)),
+        )
+        db.commit()
+
+    def test_assembles_files_from_last_turns(self, mock_repo_db, no_git_subprocess):
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db)
+        self._create_turn(mock_repo_db, "t-old", "s1", 1, ["src/old.py"])
+        self._create_turn(mock_repo_db, "t-new", "s1", 2, ["src/new.py"])
+
+        decision = create_decision(mock_repo_db, title="Arch choice")
+        link_decision_to_file(mock_repo_db, decision["id"], "src/new.py")
+
+        result = json.loads(asyncio.run(ec_decision_context(recent_turns=5)))
+        ids = [d["id"] for d in result["decisions"]]
+        assert decision["id"] in ids
+        assert result["signal_summary"]["active_session"] is True
+        assert result["signal_summary"]["file_count"] >= 2  # both turns' files unioned
+
+    def test_records_retrieval_event_and_selections(self, mock_repo_db, no_git_subprocess):
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db)
+        self._create_turn(mock_repo_db, "t1", "s1", 1, ["src/a.py"])
+        decision = create_decision(mock_repo_db, title="A")
+        link_decision_to_file(mock_repo_db, decision["id"], "src/a.py")
+
+        result = json.loads(asyncio.run(ec_decision_context()))
+        assert result["retrieval_event_id"] is not None
+
+        # selection_id threaded through per-decision
+        for d in result["decisions"]:
+            assert "selection_id" in d
+
+        row = mock_repo_db.execute(
+            "SELECT search_type, source FROM retrieval_events WHERE id = ?",
+            (result["retrieval_event_id"],),
+        ).fetchone()
+        assert row is not None
+        assert row["search_type"] == "decision_context"
+        assert row["source"] == "mcp"
+
+        sel_count = mock_repo_db.execute(
+            "SELECT COUNT(*) AS n FROM retrieval_selections WHERE retrieval_event_id = ?",
+            (result["retrieval_event_id"],),
+        ).fetchone()["n"]
+        assert sel_count == len(result["decisions"])
+
+    def test_degrades_when_no_active_session(self, mock_repo_db, no_git_subprocess):
+        """P0-3 regression: no active session must not hard-error."""
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        result = json.loads(asyncio.run(ec_decision_context()))
+        assert "error" not in result
+        assert result["signal_summary"]["active_session"] is False
+        assert any("No active session" in w for w in result.get("warnings", []))
+
+    def test_git_diff_failure_graceful(self, mock_repo_db, no_git_subprocess):
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db)
+        result = json.loads(asyncio.run(ec_decision_context()))
+        assert "error" not in result
+        assert result["signal_summary"]["has_diff"] is False
+        assert any("git diff HEAD unavailable" in w for w in result.get("warnings", []))
+
+    def test_empty_when_no_signals_and_no_decisions(self, mock_repo_db, no_git_subprocess):
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db)
+        result = json.loads(asyncio.run(ec_decision_context()))
+        assert "error" not in result
+        assert result["count"] == 0
+        assert result["decisions"] == []
+
+    def test_honors_include_stale_false(self, mock_repo_db, no_git_subprocess):
+        from entirecontext.core.decisions import create_decision, link_decision_to_file, update_decision_staleness
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db)
+        self._create_turn(mock_repo_db, "t1", "s1", 1, ["src/stalefile.py"])
+
+        d = create_decision(mock_repo_db, title="Stale guidance")
+        link_decision_to_file(mock_repo_db, d["id"], "src/stalefile.py")
+        update_decision_staleness(mock_repo_db, d["id"], "stale")
+
+        result = json.loads(asyncio.run(ec_decision_context(include_stale=False)))
+        ids = [r["id"] for r in result["decisions"]]
+        assert d["id"] not in ids
+
+    def test_unions_diff_files_not_in_files_touched(self, mock_repo_db, monkeypatch):
+        """P1-1 regression: git diff --name-only picks up files that turns.files_touched
+        doesn't capture (e.g. MultiEdit edits[].file_path, NotebookEdit notebook_path).
+        """
+        import subprocess
+
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db)
+        # Session has no file in files_touched
+        self._create_turn(mock_repo_db, "t1", "s1", 1, [])
+        decision = create_decision(mock_repo_db, title="Multi-edit context")
+        link_decision_to_file(mock_repo_db, decision["id"], "src/multi.py")
+
+        def fake_run(args, **kwargs):
+            completed = subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+            if "--name-only" in args:
+                completed.stdout = "src/multi.py\n"
+            else:
+                completed.stdout = "+++ b/src/multi.py\n@@ -1 +1 @@\n+x"
+            return completed
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = json.loads(asyncio.run(ec_decision_context()))
+        ids = [r["id"] for r in result["decisions"]]
+        assert decision["id"] in ids
+        assert result["signal_summary"]["file_count"] >= 1
+        assert result["signal_summary"]["has_diff"] is True
+
+    def test_commit_signal_bounded_to_single_sha(self, mock_repo_db, no_git_subprocess, monkeypatch):
+        """P1-3 regression: even with many checkpoints, only the latest SHA feeds
+        the commit signal so it can't drown current-change context."""
+        from entirecontext.core import decisions as core_decisions
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db)
+        for i in range(10):
+            mock_repo_db.execute(
+                "INSERT INTO checkpoints (id, session_id, git_commit_hash, created_at) VALUES (?, 's1', ?, ?)",
+                (f"cp-{i}", f"sha-{i}", f"2025-01-{i + 1:02d}"),
+            )
+        mock_repo_db.commit()
+
+        captured: dict[str, object] = {}
+        real_rank = core_decisions.rank_related_decisions
+
+        def spy_rank(conn, **kwargs):
+            captured["commit_shas"] = list(kwargs.get("commit_shas") or [])
+            return real_rank(conn, **kwargs)
+
+        monkeypatch.setattr("entirecontext.core.decisions.rank_related_decisions", spy_rank)
+
+        asyncio.run(ec_decision_context())
+
+        shas = captured.get("commit_shas")
+        assert shas is not None
+        assert len(shas) == 1  # only latest, not 10
+        assert shas[0] == "sha-9"  # most-recent created_at
+
+
 class TestMCPAssessTrends:
     @pytest.fixture(autouse=True)
     def _require_mcp(self):

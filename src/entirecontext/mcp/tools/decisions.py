@@ -104,6 +104,177 @@ async def ec_decision_related(
         conn.close()
 
 
+async def ec_decision_context(
+    limit: int = 5,
+    recent_turns: int = 5,
+    include_stale: bool = True,
+    include_filter_stats: bool = False,
+) -> str:
+    """Proactive one-call decision retrieval from the current session context.
+
+    Auto-assembles signals from the active session (files_touched from recent
+    turns + files changed in the uncommitted git diff + the most recent
+    checkpoint SHA) and ranks decisions via the full scorer. Agents should
+    prefer this over ec_decision_related for generic "what's relevant to my
+    current work" queries — it's the closest to a zero-argument proactive
+    retrieval path.
+
+    Degrades gracefully when there's no active session: falls back to
+    git-diff-only signals and returns ``signal_summary.active_session=false``
+    with a warning. A warning is also added when ``git diff HEAD`` is
+    unavailable (bare repo, pre-first-commit, subprocess failure).
+
+    Each returned decision carries a ``selection_id`` that can be passed
+    directly to ``ec_decision_outcome`` or ``ec_context_apply`` without a
+    follow-up lookup.
+
+    Args:
+        limit: Maximum number of decisions to return.
+        recent_turns: How many recent turns to union files_touched from.
+        include_stale: Include stale-marked decisions (demoted but visible).
+        include_filter_stats: Include filter breakdown in the response.
+    """
+    import subprocess
+
+    (conn, repo_path), error = runtime.resolve_repo()
+    if error:
+        return error
+    try:
+        from ...core.decisions import _normalize_path, rank_related_decisions
+        from ...core.telemetry import detect_current_context
+
+        session_id, _turn_id = detect_current_context(conn)
+        warnings: list[str] = []
+
+        # --- 1. files_touched from recent turns (session-scoped) ---
+        file_paths: list[str] = []
+        seen_files: set[str] = set()
+        if session_id:
+            rows = conn.execute(
+                "SELECT files_touched FROM turns "
+                "WHERE session_id = ? AND files_touched IS NOT NULL "
+                "ORDER BY turn_number DESC LIMIT ?",
+                (session_id, recent_turns),
+            ).fetchall()
+            for row in rows:
+                raw = row["files_touched"]
+                if not raw:
+                    continue
+                try:
+                    parsed = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if not isinstance(parsed, list):
+                    continue
+                for f in parsed:
+                    if not isinstance(f, str):
+                        continue
+                    normalized = _normalize_path(f)
+                    if normalized and normalized not in seen_files:
+                        seen_files.add(normalized)
+                        file_paths.append(normalized)
+        else:
+            warnings.append("No active session; falling back to repo-state signals only.")
+
+        # --- 2. Git diff (diff_text + file union) ---
+        diff_text: str | None = None
+        has_diff = False
+        if repo_path:
+            try:
+                diff_result = subprocess.run(
+                    ["git", "diff", "HEAD"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    check=False,
+                )
+                if diff_result.returncode == 0 and diff_result.stdout:
+                    diff_text = diff_result.stdout[:8192]
+                    has_diff = True
+                name_result = subprocess.run(
+                    ["git", "diff", "--name-only", "HEAD"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    check=False,
+                )
+                if name_result.returncode == 0 and name_result.stdout:
+                    for line in name_result.stdout.strip().splitlines():
+                        normalized = _normalize_path(line.strip())
+                        if normalized and normalized not in seen_files:
+                            seen_files.add(normalized)
+                            file_paths.append(normalized)
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                warnings.append("git diff HEAD unavailable; commit/diff signal skipped.")
+
+        # --- 3. Latest single checkpoint SHA (bounded commit signal) ---
+        commit_shas: list[str] = []
+        if session_id:
+            row = conn.execute(
+                "SELECT git_commit_hash FROM checkpoints "
+                "WHERE session_id = ? AND git_commit_hash IS NOT NULL "
+                "ORDER BY created_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if row and row["git_commit_hash"]:
+                commit_shas.append(row["git_commit_hash"])
+
+        # --- 4. Rank via full scorer ---
+        started_at = time.perf_counter()
+        decisions, filter_stats = rank_related_decisions(
+            conn,
+            file_paths=file_paths,
+            diff_text=diff_text,
+            commit_shas=commit_shas,
+            limit=limit,
+            include_stale=include_stale,
+            _return_stats=True,
+        )
+
+        # --- 5. Telemetry: event + per-decision selection ---
+        tracked_event_id = runtime.record_search_event(
+            conn,
+            query="decision-context",
+            search_type="decision_context",
+            target="decision",
+            result_count=len(decisions),
+            latency_ms=int((time.perf_counter() - started_at) * 1000),
+            file_filter=",".join(file_paths) or None,
+            since=None,
+        )
+        for idx, item in enumerate(decisions, start=1):
+            selection_id = runtime.record_selection(
+                conn,
+                retrieval_event_id=tracked_event_id,
+                result_type="decision",
+                result_id=item["id"],
+                rank=idx,
+            )
+            item["selection_id"] = selection_id
+
+        payload = {
+            "decisions": decisions,
+            "count": len(decisions),
+            "retrieval_event_id": tracked_event_id,
+            "signal_summary": {
+                "file_count": len(file_paths),
+                "has_diff": has_diff,
+                "commit_count": len(commit_shas),
+                "turn_window": recent_turns,
+                "active_session": session_id is not None,
+            },
+        }
+        if warnings:
+            payload["warnings"] = warnings
+        if include_filter_stats:
+            payload["filter_stats"] = filter_stats
+        return json.dumps(payload)
+    finally:
+        conn.close()
+
+
 async def ec_decision_outcome(
     decision_id: str,
     outcome_type: str,
@@ -391,6 +562,7 @@ def register_tools(mcp, services=None) -> None:
     for tool in (
         ec_decision_get,
         ec_decision_related,
+        ec_decision_context,
         ec_decision_outcome,
         ec_decision_create,
         ec_decision_list,

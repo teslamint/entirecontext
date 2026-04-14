@@ -71,6 +71,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_extract": False,
         "show_related_on_start": False,
         "auto_promotion_contradicted_threshold": 2,
+        "surface_on_tool_use": False,
+        "surface_on_tool_use_turn_interval": 1,
+        "surface_on_tool_use_limit": 3,
         "extract_keywords": [
             "결정",
             "선택",

@@ -205,6 +205,23 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                 output = "\n\n".join(sections)
                 fallback_path.parent.mkdir(parents=True, exist_ok=True)
                 fallback_path.write_text(output, encoding="utf-8")
+                # Cross-channel dedup: record surfaced IDs on the session row so
+                # PostToolUse can't re-surface the same decision later in the
+                # same session (issue #42 cross-channel dedup).
+                surfacing_session_id = data.get("session_id")
+                if surfacing_session_id and seen_ids:
+                    try:
+                        prior = _load_session_metadata(conn, surfacing_session_id)
+                        prior_set = set(prior.get("surfaced_decisions") or [])
+                        merged = sorted(prior_set | set(seen_ids))
+                        _write_session_metadata_patch(
+                            conn,
+                            surfacing_session_id,
+                            {"$.surfaced_decisions": merged},
+                        )
+                        conn.commit()
+                    except Exception:
+                        pass
                 return output
             else:
                 # Clean up stale fallback file
@@ -224,6 +241,259 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         except Exception:
             pass
         return None
+
+
+def _extract_tool_files(tool_input: Any, config: dict) -> list[str]:
+    """Extract file paths from a PostToolUse tool_input payload.
+
+    Handles the single-file case (`file_path`, `path`, `notebook_path`) and
+    the MultiEdit case (`edits[].file_path`). Skips any files the capture
+    config marks as skippable.
+    """
+    from ..core.content_filter import should_skip_file
+    from ..core.decisions import _normalize_path
+
+    if not isinstance(tool_input, dict):
+        return []
+
+    collected: list[str] = []
+    seen: set[str] = set()
+
+    def _add(value: Any) -> None:
+        if not isinstance(value, str) or not value:
+            return
+        if should_skip_file(value, config):
+            return
+        normalized = _normalize_path(value)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        collected.append(normalized)
+
+    for key in ("file_path", "path", "notebook_path"):
+        if key in tool_input:
+            _add(tool_input[key])
+
+    edits = tool_input.get("edits")
+    if isinstance(edits, list):
+        for edit in edits:
+            if isinstance(edit, dict):
+                _add(edit.get("file_path"))
+
+    return collected
+
+
+def _load_session_metadata(conn, session_id: str) -> dict:
+    """Load sessions.metadata JSON; return empty dict on NULL/parse failure."""
+    import json as _json
+
+    row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    if not row or not row["metadata"]:
+        return {}
+    try:
+        parsed = _json.loads(row["metadata"])
+        return parsed if isinstance(parsed, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _write_session_metadata_patch(conn, session_id: str, patch: dict) -> None:
+    """Merge patch into sessions.metadata via json_set + COALESCE null-safe pattern.
+
+    We intentionally write one key at a time using json_set so we don't lose
+    unrelated keys in a concurrent update. patch is ``{json_path: python_value}``.
+    """
+    import json as _json
+
+    if not patch:
+        return
+    for json_path, value in patch.items():
+        conn.execute(
+            "UPDATE sessions SET metadata = json_set(COALESCE(metadata, '{}'), ?, json(?)) WHERE id = ?",
+            (json_path, _json.dumps(value), session_id),
+        )
+
+
+def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
+    """Surface decisions linked to just-edited files mid-session.
+
+    Fires on PostToolUse. Must stay within the 3-second hook budget; uses a
+    lightweight direct path (reusing ``_gather_candidates_by_files`` for path
+    normalization) and deliberately avoids ``_find_git_root`` and the full
+    ranker.
+
+    Primary delivery is the file fallback ``.entirecontext/decisions-context.md``
+    — stdout is a secondary, non-guaranteed convenience channel.
+    """
+    try:
+        cwd = data.get("cwd") or "."
+        session_id = data.get("session_id")
+        tool_name = data.get("tool_name", "")
+        tool_input = data.get("tool_input", {})
+
+        if not session_id or not tool_name:
+            return None
+
+        from ..core.config import load_config
+        from ..core.content_filter import should_skip_tool
+
+        config = load_config(cwd if cwd != "." else None)
+        if not config.get("capture", {}).get("auto_capture", True):
+            return None
+        decisions_cfg = config.get("decisions", {})
+        if not decisions_cfg.get("surface_on_tool_use", False):
+            return None
+        if should_skip_tool(tool_name, config):
+            return None
+
+        files = _extract_tool_files(tool_input, config)
+        if not files:
+            return None
+
+        from ..core.decisions import _gather_candidates_by_files
+        from ..db import get_db
+
+        conn = get_db(cwd)
+        try:
+            # Fast exit: no decisions at all.
+            row = conn.execute("SELECT 1 FROM decisions LIMIT 1").fetchone()
+            if not row:
+                return None
+
+            # Find the in-progress turn for this session.
+            turn_row = conn.execute(
+                "SELECT id, turn_number FROM turns "
+                "WHERE session_id = ? AND turn_status = 'in_progress' "
+                "ORDER BY turn_number DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if not turn_row:
+                return None
+            turn_id = turn_row["id"]
+            turn_number = turn_row["turn_number"] or 0
+
+            # Load session metadata for dedup and per-turn markers.
+            meta = _load_session_metadata(conn, session_id)
+            post_tool_turns = meta.get("post_tool_surfaced_turns") or {}
+            if not isinstance(post_tool_turns, dict):
+                post_tool_turns = {}
+            if turn_id in post_tool_turns:
+                # Already surfaced for this user turn — one event per turn.
+                return None
+
+            interval = max(int(decisions_cfg.get("surface_on_tool_use_turn_interval", 1) or 1), 1)
+            if turn_number % interval != 0:
+                return None
+
+            surfaced_session_wide = set(meta.get("surfaced_decisions") or [])
+            if not isinstance(surfaced_session_wide, set):
+                surfaced_session_wide = set(surfaced_session_wide)
+
+            # Path normalization + candidate gathering (reuses the helper used
+            # by the full ranker — handles `./` prefix and directory proximity).
+            candidate_ids = _gather_candidates_by_files(conn, files)
+            candidate_ids -= surfaced_session_wide
+            if not candidate_ids:
+                _cleanup_fallback_file(cwd)
+                return None
+
+            limit = max(int(decisions_cfg.get("surface_on_tool_use_limit", 3) or 3), 1)
+            placeholders = ",".join("?" for _ in candidate_ids)
+            surfaced_rows = conn.execute(
+                f"SELECT id, title, rationale, staleness_status, updated_at "  # noqa: S608
+                f"FROM decisions "
+                f"WHERE id IN ({placeholders}) "
+                f"  AND staleness_status NOT IN ('superseded', 'contradicted') "
+                f"ORDER BY "
+                f"  CASE staleness_status WHEN 'fresh' THEN 0 WHEN 'stale' THEN 1 ELSE 2 END, "
+                f"  updated_at DESC "
+                f"LIMIT ?",
+                (*candidate_ids, limit),
+            ).fetchall()
+
+            if not surfaced_rows:
+                _cleanup_fallback_file(cwd)
+                return None
+
+            decisions_out = [
+                {
+                    "id": r["id"],
+                    "title": r["title"],
+                    "rationale": r["rationale"],
+                    "staleness_status": r["staleness_status"],
+                    "updated_at": r["updated_at"],
+                    "files": [],
+                }
+                for r in surfaced_rows
+            ]
+            entries = [_format_decision_entry(d) for d in decisions_out]
+            header = "## Related Decisions (current edit)\n\nThe file(s) you just edited are linked to the following prior decisions:\n\n"
+            body = header + "\n\n".join(entries)
+
+            # Write primary delivery channel.
+            from pathlib import Path as _Path
+
+            fallback_path = _Path(cwd) / ".entirecontext" / "decisions-context.md"
+            try:
+                fallback_path.parent.mkdir(parents=True, exist_ok=True)
+                fallback_path.write_text(body, encoding="utf-8")
+            except OSError:
+                pass  # never block tool execution
+
+            # Single compact telemetry row (no per-selection writes in hook path).
+            try:
+                from ..core.telemetry import record_retrieval_event
+
+                record_retrieval_event(
+                    conn,
+                    source="hook",
+                    search_type="post_tool_use",
+                    target="decision",
+                    query=",".join(files),
+                    result_count=len(decisions_out),
+                    latency_ms=0,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    file_filter=",".join(files),
+                )
+            except Exception:
+                pass
+
+            # Update session metadata: cross-channel dedup set + per-turn marker.
+            new_ids = [d["id"] for d in decisions_out]
+            new_session_wide = sorted(surfaced_session_wide | set(new_ids))
+            post_tool_turns[turn_id] = new_ids
+            _write_session_metadata_patch(
+                conn,
+                session_id,
+                {
+                    "$.surfaced_decisions": new_session_wide,
+                    "$.post_tool_surfaced_turns": post_tool_turns,
+                },
+            )
+            conn.commit()
+            return body
+        finally:
+            conn.close()
+    except Exception as exc:
+        try:
+            _record_hook_warning(data.get("cwd", "."), "post_tool_use_decisions", exc)
+        except Exception:
+            pass
+        return None
+
+
+def _cleanup_fallback_file(cwd: str) -> None:
+    """Delete the rolling decisions-context.md if it exists — empty surface
+    events must not leave stale context behind (PR #55 Codex review P2-2)."""
+    from pathlib import Path as _Path
+
+    try:
+        fallback_path = _Path(cwd) / ".entirecontext" / "decisions-context.md"
+        if fallback_path.exists():
+            fallback_path.unlink()
+    except OSError:
+        pass
 
 
 def _session_has_extraction_marker(conn, session_id: str) -> bool:

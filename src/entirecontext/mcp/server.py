@@ -85,6 +85,7 @@ def _record_selection(
 
 from .tools.checkpoint import ec_checkpoint_list, ec_rewind  # noqa: E402
 from .tools.decisions import (  # noqa: E402
+    ec_decision_context,
     ec_decision_create,
     ec_decision_get,
     ec_decision_list,
@@ -133,6 +134,7 @@ __all__ = [
     "ec_lessons",
     "ec_dashboard",
     "ec_graph",
+    "ec_decision_context",
     "ec_decision_create",
     "ec_decision_get",
     "ec_decision_list",
