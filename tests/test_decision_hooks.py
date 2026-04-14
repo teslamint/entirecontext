@@ -809,6 +809,115 @@ class TestOnPostToolUseDecisions:
         assert d["id"] in meta.get("surfaced_decisions", [])
         assert "post_tool_surfaced_turns" in meta
 
+    def test_chain_collapse_substitutes_terminal_successor(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 Codex review P1: when the file link is on the superseded
+        ancestor (common migration state — old linked, new not yet linked),
+        the hook must walk the chain and surface the terminal successor."""
+        from entirecontext.core.decisions import supersede_decision
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+
+        old = create_decision(ec_db, title="Retired routing")
+        new = create_decision(ec_db, title="Current routing")
+        # File link stays on `old`; `new` has no file link yet.
+        link_decision_to_file(ec_db, old["id"], "src/router.py")
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/router.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Current routing" in result  # terminal successor surfaces
+        assert "Retired routing" not in result  # ancestor is hidden
+
+    def test_exact_match_beats_sibling_directory_candidate(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 Codex review P2: a decision with an exact file link must
+        outrank a more-recent sibling decision in the same directory when
+        the limit is small.
+        """
+        import time as _time
+
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch, limit=1)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+
+        exact = create_decision(ec_db, title="Exact hit")
+        link_decision_to_file(ec_db, exact["id"], "src/app.py")
+
+        # Create a newer sibling decision in the same directory
+        _time.sleep(0.01)  # ensure updated_at differs
+        sibling = create_decision(ec_db, title="Recent sibling")
+        link_decision_to_file(ec_db, sibling["id"], "src/other.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Exact hit" in result
+        assert "Recent sibling" not in result  # sibling must not crowd out the exact match
+
+    def test_nested_cwd_resolves_repo_scoped_config(self, ec_repo, ec_db):
+        """PR #56 Codex review P1: PostToolUse hook invoked from a nested
+        subdirectory must still honor `<repo>/.entirecontext/config.toml`
+        and write the fallback file at the repo root, not the subdirectory.
+        """
+        import json as _json
+
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        # Write a repo-scoped .entirecontext/config.toml that enables the flag.
+        ec_config_dir = ec_repo / ".entirecontext"
+        ec_config_dir.mkdir(parents=True, exist_ok=True)
+        (ec_config_dir / "config.toml").write_text(
+            "[decisions]\nsurface_on_tool_use = true\nsurface_on_tool_use_turn_interval = 1\nsurface_on_tool_use_limit = 3\n",
+            encoding="utf-8",
+        )
+
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Nested cwd rule")
+        link_decision_to_file(ec_db, d["id"], "src/nested.py")
+
+        nested_dir = ec_repo / "src" / "features"
+        nested_dir.mkdir(parents=True, exist_ok=True)
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(nested_dir),  # <-- nested, not repo root
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/nested.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Nested cwd rule" in result
+
+        # Fallback file lives at the REPO root, not in the nested subdirectory.
+        repo_fallback = ec_repo / ".entirecontext" / "decisions-context.md"
+        nested_fallback = nested_dir / ".entirecontext" / "decisions-context.md"
+        assert repo_fallback.exists()
+        assert not nested_fallback.exists()
+
+        # Session metadata was updated on the session row.
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        meta = _json.loads(row["metadata"])
+        assert d["id"] in meta["surfaced_decisions"]
+
     def test_empty_result_cleans_up_fallback_file(self, ec_repo, ec_db, monkeypatch):
         """P2-2 regression: stale decisions-context.md is removed when the
         current surface event returns no results.

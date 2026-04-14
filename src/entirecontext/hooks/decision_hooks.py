@@ -243,6 +243,48 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         return None
 
 
+def _gather_exact_file_matches(conn, normalized_files: list[str]) -> set[str]:
+    """Return decision IDs that have an EXACT file link to one of the inputs.
+
+    Unlike ``_gather_candidates_by_files`` (which the full ranker uses),
+    this helper deliberately skips ancestor/proximity matches so the
+    PostToolUse hook surfaces decisions linked directly to the edited file
+    rather than sibling decisions under the same directory. Proximity is
+    the full ranker's job; the hook is the fast exact-match path.
+    """
+    if not normalized_files:
+        return set()
+    placeholders = ",".join("?" for _ in normalized_files)
+    rows = conn.execute(
+        f"SELECT DISTINCT decision_id FROM decision_files "  # noqa: S608
+        f"WHERE REPLACE("
+        f"  CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3) ELSE file_path END, "
+        f"  '\\', '/') IN ({placeholders})",
+        normalized_files,
+    ).fetchall()
+    return {r["decision_id"] for r in rows}
+
+
+def _find_ec_repo_root(start: str) -> str | None:
+    """Walk up from ``start`` looking for ``.entirecontext/db/local.db``.
+
+    Used by ``on_post_tool_use_decisions`` to recover the repo root without
+    invoking ``git`` (which is too expensive inside the 3-second PostToolUse
+    hook budget — ``_find_git_root`` has its own 5-second subprocess timeout
+    that would blow the budget). Pure filesystem walk; no subprocess.
+    """
+    from pathlib import Path as _Path
+
+    try:
+        current = _Path(start).resolve()
+    except (OSError, RuntimeError):
+        return None
+    for parent in (current, *current.parents):
+        if (parent / ".entirecontext" / "db" / "local.db").exists():
+            return str(parent)
+    return None
+
+
 def _extract_tool_files(tool_input: Any, config: dict) -> list[str]:
     """Extract file paths from a PostToolUse tool_input payload.
 
@@ -334,27 +376,35 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
         if not session_id or not tool_name:
             return None
 
+        # Resolve the repo root by walking up from cwd looking for
+        # `.entirecontext/db/local.db`. Using `cwd` directly would make nested
+        # subdirectory invocations silently miss `<repo>/.entirecontext/config.toml`
+        # (PR #56 Codex review P1). Pure filesystem walk — no `_find_git_root`
+        # subprocess which would blow the 3-second hook budget.
+        repo_path = _find_ec_repo_root(cwd)
+        if repo_path is None:
+            return None
+
         from ..core.config import load_config
         from ..core.content_filter import should_skip_tool
-
-        config = load_config(cwd if cwd != "." else None)
-        if not config.get("capture", {}).get("auto_capture", True):
-            return None
-        decisions_cfg = config.get("decisions", {})
-        if not decisions_cfg.get("surface_on_tool_use", False):
-            return None
-        if should_skip_tool(tool_name, config):
-            return None
-
-        files = _extract_tool_files(tool_input, config)
-        if not files:
-            return None
-
-        from ..core.decisions import _gather_candidates_by_files
+        from ..core.decisions import _normalize_path, resolve_successor_chain
         from ..db import get_db
 
-        conn = get_db(cwd)
+        conn = get_db(repo_path)
         try:
+            config = load_config(repo_path)
+            if not config.get("capture", {}).get("auto_capture", True):
+                return None
+            decisions_cfg = config.get("decisions", {})
+            if not decisions_cfg.get("surface_on_tool_use", False):
+                return None
+            if should_skip_tool(tool_name, config):
+                return None
+
+            files = _extract_tool_files(tool_input, config)
+            if not files:
+                return None
+
             # Fast exit: no decisions at all.
             row = conn.execute("SELECT 1 FROM decisions LIMIT 1").fetchone()
             if not row:
@@ -389,51 +439,107 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             if not isinstance(surfaced_session_wide, set):
                 surfaced_session_wide = set(surfaced_session_wide)
 
-            # Path normalization + candidate gathering (reuses the helper used
-            # by the full ranker — handles `./` prefix and directory proximity).
-            candidate_ids = _gather_candidates_by_files(conn, files)
+            # fallback_root is the repo root recovered above; write the
+            # rolling Markdown there so nested-cwd invocations still land at
+            # `<repo>/.entirecontext/decisions-context.md`.
+            fallback_root = repo_path
+
+            # Exact-match only (PR #56 Codex review P2): sibling/proximity
+            # candidates belong to the full ranker, not this 3-result hook
+            # path. Ordering by proximity without scoring would let same-
+            # directory siblings outrank direct hits when the limit is small.
+            normalized_files = [_normalize_path(f) for f in files if _normalize_path(f)]
+            candidate_ids = _gather_exact_file_matches(conn, normalized_files)
             candidate_ids -= surfaced_session_wide
             if not candidate_ids:
-                _cleanup_fallback_file(cwd)
+                _cleanup_fallback_file(fallback_root)
                 return None
 
+            # Fetch candidates INCLUDING superseded rows (PR #56 Codex review P1):
+            # we need to walk each superseded decision to its terminal successor
+            # before applying the limit, rather than dropping the chain outright.
+            # Contradicted rows are still hard-excluded.
             limit = max(int(decisions_cfg.get("surface_on_tool_use_limit", 3) or 3), 1)
             placeholders = ",".join("?" for _ in candidate_ids)
-            surfaced_rows = conn.execute(
-                f"SELECT id, title, rationale, staleness_status, updated_at "  # noqa: S608
+            raw_rows = conn.execute(
+                f"SELECT id, title, rationale, staleness_status, updated_at, superseded_by_id "  # noqa: S608
                 f"FROM decisions "
                 f"WHERE id IN ({placeholders}) "
-                f"  AND staleness_status NOT IN ('superseded', 'contradicted') "
+                f"  AND staleness_status != 'contradicted' "
                 f"ORDER BY "
-                f"  CASE staleness_status WHEN 'fresh' THEN 0 WHEN 'stale' THEN 1 ELSE 2 END, "
-                f"  updated_at DESC "
-                f"LIMIT ?",
-                (*candidate_ids, limit),
+                f"  CASE staleness_status WHEN 'fresh' THEN 0 WHEN 'stale' THEN 1 WHEN 'superseded' THEN 2 ELSE 3 END, "
+                f"  updated_at DESC",
+                tuple(candidate_ids),
             ).fetchall()
 
-            if not surfaced_rows:
-                _cleanup_fallback_file(cwd)
+            if not raw_rows:
+                _cleanup_fallback_file(fallback_root)
                 return None
 
-            decisions_out = [
-                {
-                    "id": r["id"],
-                    "title": r["title"],
-                    "rationale": r["rationale"],
-                    "staleness_status": r["staleness_status"],
-                    "updated_at": r["updated_at"],
-                    "files": [],
-                }
-                for r in surfaced_rows
-            ]
+            # Chain-collapse: substitute superseded rows with their terminal
+            # successor so migration states (old linked, new not yet linked)
+            # still surface the live decision. Terminal must be fresh/stale
+            # and must not already be in the session-wide dedup set.
+            decisions_out: list[dict] = []
+            emitted: set[str] = set()
+            for r in raw_rows:
+                if len(decisions_out) >= limit:
+                    break
+                status = r["staleness_status"] or "fresh"
+                if status == "superseded":
+                    if not r["superseded_by_id"]:
+                        continue
+                    try:
+                        terminal_id, terminal_status = resolve_successor_chain(conn, r["id"])
+                    except Exception:
+                        continue
+                    if terminal_id == r["id"] or terminal_status in ("superseded", "contradicted"):
+                        continue
+                    if terminal_id in emitted or terminal_id in surfaced_session_wide:
+                        continue
+                    term_row = conn.execute(
+                        "SELECT id, title, rationale, staleness_status, updated_at FROM decisions WHERE id = ?",
+                        (terminal_id,),
+                    ).fetchone()
+                    if not term_row:
+                        continue
+                    decisions_out.append(
+                        {
+                            "id": term_row["id"],
+                            "title": term_row["title"],
+                            "rationale": term_row["rationale"],
+                            "staleness_status": term_row["staleness_status"],
+                            "updated_at": term_row["updated_at"],
+                            "files": [],
+                        }
+                    )
+                    emitted.add(term_row["id"])
+                    continue
+                if r["id"] in emitted:
+                    continue
+                decisions_out.append(
+                    {
+                        "id": r["id"],
+                        "title": r["title"],
+                        "rationale": r["rationale"],
+                        "staleness_status": status,
+                        "updated_at": r["updated_at"],
+                        "files": [],
+                    }
+                )
+                emitted.add(r["id"])
+
+            if not decisions_out:
+                _cleanup_fallback_file(fallback_root)
+                return None
             entries = [_format_decision_entry(d) for d in decisions_out]
             header = "## Related Decisions (current edit)\n\nThe file(s) you just edited are linked to the following prior decisions:\n\n"
             body = header + "\n\n".join(entries)
 
-            # Write primary delivery channel.
+            # Write primary delivery channel at the repo root (not cwd).
             from pathlib import Path as _Path
 
-            fallback_path = _Path(cwd) / ".entirecontext" / "decisions-context.md"
+            fallback_path = _Path(fallback_root) / ".entirecontext" / "decisions-context.md"
             try:
                 fallback_path.parent.mkdir(parents=True, exist_ok=True)
                 fallback_path.write_text(body, encoding="utf-8")
@@ -483,13 +589,16 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
         return None
 
 
-def _cleanup_fallback_file(cwd: str) -> None:
-    """Delete the rolling decisions-context.md if it exists — empty surface
-    events must not leave stale context behind (PR #55 Codex review P2-2)."""
+def _cleanup_fallback_file(root: str) -> None:
+    """Delete the rolling decisions-context.md under ``root/.entirecontext/``
+    if it exists — empty surface events must not leave stale context behind
+    (PR #55 Codex review P2-2). ``root`` should be the repo root recovered
+    from the DB connection, not the hook cwd, so nested subdirectory
+    invocations still target the repo-level file."""
     from pathlib import Path as _Path
 
     try:
-        fallback_path = _Path(cwd) / ".entirecontext" / "decisions-context.md"
+        fallback_path = _Path(root) / ".entirecontext" / "decisions-context.md"
         if fallback_path.exists():
             fallback_path.unlink()
     except OSError:
