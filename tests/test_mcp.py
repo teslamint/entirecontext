@@ -1644,6 +1644,43 @@ class TestEcDecisionContext:
         assert result["signal_summary"]["file_count"] >= 1
         assert result["signal_summary"]["has_diff"] is True
 
+    def test_session_id_override_targets_specific_session(self, mock_repo_db, no_git_subprocess):
+        """PR #56 round 4: explicit session_id must bypass detect_current_context
+        so concurrent sessions in the same repo can target their own workflow.
+        Uses disjoint directories so proximity matching can't cross-contaminate.
+        """
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        # Two sessions in the same repo, each with files under separate
+        # top-level directories so ancestor proximity can't leak.
+        self._create_session(mock_repo_db, session_id="session-A")
+        self._create_turn(mock_repo_db, "tA-1", "session-A", 1, ["alpha_pkg/runner.py"])
+        self._create_session(mock_repo_db, session_id="session-B")
+        self._create_turn(mock_repo_db, "tB-1", "session-B", 1, ["beta_pkg/runner.py"])
+
+        d_a = create_decision(mock_repo_db, title="Alpha decision")
+        link_decision_to_file(mock_repo_db, d_a["id"], "alpha_pkg/runner.py")
+        d_b = create_decision(mock_repo_db, title="Beta decision")
+        link_decision_to_file(mock_repo_db, d_b["id"], "beta_pkg/runner.py")
+
+        result_a = json.loads(asyncio.run(ec_decision_context(session_id="session-A")))
+        ids_a = [d["id"] for d in result_a["decisions"]]
+        assert d_a["id"] in ids_a
+        assert d_b["id"] not in ids_a
+
+        result_b = json.loads(asyncio.run(ec_decision_context(session_id="session-B")))
+        ids_b = [d["id"] for d in result_b["decisions"]]
+        assert d_b["id"] in ids_b
+        assert d_a["id"] not in ids_b
+
+    def test_session_id_override_unknown_returns_error(self, mock_repo_db, no_git_subprocess):
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        result = json.loads(asyncio.run(ec_decision_context(session_id="does-not-exist")))
+        assert "error" in result
+        assert "does-not-exist" in result["error"]
+
     def test_commit_signal_bounded_to_single_sha(self, mock_repo_db, no_git_subprocess, monkeypatch):
         """P1-3 regression: even with many checkpoints, only the latest SHA feeds
         the commit signal so it can't drown current-change context."""

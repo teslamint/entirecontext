@@ -13,8 +13,25 @@ from .session_lifecycle import _find_git_root, _record_hook_warning
 # Two distinct files so SessionStart and PostToolUse never clobber each
 # other. Agents read both; PR #56 review round 3 flagged that a shared
 # path lets PostToolUse cleanup destroy SessionStart context.
+#
+# PostToolUse further suffixes its fallback with the session id so two
+# concurrent sessions in the same repo can't clobber each other (PR #56
+# review round 4). SessionStart stays on a single path for backwards
+# compatibility — agents that only run one session at a time still see
+# the long-standing name.
 _SESSION_START_FALLBACK_NAME = "decisions-context.md"
-_POST_TOOL_FALLBACK_NAME = "decisions-context-tooluse.md"
+_POST_TOOL_FALLBACK_BASE = "decisions-context-tooluse"
+
+
+def _post_tool_fallback_name(session_id: str) -> str:
+    """Return the session-scoped filename for the PostToolUse fallback.
+
+    Session ids are UUIDs in normal operation, but we sanitize defensively
+    in case a caller passes something unusual — strip anything outside the
+    ``[A-Za-z0-9_-]`` set so the result is always a safe filename.
+    """
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_id or "unknown")
+    return f"{_POST_TOOL_FALLBACK_BASE}-{safe}.md"
 
 
 def _load_decisions_config(repo_path: str) -> dict:
@@ -462,7 +479,7 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             normalized_files = [_normalize_path(f) for f in files if _normalize_path(f)]
             candidate_ids = _gather_exact_file_matches(conn, normalized_files)
             if not candidate_ids:
-                _cleanup_post_tool_fallback(fallback_root)
+                _cleanup_post_tool_fallback(fallback_root, session_id)
                 return None
 
             # Fetch candidates INCLUDING superseded rows (PR #56 Codex review P1):
@@ -489,7 +506,7 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             ).fetchall()
 
             if not raw_rows:
-                _cleanup_post_tool_fallback(fallback_root)
+                _cleanup_post_tool_fallback(fallback_root, session_id)
                 return None
 
             # Chain-collapse: substitute superseded rows with their terminal
@@ -551,7 +568,7 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
                 emitted.add(r["id"])
 
             if not decisions_out:
-                _cleanup_post_tool_fallback(fallback_root)
+                _cleanup_post_tool_fallback(fallback_root, session_id)
                 return None
             entries = [_format_decision_entry(d) for d in decisions_out]
             header = "## Related Decisions (current edit)\n\nThe file(s) you just edited are linked to the following prior decisions:\n\n"
@@ -564,14 +581,21 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             # Codex review round 3).
             from pathlib import Path as _Path
 
-            fallback_path = _Path(fallback_root) / ".entirecontext" / _POST_TOOL_FALLBACK_NAME
+            fallback_path = _Path(fallback_root) / ".entirecontext" / _post_tool_fallback_name(session_id)
             try:
                 fallback_path.parent.mkdir(parents=True, exist_ok=True)
                 fallback_path.write_text(body, encoding="utf-8")
             except OSError:
                 pass  # never block tool execution
 
-            # Single compact telemetry row (no per-selection writes in hook path).
+            # Persist the dedup state + telemetry event atomically (PR #56
+            # review round 4). If any of these writes raise, we must NOT
+            # leave the fallback file on disk — otherwise the next tool
+            # call in the same turn sees stale metadata and re-surfaces
+            # the same decisions, violating the documented per-turn guarantee.
+            new_ids = [d["id"] for d in decisions_out]
+            new_session_wide = sorted(surfaced_session_wide | set(new_ids))
+            post_tool_turns[turn_id] = new_ids
             try:
                 from ..core.telemetry import record_retrieval_event
 
@@ -587,22 +611,27 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
                     turn_id=turn_id,
                     file_filter=",".join(files),
                 )
+                _write_session_metadata_patch(
+                    conn,
+                    session_id,
+                    {
+                        "$.surfaced_decisions": new_session_wide,
+                        "$.post_tool_surfaced_turns": post_tool_turns,
+                    },
+                )
+                conn.commit()
             except Exception:
-                pass
+                try:
+                    conn.rollback()
+                except sqlite3.Error:
+                    pass
+                # Keep dedup state and the fallback file in sync: if the
+                # dedup write failed, remove the fallback so the next call
+                # re-surfaces cleanly instead of reading a file that no
+                # metadata record anchors.
+                _cleanup_post_tool_fallback(fallback_root, session_id)
+                return None
 
-            # Update session metadata: cross-channel dedup set + per-turn marker.
-            new_ids = [d["id"] for d in decisions_out]
-            new_session_wide = sorted(surfaced_session_wide | set(new_ids))
-            post_tool_turns[turn_id] = new_ids
-            _write_session_metadata_patch(
-                conn,
-                session_id,
-                {
-                    "$.surfaced_decisions": new_session_wide,
-                    "$.post_tool_surfaced_turns": post_tool_turns,
-                },
-            )
-            conn.commit()
             return body
         finally:
             conn.close()
@@ -631,15 +660,18 @@ def _cleanup_session_start_fallback(root: str) -> None:
         pass
 
 
-def _cleanup_post_tool_fallback(root: str) -> None:
-    """Delete the PostToolUse-written ``decisions-context-tooluse.md`` if it
-    exists. Keeps the SessionStart file untouched so that cross-channel dedup
-    hits don't destroy content the agent has not yet consumed (PR #56 review
-    round 3)."""
+def _cleanup_post_tool_fallback(root: str, session_id: str) -> None:
+    """Delete the session-scoped PostToolUse fallback file if it exists.
+
+    Takes the session id so each session only touches its own file —
+    concurrent sessions in the same repo cannot clobber one another
+    (PR #56 review round 4). The SessionStart file is also untouched,
+    preserving the round-3 writer-separation fix.
+    """
     from pathlib import Path as _Path
 
     try:
-        path = _Path(root) / ".entirecontext" / _POST_TOOL_FALLBACK_NAME
+        path = _Path(root) / ".entirecontext" / _post_tool_fallback_name(session_id)
         if path.exists():
             path.unlink()
     except OSError:

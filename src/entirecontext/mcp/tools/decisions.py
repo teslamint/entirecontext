@@ -109,6 +109,7 @@ async def ec_decision_context(
     recent_turns: int = 5,
     include_stale: bool = True,
     include_filter_stats: bool = False,
+    session_id: str | None = None,
 ) -> str:
     """Proactive one-call decision retrieval from the current session context.
 
@@ -133,6 +134,11 @@ async def ec_decision_context(
         recent_turns: How many recent turns to union files_touched from.
         include_stale: Include stale-marked decisions (demoted but visible).
         include_filter_stats: Include filter breakdown in the response.
+        session_id: Optional explicit session to pull turn/checkpoint signals
+            from. When omitted, the tool falls back to
+            ``detect_current_context(conn)``. Pass this whenever two agent
+            sessions are open in the same repo so the caller can be sure
+            signals come from the right workflow (PR #56 review).
     """
     import subprocess
 
@@ -143,7 +149,13 @@ async def ec_decision_context(
         from ...core.decisions import _normalize_path, rank_related_decisions
         from ...core.telemetry import detect_current_context
 
-        session_id, _turn_id = detect_current_context(conn)
+        if session_id:
+            # Explicit override: verify the session exists before trusting it.
+            row = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            if not row:
+                return runtime.error_payload(f"Session not found: {session_id}")
+        else:
+            session_id, _turn_id = detect_current_context(conn)
         warnings: list[str] = []
 
         # --- 1. files_touched from recent turns (session-scoped) ---
@@ -210,15 +222,15 @@ async def ec_decision_context(
                 warnings.append("git diff HEAD unavailable; commit/diff signal skipped.")
 
         # --- 3. Latest single checkpoint SHA (bounded commit signal) ---
+        # `checkpoints.git_commit_hash` is schema-level NOT NULL (see
+        # db/schema.py:102), so no nullness filter is needed here.
         commit_shas: list[str] = []
         if session_id:
             row = conn.execute(
-                "SELECT git_commit_hash FROM checkpoints "
-                "WHERE session_id = ? AND git_commit_hash IS NOT NULL "
-                "ORDER BY created_at DESC LIMIT 1",
+                "SELECT git_commit_hash FROM checkpoints WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
                 (session_id,),
             ).fetchone()
-            if row and row["git_commit_hash"]:
+            if row:
                 commit_shas.append(row["git_commit_hash"])
 
         # --- 4. Rank via full scorer ---

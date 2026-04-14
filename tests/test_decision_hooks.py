@@ -474,9 +474,9 @@ class TestOnPostToolUseDecisions:
         assert result is not None
         assert "Routing strategy" in result
 
-        # Fallback file written (PostToolUse-specific — distinct from
-        # SessionStart's `decisions-context.md`).
-        fallback = ec_repo / ".entirecontext" / "decisions-context-tooluse.md"
+        # Fallback file written (PostToolUse-specific, session-scoped —
+        # distinct from SessionStart's `decisions-context.md`).
+        fallback = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
         assert fallback.exists()
         assert "Routing strategy" in fallback.read_text(encoding="utf-8")
 
@@ -811,6 +811,51 @@ class TestOnPostToolUseDecisions:
         assert d["id"] in meta.get("surfaced_decisions", [])
         assert "post_tool_surfaced_turns" in meta
 
+    def test_concurrent_sessions_do_not_clobber_each_others_fallback(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 round 4: two sessions in the same repo each get their own
+        `decisions-context-tooluse-<session>.md` file. An empty PostToolUse
+        event in session B must not delete the file session A has just
+        written — the filename is session-qualified.
+        """
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+
+        session_a, _ = self._setup_session_and_turn(ec_db, session_id="s-alpha", turn_number=2)
+        session_b, _ = self._setup_session_and_turn(ec_db, session_id="s-beta", turn_number=2)
+
+        d = create_decision(ec_db, title="Alpha linked decision")
+        link_decision_to_file(ec_db, d["id"], "src/alpha.py")
+
+        # Session A surfaces and writes its fallback.
+        result_a = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_a,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/alpha.py"},
+            }
+        )
+        assert result_a is not None
+        file_a = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_a}.md"
+        file_b = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_b}.md"
+        assert file_a.exists()
+        assert not file_b.exists()
+
+        # Session B edits an unlinked file → empty result → its own cleanup
+        # fires but must not touch session A's fallback.
+        result_b = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_b,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/beta.py"},
+            }
+        )
+        assert result_b is None
+        assert file_a.exists()  # still there
+        assert "Alpha linked decision" in file_a.read_text(encoding="utf-8")
+
     def test_chain_collapse_reachable_when_ancestor_already_surfaced(self, ec_repo, ec_db, monkeypatch):
         """PR #56 review round 3 — Bug 1: the session-wide dedup set may
         contain a superseded ancestor (because SessionStart surfaced it).
@@ -981,9 +1026,9 @@ class TestOnPostToolUseDecisions:
         assert "Nested cwd rule" in result
 
         # PostToolUse fallback file lives at the REPO root, not in the
-        # nested subdirectory.
-        repo_fallback = ec_repo / ".entirecontext" / "decisions-context-tooluse.md"
-        nested_fallback = nested_dir / ".entirecontext" / "decisions-context-tooluse.md"
+        # nested subdirectory. Filename is session-qualified.
+        repo_fallback = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
+        nested_fallback = nested_dir / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
         assert repo_fallback.exists()
         assert not nested_fallback.exists()
 
@@ -1003,7 +1048,7 @@ class TestOnPostToolUseDecisions:
         session_id, _turn_id = self._setup_session_and_turn(ec_db)
         create_decision(ec_db, title="Not linked")
 
-        fallback = ec_repo / ".entirecontext" / "decisions-context-tooluse.md"
+        fallback = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
         fallback.parent.mkdir(parents=True, exist_ok=True)
         fallback.write_text("stale tool-use context", encoding="utf-8")
 
