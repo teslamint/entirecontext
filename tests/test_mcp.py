@@ -1281,7 +1281,7 @@ class TestMCPDecisionToolsExtended:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
         return db
 
     def test_ec_decision_related_with_files(self, mock_repo_db):
@@ -1820,7 +1820,7 @@ class TestMCPAssessTrends:
 
     @pytest.fixture
     def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.server._get_repo_db", lambda: (db, "/tmp/test"))
+        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
         return db
 
     def _seed_assessments(self, conn, count=3, verdict="expand", created_at="2025-06-01", feedback=None):
