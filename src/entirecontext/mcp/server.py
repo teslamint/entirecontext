@@ -38,10 +38,18 @@ def _record_search_event(
     commit_filter: str | None = None,
     agent_filter: str | None = None,
     since: str | None = None,
+    session_id: str | None = None,
+    turn_id: str | None = None,
 ) -> str:
     from ..core.telemetry import detect_current_context, record_retrieval_event
 
-    session_id, turn_id = detect_current_context(conn)
+    # Fall back to auto-detection only when the caller has not supplied an
+    # explicit session/turn. MCP tools that honor a caller-provided
+    # ``session_id`` override (e.g. ``ec_decision_context``) must be able
+    # to anchor their telemetry to that exact session, not whatever the
+    # connection's currently active session happens to be.
+    if session_id is None and turn_id is None:
+        session_id, turn_id = detect_current_context(conn)
     event = record_retrieval_event(
         conn,
         source="mcp",

@@ -1711,6 +1711,77 @@ class TestEcDecisionContext:
         assert "error" in result
         assert "does-not-exist" in result["error"]
 
+    def test_session_id_override_skips_repo_wide_git_diff(self, mock_repo_db, monkeypatch):
+        """[Codex P1] When ``session_id`` is explicitly overridden, ``ec_decision_context``
+        must NOT spawn ``git diff HEAD``: that diff reflects the working-tree state
+        for ALL concurrent sessions in the repo and would leak files from other
+        sessions into the session-pinned query. The override path accepts the
+        coverage loss in exchange for multi-session correctness.
+        """
+        import subprocess
+
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db, session_id="s-pinned")
+        self._create_turn(mock_repo_db, "t-pin-1", "s-pinned", 1, ["alpha_pkg/runner.py"])
+
+        subprocess_calls: list = []
+
+        def tracking_run(args, **kwargs):
+            subprocess_calls.append(list(args) if hasattr(args, "__iter__") else args)
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", tracking_run)
+
+        result = json.loads(asyncio.run(ec_decision_context(session_id="s-pinned")))
+        assert "error" not in result
+        assert subprocess_calls == [], (
+            f"subprocess.run must not be invoked when session_id is overridden; got calls: {subprocess_calls}"
+        )
+        assert result["signal_summary"]["has_diff"] is False
+        assert any("session_id override" in w for w in result.get("warnings", [])), (
+            "override path must record a warning documenting the skipped diff signal"
+        )
+
+    def test_session_id_override_attributes_event_to_override_session(self, mock_repo_db, no_git_subprocess):
+        """[Codex P1] retrieval_events (and inherited retrieval_selections)
+        must be attributed to the overridden ``session_id``, not re-detected via
+        ``detect_current_context``. Sets up session-B with a more recent
+        ``last_activity_at`` than session-A so the auto-detect fallback would
+        return B; then overrides to A and asserts the event row carries A.
+        """
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        self._create_session(mock_repo_db, session_id="session-A")
+        mock_repo_db.execute("UPDATE sessions SET last_activity_at = '2025-01-01' WHERE id = 'session-A'")
+        self._create_session(mock_repo_db, session_id="session-B")
+        mock_repo_db.execute("UPDATE sessions SET last_activity_at = '2099-12-31' WHERE id = 'session-B'")
+        mock_repo_db.commit()
+
+        self._create_turn(mock_repo_db, "tA", "session-A", 1, ["alpha_pkg/runner.py"])
+        d_a = create_decision(mock_repo_db, title="Alpha decision")
+        link_decision_to_file(mock_repo_db, d_a["id"], "alpha_pkg/runner.py")
+
+        result = json.loads(asyncio.run(ec_decision_context(session_id="session-A")))
+        assert "error" not in result
+        event_id = result["retrieval_event_id"]
+        assert event_id
+
+        event_row = mock_repo_db.execute("SELECT session_id FROM retrieval_events WHERE id = ?", (event_id,)).fetchone()
+        assert event_row["session_id"] == "session-A", (
+            "retrieval_events row must be attributed to the override session, "
+            "not re-detected via detect_current_context (which would return session-B)"
+        )
+
+        # Selections inherit from the event row and must also carry session-A.
+        if result["decisions"]:
+            selection_id = result["decisions"][0]["selection_id"]
+            sel_row = mock_repo_db.execute(
+                "SELECT session_id FROM retrieval_selections WHERE id = ?", (selection_id,)
+            ).fetchone()
+            assert sel_row["session_id"] == "session-A"
+
     def test_commit_signal_bounded_to_single_sha(self, mock_repo_db, no_git_subprocess, monkeypatch):
         """P1-3 regression: even with many checkpoints, only the latest SHA feeds
         the commit signal so it can't drown current-change context."""

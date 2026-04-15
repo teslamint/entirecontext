@@ -684,15 +684,79 @@ class TestOnPostToolUseDecisions:
         d = create_decision(ec_db, title="Skipped env")
         link_decision_to_file(ec_db, d["id"], ".env")
 
+        # Must use an edit-capable tool here: read-only tools (``Read``,
+        # ``NotebookRead``) short-circuit on the ``_READ_ONLY_TOOLS`` guard
+        # added for Codex P2, which would bypass ``should_skip_file`` entirely
+        # and give a false-positive pass on this test.
         result = on_post_tool_use_decisions(
             {
                 "cwd": str(ec_repo),
                 "session_id": session_id,
-                "tool_name": "Read",
+                "tool_name": "Edit",
                 "tool_input": {"file_path": ".env"},
             }
         )
         assert result is None
+
+    def test_read_only_tool_does_not_consume_dedup(self, ec_repo, ec_db, monkeypatch):
+        """[Codex P2] Read / NotebookRead must NOT fire mid-session surfacing.
+
+        Typical agent flow is Read-then-Edit within one turn: letting the
+        Read consume the per-turn dedup marker would suppress the Edit's
+        Markdown block, destroying the core timing of the feature. The
+        subsequent Edit in the same turn must still surface normally.
+        """
+        import json as _json
+
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Survives Read-then-Edit")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        read_result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Read",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert read_result is None
+
+        notebook_read_result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "NotebookRead",
+                "tool_input": {"notebook_path": "nb.ipynb"},
+            }
+        )
+        assert notebook_read_result is None
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row["metadata"]:
+            meta = _json.loads(row["metadata"])
+            assert not meta.get("surfaced_decisions"), "read-only tools must not populate surfaced_decisions"
+            assert not meta.get("post_tool_surfaced_turns"), "read-only tools must not consume per-turn dedup"
+
+        edit_result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert edit_result is not None, (
+            "Edit after Read in same turn must still surface — Read must not have consumed the per-turn dedup marker"
+        )
+        assert "Survives Read-then-Edit" in edit_result
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        meta = _json.loads(row["metadata"])
+        assert d["id"] in meta.get("surfaced_decisions", [])
 
     def test_write_tool_captures_file_path(self, ec_repo, ec_db, monkeypatch):
         from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions

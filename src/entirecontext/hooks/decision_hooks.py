@@ -22,6 +22,14 @@ from .session_lifecycle import _find_git_root, _record_hook_warning
 _SESSION_START_FALLBACK_NAME = "decisions-context.md"
 _POST_TOOL_FALLBACK_BASE = "decisions-context-tooluse"
 
+# Tools that open/view a file without editing it. Firing mid-session
+# decision surfacing on these would consume the per-turn dedup marker
+# before the user's real Edit runs — the typical agent flow is Read-then-
+# Edit within the same turn, and the subsequent Edit would then produce
+# no Markdown block at all. PostToolUse short-circuits for these tool
+# names before touching the DB or any dedup state.
+_READ_ONLY_TOOLS = frozenset({"Read", "NotebookRead"})
+
 
 def _post_tool_fallback_name(session_id: str) -> str:
     """Return the session-scoped filename for the PostToolUse fallback.
@@ -403,6 +411,13 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
         tool_input = data.get("tool_input", {})
 
         if not session_id or not tool_name:
+            return None
+
+        # Read-only tools must never fire mid-session surfacing: the typical
+        # agent flow is Read-then-Edit within one turn, and letting the Read
+        # consume the per-turn dedup marker would suppress the real Edit's
+        # Markdown block. Short-circuit before any DB open or state mutation.
+        if tool_name in _READ_ONLY_TOOLS:
             return None
 
         # Resolve the repo root by walking up from cwd looking for

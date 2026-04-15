@@ -149,14 +149,34 @@ async def ec_decision_context(
         from ...core.decisions import _normalize_path, rank_related_decisions
         from ...core.telemetry import detect_current_context
 
+        # Track whether the caller explicitly pinned a session. When they
+        # did, we must NOT fold repo-wide signals (like `git diff HEAD`)
+        # into the ranking — those reflect the working tree state across
+        # all concurrent sessions and would leak files from other sessions
+        # into this query. Multi-session correctness beats coverage here.
+        is_session_overridden = session_id is not None
+        turn_id: str | None = None
+
         if session_id:
             # Explicit override: verify the session exists before trusting it.
             row = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if not row:
                 return runtime.error_payload(f"Session not found: {session_id}")
+            # Anchor telemetry to the latest turn of the overridden session
+            # so retrieval_events / retrieval_selections are attributed
+            # correctly regardless of what `detect_current_context` would
+            # return for the connection's own active session.
+            turn_row = conn.execute(
+                "SELECT id FROM turns WHERE session_id = ? ORDER BY turn_number DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if turn_row:
+                turn_id = turn_row["id"]
         else:
-            session_id, _turn_id = detect_current_context(conn)
+            session_id, turn_id = detect_current_context(conn)
         warnings: list[str] = []
+        if is_session_overridden:
+            warnings.append("session_id override: repo-wide git diff signal skipped to avoid cross-session pollution.")
 
         # --- 1. files_touched from recent turns (session-scoped) ---
         file_paths: list[str] = []
@@ -200,7 +220,13 @@ async def ec_decision_context(
         diff_text: str | None = None
         has_diff = False
         git_diff_available = False
-        if repo_path:
+        # ``is_session_overridden`` suppresses the repo-wide git diff path
+        # entirely: the diff reflects the working tree for ALL concurrent
+        # sessions in this repo and would pollute a session-pinned query
+        # with files touched by unrelated sessions. Override callers rely
+        # on exact session isolation, so we accept the loss of diff-based
+        # coverage (already surfaced as a warning above) in exchange.
+        if repo_path and not is_session_overridden:
             try:
                 diff_result = subprocess.run(
                     ["git", "diff", "HEAD"],
@@ -271,6 +297,11 @@ async def ec_decision_context(
         )
 
         # --- 5. Telemetry: event + per-decision selection ---
+        # Pass the resolved session_id/turn_id explicitly so the event
+        # is attributed to the caller-pinned session, not re-detected
+        # via `detect_current_context` inside the wrapper. Per-selection
+        # rows inherit from the event row by default, so no selection-
+        # level override is needed here.
         tracked_event_id = runtime.record_search_event(
             conn,
             query="decision-context",
@@ -280,6 +311,8 @@ async def ec_decision_context(
             latency_ms=int((time.perf_counter() - started_at) * 1000),
             file_filter=",".join(file_paths) or None,
             since=None,
+            session_id=session_id,
+            turn_id=turn_id,
         )
         for idx, item in enumerate(decisions, start=1):
             selection_id = runtime.record_selection(
