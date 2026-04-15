@@ -92,6 +92,12 @@ def _record_selection(
 
 
 from .tools.checkpoint import ec_checkpoint_list, ec_rewind  # noqa: E402
+from .tools.decision_candidates import (  # noqa: E402
+    ec_decision_candidate_confirm,
+    ec_decision_candidate_get,
+    ec_decision_candidate_list,
+    ec_decision_candidate_reject,
+)
 from .tools.decisions import (  # noqa: E402
     ec_decision_context,
     ec_decision_create,
@@ -109,10 +115,10 @@ from .tools.session import ec_attribution, ec_context_apply, ec_session_context,
 
 if mcp:
     from .runtime import ServiceRegistry
-    from .tools import checkpoint, decisions, futures, misc, search, session
+    from .tools import checkpoint, decision_candidates, decisions, futures, misc, search, session
 
     _services = ServiceRegistry()
-    for module in (search, checkpoint, session, futures, misc, decisions):
+    for module in (search, checkpoint, session, futures, misc, decisions, decision_candidates):
         module.register_tools(mcp, _services)
 
 
@@ -150,5 +156,9 @@ __all__ = [
     "ec_decision_related",
     "ec_decision_search",
     "ec_decision_stale",
+    "ec_decision_candidate_list",
+    "ec_decision_candidate_get",
+    "ec_decision_candidate_confirm",
+    "ec_decision_candidate_reject",
     "run_server",
 ]

@@ -1,0 +1,645 @@
+"""Unit + integration tests for the candidate decision extraction pipeline."""
+
+from __future__ import annotations
+
+import json
+from datetime import datetime, timezone
+
+import pytest
+
+from entirecontext.core.decision_candidates import (
+    confirm_candidate,
+    get_candidate,
+    list_candidates,
+    reject_candidate,
+)
+from entirecontext.core.decision_extraction import (
+    CandidateDraft,
+    DecisionExtractionError,
+    DedupResult,
+    SignalBundle,
+    _tokenize_title_for_fts,
+    collect_signals,
+    compute_dedup_key,
+    is_session_extracted,
+    mark_session_extracted,
+    normalize_title_for_dedup,
+    parse_llm_response,
+    persist_candidate,
+    score_confidence,
+)
+from entirecontext.core.decisions import create_decision
+from entirecontext.core.futures import create_assessment
+from entirecontext.core.project import get_project
+from entirecontext.core.session import create_session
+from entirecontext.core.turn import create_turn
+
+
+# ---------------------------------------------------------------------------
+# Seeding helpers
+# ---------------------------------------------------------------------------
+
+
+def _seed_session(conn, ec_repo, session_id: str = "extraction-test-session") -> dict:
+    project = get_project(str(ec_repo))
+    return create_session(conn, project["id"], session_id=session_id)
+
+
+def _seed_turn(conn, session_id: str, turn_number: int, summary: str, files: list[str] | None = None) -> dict:
+    turn = create_turn(conn, session_id, turn_number, user_message=f"msg {turn_number}")
+    conn.execute(
+        "UPDATE turns SET assistant_summary = ?, files_touched = ?, turn_status = 'completed' WHERE id = ?",
+        (summary, json.dumps(files) if files else None, turn["id"]),
+    )
+    conn.commit()
+    return turn
+
+
+def _seed_checkpoint(
+    conn,
+    session_id: str,
+    diff_summary: str,
+    created_at: str | None = None,
+    commit_hash: str = "abc123",
+) -> dict:
+    import uuid
+
+    checkpoint_id = str(uuid.uuid4())
+    if created_at is None:
+        created_at = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """
+        INSERT INTO checkpoints (id, session_id, git_commit_hash, diff_summary, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (checkpoint_id, session_id, commit_hash, diff_summary, created_at),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM checkpoints WHERE id = ?", (checkpoint_id,)).fetchone()
+    return dict(row)
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — normalization, dedup key, tokenization
+# ---------------------------------------------------------------------------
+
+
+class TestNormalization:
+    def test_normalize_basic(self):
+        assert normalize_title_for_dedup("Use Redis for Caching!!") == "use redis for caching"
+
+    def test_normalize_case_invariance(self):
+        assert normalize_title_for_dedup("USE REDIS") == normalize_title_for_dedup("use redis")
+
+    def test_normalize_whitespace_collapses(self):
+        assert normalize_title_for_dedup("  use   redis\nfor\tcaching  ") == "use redis for caching"
+
+    def test_compute_dedup_key_stable(self):
+        k1 = compute_dedup_key("Use Redis")
+        k2 = compute_dedup_key("use redis!!")
+        assert k1 == k2
+
+    def test_dedup_key_12_chars(self):
+        k = compute_dedup_key("hello world")
+        assert len(k) == 12
+
+    def test_tokenize_title(self):
+        result = _tokenize_title_for_fts("Use JWT over session-based auth")
+        assert result is not None
+        assert "jwt" in result.lower()
+        assert "auth" in result.lower()
+
+    def test_tokenize_empty(self):
+        assert _tokenize_title_for_fts("") is None
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — confidence scoring
+# ---------------------------------------------------------------------------
+
+
+def _mock_draft(
+    source_type: str,
+    *,
+    rationale: str | None = None,
+    rejected: list | None = None,
+    files: list | None = None,
+) -> CandidateDraft:
+    return CandidateDraft(
+        title="t",
+        rationale=rationale,
+        scope=None,
+        rejected_alternatives=rejected or [],
+        supporting_evidence=[],
+        source_type=source_type,
+        source_id=f"{source_type}-1",
+        session_id="s1",
+        checkpoint_id=None,
+        assessment_id=None,
+        files=files or [],
+    )
+
+
+class TestConfidenceScoring:
+    def test_session_base_weight(self):
+        draft = _mock_draft("session")
+        dr = DedupResult(dedup_key="k")
+        score, breakdown = score_confidence(draft, dr)
+        assert abs(score - 0.30) < 1e-6
+        assert breakdown["base"]["weight"] == 0.30
+
+    def test_checkpoint_base_weight(self):
+        draft = _mock_draft("checkpoint")
+        dr = DedupResult(dedup_key="k")
+        score, _ = score_confidence(draft, dr)
+        assert abs(score - 0.40) < 1e-6
+
+    def test_assessment_base_weight(self):
+        draft = _mock_draft("assessment")
+        dr = DedupResult(dedup_key="k")
+        score, _ = score_confidence(draft, dr)
+        assert abs(score - 0.55) < 1e-6
+
+    def test_rationale_bonus(self):
+        long_rationale = "this rationale is clearly longer than thirty characters"
+        draft = _mock_draft("session", rationale=long_rationale)
+        dr = DedupResult(dedup_key="k")
+        score, _ = score_confidence(draft, dr)
+        assert abs(score - 0.45) < 1e-6
+
+    def test_short_rationale_no_bonus(self):
+        draft = _mock_draft("session", rationale="short")
+        dr = DedupResult(dedup_key="k")
+        score, _ = score_confidence(draft, dr)
+        assert abs(score - 0.30) < 1e-6
+
+    def test_alts_bonus(self):
+        draft = _mock_draft("session", rejected=["old approach"])
+        dr = DedupResult(dedup_key="k")
+        score, _ = score_confidence(draft, dr)
+        assert abs(score - 0.45) < 1e-6
+
+    def test_files_in_band_bonus(self):
+        draft = _mock_draft("session", files=["a.py", "b.py"])
+        dr = DedupResult(dedup_key="k")
+        score, _ = score_confidence(draft, dr)
+        assert abs(score - 0.40) < 1e-6
+
+    def test_zero_files_no_bonus(self):
+        draft = _mock_draft("session", files=[])
+        dr = DedupResult(dedup_key="k")
+        score, _ = score_confidence(draft, dr)
+        assert abs(score - 0.30) < 1e-6
+
+    def test_too_many_files_no_bonus(self):
+        draft = _mock_draft("session", files=[f"f{i}.py" for i in range(10)])
+        dr = DedupResult(dedup_key="k")
+        score, _ = score_confidence(draft, dr)
+        assert abs(score - 0.30) < 1e-6
+
+    def test_penalty_clamps_to_zero(self):
+        draft = _mock_draft("session")
+        dr = DedupResult(dedup_key="k", score_vs_decisions=4.0, score_vs_candidates=4.0)
+        score, _ = score_confidence(draft, dr)
+        assert score == 0.0
+
+    def test_breakdown_has_expected_keys(self):
+        draft = _mock_draft(
+            "assessment",
+            rationale="long rationale exceeding thirty characters easily",
+            rejected=["alt"],
+            files=["a.py"],
+        )
+        dr = DedupResult(dedup_key="k", score_vs_decisions=0.2)
+        score, breakdown = score_confidence(draft, dr)
+        assert "initial" in breakdown
+        assert "penalties" in breakdown
+        assert "final" in breakdown
+        assert breakdown["initial"] == 0.95  # 0.55 + 0.15 + 0.15 + 0.10
+        assert score < breakdown["initial"]
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — session marker (including v12 shim)
+# ---------------------------------------------------------------------------
+
+
+class TestSessionMarker:
+    def test_fresh_session_not_marked(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo)
+        assert is_session_extracted(ec_db, session["id"]) is False
+
+    def test_mark_session_extracted(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo)
+        mark_session_extracted(ec_db, session["id"])
+        assert is_session_extracted(ec_db, session["id"]) is True
+
+    def test_v12_marker_recognized(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo)
+        ec_db.execute(
+            "UPDATE sessions SET metadata = ? WHERE id = ?",
+            (json.dumps({"decisions_extracted": True}), session["id"]),
+        )
+        ec_db.commit()
+        assert is_session_extracted(ec_db, session["id"]) is True
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — signal collection per source
+# ---------------------------------------------------------------------------
+
+
+class TestSignalCollection:
+    def test_session_no_keyword_match(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo)
+        _seed_turn(ec_db, session["id"], 1, "Just a normal status update")
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        assert all(b.source_type != "session" for b in bundles)
+
+    def test_session_with_keyword_match(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo)
+        _seed_turn(
+            ec_db,
+            session["id"],
+            1,
+            "We decided to use Redis over memcached",
+            files=["src/cache.py"],
+        )
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        session_bundles = [b for b in bundles if b.source_type == "session"]
+        assert len(session_bundles) == 1
+        assert "src/cache.py" in session_bundles[0].files
+
+    def test_session_empty_intersection_files(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo, session_id="s-empty-intersect")
+        _seed_turn(ec_db, session["id"], 1, "We decided on approach A", files=["a.py"])
+        _seed_turn(ec_db, session["id"], 2, "We decided approach B instead", files=["b.py"])
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        session_bundles = [b for b in bundles if b.source_type == "session"]
+        assert len(session_bundles) == 1
+        # Intersection of {a.py} and {b.py} is empty and must NOT fall back
+        # to the union.
+        assert session_bundles[0].files == []
+
+    def test_checkpoint_single_file_skipped(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo, session_id="s-cp-single")
+        _seed_turn(ec_db, session["id"], 1, "refactor", files=["a.py"])
+        _seed_checkpoint(ec_db, session["id"], diff_summary="a.py | 5 +++--", commit_hash="cp1")
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        assert all(b.source_type != "checkpoint" for b in bundles)
+
+    def test_checkpoint_multi_file_included(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo, session_id="s-cp-multi")
+        _seed_turn(ec_db, session["id"], 1, "refactor", files=["a.py", "b.py", "c.py"])
+        _seed_checkpoint(
+            ec_db,
+            session["id"],
+            diff_summary="a.py | 5 +++--\nb.py | 3 +++\nc.py | 2 +",
+            commit_hash="cp2",
+        )
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        cp_bundles = [b for b in bundles if b.source_type == "checkpoint"]
+        assert len(cp_bundles) == 1
+        assert set(cp_bundles[0].files) == {"a.py", "b.py", "c.py"}
+
+    def test_checkpoint_does_not_read_files_snapshot(self, ec_repo, ec_db):
+        """Checkpoint files come from turn window, not from files_snapshot."""
+        session = _seed_session(ec_db, ec_repo, session_id="s-no-snapshot")
+        _seed_turn(ec_db, session["id"], 1, "changes", files=["x.py", "y.py"])
+        # Seed checkpoint with NULL files_snapshot (matching real auto-created checkpoints).
+        _seed_checkpoint(ec_db, session["id"], diff_summary="x.py | 1\ny.py | 1", commit_hash="nosnap")
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        cp_bundles = [b for b in bundles if b.source_type == "checkpoint"]
+        assert len(cp_bundles) == 1
+        assert set(cp_bundles[0].files) == {"x.py", "y.py"}
+
+    def test_assessment_neutral_skipped(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo, session_id="s-neutral")
+        _seed_turn(ec_db, session["id"], 1, "work", files=["a.py", "b.py"])
+        cp = _seed_checkpoint(ec_db, session["id"], diff_summary="a.py|1\nb.py|1", commit_hash="cp-neutral")
+        create_assessment(
+            ec_db,
+            verdict="neutral",
+            impact_summary="no impact",
+            roadmap_alignment="",
+            tidy_suggestion="",
+            diff_summary="",
+            checkpoint_id=cp["id"],
+        )
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        assert all(b.source_type != "assessment" for b in bundles)
+
+    def test_assessment_expand_collected(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo, session_id="s-expand")
+        _seed_turn(ec_db, session["id"], 1, "work", files=["a.py", "b.py"])
+        cp = _seed_checkpoint(ec_db, session["id"], diff_summary="a.py|1\nb.py|1", commit_hash="cp-expand")
+        create_assessment(
+            ec_db,
+            verdict="expand",
+            impact_summary="expands scope to cover X",
+            roadmap_alignment="aligned",
+            tidy_suggestion="consider extracting Y",
+            diff_summary="diff",
+            checkpoint_id=cp["id"],
+        )
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        assess_bundles = [b for b in bundles if b.source_type == "assessment"]
+        assert len(assess_bundles) == 1
+        assert set(assess_bundles[0].files) >= {"a.py", "b.py"}
+
+
+# ---------------------------------------------------------------------------
+# Unit tests — parse_llm_response
+# ---------------------------------------------------------------------------
+
+
+class TestParseLLMResponse:
+    def _bundle(self) -> SignalBundle:
+        return SignalBundle(
+            source_type="session",
+            source_id="s1",
+            session_id="sess",
+            checkpoint_id=None,
+            assessment_id=None,
+            text_blocks=["x"],
+            files=["a.py"],
+        )
+
+    def test_invalid_json_raises(self):
+        with pytest.raises(DecisionExtractionError):
+            parse_llm_response("not json", self._bundle())
+
+    def test_non_list_returns_empty(self):
+        result = parse_llm_response('{"not": "a list"}', self._bundle())
+        assert result == []
+
+    def test_valid_array(self):
+        raw = json.dumps(
+            [{"title": "Use Redis", "rationale": "fast", "scope": "cache", "rejected_alternatives": ["memcached"]}]
+        )
+        drafts = parse_llm_response(raw, self._bundle())
+        assert len(drafts) == 1
+        assert drafts[0].title == "Use Redis"
+        assert drafts[0].rejected_alternatives == ["memcached"]
+
+    def test_caps_at_five(self):
+        raw = json.dumps([{"title": f"D{i}"} for i in range(10)])
+        drafts = parse_llm_response(raw, self._bundle())
+        assert len(drafts) == 5
+
+    def test_skips_missing_title(self):
+        raw = json.dumps([{"title": "ok"}, {"no_title": "x"}, {"title": ""}])
+        drafts = parse_llm_response(raw, self._bundle())
+        assert len(drafts) == 1
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — end-to-end run_extraction via shim
+# ---------------------------------------------------------------------------
+
+
+class TestEndToEndExtraction:
+    def test_session_only_extraction(self, ec_repo, ec_db, monkeypatch):
+        session = _seed_session(ec_db, ec_repo, session_id="e2e-session-only")
+        _seed_turn(
+            ec_db,
+            session["id"],
+            1,
+            "We decided to use Redis instead of memcached",
+            files=["src/cache.py"],
+        )
+        llm_response = json.dumps(
+            [
+                {
+                    "title": "Use Redis for cache",
+                    "rationale": "Redis persistence is essential for our use case",
+                    "scope": "cache",
+                    "rejected_alternatives": ["memcached"],
+                }
+            ]
+        )
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: llm_response,
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+
+        candidates = list_candidates(ec_db, session_id=session["id"])
+        assert len(candidates) == 1
+        assert candidates[0]["source_type"] == "session"
+        assert candidates[0]["review_status"] == "pending"
+        assert candidates[0]["confidence"] > 0.0
+
+    def test_retriever_isolation(self, ec_repo, ec_db, monkeypatch):
+        """Pending candidates must not leak into decision retrievers."""
+        from entirecontext.core.decisions import rank_related_decisions
+
+        # Seed a real decision the retriever should see
+        create_decision(
+            ec_db,
+            title="Real confirmed decision",
+            rationale="carry forward",
+            scope="test",
+        )
+
+        # Seed a candidate with a similar title
+        session = _seed_session(ec_db, ec_repo, session_id="e2e-isolation")
+        _seed_turn(ec_db, session["id"], 1, "We decided to revisit the confirmed decision", files=["a.py"])
+        llm_response = json.dumps(
+            [
+                {
+                    "title": "Real confirmed decision variant",
+                    "rationale": "a reasoned rationale longer than thirty characters",
+                    "scope": "test",
+                    "rejected_alternatives": [],
+                }
+            ]
+        )
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: llm_response,
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+
+        # Both tables should have data
+        assert len(list_candidates(ec_db)) == 1
+        # Retrievers must only see the confirmed decision, not the candidate
+        ranked, _stats = rank_related_decisions(ec_db, file_paths=["a.py"], _return_stats=True)
+        titles = [d.get("title") for d in ranked]
+        assert "Real confirmed decision" in titles or ranked == []  # retriever may return empty if relevance low
+        assert "Real confirmed decision variant" not in titles
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — confirm / reject flow
+# ---------------------------------------------------------------------------
+
+
+class TestConfirmRejectFlow:
+    def _seed_candidate(self, ec_db, ec_repo, *, session_id="conf-session", checkpoint_id=None, assessment_id=None):
+        session = _seed_session(ec_db, ec_repo, session_id=session_id)
+        draft = CandidateDraft(
+            title="Confirm test decision",
+            rationale="a sufficiently long rationale to pass the heuristic",
+            scope="test",
+            rejected_alternatives=["alt"],
+            supporting_evidence=[],
+            source_type="session",
+            source_id=session["id"],
+            session_id=session["id"],
+            checkpoint_id=checkpoint_id,
+            assessment_id=assessment_id,
+            files=["src/a.py", "src/b.py"],
+        )
+        dr = DedupResult(dedup_key=compute_dedup_key(draft.title))
+        score, breakdown = score_confidence(draft, dr)
+        result = persist_candidate(ec_db, draft, score, breakdown, dr)
+        return result.candidate_id
+
+    def test_confirm_creates_decision_with_files(self, ec_repo, ec_db):
+        from entirecontext.core.decisions import get_decision
+
+        cid = self._seed_candidate(ec_db, ec_repo)
+        assert cid is not None
+        result = confirm_candidate(ec_db, cid, reviewer="cli")
+        assert result["promoted"] is True
+        decision_id = result["decision_id"]
+        decision = get_decision(ec_db, decision_id)
+        assert decision is not None
+        assert "src/a.py" in decision.get("files", [])
+        assert "src/b.py" in decision.get("files", [])
+
+    def test_confirm_promotes_checkpoint_and_assessment_links(self, ec_repo, ec_db):
+        session = _seed_session(ec_db, ec_repo, session_id="conf-provenance")
+        _seed_turn(ec_db, session["id"], 1, "work", files=["a.py"])
+        cp = _seed_checkpoint(ec_db, session["id"], diff_summary="a.py|1\nb.py|1", commit_hash="cp-prov")
+        assess_id = create_assessment(
+            ec_db,
+            verdict="expand",
+            impact_summary="x",
+            checkpoint_id=cp["id"],
+        )["id"]
+        cid = self._seed_candidate(
+            ec_db,
+            ec_repo,
+            session_id="conf-provenance-cand",
+            checkpoint_id=cp["id"],
+            assessment_id=assess_id,
+        )
+        result = confirm_candidate(ec_db, cid, reviewer="cli")
+        decision_id = result["decision_id"]
+        # decision_checkpoints link
+        cp_link = ec_db.execute(
+            "SELECT 1 FROM decision_checkpoints WHERE decision_id = ? AND checkpoint_id = ?",
+            (decision_id, cp["id"]),
+        ).fetchone()
+        assert cp_link is not None
+        # decision_assessments link with 'informed_by'
+        assess_link = ec_db.execute(
+            "SELECT relation_type FROM decision_assessments WHERE decision_id = ? AND assessment_id = ?",
+            (decision_id, assess_id),
+        ).fetchone()
+        assert assess_link is not None
+        assert assess_link["relation_type"] == "informed_by"
+
+    def test_reject_no_decision_created(self, ec_repo, ec_db):
+        cid = self._seed_candidate(ec_db, ec_repo, session_id="reject-session")
+        reject_candidate(ec_db, cid, reason="not useful")
+        after = get_candidate(ec_db, cid)
+        assert after["review_status"] == "rejected"
+        assert after["review_note"] == "not useful"
+        # Decisions table remains empty
+        decision_count = ec_db.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()["c"]
+        assert decision_count == 0
+
+    def test_double_confirm_raises(self, ec_repo, ec_db):
+        cid = self._seed_candidate(ec_db, ec_repo, session_id="double-session")
+        confirm_candidate(ec_db, cid)
+        with pytest.raises(ValueError):
+            confirm_candidate(ec_db, cid)
+
+
+# ---------------------------------------------------------------------------
+# Integration tests — dedup and noisy-input harness (Tier 1)
+# ---------------------------------------------------------------------------
+
+
+class TestDedupAndNoise:
+    def test_duplicate_title_penalized_against_confirmed_decision(self, ec_repo, ec_db, monkeypatch):
+        """Tier 1 noisy-input scenario: pre-existing confirmed decision."""
+        create_decision(
+            ec_db,
+            title="Use Redis over memcached",
+            rationale="legacy choice carried forward",
+            scope="cache",
+        )
+
+        session = _seed_session(ec_db, ec_repo, session_id="noisy-preexisting")
+        _seed_turn(ec_db, session["id"], 1, "We decided again on Redis over memcached", files=["cache.py"])
+        llm_response = json.dumps(
+            [
+                {
+                    "title": "Use Redis over memcached",
+                    "rationale": "same as before",
+                    "scope": "cache",
+                    "rejected_alternatives": ["memcached"],
+                }
+            ]
+        )
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: llm_response,
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+        candidates = list_candidates(ec_db, session_id=session["id"])
+        assert len(candidates) == 1
+        # Dedup fuzzy hit against existing decision must reduce the score
+        breakdown = candidates[0]["confidence_breakdown"]
+        assert breakdown["penalties"]["vs_decisions"] > 0
+        assert candidates[0]["confidence"] < 0.55
+
+    def test_idempotent_same_title_reextraction(self, ec_repo, ec_db, monkeypatch):
+        """Running extraction twice on same signals produces no duplicate rows."""
+        session = _seed_session(ec_db, ec_repo, session_id="noisy-idempotent")
+        _seed_turn(ec_db, session["id"], 1, "We decided to chose X", files=["x.py"])
+        llm_response = json.dumps(
+            [{"title": "Choose X", "rationale": "a reason long enough for the heuristic", "scope": "x"}]
+        )
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: llm_response,
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+        count_after_first = len(list_candidates(ec_db, session_id=session["id"]))
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+        count_after_second = len(list_candidates(ec_db, session_id=session["id"]))
+        assert count_after_first == 1
+        assert count_after_second == 1  # marker short-circuits second run
+
+    def test_low_signal_candidate_below_threshold(self, ec_repo, ec_db, monkeypatch):
+        """Candidates with no rationale / alts / files sit below default filter."""
+        session = _seed_session(ec_db, ec_repo, session_id="noisy-lowsignal")
+        _seed_turn(ec_db, session["id"], 1, "We decided something", files=[])
+        llm_response = json.dumps(
+            [{"title": "Vague choice", "rationale": "", "scope": "", "rejected_alternatives": []}]
+        )
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: llm_response,
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+        all_candidates = list_candidates(ec_db, session_id=session["id"])
+        filtered = list_candidates(ec_db, session_id=session["id"], min_confidence=0.5)
+        assert len(all_candidates) == 1
+        assert all_candidates[0]["confidence"] < 0.5
+        assert len(filtered) == 0

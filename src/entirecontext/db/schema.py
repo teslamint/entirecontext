@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -419,6 +419,44 @@ CREATE INDEX IF NOT EXISTS idx_operation_events_session ON operation_events(sess
 CREATE INDEX IF NOT EXISTS idx_operation_events_created ON operation_events(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_operation_events_status ON operation_events(status);
 """,
+    "decision_candidates": """
+CREATE TABLE IF NOT EXISTS decision_candidates (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    rationale TEXT,
+    scope TEXT,
+    rejected_alternatives TEXT,
+    supporting_evidence TEXT,
+    source_type TEXT NOT NULL CHECK(source_type IN ('session','checkpoint','assessment')),
+    source_id TEXT NOT NULL,
+    session_id TEXT,
+    checkpoint_id TEXT,
+    assessment_id TEXT,
+    files TEXT,
+    confidence REAL NOT NULL DEFAULT 0.0,
+    confidence_breakdown TEXT,
+    review_status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(review_status IN ('pending','confirmed','rejected')),
+    reviewed_at TEXT,
+    reviewed_by TEXT,
+    review_note TEXT,
+    promoted_decision_id TEXT,
+    dedup_key TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE SET NULL,
+    FOREIGN KEY (checkpoint_id) REFERENCES checkpoints(id) ON DELETE SET NULL,
+    FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE SET NULL,
+    FOREIGN KEY (promoted_decision_id) REFERENCES decisions(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_decision_candidates_review ON decision_candidates(review_status);
+CREATE INDEX IF NOT EXISTS idx_decision_candidates_source ON decision_candidates(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_decision_candidates_confidence ON decision_candidates(confidence DESC);
+CREATE INDEX IF NOT EXISTS idx_decision_candidates_dedup ON decision_candidates(dedup_key);
+CREATE INDEX IF NOT EXISTS idx_decision_candidates_session ON decision_candidates(session_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_decision_candidates_source_dedup
+    ON decision_candidates(source_type, source_id, dedup_key);
+""",
 }
 
 # FTS5 virtual tables
@@ -462,6 +500,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_decisions USING fts5(
     title,
     rationale,
     content='decisions',
+    content_rowid='rowid'
+);
+""",
+    "fts_decision_candidates": """
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_decision_candidates USING fts5(
+    title,
+    rationale,
+    content='decision_candidates',
     content_rowid='rowid'
 );
 """,
@@ -566,6 +612,26 @@ CREATE TRIGGER IF NOT EXISTS fts_decisions_au AFTER UPDATE ON decisions BEGIN
   INSERT INTO fts_decisions(fts_decisions, rowid, title, rationale)
   VALUES ('delete', old.rowid, old.title, old.rationale);
   INSERT INTO fts_decisions(rowid, title, rationale)
+  VALUES (new.rowid, new.title, new.rationale);
+END;
+""",
+    "fts_decision_candidates_ai": """
+CREATE TRIGGER IF NOT EXISTS fts_decision_candidates_ai AFTER INSERT ON decision_candidates BEGIN
+  INSERT INTO fts_decision_candidates(rowid, title, rationale)
+  VALUES (new.rowid, new.title, new.rationale);
+END;
+""",
+    "fts_decision_candidates_ad": """
+CREATE TRIGGER IF NOT EXISTS fts_decision_candidates_ad AFTER DELETE ON decision_candidates BEGIN
+  INSERT INTO fts_decision_candidates(fts_decision_candidates, rowid, title, rationale)
+  VALUES ('delete', old.rowid, old.title, old.rationale);
+END;
+""",
+    "fts_decision_candidates_au": """
+CREATE TRIGGER IF NOT EXISTS fts_decision_candidates_au AFTER UPDATE ON decision_candidates BEGIN
+  INSERT INTO fts_decision_candidates(fts_decision_candidates, rowid, title, rationale)
+  VALUES ('delete', old.rowid, old.title, old.rationale);
+  INSERT INTO fts_decision_candidates(rowid, title, rationale)
   VALUES (new.rowid, new.title, new.rationale);
 END;
 """,

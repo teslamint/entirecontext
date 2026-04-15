@@ -83,6 +83,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "approach",
             "instead of",
         ],
+        "extract_sources": ["session", "checkpoint", "assessment"],
+        "candidate_min_confidence": 0.0,
+        "candidate_dedup_similarity_threshold": 0.5,
+        "candidate_redact_secrets": True,
     },
 }
 
