@@ -82,7 +82,7 @@ class TestHandleHook:
             session_id=None,
             turn_id=None,
         )
-        mock_context.close.assert_called_once()
+        mock_context.__exit__.assert_called_once()
 
     def test_exception_prints_to_stderr(self, capsys):
         mock_handler = MagicMock(side_effect=RuntimeError("crash"))
