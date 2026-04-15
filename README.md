@@ -204,6 +204,8 @@ uv tool install entirecontext
 pipx install entirecontext
 ```
 
+Tagged GitHub releases also include the built wheel and source tarball as release assets. PyPI remains the primary install path.
+
 Use the same workflow after either install path:
 
 ```bash
@@ -649,4 +651,3 @@ EntireContext was inspired by:
 ## License
 
 [MIT](LICENSE)
-
