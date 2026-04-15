@@ -20,6 +20,9 @@ htmlcov/
 .coverage
 coverage.json
 .claude
+.cursor/
 .codex/
 .serena/
+agents.lock
+.agents/.gitignore
 *-export.json
