@@ -1297,6 +1297,69 @@ class TestMaybeExtractDecisions:
         maybe_extract_decisions(str(ec_repo), session["id"])
         assert len(launched) == 0
 
+    def test_gate_respects_extract_sources_session_only(self, ec_repo, ec_db, monkeypatch):
+        """Regression: with extract_sources=['session'] and no keyword-match
+        in summaries but a checkpoint diff_summary present, the gate must
+        NOT launch the worker. Previously the gate unconditionally OR'd
+        all three signals and spawned a no-op worker."""
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {
+                "auto_extract": True,
+                "extract_keywords": ["decided"],
+                "extract_sources": ["session"],
+            },
+        )
+        session = self._setup_session_with_summaries(ec_db, ["just a normal conversation"])
+        # Seed a checkpoint with non-empty diff_summary — used to trigger the
+        # checkpoint signal path. Must be ignored because extract_sources
+        # excludes checkpoint.
+        import uuid as _uuid
+
+        ec_db.execute(
+            "INSERT INTO checkpoints (id, session_id, git_commit_hash, diff_summary) VALUES (?, ?, ?, ?)",
+            (str(_uuid.uuid4()), session["id"], "abc", "src/cache.py | 5 +++--\nsrc/db.py | 3 +"),
+        )
+        ec_db.commit()
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(1) or 0,
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"])
+        assert len(launched) == 0
+
+    def test_gate_respects_extract_sources_checkpoint_only(self, ec_repo, ec_db, monkeypatch):
+        """Regression: with extract_sources=['checkpoint'] and a session
+        summary that would have matched the keyword, the gate must still
+        launch (checkpoint signal present) but must NOT launch due to the
+        session signal. Verified indirectly: we also add a session summary
+        that matches the keyword, set extract_sources to ['checkpoint']
+        only, omit any checkpoint, and expect no launch — proving that
+        the session path is correctly gated off."""
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {
+                "auto_extract": True,
+                "extract_keywords": ["decided"],
+                "extract_sources": ["checkpoint"],
+            },
+        )
+        session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(1) or 0,
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"])
+        # No checkpoint seeded; session signal was disabled by extract_sources.
+        # Worker must not spawn.
+        assert len(launched) == 0
+
 
 class TestExtractFromSessionCLI:
     def _setup_session_with_turns(self, ec_db, turn_data):
@@ -1312,7 +1375,9 @@ class TestExtractFromSessionCLI:
         ec_db.commit()
         return session
 
-    def test_creates_decisions_from_llm_response(self, ec_repo, ec_db, monkeypatch):
+    def test_creates_candidates_from_llm_response(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.decision_candidates import list_candidates
+
         session = self._setup_session_with_turns(
             ec_db,
             [
@@ -1337,15 +1402,19 @@ class TestExtractFromSessionCLI:
 
         _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
 
-        decisions = list_decisions(ec_db)
-        titles = [d["title"] for d in decisions]
+        candidates = list_candidates(ec_db, session_id=session["id"])
+        titles = [c["title"] for c in candidates]
         assert "Use Redis for caching" in titles
+        # Real decisions table should be untouched
+        assert list_decisions(ec_db) == []
 
         row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()
         meta = json.loads(row["metadata"]) if row["metadata"] else {}
-        assert meta.get("decisions_extracted") is True
+        assert meta.get("candidates_extracted") is True
 
-    def test_auto_links_files(self, ec_repo, ec_db, monkeypatch):
+    def test_auto_files_on_candidate(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.decision_candidates import list_candidates
+
         session = self._setup_session_with_turns(
             ec_db,
             [
@@ -1365,11 +1434,13 @@ class TestExtractFromSessionCLI:
 
         _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
 
-        decisions = list_decisions(ec_db)
-        d = get_decision(ec_db, decisions[0]["id"])
-        assert "src/cache.py" in d.get("files", [])
+        candidates = list_candidates(ec_db, session_id=session["id"])
+        assert len(candidates) >= 1
+        candidate_files = candidates[0].get("files") or []
+        # Files live on the candidate row until confirm promotes them.
+        assert "src/cache.py" in candidate_files
 
-    def test_empty_array_sets_marker(self, ec_repo, ec_db, monkeypatch):
+    def test_empty_array_sets_candidates_marker(self, ec_repo, ec_db, monkeypatch):
         session = self._setup_session_with_turns(
             ec_db,
             [
@@ -1386,7 +1457,7 @@ class TestExtractFromSessionCLI:
 
         row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()
         meta = json.loads(row["metadata"]) if row["metadata"] else {}
-        assert meta.get("decisions_extracted") is True
+        assert meta.get("candidates_extracted") is True
 
     def test_invalid_json_no_marker(self, ec_repo, ec_db, monkeypatch):
         session = self._setup_session_with_turns(
@@ -1405,9 +1476,13 @@ class TestExtractFromSessionCLI:
 
         row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()
         meta = json.loads(row["metadata"]) if row["metadata"] else {}
+        # parse failure must not mark the session so the next SessionEnd retries
+        assert meta.get("candidates_extracted") is not True
         assert meta.get("decisions_extracted") is not True
 
-    def test_max_5_decisions(self, ec_repo, ec_db, monkeypatch):
+    def test_max_5_candidates(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.decision_candidates import list_candidates
+
         session = self._setup_session_with_turns(
             ec_db,
             [
@@ -1425,8 +1500,8 @@ class TestExtractFromSessionCLI:
 
         _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
 
-        decisions = list_decisions(ec_db)
-        assert len(decisions) <= 5
+        candidates = list_candidates(ec_db, session_id=session["id"])
+        assert len(candidates) <= 5
 
     def test_idempotency_second_run_skips(self, ec_repo, ec_db, monkeypatch):
         session = self._setup_session_with_turns(
@@ -1445,6 +1520,30 @@ class TestExtractFromSessionCLI:
         _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
         _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
         assert len(call_count) == 1
+
+    def test_v12_marker_shim_short_circuits(self, ec_repo, ec_db, monkeypatch):
+        """v12 decisions_extracted marker must be honored as already-extracted."""
+        session = self._setup_session_with_turns(
+            ec_db,
+            [
+                ("We decided X", []),
+            ],
+        )
+        ec_db.execute(
+            "UPDATE sessions SET metadata = ? WHERE id = ?",
+            (json.dumps({"decisions_extracted": True}), session["id"]),
+        )
+        ec_db.commit()
+
+        call_count = []
+        monkeypatch.setattr(
+            "entirecontext.cli.decisions_cmds._get_llm_response",
+            lambda *a, **kw: (call_count.append(1), "[]")[1],
+        )
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+        assert len(call_count) == 0
 
 
 class TestHandlerIntegration:

@@ -717,7 +717,15 @@ def _session_has_extraction_marker(conn, session_id: str) -> bool:
         import json
 
         meta = json.loads(row["metadata"])
-        return meta.get("decisions_extracted", False) is True
+        if not isinstance(meta, dict):
+            return False
+        # v13 marker is authoritative; v12 marker shim means sessions already
+        # processed by the old pipeline are not re-extracted.
+        if meta.get("candidates_extracted", False) is True:
+            return True
+        if meta.get("decisions_extracted", False) is True:
+            return True
+        return False
     except (ValueError, TypeError):
         return False
 
@@ -729,8 +737,28 @@ def _summaries_match_keywords(summaries: list[str], keywords: list[str]) -> bool
     return any(pattern.search(s) for s in summaries)
 
 
+def _session_has_checkpoint_signal(conn, session_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM checkpoints "
+        "WHERE session_id = ? AND diff_summary IS NOT NULL AND TRIM(diff_summary) != '' "
+        "LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    return row is not None
+
+
+def _session_has_assessment_signal(conn, session_id: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM assessments a JOIN checkpoints c ON a.checkpoint_id = c.id "
+        "WHERE c.session_id = ? AND a.verdict IN ('expand', 'narrow') "
+        "LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    return row is not None
+
+
 def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
-    """Launch background decision extraction if keywords match. Never raises."""
+    """Launch background candidate extraction if any of the three source gates fire. Never raises."""
     try:
         config = _load_decisions_config(repo_path)
         if not config.get("auto_extract", False):
@@ -743,18 +771,34 @@ def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
             if _session_has_extraction_marker(conn, session_id):
                 return
 
-            rows = conn.execute(
-                "SELECT assistant_summary FROM turns "
-                "WHERE session_id = ? AND assistant_summary IS NOT NULL "
-                "ORDER BY turn_number ASC",
-                (session_id,),
-            ).fetchall()
-            summaries = [r["assistant_summary"] for r in rows if r["assistant_summary"]]
-            if not summaries:
-                return
+            # Respect `config.decisions.extract_sources` so users who disable
+            # a source type do not see spurious worker launches. Without this,
+            # a user with `extract_sources = ['session']` would still spawn a
+            # worker on non-empty checkpoint diff_summary or expand/narrow
+            # assessment verdicts, just to have the worker no-op inside
+            # `collect_signals`.
+            raw_sources = config.get("extract_sources")
+            if isinstance(raw_sources, list) and raw_sources:
+                sources = {str(s) for s in raw_sources}
+            else:
+                sources = {"session", "checkpoint", "assessment"}
 
-            keywords = config.get("extract_keywords", [])
-            if not _summaries_match_keywords(summaries, keywords):
+            session_signal = False
+            if "session" in sources:
+                keywords = config.get("extract_keywords", [])
+                rows = conn.execute(
+                    "SELECT assistant_summary FROM turns "
+                    "WHERE session_id = ? AND assistant_summary IS NOT NULL "
+                    "ORDER BY turn_number ASC",
+                    (session_id,),
+                ).fetchall()
+                summaries = [r["assistant_summary"] for r in rows if r["assistant_summary"]]
+                session_signal = bool(summaries) and _summaries_match_keywords(summaries, keywords)
+
+            checkpoint_signal = "checkpoint" in sources and _session_has_checkpoint_signal(conn, session_id)
+            assessment_signal = "assessment" in sources and _session_has_assessment_signal(conn, session_id)
+
+            if not (session_signal or checkpoint_signal or assessment_signal):
                 return
 
             if worker_status(repo_path, pid_name="worker-decision").get("running"):
@@ -764,7 +808,15 @@ def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
 
             launch_worker(
                 repo_path,
-                [sys.executable, "-m", "entirecontext.cli", "decision", "extract-from-session", session_id],
+                [
+                    sys.executable,
+                    "-m",
+                    "entirecontext.cli",
+                    "decision",
+                    "extract-candidates",
+                    "--session",
+                    session_id,
+                ],
                 pid_name="worker-decision",
             )
         finally:

@@ -488,13 +488,18 @@ class TestDecisionsCLIExtended:
         assert result.exit_code == 0
 
         conn = get_db(str(ec_repo))
-        row = conn.execute("SELECT * FROM decisions WHERE title = 'Use JWT'").fetchone()
+        # Candidate row (not decision) is produced; decisions table stays empty.
+        row = conn.execute("SELECT * FROM decision_candidates WHERE title = 'Use JWT'").fetchone()
         assert row is not None
+        assert row["review_status"] == "pending"
+        assert row["source_type"] == "session"
+        decision_count = conn.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()["c"]
+        assert decision_count == 0
 
         meta = json.loads(
             conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()["metadata"]
         )
-        assert meta.get("decisions_extracted") is True
+        assert meta.get("candidates_extracted") is True
         conn.close()
 
     def test_extract_from_session_idempotent(self, ec_repo, monkeypatch):

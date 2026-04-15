@@ -457,122 +457,122 @@ def decision_stale_all():
         console.print(f"\n[yellow]{stale_count}/{len(decisions)} decisions marked as stale.[/yellow]")
 
 
-def _get_llm_response(summaries: str, repo_path: str) -> str:
-    """Call LLM to extract decisions. Separated for testability."""
-    from ..core.config import load_config
-    from ..core.llm import get_backend
+def _get_llm_response(summaries: str, repo_path: str, source_type: str = "session") -> str:
+    """LLM call shim preserved at current module path for monkeypatch-based tests.
 
-    config = load_config(repo_path)
-    backend_name = config.get("futures", {}).get("default_backend", "openai")
-    model = config.get("futures", {}).get("default_model", None)
-    backend = get_backend(backend_name, model=model)
+    The shim body below (_extract_from_session_impl) must always call this
+    module-level function so that test monkeypatches on
+    `entirecontext.cli.decisions_cmds._get_llm_response` remain effective.
+    The production hook/worker path invokes
+    `core.decision_extraction.call_extraction_llm` directly instead.
 
-    system = (
-        "Extract architectural/technical decisions from this coding session. "
-        'Return a JSON array: [{"title": str, "rationale": str, "scope": str, "rejected_alternatives": [str]}] '
-        "Only include actual decisions (choosing one approach over another), "
-        "not tasks, plans, or status updates. "
-        "Return [] if no decisions were made."
-    )
-    return backend.complete(system, summaries)
+    `source_type` is a keyword with default so that legacy tests that
+    monkeypatch this function with a 2-arg lambda (no source_type) still
+    work — the shim calls through `_invoke_get_llm_response` which falls
+    back to the 2-arg signature when the bound symbol does not accept
+    `source_type`.
+    """
+    from ..core.decision_extraction import call_extraction_llm
+
+    return call_extraction_llm(summaries, repo_path, source_type=source_type)
+
+
+def _invoke_get_llm_response(summaries: str, repo_path: str, source_type: str) -> str:
+    """Dispatch through the module-level _get_llm_response symbol while
+    staying compatible with pre-existing 2-arg monkeypatches.
+
+    Production callers (and tests that use `lambda *a, **kw: ...`) get
+    the correct per-source system prompt via the `source_type` kwarg.
+    Legacy tests that monkeypatch with `lambda summaries, repo_path: ...`
+    are detected via inspect.signature and called without the kwarg.
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(_get_llm_response).parameters
+    except (TypeError, ValueError):
+        return _get_llm_response(summaries, repo_path)
+    accepts_source = "source_type" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    if accepts_source:
+        return _get_llm_response(summaries, repo_path, source_type=source_type)
+    return _get_llm_response(summaries, repo_path)
 
 
 def _extract_from_session_impl(conn, session_id: str, repo_path: str) -> None:
-    """Core extraction logic. Used by CLI command and testable directly."""
-    import json as _json
-    import re
+    """Back-compat shim that drives the candidate pipeline while keeping
+    monkeypatches on _get_llm_response effective. Writes into
+    decision_candidates, NOT decisions — legacy tests were migrated."""
+    from ..core import decision_extraction as ex
 
-    from ..core.config import load_config
-    from ..core.decisions import create_decision, link_decision_to_file
-
-    # Idempotency check
-    row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
-    if row and row["metadata"]:
-        try:
-            meta = _json.loads(row["metadata"])
-            if meta.get("decisions_extracted") is True:
-                return
-        except (ValueError, TypeError):
-            pass
-
-    # Collect summaries with files
-    rows = conn.execute(
-        "SELECT assistant_summary, files_touched FROM turns "
-        "WHERE session_id = ? AND assistant_summary IS NOT NULL "
-        "ORDER BY turn_number ASC",
-        (session_id,),
-    ).fetchall()
-    if not rows:
+    if ex.is_session_extracted(conn, session_id):
         return
 
-    summaries = [r["assistant_summary"] for r in rows if r["assistant_summary"]]
-    all_files: set[str] = set()
-    for r in rows:
-        if r["files_touched"]:
-            try:
-                files = _json.loads(r["files_touched"])
-                if isinstance(files, list):
-                    all_files.update(files)
-            except (ValueError, TypeError):
-                pass
-
-    # Keyword filter
-    config = load_config(repo_path)
-    keywords = config.get("decisions", {}).get("extract_keywords", [])
-    if keywords:
-        pattern = re.compile("|".join(re.escape(k) for k in keywords), re.IGNORECASE)
-        summaries = [s for s in summaries if pattern.search(s)]
-    if not summaries:
+    bundles = ex.collect_signals(conn, session_id, repo_path)
+    if not bundles:
+        # Intentionally NOT marking as extracted — future collector rules or
+        # new source types must be able to rediscover these sessions.
         return
 
-    # LLM call
-    combined = "\n".join(summaries)
-    raw = _get_llm_response(combined, repo_path)
-
-    # Parse
-    try:
-        decisions_data = _json.loads(raw)
-    except (ValueError, TypeError):
-        console.print("[yellow]Invalid JSON from LLM, skipping extraction[/yellow]")
-        return
-
-    if not isinstance(decisions_data, list):
-        return
-
-    decisions_data = decisions_data[:5]
-
-    for item in decisions_data:
-        try:
-            if not isinstance(item, dict) or "title" not in item:
-                continue
-            d = create_decision(
-                conn,
-                title=item["title"],
-                rationale=item.get("rationale"),
-                scope=item.get("scope"),
-                rejected_alternatives=item.get("rejected_alternatives"),
-            )
-            for f in all_files:
-                try:
-                    link_decision_to_file(conn, d["id"], f)
-                except Exception:
-                    pass
-        except Exception:
+    parsed_ok = False
+    for bundle in bundles:
+        prompt_text = ex.assemble_prompt(bundle)
+        if not prompt_text.strip():
             continue
+        redacted = ex.apply_redaction(prompt_text, repo_path)
+        try:
+            raw = _invoke_get_llm_response(redacted, repo_path, bundle.source_type)
+        except ex.DecisionExtractionError:
+            continue
+        except Exception as exc:
+            console.print(f"[yellow]LLM call failed for {bundle.source_type}: {exc}[/yellow]")
+            continue
+        try:
+            drafts = ex.parse_llm_response(raw, bundle)
+        except ex.DecisionExtractionError:
+            # Parse failure intentionally does NOT mark the session, so that
+            # the next SessionEnd re-runs extraction once the upstream noise
+            # has been resolved. Matches test_extract_from_session_invalid_llm_json.
+            continue
+        parsed_ok = True
+        for draft in drafts:
+            dedup_result = ex.dedup(conn, draft)
+            score, breakdown = ex.score_confidence(draft, dedup_result)
+            ex.persist_candidate(conn, draft, score, breakdown, dedup_result)
 
-    # Set idempotency marker (null-safe)
-    conn.execute(
-        "UPDATE sessions SET metadata = json_set(COALESCE(metadata, '{}'), '$.decisions_extracted', json('true')) WHERE id = ?",
-        (session_id,),
-    )
-    conn.commit()
+    if parsed_ok:
+        ex.mark_session_extracted(conn, session_id)
+
+
+@decision_app.command("extract-candidates")
+def decision_extract_candidates(
+    session_id: str = typer.Option(..., "--session", help="Session ID to extract candidates from"),
+):
+    """Extract candidate decisions from a session (background worker target)."""
+    conn, repo_path = get_repo_connection()
+    try:
+        from ..core.decision_extraction import run_extraction
+
+        outcome = run_extraction(conn, session_id, repo_path)
+        console.print(
+            f"[green]Extraction complete[/green] — bundles={outcome.bundles_collected} "
+            f"drafts={outcome.drafts_parsed} inserted={outcome.candidates_inserted} "
+            f"duplicates={outcome.duplicates_skipped}"
+        )
+        if outcome.warnings:
+            for warning in outcome.warnings:
+                console.print(f"[yellow]warning:[/yellow] {warning}")
+    except Exception as exc:
+        console.print(f"[red]Extraction failed: {exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
 
 
 @decision_app.command("extract-from-session")
 def decision_extract_from_session(
-    session_id: str = typer.Argument(..., help="Session ID to extract decisions from"),
+    session_id: str = typer.Argument(..., help="Session ID to extract candidates from"),
 ):
-    """Extract decisions from a session using LLM (background worker target)."""
+    """Back-compat alias for the candidate extraction pipeline."""
     conn, repo_path = get_repo_connection()
     try:
         _extract_from_session_impl(conn, session_id, repo_path)
@@ -581,6 +581,138 @@ def decision_extract_from_session(
         raise typer.Exit(1)
     finally:
         conn.close()
+
+
+candidates_app = typer.Typer(help="Candidate decision review flow")
+
+
+@candidates_app.command("list")
+def candidates_list(
+    session_id: Optional[str] = typer.Option(None, "--session", help="Filter by session id"),
+    status: Optional[str] = typer.Option(None, "--status", help="pending|confirmed|rejected"),
+    min_confidence: float = typer.Option(0.0, "--min-confidence", help="Minimum confidence"),
+    source: Optional[str] = typer.Option(None, "--source", help="session|checkpoint|assessment"),
+    limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
+):
+    from ..core.decision_candidates import list_candidates
+
+    conn, _ = get_repo_connection()
+    try:
+        rows = list_candidates(
+            conn,
+            session_id=session_id,
+            status=status,
+            min_confidence=min_confidence,
+            source_type=source,
+            limit=limit,
+        )
+    finally:
+        conn.close()
+
+    if not rows:
+        console.print("[dim]No candidates found.[/dim]")
+        return
+
+    table = Table(title=f"Decision Candidates ({len(rows)})")
+    table.add_column("ID", style="dim", max_width=12)
+    table.add_column("Title")
+    table.add_column("Source")
+    table.add_column("Status")
+    table.add_column("Conf", justify="right")
+    for r in rows:
+        table.add_row(
+            r["id"][:12],
+            (r.get("title") or "")[:60],
+            r.get("source_type", ""),
+            r.get("review_status", ""),
+            f"{r.get('confidence', 0.0):.2f}",
+        )
+    console.print(table)
+
+
+@candidates_app.command("show")
+def candidates_show(candidate_id: str = typer.Argument(..., help="Candidate ID")):
+    import json as _json
+
+    from ..core.decision_candidates import get_candidate
+
+    conn, _ = get_repo_connection()
+    try:
+        candidate = get_candidate(conn, candidate_id)
+    finally:
+        conn.close()
+
+    if not candidate:
+        console.print(f"[red]Candidate not found:[/red] {candidate_id}")
+        raise typer.Exit(1)
+
+    console.print(f"[bold]Candidate:[/bold] {candidate['id']}")
+    console.print(f"  Title: {candidate.get('title', '')}")
+    console.print(f"  Source: {candidate.get('source_type', '')} / {candidate.get('source_id', '')}")
+    console.print(f"  Status: {candidate.get('review_status', '')}")
+    console.print(f"  Confidence: {candidate.get('confidence', 0.0):.3f}")
+    if candidate.get("rationale"):
+        console.print(f"  Rationale: {candidate['rationale']}")
+    if candidate.get("scope"):
+        console.print(f"  Scope: {candidate['scope']}")
+    alts = candidate.get("rejected_alternatives") or []
+    if alts:
+        console.print(f"  Rejected alternatives: {alts}")
+    files = candidate.get("files") or []
+    if files:
+        console.print(f"  Files: {files}")
+    breakdown = candidate.get("confidence_breakdown") or {}
+    if breakdown:
+        console.print("  Breakdown:")
+        console.print(_json.dumps(breakdown, indent=2, ensure_ascii=False))
+
+
+@candidates_app.command("confirm")
+def candidates_confirm(
+    candidate_id: str = typer.Argument(..., help="Candidate ID"),
+    scope: Optional[str] = typer.Option(None, "--scope", help="Override scope on promotion"),
+    note: Optional[str] = typer.Option(None, "--note", help="Reviewer note"),
+):
+    from ..core.decision_candidates import confirm_candidate
+
+    conn, _ = get_repo_connection()
+    try:
+        result = confirm_candidate(
+            conn,
+            candidate_id,
+            scope_override=scope,
+            reviewer="cli",
+            note=note,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+    console.print(
+        f"[green]Confirmed[/green] candidate {result['candidate_id'][:12]} → decision {result['decision_id']}"
+    )
+
+
+@candidates_app.command("reject")
+def candidates_reject(
+    candidate_id: str = typer.Argument(..., help="Candidate ID"),
+    reason: Optional[str] = typer.Option(None, "--reason", help="Reviewer reason"),
+):
+    from ..core.decision_candidates import reject_candidate
+
+    conn, _ = get_repo_connection()
+    try:
+        result = reject_candidate(conn, candidate_id, reason=reason, reviewer="cli")
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+    finally:
+        conn.close()
+    console.print(f"[yellow]Rejected[/yellow] candidate {result['candidate_id'][:12]}")
+
+
+decision_app.add_typer(candidates_app, name="candidates")
 
 
 def register(app: typer.Typer) -> None:
