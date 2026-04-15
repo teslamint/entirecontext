@@ -419,21 +419,35 @@ ec mcp serve
 
 | Tool | Description |
 |------|-------------|
+| `ec_decision_context` | Proactive one-call decision retrieval from the current session (files, diff, latest checkpoint) |
 | `ec_decision_create` | Create a decision record (title, rationale, rejected alternatives, scope) |
 | `ec_decision_get` | Resolve decision by full or prefix ID |
+| `ec_decision_list` | List decisions with optional filters (status, tags, files) |
+| `ec_decision_outcome` | Record the outcome of a decision (accepted, ignored, or contradicted) |
 | `ec_decision_related` | Rank linked decisions by file overlap, assessment relations, and diff text match |
+| `ec_decision_search` | Keyword search over decisions via FTS5, with optional hybrid ranking and staleness filters |
+| `ec_decision_stale` | Check if a decision's linked files have changed recently (read-only staleness probe) |
+| `ec_decision_candidate_list` | List candidate decisions; filter by session, status, confidence, or source type |
+| `ec_decision_candidate_get` | Get a single candidate with full score breakdown |
+| `ec_decision_candidate_confirm` | Promote a candidate to a real decision via atomic claim-then-promote |
+| `ec_decision_candidate_reject` | Reject a candidate (leaves no trace in decisions) |
 | `ec_search` | Search turns/sessions with regex or FTS5. Filters: `file_filter`, `commit_filter`, `agent_filter`, `since` |
-| `ec_checkpoint_list` | List checkpoints, optionally filtered by `session_id` and `since` |
-| `ec_session_context` | Get session details with recent turns. Auto-detects current session if `session_id` omitted |
-| `ec_attribution` | Get human/agent attribution for a file, with optional line range |
-| `ec_rewind` | Show state at a specific checkpoint |
 | `ec_related` | Find related sessions/turns by query text or file paths |
+| `ec_ast_search` | Search AST symbols by name, filtered by `symbol_type` and `file_filter` |
+| `ec_activate` | Spread-activation retrieval from a seed turn/session with `max_hops` and `decay` |
+| `ec_session_context` | Get session details with recent turns. Auto-detects current session if `session_id` omitted |
 | `ec_turn_content` | Get full content for a specific turn (including JSONL content files) |
+| `ec_attribution` | Get human/agent attribution for a file, with optional line range |
+| `ec_context_apply` | Record how context was applied (e.g., `lesson_applied`, `accepted`) linking back to a prior retrieval selection |
+| `ec_checkpoint_list` | List checkpoints, optionally filtered by `session_id` and `since` |
+| `ec_rewind` | Show state at a specific checkpoint |
 | `ec_assess` | Assess staged diff or checkpoint against roadmap via LLM |
 | `ec_assess_create` | Create an assessment programmatically (verdict, impact, suggestion) |
 | `ec_feedback` | Add agree/disagree feedback to an assessment |
 | `ec_lessons` | Generate LESSONS.md from assessed changes with feedback |
 | `ec_assess_trends` | Cross-repo assessment trend analysis (verdict distribution, feedback stats) |
+| `ec_dashboard` | Dashboard statistics: session/turn/checkpoint activity over a `since` window |
+| `ec_graph` | Build a knowledge graph (nodes/edges/stats) for a session or time window |
 
 All tools accept a `repos` parameter for cross-repo queries: `null` = current repo, `["*"]` = all repos, `["name"]` = specific repos.
 
