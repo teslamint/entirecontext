@@ -231,18 +231,29 @@ def reject_candidate(
     reason: str | None = None,
     reviewer: str = "cli",
 ) -> dict[str, Any]:
+    """Reject a candidate with the same atomic-claim pattern as confirm.
+
+    Without the conditional UPDATE, a concurrent confirm_candidate could
+    CAS-claim and promote the candidate between our Python-level pending
+    check and the UPDATE, resulting in a 'rejected' candidate whose
+    promoted_decision_id still points at a committed `decisions` row —
+    a dangling invariant we cannot recover from.
+    """
     candidate = get_candidate(conn, candidate_id)
     if candidate is None:
         raise ValueError(f"Candidate '{candidate_id}' not found")
-    if candidate.get("review_status") != "pending":
-        raise ValueError(f"Candidate '{candidate['id']}' is already {candidate.get('review_status')}")
 
     now = _now_iso()
-    conn.execute(
+    cursor = conn.execute(
         "UPDATE decision_candidates SET review_status='rejected', reviewed_at=?, "
-        "reviewed_by=?, review_note=?, updated_at=? WHERE id=?",
+        "reviewed_by=?, review_note=?, updated_at=? "
+        "WHERE id=? AND review_status='pending'",
         (now, reviewer, reason, now, candidate["id"]),
     )
+    if cursor.rowcount == 0:
+        fresh = get_candidate(conn, candidate["id"])
+        status = fresh.get("review_status") if fresh else "unknown"
+        raise ValueError(f"Candidate '{candidate['id']}' is already {status}")
     conn.commit()
 
     _record_event(

@@ -1,5 +1,7 @@
 """Migration to schema v13 — decision_candidates table for candidate extraction pipeline."""
 
+from __future__ import annotations
+
 
 def _create_decision_candidates_table(conn):
     row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='decision_candidates'").fetchone()

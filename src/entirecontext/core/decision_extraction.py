@@ -605,6 +605,17 @@ def parse_llm_response(raw: str, bundle: SignalBundle) -> list[CandidateDraft]:
 
 
 def _normalize_fts_scores(rows: list[Any]) -> dict[str, float]:
+    """Normalize FTS5 bm25 ranks into [0.0, 1.0] using min-max rescaling.
+
+    Matches the convention in core.decisions._fts_rank_decisions_from_diff
+    (lines 1014-1018), which collapses a single-row result set to the
+    *mid* value (2.0 out of [0.5, 4.0]) rather than the max. We do the
+    same with our [0.0, 1.0] range — single-row → 0.5 — so that a
+    single weak FTS hit does not propagate as the full dedup penalty
+    weight and zero out legitimate candidates that happen to share one
+    stopword-adjacent token with a prior decision. True duplicates are
+    still caught by the exact dedup_key gate via the unique index.
+    """
     if not rows:
         return {}
     raw_scores = {r["rowid"]: -float(r["rank"]) for r in rows}
@@ -615,7 +626,7 @@ def _normalize_fts_scores(rows: list[Any]) -> dict[str, float]:
     result: dict[str, float] = {}
     if mx == mn:
         for rowid in raw_scores:
-            result[str(rowid)] = 1.0
+            result[str(rowid)] = 0.5
     else:
         span = mx - mn
         for rowid, raw in raw_scores.items():

@@ -113,6 +113,42 @@ class TestNormalization:
         assert _tokenize_title_for_fts("") is None
 
 
+class TestNormalizeFTSScores:
+    def test_single_match_returns_mid_value(self):
+        """Regression: single-match must return mid-value 0.5 (matching
+        core.decisions._fts_rank_decisions_from_diff convention), not
+        1.0. Otherwise any single FTS hit on a shared stopword-adjacent
+        token propagates as the full dedup penalty weight and zeros out
+        legitimate candidates."""
+        from entirecontext.core.decision_extraction import _normalize_fts_scores
+
+        class _Row(dict):
+            def __getitem__(self, key):
+                return super().__getitem__(key)
+
+        rows = [_Row({"rowid": 1, "rank": -1.5})]
+        result = _normalize_fts_scores(rows)
+        assert result == {"1": 0.5}
+
+    def test_multi_match_spans_zero_to_one(self):
+        from entirecontext.core.decision_extraction import _normalize_fts_scores
+
+        rows = [
+            {"rowid": 1, "rank": -1.0},  # weakest
+            {"rowid": 2, "rank": -3.0},  # strongest (bm25 is negative)
+            {"rowid": 3, "rank": -2.0},  # middle
+        ]
+        result = _normalize_fts_scores(rows)
+        assert result["1"] == 0.0
+        assert result["2"] == 1.0
+        assert result["3"] == 0.5
+
+    def test_empty_input(self):
+        from entirecontext.core.decision_extraction import _normalize_fts_scores
+
+        assert _normalize_fts_scores([]) == {}
+
+
 # ---------------------------------------------------------------------------
 # Unit tests — confidence scoring
 # ---------------------------------------------------------------------------
@@ -625,6 +661,29 @@ class TestConfirmRejectFlow:
             ("Confirm test decision",),
         ).fetchone()
         assert decision_rows["c"] == 1
+
+    def test_reject_is_conditional_on_pending_status(self, ec_repo, ec_db):
+        """Regression: reject_candidate must use the same conditional UPDATE
+        pattern as confirm_candidate so a concurrent confirm cannot race it
+        into an invalid 'rejected with dangling promoted_decision_id' state."""
+        cid = self._seed_candidate(ec_db, ec_repo, session_id="reject-race")
+        # Simulate a concurrent confirm completing between our reject's
+        # read and its UPDATE.
+        confirm_candidate(ec_db, cid)
+        # Now the candidate is 'confirmed'. A reject attempt must raise
+        # without overwriting the status or orphaning the decision row.
+        with pytest.raises(ValueError):
+            reject_candidate(ec_db, cid, reason="conflict")
+        fresh = get_candidate(ec_db, cid)
+        assert fresh["review_status"] == "confirmed"
+        assert fresh["promoted_decision_id"] is not None
+
+    def test_reject_second_call_raises(self, ec_repo, ec_db):
+        """Reject is idempotent from the caller's POV: second call raises."""
+        cid = self._seed_candidate(ec_db, ec_repo, session_id="reject-double")
+        reject_candidate(ec_db, cid)
+        with pytest.raises(ValueError):
+            reject_candidate(ec_db, cid)
 
     def test_confirm_rolls_back_claim_on_post_claim_failure(self, ec_repo, ec_db, monkeypatch):
         """Regression: if create_decision (or any auto-committing step after
