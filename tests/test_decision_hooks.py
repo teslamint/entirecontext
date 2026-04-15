@@ -811,6 +811,67 @@ class TestOnPostToolUseDecisions:
         assert d["id"] in meta.get("surfaced_decisions", [])
         assert "post_tool_surfaced_turns" in meta
 
+    def test_metadata_failure_leaves_no_orphan_telemetry(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 round 7 (#discussion_r3080485995) regression:
+        ``record_retrieval_event`` commits internally (telemetry.py:75),
+        so if it runs before ``_write_session_metadata_patch`` and the
+        metadata write subsequently fails, the rollback in the except
+        handler cannot undo the already-committed telemetry row.
+
+        The fix reorders the writes so the metadata patch runs first.
+        This test asserts that when the metadata patch raises, ZERO
+        rows end up in ``retrieval_events`` — proving telemetry was
+        never called (let alone committed) before the metadata failure.
+        A regression that re-orders the calls would leave one orphan row.
+        """
+        import sqlite3
+
+        from entirecontext.hooks import decision_hooks
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Atomic ordering test")
+        link_decision_to_file(ec_db, d["id"], "src/atomic.py")
+
+        def failing_patch(conn, sid, patch):
+            raise sqlite3.OperationalError("simulated SQLITE_BUSY")
+
+        monkeypatch.setattr(decision_hooks, "_write_session_metadata_patch", failing_patch)
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/atomic.py"},
+            }
+        )
+        assert result is None
+
+        events = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM retrieval_events WHERE search_type = 'post_tool_use'"
+        ).fetchone()["n"]
+        assert events == 0, (
+            "orphan retrieval_events row detected — record_retrieval_event "
+            "must not run before _write_session_metadata_patch"
+        )
+
+        fallback = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
+        assert not fallback.exists()
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row["metadata"]:
+            import json as _json
+
+            meta = _json.loads(row["metadata"])
+            assert not meta.get("surfaced_decisions"), (
+                "surfaced_decisions must remain empty after a failed metadata patch"
+            )
+            assert not meta.get("post_tool_surfaced_turns"), (
+                "post_tool_surfaced_turns must remain empty after a failed metadata patch"
+            )
+
     def test_concurrent_sessions_do_not_clobber_each_others_fallback(self, ec_repo, ec_db, monkeypatch):
         """PR #56 round 4: two sessions in the same repo each get their own
         `decisions-context-tooluse-<session>.md` file. An empty PostToolUse

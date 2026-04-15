@@ -390,10 +390,11 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
     hits) and avoids ``_find_git_root``.
 
     Primary delivery is the file fallback
-    ``.entirecontext/decisions-context-tooluse.md`` — stdout is a
-    secondary, non-guaranteed convenience channel. Note the tool-use
-    file is distinct from the SessionStart file so the two writers
-    never clobber each other.
+    ``.entirecontext/decisions-context-tooluse-<session_id>.md`` — the
+    session-qualified suffix keeps concurrent sessions in the same repo
+    from clobbering each other, and the file is also distinct from the
+    SessionStart fallback so the two writers never collide. Stdout is
+    a secondary, non-guaranteed convenience channel.
     """
     try:
         cwd = data.get("cwd") or "."
@@ -469,7 +470,7 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
 
             # fallback_root is the repo root recovered above; write the
             # rolling Markdown there so nested-cwd invocations still land at
-            # `<repo>/.entirecontext/decisions-context-tooluse.md`.
+            # `<repo>/.entirecontext/decisions-context-tooluse-<session_id>.md`.
             fallback_root = repo_path
 
             # Exact-match only (PR #56 Codex review P2): sibling/proximity
@@ -599,6 +600,23 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             try:
                 from ..core.telemetry import record_retrieval_event
 
+                # _write_session_metadata_patch MUST run before
+                # record_retrieval_event: the latter commits internally
+                # (telemetry.record_retrieval_event ends with conn.commit),
+                # so reversing this order would leave an orphaned telemetry
+                # row on disk if the metadata write then fails — the
+                # rollback in the except handler cannot undo an already-
+                # committed row. With this ordering, the metadata UPDATE
+                # is still pending when record_retrieval_event commits,
+                # so both writes flush together in one transaction.
+                _write_session_metadata_patch(
+                    conn,
+                    session_id,
+                    {
+                        "$.surfaced_decisions": new_session_wide,
+                        "$.post_tool_surfaced_turns": post_tool_turns,
+                    },
+                )
                 record_retrieval_event(
                     conn,
                     source="hook",
@@ -610,14 +628,6 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
                     session_id=session_id,
                     turn_id=turn_id,
                     file_filter=",".join(files),
-                )
-                _write_session_metadata_patch(
-                    conn,
-                    session_id,
-                    {
-                        "$.surfaced_decisions": new_session_wide,
-                        "$.post_tool_surfaced_turns": post_tool_turns,
-                    },
                 )
                 conn.commit()
             except Exception:
