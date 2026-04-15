@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import subprocess
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+
+@contextlib.contextmanager
+def transaction(conn: sqlite3.Connection) -> Iterator[None]:
+    """Own a BEGIN IMMEDIATE boundary, or defer to an outer owner if nested.
+
+    Relies on Python 3.12 ``LEGACY_TRANSACTION_CONTROL`` semantics: ``conn.in_transaction``
+    is ``True`` only after DML has started an implicit transaction. A pure ``SELECT``
+    does not flip the flag, so entering this helper from a read-only caller starts a
+    real ``BEGIN IMMEDIATE``. If the connection is migrated to ``autocommit=True`` in
+    the future, ``tests/test_transaction_helper.py`` will fail and flag the semantic
+    change before silent atomicity regressions ship.
+    """
+    if conn.in_transaction:
+        yield
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+        conn.commit()
+    except BaseException:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        raise
 
 
 def _find_git_root(path: str | Path = ".") -> str | None:
@@ -84,7 +112,9 @@ class RepoContext:
     def __exit__(self, *exc: object) -> None:
         self.close()
 
-    def as_request_context(self, *, source: str, turn_id: str | None = None, agent_type: str | None = None) -> RequestContext:
+    def as_request_context(
+        self, *, source: str, turn_id: str | None = None, agent_type: str | None = None
+    ) -> RequestContext:
         return RequestContext(
             source=source,
             session_id=self.current_session_id,

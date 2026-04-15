@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
+from .context import transaction
 from .resolve import escape_like as _escape_like
 from .resolve import resolve_assessment_id as _resolve_assessment_id
 from .resolve import resolve_checkpoint_id as _resolve_checkpoint_id
@@ -418,29 +419,9 @@ def record_decision_outcome(
     now = _now_iso()
 
     # Wrap outcome insert + updated_at bump + potential auto-promotion in a single
-    # BEGIN IMMEDIATE transaction so concurrent contradicted outcomes can't double-promote
-    # or miss the threshold. When an outer transaction already owns the connection,
-    # leave commit/rollback to the caller — committing here would flush the caller's
-    # in-flight work.
-    #
-    # Use `conn.in_transaction` to distinguish the nested case *before* attempting
-    # BEGIN IMMEDIATE. Going through `try/except sqlite3.OperationalError` would
-    # swallow unrelated lock-contention failures ("database is locked" after
-    # busy_timeout), leaving the caller to silently drop writes into an
-    # uncommitted implicit transaction.
-    if conn.in_transaction:
-        started_tx = False
-    else:
-        conn.execute("BEGIN IMMEDIATE")
-        started_tx = True
-
-    # Explicit rollback on any DML failure: Python's sqlite3 does not auto-rollback
-    # transactions started with an explicit BEGIN IMMEDIATE, so without this guard
-    # an exception in INSERT/UPDATE/auto-promote would leave the write transaction
-    # open on the connection — cascading into "cannot start a transaction within a
-    # transaction" errors on subsequent calls that would then silently drop into
-    # the nested-path branch and write into a stale uncommitted tx.
-    try:
+    # BEGIN IMMEDIATE boundary so concurrent contradicted outcomes can't double-promote
+    # or miss the threshold. `transaction()` defers commit/rollback to any outer owner.
+    with transaction(conn):
         conn.execute(
             """
             INSERT INTO decision_outcomes (
@@ -451,20 +432,8 @@ def record_decision_outcome(
         )
         conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (now, full_decision_id))
 
-        # Auto-promotion: if a contradicted outcome pushes the decision past threshold,
-        # promote its staleness_status. One-way ratchet — never reverts to fresh.
         if outcome_type == "contradicted":
             _maybe_auto_promote_contradicted(conn, full_decision_id, now)
-
-        if started_tx:
-            conn.commit()
-    except Exception:
-        if started_tx:
-            try:
-                conn.rollback()
-            except sqlite3.Error:
-                pass
-        raise
 
     row = conn.execute(
         """
@@ -757,13 +726,7 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
     if old_full == new_full:
         raise ValueError("A decision cannot supersede itself")
 
-    if conn.in_transaction:
-        started_tx = False
-    else:
-        conn.execute("BEGIN IMMEDIATE")
-        started_tx = True
-
-    try:
+    with transaction(conn):
         probe_id: str | None = new_full
         visited: set[str] = {old_full}
         while probe_id is not None:
@@ -780,15 +743,6 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
             "UPDATE decisions SET staleness_status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE id = ?",
             (new_full, now, old_full),
         )
-        if started_tx:
-            conn.commit()
-    except Exception:
-        if started_tx:
-            try:
-                conn.rollback()
-            except sqlite3.Error:
-                pass
-        raise
     return get_decision(conn, old_full) or {}
 
 
