@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import sqlite3
 
-def _create_decision_candidates_table(conn):
+
+def _create_decision_candidates_table(conn: sqlite3.Connection) -> None:
     row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='decision_candidates'").fetchone()
     if row is not None:
         return
@@ -42,7 +44,7 @@ def _create_decision_candidates_table(conn):
     )
 
 
-def _create_decision_candidates_indexes(conn):
+def _create_decision_candidates_indexes(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_decision_candidates_review ON decision_candidates(review_status)")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_decision_candidates_source ON decision_candidates(source_type, source_id)"
@@ -58,7 +60,7 @@ def _create_decision_candidates_indexes(conn):
     )
 
 
-def _create_fts_decision_candidates(conn):
+def _create_fts_decision_candidates(conn: sqlite3.Connection) -> None:
     row = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='fts_decision_candidates'"
     ).fetchone()
@@ -76,7 +78,7 @@ def _create_fts_decision_candidates(conn):
     )
 
 
-def _create_fts_decision_candidates_triggers(conn):
+def _create_fts_decision_candidates_triggers(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         CREATE TRIGGER IF NOT EXISTS fts_decision_candidates_ai
