@@ -265,10 +265,15 @@ def mark_session_extracted(conn, session_id: str) -> None:
 
 
 def _previous_checkpoint_created_at(conn, session_id: str, current_created_at: str) -> str | None:
+    # datetime() wrapping normalizes both the ISO-8601 format that Python
+    # writes via create_turn/_now_iso() and the space-separated form that
+    # sqlite emits for the checkpoints.created_at DEFAULT datetime('now').
+    # Without this, lexicographic comparison between 'T' (0x54) and ' '
+    # (0x20) makes same-second turn/checkpoint rows compare incorrectly.
     row = conn.execute(
         "SELECT created_at FROM checkpoints "
-        "WHERE session_id = ? AND created_at < ? "
-        "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+        "WHERE session_id = ? AND datetime(created_at) < datetime(?) "
+        "ORDER BY datetime(created_at) DESC, rowid DESC LIMIT 1",
         (session_id, current_created_at),
     ).fetchone()
     if row is None:
@@ -277,11 +282,15 @@ def _previous_checkpoint_created_at(conn, session_id: str, current_created_at: s
 
 
 def _turn_window_rows(conn, session_id: str, checkpoint_created_at: str, prev_created_at: str | None) -> list[Any]:
+    # Both turns.timestamp (ISO-8601 with T separator) and
+    # checkpoints.created_at (sqlite space-separated) must be canonicalized
+    # via datetime() so the range predicate works across the format
+    # boundary. See _previous_checkpoint_created_at for context.
     if prev_created_at is None:
         return list(
             conn.execute(
                 "SELECT assistant_summary, files_touched FROM turns "
-                "WHERE session_id = ? AND timestamp <= ? "
+                "WHERE session_id = ? AND datetime(timestamp) <= datetime(?) "
                 "ORDER BY turn_number ASC",
                 (session_id, checkpoint_created_at),
             ).fetchall()
@@ -289,7 +298,8 @@ def _turn_window_rows(conn, session_id: str, checkpoint_created_at: str, prev_cr
     return list(
         conn.execute(
             "SELECT assistant_summary, files_touched FROM turns "
-            "WHERE session_id = ? AND timestamp <= ? AND timestamp > ? "
+            "WHERE session_id = ? AND datetime(timestamp) <= datetime(?) "
+            "  AND datetime(timestamp) > datetime(?) "
             "ORDER BY turn_number ASC",
             (session_id, checkpoint_created_at, prev_created_at),
         ).fetchall()

@@ -313,6 +313,35 @@ class TestSignalCollection:
         assert len(cp_bundles) == 1
         assert set(cp_bundles[0].files) == {"x.py", "y.py"}
 
+    def test_checkpoint_window_bridges_timestamp_format_mismatch(self, ec_repo, ec_db):
+        """Regression: turns.timestamp uses ISO-8601 with 'T' separator, while
+        checkpoints.created_at DEFAULT datetime('now') produces space-separated
+        form. Lexicographic comparison used to silently drop the entire turn
+        window. The fix wraps both sides in sqlite's datetime() normalizer."""
+        session = _seed_session(ec_db, ec_repo, session_id="s-format-mismatch")
+        # Seed turns via create_turn — this writes the real ISO format.
+        _seed_turn(ec_db, session["id"], 1, "work on cache", files=["cache.py", "config.py"])
+        _seed_turn(ec_db, session["id"], 2, "finish work", files=["cache.py", "runner.py"])
+        # Use the real schema default for created_at (space-separated form)
+        # instead of an ISO string, reproducing the production bug path.
+        import uuid as _uuid
+
+        checkpoint_id = str(_uuid.uuid4())
+        ec_db.execute(
+            "INSERT INTO checkpoints (id, session_id, git_commit_hash, diff_summary) VALUES (?, ?, ?, ?)",
+            (checkpoint_id, session["id"], "mismatch-hash", "cache.py | 5\nconfig.py | 3\nrunner.py | 1"),
+        )
+        ec_db.commit()
+        # Confirm the created_at is indeed space-separated (production shape).
+        row = ec_db.execute("SELECT created_at FROM checkpoints WHERE id = ?", (checkpoint_id,)).fetchone()
+        assert " " in row["created_at"] and "T" not in row["created_at"]
+
+        bundles = collect_signals(ec_db, session["id"], str(ec_repo))
+        cp_bundles = [b for b in bundles if b.source_type == "checkpoint"]
+        assert len(cp_bundles) == 1
+        # Turn window must include both turns despite the format mismatch.
+        assert set(cp_bundles[0].files) == {"cache.py", "config.py", "runner.py"}
+
     def test_assessment_neutral_skipped(self, ec_repo, ec_db):
         session = _seed_session(ec_db, ec_repo, session_id="s-neutral")
         _seed_turn(ec_db, session["id"], 1, "work", files=["a.py", "b.py"])
@@ -623,6 +652,65 @@ class TestDedupAndNoise:
         count_after_second = len(list_candidates(ec_db, session_id=session["id"]))
         assert count_after_first == 1
         assert count_after_second == 1  # marker short-circuits second run
+
+    def test_shim_passes_source_type_per_bundle(self, ec_repo, ec_db, monkeypatch):
+        """Regression: the back-compat shim used to hardcode source_type='session'
+        when invoking call_extraction_llm, so checkpoint/assessment bundles were
+        sent through the wrong system prompt. The shim now dispatches through
+        _invoke_get_llm_response which passes source_type to _get_llm_response."""
+        session = _seed_session(ec_db, ec_repo, session_id="shim-source-type")
+        _seed_turn(ec_db, session["id"], 1, "We decided to extract helpers", files=["a.py", "b.py"])
+        _seed_checkpoint(
+            ec_db,
+            session["id"],
+            diff_summary="a.py | 5\nb.py | 3",
+            commit_hash="shim-cp",
+        )
+
+        captured: list[dict] = []
+
+        def fake_llm(summaries, repo_path, source_type="session"):
+            captured.append({"source_type": source_type, "text": summaries[:60]})
+            return json.dumps(
+                [
+                    {
+                        "title": f"{source_type} decision",
+                        "rationale": "a long enough rationale for the heuristic bonus",
+                        "scope": "x",
+                    }
+                ]
+            )
+
+        monkeypatch.setattr("entirecontext.cli.decisions_cmds._get_llm_response", fake_llm)
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+
+        source_types_seen = {c["source_type"] for c in captured}
+        # At minimum, both session and checkpoint source_type must reach the LLM
+        # call with their own identifier.
+        assert "session" in source_types_seen
+        assert "checkpoint" in source_types_seen
+
+    def test_shim_legacy_two_arg_monkeypatch_still_works(self, ec_repo, ec_db, monkeypatch):
+        """Regression: pre-existing tests monkeypatch _get_llm_response with a
+        2-arg lambda (no source_type). The shim's inspect-based dispatch must
+        detect this and call the 2-arg version so those tests keep passing."""
+        session = _seed_session(ec_db, ec_repo, session_id="shim-legacy")
+        _seed_turn(ec_db, session["id"], 1, "We decided X", files=["a.py"])
+
+        calls: list[int] = []
+
+        def legacy_llm(summaries, repo_path):
+            calls.append(1)
+            return json.dumps([{"title": "Choose X", "rationale": "a reason long enough for heuristic", "scope": "x"}])
+
+        monkeypatch.setattr("entirecontext.cli.decisions_cmds._get_llm_response", legacy_llm)
+        from entirecontext.cli.decisions_cmds import _extract_from_session_impl
+
+        _extract_from_session_impl(ec_db, session["id"], str(ec_repo))
+        assert len(calls) == 1
+        assert len(list_candidates(ec_db, session_id=session["id"])) == 1
 
     def test_low_signal_candidate_below_threshold(self, ec_repo, ec_db, monkeypatch):
         """Candidates with no rationale / alts / files sit below default filter."""

@@ -457,7 +457,7 @@ def decision_stale_all():
         console.print(f"\n[yellow]{stale_count}/{len(decisions)} decisions marked as stale.[/yellow]")
 
 
-def _get_llm_response(summaries: str, repo_path: str) -> str:
+def _get_llm_response(summaries: str, repo_path: str, source_type: str = "session") -> str:
     """LLM call shim preserved at current module path for monkeypatch-based tests.
 
     The shim body below (_extract_from_session_impl) must always call this
@@ -465,10 +465,37 @@ def _get_llm_response(summaries: str, repo_path: str) -> str:
     `entirecontext.cli.decisions_cmds._get_llm_response` remain effective.
     The production hook/worker path invokes
     `core.decision_extraction.call_extraction_llm` directly instead.
+
+    `source_type` is a keyword with default so that legacy tests that
+    monkeypatch this function with a 2-arg lambda (no source_type) still
+    work — the shim calls through `_invoke_get_llm_response` which falls
+    back to the 2-arg signature when the bound symbol does not accept
+    `source_type`.
     """
     from ..core.decision_extraction import call_extraction_llm
 
-    return call_extraction_llm(summaries, repo_path, source_type="session")
+    return call_extraction_llm(summaries, repo_path, source_type=source_type)
+
+
+def _invoke_get_llm_response(summaries: str, repo_path: str, source_type: str) -> str:
+    """Dispatch through the module-level _get_llm_response symbol while
+    staying compatible with pre-existing 2-arg monkeypatches.
+
+    Production callers (and tests that use `lambda *a, **kw: ...`) get
+    the correct per-source system prompt via the `source_type` kwarg.
+    Legacy tests that monkeypatch with `lambda summaries, repo_path: ...`
+    are detected via inspect.signature and called without the kwarg.
+    """
+    import inspect
+
+    try:
+        params = inspect.signature(_get_llm_response).parameters
+    except (TypeError, ValueError):
+        return _get_llm_response(summaries, repo_path)
+    accepts_source = "source_type" in params or any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    if accepts_source:
+        return _get_llm_response(summaries, repo_path, source_type=source_type)
+    return _get_llm_response(summaries, repo_path)
 
 
 def _extract_from_session_impl(conn, session_id: str, repo_path: str) -> None:
@@ -493,7 +520,7 @@ def _extract_from_session_impl(conn, session_id: str, repo_path: str) -> None:
             continue
         redacted = ex.apply_redaction(prompt_text, repo_path)
         try:
-            raw = _get_llm_response(redacted, repo_path)
+            raw = _invoke_get_llm_response(redacted, repo_path, bundle.source_type)
         except ex.DecisionExtractionError:
             continue
         except Exception as exc:
