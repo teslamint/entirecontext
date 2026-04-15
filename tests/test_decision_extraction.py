@@ -591,6 +591,68 @@ class TestConfirmRejectFlow:
         with pytest.raises(ValueError):
             confirm_candidate(ec_db, cid)
 
+    def test_confirm_claim_is_conditional_on_pending_status(self, ec_repo, ec_db):
+        """Regression: the confirm path must gate on review_status='pending'
+        via a conditional UPDATE, not via a separate pre-check. Manually
+        flipping the row to 'rejected' between reads must cause the
+        conditional UPDATE to miss and the call to raise ValueError without
+        creating any decision row."""
+        cid = self._seed_candidate(ec_db, ec_repo, session_id="conditional-claim")
+        # Simulate a concurrent reject landing between the initial read and
+        # the UPDATE. We do this by manually flipping review_status.
+        ec_db.execute(
+            "UPDATE decision_candidates SET review_status='rejected' WHERE id=?",
+            (cid,),
+        )
+        ec_db.commit()
+        with pytest.raises(ValueError):
+            confirm_candidate(ec_db, cid)
+        # Decisions table must remain untouched.
+        decision_count = ec_db.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()["c"]
+        assert decision_count == 0
+
+    def test_confirm_second_call_produces_exactly_one_decision(self, ec_repo, ec_db):
+        """Regression: the earlier non-atomic flow could create duplicate
+        decisions if confirm_candidate was invoked twice. The conditional
+        UPDATE must ensure the second call raises immediately and the
+        decisions table still holds exactly one row per confirmed candidate."""
+        cid = self._seed_candidate(ec_db, ec_repo, session_id="exactly-one")
+        confirm_candidate(ec_db, cid)
+        with pytest.raises(ValueError):
+            confirm_candidate(ec_db, cid)
+        decision_rows = ec_db.execute(
+            "SELECT COUNT(*) AS c FROM decisions WHERE title = ?",
+            ("Confirm test decision",),
+        ).fetchone()
+        assert decision_rows["c"] == 1
+
+    def test_confirm_rolls_back_claim_on_post_claim_failure(self, ec_repo, ec_db, monkeypatch):
+        """Regression: if create_decision (or any auto-committing step after
+        the claim) raises, confirm_candidate must roll the claim back to
+        'pending' so the candidate can be retried later. Without the
+        rollback, the candidate would stay stuck in 'confirmed' with
+        promoted_decision_id=NULL and no real decision to back it."""
+        cid = self._seed_candidate(ec_db, ec_repo, session_id="claim-rollback")
+
+        def failing_create_decision(*args, **kwargs):
+            raise RuntimeError("simulated post-claim failure")
+
+        monkeypatch.setattr(
+            "entirecontext.core.decisions.create_decision",
+            failing_create_decision,
+        )
+        with pytest.raises(RuntimeError, match="simulated post-claim failure"):
+            confirm_candidate(ec_db, cid)
+
+        # After the failure, the candidate must be back to pending so that
+        # a later retry (with a working create_decision) can succeed.
+        after = get_candidate(ec_db, cid)
+        assert after["review_status"] == "pending"
+        assert after["promoted_decision_id"] is None
+        # And of course, no decision row was created.
+        decision_count = ec_db.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()["c"]
+        assert decision_count == 0
+
 
 # ---------------------------------------------------------------------------
 # Integration tests — dedup and noisy-input harness (Tier 1)
