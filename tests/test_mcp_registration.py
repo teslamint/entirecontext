@@ -33,6 +33,7 @@ def test_register_tools_exports_expected_public_tool_names():
         "ec_checkpoint_list",
         "ec_context_apply",
         "ec_dashboard",
+        "ec_decision_context",
         "ec_decision_create",
         "ec_decision_get",
         "ec_decision_list",
