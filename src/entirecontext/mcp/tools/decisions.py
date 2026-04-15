@@ -104,6 +104,247 @@ async def ec_decision_related(
         conn.close()
 
 
+async def ec_decision_context(
+    limit: int = 5,
+    recent_turns: int = 5,
+    include_stale: bool = True,
+    include_filter_stats: bool = False,
+    session_id: str | None = None,
+) -> str:
+    """Proactive one-call decision retrieval from the current session context.
+
+    Auto-assembles signals from the active session (files_touched from recent
+    turns + files changed in the uncommitted git diff + the most recent
+    checkpoint SHA) and ranks decisions via the full scorer. Agents should
+    prefer this over ec_decision_related for generic "what's relevant to my
+    current work" queries — it's the closest to a zero-argument proactive
+    retrieval path.
+
+    Degrades gracefully when there's no active session: falls back to
+    git-diff-only signals and returns ``signal_summary.active_session=false``
+    with a warning. A warning is also added when ``git diff HEAD`` is
+    unavailable (bare repo, pre-first-commit, subprocess failure).
+
+    Each returned decision carries a ``selection_id`` that can be passed
+    directly to ``ec_decision_outcome`` or ``ec_context_apply`` without a
+    follow-up lookup.
+
+    Args:
+        limit: Maximum number of decisions to return.
+        recent_turns: How many recent turns to union files_touched from.
+        include_stale: Include stale-marked decisions (demoted but visible).
+        include_filter_stats: Include filter breakdown in the response.
+        session_id: Optional explicit session to pull turn/checkpoint signals
+            from. When omitted, the tool falls back to
+            ``detect_current_context(conn)``. Pass this whenever two agent
+            sessions are open in the same repo so the caller can be sure
+            signals come from the right workflow (PR #56 review).
+    """
+    import subprocess
+
+    (conn, repo_path), error = runtime.resolve_repo()
+    if error:
+        return error
+    try:
+        from ...core.decisions import _normalize_path, rank_related_decisions
+        from ...core.telemetry import detect_current_context
+
+        # Track whether the caller explicitly pinned a session. When they
+        # did, we must NOT fold repo-wide signals (like `git diff HEAD`)
+        # into the ranking — those reflect the working tree state across
+        # all concurrent sessions and would leak files from other sessions
+        # into this query. Multi-session correctness beats coverage here.
+        is_session_overridden = session_id is not None
+        turn_id: str | None = None
+
+        if session_id:
+            # Explicit override: verify the session exists before trusting it.
+            row = conn.execute("SELECT 1 FROM sessions WHERE id = ?", (session_id,)).fetchone()
+            if not row:
+                return runtime.error_payload(f"Session not found: {session_id}")
+            # Anchor telemetry to the latest turn of the overridden session
+            # so retrieval_events / retrieval_selections are attributed
+            # correctly regardless of what `detect_current_context` would
+            # return for the connection's own active session.
+            turn_row = conn.execute(
+                "SELECT id FROM turns WHERE session_id = ? ORDER BY turn_number DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if turn_row:
+                turn_id = turn_row["id"]
+        else:
+            session_id, turn_id = detect_current_context(conn)
+        warnings: list[str] = []
+        if is_session_overridden:
+            warnings.append("session_id override: repo-wide git diff signal skipped to avoid cross-session pollution.")
+
+        # --- 1. files_touched from recent turns (session-scoped) ---
+        file_paths: list[str] = []
+        seen_files: set[str] = set()
+        if session_id:
+            rows = conn.execute(
+                "SELECT files_touched FROM turns "
+                "WHERE session_id = ? AND files_touched IS NOT NULL "
+                "ORDER BY turn_number DESC LIMIT ?",
+                (session_id, recent_turns),
+            ).fetchall()
+            for row in rows:
+                raw = row["files_touched"]
+                if not raw:
+                    continue
+                try:
+                    parsed = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if not isinstance(parsed, list):
+                    continue
+                for f in parsed:
+                    if not isinstance(f, str):
+                        continue
+                    normalized = _normalize_path(f)
+                    if normalized and normalized not in seen_files:
+                        seen_files.add(normalized)
+                        file_paths.append(normalized)
+        else:
+            warnings.append("No active session; falling back to repo-state signals only.")
+
+        # --- 2. Git diff (diff_text + file union) ---
+        # Both git calls use `check=False`, so non-zero exits (e.g. a
+        # pre-first-commit repo where `HEAD` doesn't exist, a broken
+        # worktree, or a missing `.git` directory) surface here as
+        # `returncode != 0` rather than as exceptions. Detect that case
+        # explicitly and attach a warning — otherwise callers see
+        # `signal_summary.has_diff=False` with no indication of *why*
+        # the diff path was skipped, which can produce unexpectedly
+        # empty rankings that look like a bug in the ranker.
+        diff_text: str | None = None
+        has_diff = False
+        git_diff_available = False
+        # ``is_session_overridden`` suppresses the repo-wide git diff path
+        # entirely: the diff reflects the working tree for ALL concurrent
+        # sessions in this repo and would pollute a session-pinned query
+        # with files touched by unrelated sessions. Override callers rely
+        # on exact session isolation, so we accept the loss of diff-based
+        # coverage (already surfaced as a warning above) in exchange.
+        if repo_path and not is_session_overridden:
+            try:
+                diff_result = subprocess.run(
+                    ["git", "diff", "HEAD"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    check=False,
+                )
+                if diff_result.returncode != 0:
+                    warnings.append(
+                        "git diff HEAD returned non-zero; commit/diff signal skipped "
+                        "(typical in a pre-first-commit repo or broken worktree)."
+                    )
+                else:
+                    git_diff_available = True
+                    if diff_result.stdout:
+                        diff_text = diff_result.stdout[:8192]
+                        has_diff = True
+
+                # Only run the --name-only pass when the first call was
+                # healthy; otherwise we already recorded a warning and
+                # there's nothing new to learn.
+                if git_diff_available:
+                    name_result = subprocess.run(
+                        ["git", "diff", "--name-only", "HEAD"],
+                        cwd=repo_path,
+                        capture_output=True,
+                        text=True,
+                        timeout=3,
+                        check=False,
+                    )
+                    if name_result.returncode != 0:
+                        warnings.append(
+                            "git diff --name-only HEAD returned non-zero; diff-derived file signals skipped."
+                        )
+                    elif name_result.stdout:
+                        for line in name_result.stdout.strip().splitlines():
+                            normalized = _normalize_path(line.strip())
+                            if normalized and normalized not in seen_files:
+                                seen_files.add(normalized)
+                                file_paths.append(normalized)
+            except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                warnings.append("git diff HEAD unavailable; commit/diff signal skipped.")
+
+        # --- 3. Latest single checkpoint SHA (bounded commit signal) ---
+        # `checkpoints.git_commit_hash` is schema-level NOT NULL (see
+        # db/schema.py:102), so no nullness filter is needed here.
+        commit_shas: list[str] = []
+        if session_id:
+            row = conn.execute(
+                "SELECT git_commit_hash FROM checkpoints WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if row:
+                commit_shas.append(row["git_commit_hash"])
+
+        # --- 4. Rank via full scorer ---
+        started_at = time.perf_counter()
+        decisions, filter_stats = rank_related_decisions(
+            conn,
+            file_paths=file_paths,
+            diff_text=diff_text,
+            commit_shas=commit_shas,
+            limit=limit,
+            include_stale=include_stale,
+            _return_stats=True,
+        )
+
+        # --- 5. Telemetry: event + per-decision selection ---
+        # Pass the resolved session_id/turn_id explicitly so the event
+        # is attributed to the caller-pinned session, not re-detected
+        # via `detect_current_context` inside the wrapper. Per-selection
+        # rows inherit from the event row by default, so no selection-
+        # level override is needed here.
+        tracked_event_id = runtime.record_search_event(
+            conn,
+            query="decision-context",
+            search_type="decision_context",
+            target="decision",
+            result_count=len(decisions),
+            latency_ms=int((time.perf_counter() - started_at) * 1000),
+            file_filter=",".join(file_paths) or None,
+            since=None,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+        for idx, item in enumerate(decisions, start=1):
+            selection_id = runtime.record_selection(
+                conn,
+                retrieval_event_id=tracked_event_id,
+                result_type="decision",
+                result_id=item["id"],
+                rank=idx,
+            )
+            item["selection_id"] = selection_id
+
+        payload = {
+            "decisions": decisions,
+            "count": len(decisions),
+            "retrieval_event_id": tracked_event_id,
+            "signal_summary": {
+                "file_count": len(file_paths),
+                "has_diff": has_diff,
+                "commit_count": len(commit_shas),
+                "turn_window": recent_turns,
+                "active_session": session_id is not None,
+            },
+        }
+        if warnings:
+            payload["warnings"] = warnings
+        if include_filter_stats:
+            payload["filter_stats"] = filter_stats
+        return json.dumps(payload)
+    finally:
+        conn.close()
+
+
 async def ec_decision_outcome(
     decision_id: str,
     outcome_type: str,
@@ -391,6 +632,7 @@ def register_tools(mcp, services=None) -> None:
     for tool in (
         ec_decision_get,
         ec_decision_related,
+        ec_decision_context,
         ec_decision_outcome,
         ec_decision_create,
         ec_decision_list,

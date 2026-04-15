@@ -32,10 +32,13 @@ Scenarios to proactively use EntireContext:
 - You need prior assessments, lessons, attribution, or related turns before proposing non-trivial changes
 
 Preferred retrieval order:
-1. Decision-specific lookup (`ec_decision_related`, `ec_decision_list`, `ec_decision_get`)
-2. Broader repo memory lookup (`ec_related`, `ec_search`, `ec_session_context`)
-3. Lesson retrieval (`ec_lessons`) — especially when debugging regressions, working in areas with prior narrow verdicts, or making structurally similar changes to previously assessed work
-4. Deep inspection (`ec_turn_content`, `ec_checkpoint_list`, `ec_attribution`, `ec_assess_trends`)
+1. **One-call proactive retrieval** — `ec_decision_context()` is the preferred starting point when you begin a task or shift to a new area of the code. It auto-assembles signals from the current session (files from recent turns, uncommitted diff, latest checkpoint) and returns ranked decisions with per-result `selection_id`. If `signal_summary.active_session` is `false`, the tool fell back to git-diff-only signals and you should treat the results as best-effort.
+2. Explicit decision queries (`ec_decision_related` with explicit files/diff/assessments, `ec_decision_list`, `ec_decision_get`) when you need to target a specific context that `ec_decision_context` can't infer.
+3. Broader repo memory lookup (`ec_related`, `ec_search`, `ec_session_context`)
+4. Lesson retrieval (`ec_lessons`) — especially when debugging regressions, working in areas with prior narrow verdicts, or making structurally similar changes to previously assessed work
+5. Deep inspection (`ec_turn_content`, `ec_checkpoint_list`, `ec_attribution`, `ec_assess_trends`)
+
+**Mid-session decision surfacing** — when `decisions.surface_on_tool_use` is enabled (see README § Proactive Retrieval), decisions linked to files you just edited appear as a `## Related Decisions (current edit)` block after tool results, and are also written to `.entirecontext/decisions-context-tooluse-<session>.md` (the filename is session-scoped so concurrent sessions can't clobber each other). Read that file whenever you edit decision-linked code. SessionStart keeps writing to `.entirecontext/decisions-context.md` (a separate file), so read both when you want full context. The hook deduplicates per-turn and session-wide, so the same decision will not be re-surfaced during a single session — if you need to re-check it, call `ec_decision_get` explicitly.
 
 If no relevant EntireContext records exist, state that explicitly before proceeding
 with new reasoning.

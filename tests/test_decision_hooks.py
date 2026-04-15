@@ -401,6 +401,803 @@ class TestOnSessionStartDecisions:
         assert "Original payments decision" not in result
 
 
+class TestOnPostToolUseDecisions:
+    """Issue #42 regression: mid-session decision surfacing on PostToolUse."""
+
+    def _setup_session_and_turn(self, ec_db, session_id="s-post", turn_number=2):
+        """Create a session + in-progress turn with the given turn_number."""
+        import json as _json
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        ec_db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at, "
+            "session_title, session_summary, total_turns) "
+            "VALUES (?, ?, 'claude', '2025-01-01', '2025-01-01', 't', 't', 0)",
+            (session_id, project_id),
+        )
+        turn_id = f"{session_id}-turn-{turn_number}"
+        ec_db.execute(
+            "INSERT INTO turns (id, session_id, turn_number, user_message, assistant_summary, "
+            "content_hash, timestamp, tools_used, files_touched, turn_status) "
+            "VALUES (?, ?, ?, 'u', NULL, 'h', '2025-01-01', ?, '[]', 'in_progress')",
+            (turn_id, session_id, turn_number, _json.dumps([])),
+        )
+        ec_db.commit()
+        return session_id, turn_id
+
+    def _enable_surface_on_tool_use(self, monkeypatch, interval=1, limit=3):
+        from entirecontext.core.config import load_config as real_load_config
+
+        def patched_load(repo_path=None):
+            cfg = real_load_config(repo_path)
+            cfg.setdefault("decisions", {})
+            cfg["decisions"]["surface_on_tool_use"] = True
+            cfg["decisions"]["surface_on_tool_use_turn_interval"] = interval
+            cfg["decisions"]["surface_on_tool_use_limit"] = limit
+            return cfg
+
+        monkeypatch.setattr("entirecontext.core.config.load_config", patched_load)
+
+    def test_disabled_by_default(self, ec_repo, ec_db):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Never surfaces")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert result is None
+
+    def test_surfaces_decision_when_file_edited(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Routing strategy")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert result is not None
+        assert "Routing strategy" in result
+
+        # Fallback file written (PostToolUse-specific, session-scoped —
+        # distinct from SessionStart's `decisions-context.md`).
+        fallback = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
+        assert fallback.exists()
+        assert "Routing strategy" in fallback.read_text(encoding="utf-8")
+
+        # Single compact retrieval_event row (no per-selection rows in hook path)
+        events = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM retrieval_events WHERE search_type = 'post_tool_use'"
+        ).fetchone()["n"]
+        assert events == 1
+
+    def test_respects_turn_interval_gate(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        # Interval=2, turn_number=1 → gate fails
+        self._enable_surface_on_tool_use(monkeypatch, interval=2)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db, turn_number=1)
+        d = create_decision(ec_db, title="Gated")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert result is None
+
+    def test_per_turn_dedup_single_event_per_turn(self, ec_repo, ec_db, monkeypatch):
+        """P1-2 regression: two tool calls in the same user turn → second returns None."""
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Per turn")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        payload = {
+            "cwd": str(ec_repo),
+            "session_id": session_id,
+            "tool_name": "Edit",
+            "tool_input": {"file_path": "src/app.py"},
+        }
+
+        first = on_post_tool_use_decisions(payload)
+        assert first is not None
+
+        second = on_post_tool_use_decisions(payload)
+        assert second is None  # same turn → no re-surface
+
+    def test_dedup_within_session_across_turns(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, first_turn_id = self._setup_session_and_turn(ec_db, turn_number=2)
+        d = create_decision(ec_db, title="Cross turn dedup")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        payload = {
+            "cwd": str(ec_repo),
+            "session_id": session_id,
+            "tool_name": "Edit",
+            "tool_input": {"file_path": "src/app.py"},
+        }
+
+        first = on_post_tool_use_decisions(payload)
+        assert first is not None
+
+        # Mark first turn as completed and create a new in-progress turn
+        ec_db.execute("UPDATE turns SET turn_status = 'completed' WHERE id = ?", (first_turn_id,))
+        ec_db.execute(
+            "INSERT INTO turns (id, session_id, turn_number, user_message, assistant_summary, "
+            "content_hash, timestamp, tools_used, files_touched, turn_status) "
+            "VALUES (?, ?, ?, 'u', NULL, 'h2', '2025-01-02', '[]', '[]', 'in_progress')",
+            (
+                "turn-2",
+                session_id,
+                4,
+            ),
+        )
+        ec_db.commit()
+
+        second = on_post_tool_use_decisions(payload)
+        # Decision already in session-wide surfaced_decisions → None (empty candidates cleans up file)
+        assert second is None
+
+    def test_cross_channel_dedup_with_session_start(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions, on_session_start_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {
+                "show_related_on_start": True,
+                "surface_on_tool_use": True,
+                "surface_on_tool_use_turn_interval": 1,
+                "surface_on_tool_use_limit": 3,
+            },
+        )
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Shared between channels")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        test_file = ec_repo / "src" / "app.py"
+        test_file.parent.mkdir(parents=True, exist_ok=True)
+        test_file.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+        _subprocess.run(["git", "-C", str(ec_repo), "commit", "-m", "add"], check=True, capture_output=True)
+
+        session_start_result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": session_id})
+        assert session_start_result is not None
+        assert "Shared between channels" in session_start_result
+
+        # PostToolUse must not re-surface it
+        post_tool_result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert post_tool_result is None
+
+    def test_filters_contradicted_and_superseded(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.decisions import update_decision_staleness
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        bad = create_decision(ec_db, title="Contradicted one")
+        link_decision_to_file(ec_db, bad["id"], "src/app.py")
+        update_decision_staleness(ec_db, bad["id"], "contradicted")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        # Only contradicted decision → candidates empty → None + fallback cleanup
+        assert result is None
+
+    def test_no_in_progress_turn_early_returns(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        # Create session but no in-progress turn
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        ec_db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at, "
+            "session_title, session_summary, total_turns) "
+            "VALUES ('s-no-turn', ?, 'claude', '2025-01-01', '2025-01-01', 't', 't', 0)",
+            (project_id,),
+        )
+        ec_db.commit()
+        d = create_decision(ec_db, title="Has no turn")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": "s-no-turn",
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert result is None
+
+    def test_exception_swallowed(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        # Force get_db to raise
+        monkeypatch.setattr("entirecontext.db.get_db", lambda _: (_ for _ in ()).throw(RuntimeError("boom")))
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": "s1",
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert result is None
+
+    def test_honors_should_skip_file(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.config import load_config as real_load_config
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        def patched_load(repo_path=None):
+            cfg = real_load_config(repo_path)
+            cfg.setdefault("decisions", {})["surface_on_tool_use"] = True
+            cfg["decisions"]["surface_on_tool_use_turn_interval"] = 1
+            cfg["decisions"]["surface_on_tool_use_limit"] = 3
+            cfg.setdefault("capture", {}).setdefault("exclusions", {})["enabled"] = True
+            cfg["capture"]["exclusions"]["file_patterns"] = [".env"]
+            return cfg
+
+        monkeypatch.setattr("entirecontext.core.config.load_config", patched_load)
+
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Skipped env")
+        link_decision_to_file(ec_db, d["id"], ".env")
+
+        # Must use an edit-capable tool here: read-only tools (``Read``,
+        # ``NotebookRead``) short-circuit on the ``_READ_ONLY_TOOLS`` guard
+        # added for Codex P2, which would bypass ``should_skip_file`` entirely
+        # and give a false-positive pass on this test.
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": ".env"},
+            }
+        )
+        assert result is None
+
+    def test_read_only_tool_does_not_consume_dedup(self, ec_repo, ec_db, monkeypatch):
+        """[Codex P2] Read / NotebookRead must NOT fire mid-session surfacing.
+
+        Typical agent flow is Read-then-Edit within one turn: letting the
+        Read consume the per-turn dedup marker would suppress the Edit's
+        Markdown block, destroying the core timing of the feature. The
+        subsequent Edit in the same turn must still surface normally.
+        """
+        import json as _json
+
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Survives Read-then-Edit")
+        link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        read_result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Read",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert read_result is None
+
+        notebook_read_result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "NotebookRead",
+                "tool_input": {"notebook_path": "nb.ipynb"},
+            }
+        )
+        assert notebook_read_result is None
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row["metadata"]:
+            meta = _json.loads(row["metadata"])
+            assert not meta.get("surfaced_decisions"), "read-only tools must not populate surfaced_decisions"
+            assert not meta.get("post_tool_surfaced_turns"), "read-only tools must not consume per-turn dedup"
+
+        edit_result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+        assert edit_result is not None, (
+            "Edit after Read in same turn must still surface — Read must not have consumed the per-turn dedup marker"
+        )
+        assert "Survives Read-then-Edit" in edit_result
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        meta = _json.loads(row["metadata"])
+        assert d["id"] in meta.get("surfaced_decisions", [])
+
+    def test_write_tool_captures_file_path(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Written file rule")
+        link_decision_to_file(ec_db, d["id"], "src/new.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Write",
+                "tool_input": {"file_path": "src/new.py", "content": "x = 1"},
+            }
+        )
+        assert result is not None
+        assert "Written file rule" in result
+
+    def test_notebook_edit_captures_notebook_path(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Notebook convention")
+        link_decision_to_file(ec_db, d["id"], "notebooks/explore.ipynb")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "NotebookEdit",
+                "tool_input": {"notebook_path": "notebooks/explore.ipynb"},
+            }
+        )
+        assert result is not None
+        assert "Notebook convention" in result
+
+    def test_multiedit_captures_all_edits(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Second file rule")
+        link_decision_to_file(ec_db, d["id"], "src/second.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "MultiEdit",
+                "tool_input": {
+                    "edits": [
+                        {"file_path": "src/first.py"},
+                        {"file_path": "src/second.py"},
+                    ],
+                },
+            }
+        )
+        assert result is not None
+        assert "Second file rule" in result
+
+    def test_handles_legacy_relative_path(self, ec_repo, ec_db, monkeypatch):
+        """P0-2 regression: decision linked with `./src/app.py`, tool payload
+        sends `src/app.py` — must surface via _gather_exact_file_matches
+        normalization (inline SQL `SUBSTR` strips `./` prefixes and normalizes
+        backslashes before the IN check).
+        """
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Legacy path linkage")
+        link_decision_to_file(ec_db, d["id"], "./src/legacy.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/legacy.py"},
+            }
+        )
+        assert result is not None
+        assert "Legacy path linkage" in result
+
+    def test_null_session_metadata_write_safe(self, ec_repo, ec_db, monkeypatch):
+        """P1-4 regression: session.metadata NULL → json_set uses COALESCE."""
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        # Explicitly ensure NULL metadata
+        ec_db.execute("UPDATE sessions SET metadata = NULL WHERE id = ?", (session_id,))
+        ec_db.commit()
+
+        d = create_decision(ec_db, title="Null metadata test")
+        link_decision_to_file(ec_db, d["id"], "src/null.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/null.py"},
+            }
+        )
+        assert result is not None
+
+        # Metadata should now contain the dedup keys
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        import json as _json
+
+        meta = _json.loads(row["metadata"])
+        assert d["id"] in meta.get("surfaced_decisions", [])
+        assert "post_tool_surfaced_turns" in meta
+
+    def test_metadata_failure_leaves_no_orphan_telemetry(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 round 7 (#discussion_r3080485995) regression:
+        ``record_retrieval_event`` commits internally (telemetry.py:75),
+        so if it runs before ``_write_session_metadata_patch`` and the
+        metadata write subsequently fails, the rollback in the except
+        handler cannot undo the already-committed telemetry row.
+
+        The fix reorders the writes so the metadata patch runs first.
+        This test asserts that when the metadata patch raises, ZERO
+        rows end up in ``retrieval_events`` — proving telemetry was
+        never called (let alone committed) before the metadata failure.
+        A regression that re-orders the calls would leave one orphan row.
+        """
+        import sqlite3
+
+        from entirecontext.hooks import decision_hooks
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Atomic ordering test")
+        link_decision_to_file(ec_db, d["id"], "src/atomic.py")
+
+        def failing_patch(conn, sid, patch):
+            raise sqlite3.OperationalError("simulated SQLITE_BUSY")
+
+        monkeypatch.setattr(decision_hooks, "_write_session_metadata_patch", failing_patch)
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/atomic.py"},
+            }
+        )
+        assert result is None
+
+        events = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM retrieval_events WHERE search_type = 'post_tool_use'"
+        ).fetchone()["n"]
+        assert events == 0, (
+            "orphan retrieval_events row detected — record_retrieval_event "
+            "must not run before _write_session_metadata_patch"
+        )
+
+        fallback = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
+        assert not fallback.exists()
+
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row["metadata"]:
+            import json as _json
+
+            meta = _json.loads(row["metadata"])
+            assert not meta.get("surfaced_decisions"), (
+                "surfaced_decisions must remain empty after a failed metadata patch"
+            )
+            assert not meta.get("post_tool_surfaced_turns"), (
+                "post_tool_surfaced_turns must remain empty after a failed metadata patch"
+            )
+
+    def test_concurrent_sessions_do_not_clobber_each_others_fallback(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 round 4: two sessions in the same repo each get their own
+        `decisions-context-tooluse-<session>.md` file. An empty PostToolUse
+        event in session B must not delete the file session A has just
+        written — the filename is session-qualified.
+        """
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+
+        session_a, _ = self._setup_session_and_turn(ec_db, session_id="s-alpha", turn_number=2)
+        session_b, _ = self._setup_session_and_turn(ec_db, session_id="s-beta", turn_number=2)
+
+        d = create_decision(ec_db, title="Alpha linked decision")
+        link_decision_to_file(ec_db, d["id"], "src/alpha.py")
+
+        # Session A surfaces and writes its fallback.
+        result_a = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_a,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/alpha.py"},
+            }
+        )
+        assert result_a is not None
+        file_a = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_a}.md"
+        file_b = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_b}.md"
+        assert file_a.exists()
+        assert not file_b.exists()
+
+        # Session B edits an unlinked file → empty result → its own cleanup
+        # fires but must not touch session A's fallback.
+        result_b = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_b,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/beta.py"},
+            }
+        )
+        assert result_b is None
+        assert file_a.exists()  # still there
+        assert "Alpha linked decision" in file_a.read_text(encoding="utf-8")
+
+    def test_chain_collapse_reachable_when_ancestor_already_surfaced(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 review round 3 — Bug 1: the session-wide dedup set may
+        contain a superseded ancestor (because SessionStart surfaced it).
+        The hook must still walk the chain and surface the fresh terminal
+        successor; subtracting the ancestor from ``candidate_ids`` before
+        chain resolution would hide the new decision entirely.
+        """
+        import json as _json
+
+        from entirecontext.core.decisions import supersede_decision
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+
+        old = create_decision(ec_db, title="Ancestor D1")
+        new = create_decision(ec_db, title="Fresh successor D2")
+        link_decision_to_file(ec_db, old["id"], "src/migration.py")
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        # Pretend SessionStart already surfaced the ancestor; the hook
+        # must not short-circuit before chain resolution.
+        ec_db.execute(
+            "UPDATE sessions SET metadata = ? WHERE id = ?",
+            (_json.dumps({"surfaced_decisions": [old["id"]]}), session_id),
+        )
+        ec_db.commit()
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/migration.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Fresh successor D2" in result
+        assert "Ancestor D1" not in result
+
+    def test_post_tool_cleanup_does_not_touch_session_start_file(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 review round 3 — Bug 2: when PostToolUse returns None on
+        an empty/deduped result, it must only clean its own fallback file
+        (``decisions-context-tooluse.md``) and leave the SessionStart file
+        (``decisions-context.md``) alone.
+        """
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+
+        # SessionStart has written its file; PostToolUse must not touch it.
+        session_start_file = ec_repo / ".entirecontext" / "decisions-context.md"
+        session_start_file.parent.mkdir(parents=True, exist_ok=True)
+        session_start_file.write_text("important session-start context", encoding="utf-8")
+
+        # Edit a file with no linked decisions → empty result → cleanup fires
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/unlinked.py"},
+            }
+        )
+        assert result is None
+        # SessionStart file untouched
+        assert session_start_file.exists()
+        assert session_start_file.read_text(encoding="utf-8") == "important session-start context"
+
+    def test_chain_collapse_substitutes_terminal_successor(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 Codex review P1: when the file link is on the superseded
+        ancestor (common migration state — old linked, new not yet linked),
+        the hook must walk the chain and surface the terminal successor."""
+        from entirecontext.core.decisions import supersede_decision
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+
+        old = create_decision(ec_db, title="Retired routing")
+        new = create_decision(ec_db, title="Current routing")
+        # File link stays on `old`; `new` has no file link yet.
+        link_decision_to_file(ec_db, old["id"], "src/router.py")
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/router.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Current routing" in result  # terminal successor surfaces
+        assert "Retired routing" not in result  # ancestor is hidden
+
+    def test_exact_match_beats_sibling_directory_candidate(self, ec_repo, ec_db, monkeypatch):
+        """PR #56 Codex review P2: a decision with an exact file link must
+        outrank a more-recent sibling decision in the same directory when
+        the limit is small.
+        """
+        import time as _time
+
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch, limit=1)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+
+        exact = create_decision(ec_db, title="Exact hit")
+        link_decision_to_file(ec_db, exact["id"], "src/app.py")
+
+        # Create a newer sibling decision in the same directory
+        _time.sleep(0.01)  # ensure updated_at differs
+        sibling = create_decision(ec_db, title="Recent sibling")
+        link_decision_to_file(ec_db, sibling["id"], "src/other.py")
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Exact hit" in result
+        assert "Recent sibling" not in result  # sibling must not crowd out the exact match
+
+    def test_nested_cwd_resolves_repo_scoped_config(self, ec_repo, ec_db):
+        """PR #56 Codex review P1: PostToolUse hook invoked from a nested
+        subdirectory must still honor `<repo>/.entirecontext/config.toml`
+        and write the fallback file at the repo root, not the subdirectory.
+        """
+        import json as _json
+
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        # Write a repo-scoped .entirecontext/config.toml that enables the flag.
+        ec_config_dir = ec_repo / ".entirecontext"
+        ec_config_dir.mkdir(parents=True, exist_ok=True)
+        (ec_config_dir / "config.toml").write_text(
+            "[decisions]\nsurface_on_tool_use = true\nsurface_on_tool_use_turn_interval = 1\nsurface_on_tool_use_limit = 3\n",
+            encoding="utf-8",
+        )
+
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        d = create_decision(ec_db, title="Nested cwd rule")
+        link_decision_to_file(ec_db, d["id"], "src/nested.py")
+
+        nested_dir = ec_repo / "src" / "features"
+        nested_dir.mkdir(parents=True, exist_ok=True)
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(nested_dir),  # <-- nested, not repo root
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/nested.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Nested cwd rule" in result
+
+        # PostToolUse fallback file lives at the REPO root, not in the
+        # nested subdirectory. Filename is session-qualified.
+        repo_fallback = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
+        nested_fallback = nested_dir / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
+        assert repo_fallback.exists()
+        assert not nested_fallback.exists()
+
+        # Session metadata was updated on the session row.
+        row = ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        meta = _json.loads(row["metadata"])
+        assert d["id"] in meta["surfaced_decisions"]
+
+    def test_empty_result_cleans_up_fallback_file(self, ec_repo, ec_db, monkeypatch):
+        """Stale PostToolUse fallback is removed when the current surface
+        event returns no results. Only the tool-use file is cleaned; the
+        SessionStart file (if present) is never touched by this path
+        (PR #56 review round 3 — cross-channel cleanup bug)."""
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        create_decision(ec_db, title="Not linked")
+
+        fallback = ec_repo / ".entirecontext" / f"decisions-context-tooluse-{session_id}.md"
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        fallback.write_text("stale tool-use context", encoding="utf-8")
+
+        # Seed SessionStart file too so we can confirm it survives cleanup.
+        session_start_fallback = ec_repo / ".entirecontext" / "decisions-context.md"
+        session_start_fallback.write_text("session start context", encoding="utf-8")
+
+        # Edit file not linked to any decision → empty result
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/unlinked.py"},
+            }
+        )
+        assert result is None
+        # PostToolUse fallback file removed
+        assert not fallback.exists()
+        # SessionStart file must NOT be touched by PostToolUse cleanup
+        assert session_start_fallback.exists()
+        assert session_start_fallback.read_text(encoding="utf-8") == "session start context"
+
+
 class TestMaybeExtractDecisions:
     def _setup_session_with_summaries(self, ec_db, summaries):
         project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]

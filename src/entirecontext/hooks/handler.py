@@ -105,6 +105,15 @@ def _handle_tool_use(data: dict[str, Any]) -> int:
     from .turn_capture import on_tool_use
 
     on_tool_use(data)
+
+    try:
+        from .decision_hooks import on_post_tool_use_decisions
+
+        result = on_post_tool_use_decisions(data)
+        if result:
+            print(result)
+    except Exception:
+        pass
     return 0
 
 

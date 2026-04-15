@@ -45,10 +45,11 @@ The main implementation hardening gap still on the table is sync merge/retry pol
   - Link decisions to commits, checkpoints, files, and assessments
   - Clarify how decisions differ from summaries, assessments, and lessons (documented in README + CLI/MCP examples)
 
-- [ ] **Make retrieval proactive, not just query-based**
-  - Surface relevant past decisions when similar files, diffs, or intents appear
-  - Rank results by current-change relevance, not only text similarity
-  - Expose the retrieval path through MCP so agents can consume it automatically
+- [x] **Make retrieval proactive, not just query-based** (#42)
+  - PostToolUse hook `on_post_tool_use_decisions` surfaces decisions linked to just-edited files mid-session
+  - New `ec_decision_context` MCP tool auto-assembles signals from the current session and returns the full ranker output in one call
+  - Per-turn + session-wide dedup across SessionStart and PostToolUse channels via `sessions.metadata` JSON markers
+  - Documented in README § Proactive Retrieval with CLI/MCP examples
 
 ## Next (1-3 weeks)
 
