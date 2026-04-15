@@ -771,19 +771,32 @@ def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
             if _session_has_extraction_marker(conn, session_id):
                 return
 
-            keywords = config.get("extract_keywords", [])
-            rows = conn.execute(
-                "SELECT assistant_summary FROM turns "
-                "WHERE session_id = ? AND assistant_summary IS NOT NULL "
-                "ORDER BY turn_number ASC",
-                (session_id,),
-            ).fetchall()
-            summaries = [r["assistant_summary"] for r in rows if r["assistant_summary"]]
+            # Respect `config.decisions.extract_sources` so users who disable
+            # a source type do not see spurious worker launches. Without this,
+            # a user with `extract_sources = ['session']` would still spawn a
+            # worker on non-empty checkpoint diff_summary or expand/narrow
+            # assessment verdicts, just to have the worker no-op inside
+            # `collect_signals`.
+            raw_sources = config.get("extract_sources")
+            if isinstance(raw_sources, list) and raw_sources:
+                sources = {str(s) for s in raw_sources}
+            else:
+                sources = {"session", "checkpoint", "assessment"}
 
-            # Gate: any one of the three source signals is enough to launch.
-            session_signal = bool(summaries) and _summaries_match_keywords(summaries, keywords)
-            checkpoint_signal = _session_has_checkpoint_signal(conn, session_id)
-            assessment_signal = _session_has_assessment_signal(conn, session_id)
+            session_signal = False
+            if "session" in sources:
+                keywords = config.get("extract_keywords", [])
+                rows = conn.execute(
+                    "SELECT assistant_summary FROM turns "
+                    "WHERE session_id = ? AND assistant_summary IS NOT NULL "
+                    "ORDER BY turn_number ASC",
+                    (session_id,),
+                ).fetchall()
+                summaries = [r["assistant_summary"] for r in rows if r["assistant_summary"]]
+                session_signal = bool(summaries) and _summaries_match_keywords(summaries, keywords)
+
+            checkpoint_signal = "checkpoint" in sources and _session_has_checkpoint_signal(conn, session_id)
+            assessment_signal = "assessment" in sources and _session_has_assessment_signal(conn, session_id)
 
             if not (session_signal or checkpoint_signal or assessment_signal):
                 return

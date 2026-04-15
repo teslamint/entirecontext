@@ -1297,6 +1297,69 @@ class TestMaybeExtractDecisions:
         maybe_extract_decisions(str(ec_repo), session["id"])
         assert len(launched) == 0
 
+    def test_gate_respects_extract_sources_session_only(self, ec_repo, ec_db, monkeypatch):
+        """Regression: with extract_sources=['session'] and no keyword-match
+        in summaries but a checkpoint diff_summary present, the gate must
+        NOT launch the worker. Previously the gate unconditionally OR'd
+        all three signals and spawned a no-op worker."""
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {
+                "auto_extract": True,
+                "extract_keywords": ["decided"],
+                "extract_sources": ["session"],
+            },
+        )
+        session = self._setup_session_with_summaries(ec_db, ["just a normal conversation"])
+        # Seed a checkpoint with non-empty diff_summary — used to trigger the
+        # checkpoint signal path. Must be ignored because extract_sources
+        # excludes checkpoint.
+        import uuid as _uuid
+
+        ec_db.execute(
+            "INSERT INTO checkpoints (id, session_id, git_commit_hash, diff_summary) VALUES (?, ?, ?, ?)",
+            (str(_uuid.uuid4()), session["id"], "abc", "src/cache.py | 5 +++--\nsrc/db.py | 3 +"),
+        )
+        ec_db.commit()
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(1) or 0,
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"])
+        assert len(launched) == 0
+
+    def test_gate_respects_extract_sources_checkpoint_only(self, ec_repo, ec_db, monkeypatch):
+        """Regression: with extract_sources=['checkpoint'] and a session
+        summary that would have matched the keyword, the gate must still
+        launch (checkpoint signal present) but must NOT launch due to the
+        session signal. Verified indirectly: we also add a session summary
+        that matches the keyword, set extract_sources to ['checkpoint']
+        only, omit any checkpoint, and expect no launch — proving that
+        the session path is correctly gated off."""
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {
+                "auto_extract": True,
+                "extract_keywords": ["decided"],
+                "extract_sources": ["checkpoint"],
+            },
+        )
+        session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(1) or 0,
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"])
+        # No checkpoint seeded; session signal was disabled by extract_sources.
+        # Worker must not spawn.
+        assert len(launched) == 0
+
 
 class TestExtractFromSessionCLI:
     def _setup_session_with_turns(self, ec_db, turn_data):
