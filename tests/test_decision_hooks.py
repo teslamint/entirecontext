@@ -1244,7 +1244,7 @@ class TestMaybeExtractDecisions:
     def test_no_keyword_matches_no_worker(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"auto_extract": True, "extract_keywords": ["decided"]},
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"], "noise_gate_min_turns_with_files": 0},
         )
         session = self._setup_session_with_summaries(ec_db, ["just a normal conversation"])
         launched = []
@@ -1260,7 +1260,7 @@ class TestMaybeExtractDecisions:
     def test_keyword_match_launches_worker(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"auto_extract": True, "extract_keywords": ["decided"]},
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"], "noise_gate_min_turns_with_files": 0},
         )
         session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
         launched = []
@@ -1280,7 +1280,7 @@ class TestMaybeExtractDecisions:
     def test_worker_already_running_skips(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"auto_extract": True, "extract_keywords": ["decided"]},
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"], "noise_gate_min_turns_with_files": 0},
         )
         session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
         launched = []
@@ -1300,7 +1300,7 @@ class TestMaybeExtractDecisions:
     def test_idempotency_marker_skips(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"auto_extract": True, "extract_keywords": ["decided"]},
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"], "noise_gate_min_turns_with_files": 0},
         )
         session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
         ec_db.execute(
@@ -1329,6 +1329,7 @@ class TestMaybeExtractDecisions:
                 "auto_extract": True,
                 "extract_keywords": ["decided"],
                 "extract_sources": ["session"],
+                "noise_gate_min_turns_with_files": 0,
             },
         )
         session = self._setup_session_with_summaries(ec_db, ["just a normal conversation"])
@@ -1366,6 +1367,7 @@ class TestMaybeExtractDecisions:
                 "auto_extract": True,
                 "extract_keywords": ["decided"],
                 "extract_sources": ["checkpoint"],
+                "noise_gate_min_turns_with_files": 0,
             },
         )
         session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
@@ -1379,6 +1381,65 @@ class TestMaybeExtractDecisions:
         maybe_extract_decisions(str(ec_repo), session["id"])
         # No checkpoint seeded; session signal was disabled by extract_sources.
         # Worker must not spawn.
+        assert len(launched) == 0
+
+
+class TestNoiseGate:
+    def test_passes_with_checkpoint(self, ec_repo, ec_db):
+        from entirecontext.hooks.decision_hooks import _session_passes_noise_gate
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        ec_db.execute(
+            "INSERT INTO checkpoints (id, session_id, git_commit_hash) VALUES (?, ?, ?)",
+            ("cp-ng-1", session["id"], "abc123"),
+        )
+        ec_db.commit()
+        assert _session_passes_noise_gate(ec_db, session["id"]) is True
+
+    def test_passes_with_enough_file_turns(self, ec_repo, ec_db):
+        from entirecontext.hooks.decision_hooks import _session_passes_noise_gate
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        for i in range(3):
+            turn = create_turn(ec_db, session["id"], i + 1, user_message=f"edit {i}")
+            ec_db.execute(
+                "UPDATE turns SET files_touched = ? WHERE id = ?",
+                (json.dumps([f"src/file{i}.py"]), turn["id"]),
+            )
+        ec_db.commit()
+        assert _session_passes_noise_gate(ec_db, session["id"]) is True
+
+    def test_rejects_low_signal(self, ec_repo, ec_db):
+        from entirecontext.hooks.decision_hooks import _session_passes_noise_gate
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        create_turn(ec_db, session["id"], 1, user_message="just chatting")
+        assert _session_passes_noise_gate(ec_db, session["id"]) is False
+
+    def test_maybe_extract_skips_below_noise_gate(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"auto_extract": True, "extract_keywords": ["decided"], "noise_gate_min_turns_with_files": 3},
+        )
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        turn = create_turn(ec_db, session["id"], 1, user_message="msg")
+        ec_db.execute(
+            "UPDATE turns SET assistant_summary = ? WHERE id = ?",
+            ("We decided to use Redis", turn["id"]),
+        )
+        ec_db.commit()
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda *a, **kw: launched.append(1) or 0,
+        )
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"])
         assert len(launched) == 0
 
 

@@ -783,6 +783,26 @@ def _summaries_match_keywords(summaries: list[str], keywords: list[str]) -> bool
     return any(pattern.search(s) for s in summaries)
 
 
+def _session_passes_noise_gate(conn, session_id: str, min_turns: int = 3) -> bool:
+    """Return True when the session has enough signal to justify extraction.
+
+    Requires at least 1 checkpoint OR at least min_turns turns with non-empty files_touched.
+    """
+    has_checkpoint = conn.execute(
+        "SELECT 1 FROM checkpoints WHERE session_id = ? LIMIT 1",
+        (session_id,),
+    ).fetchone() is not None
+    if has_checkpoint:
+        return True
+
+    turns_with_files = conn.execute(
+        "SELECT COUNT(*) FROM turns WHERE session_id = ? "
+        "AND files_touched IS NOT NULL AND TRIM(files_touched) NOT IN ('', '[]')",
+        (session_id,),
+    ).fetchone()[0]
+    return turns_with_files >= min_turns
+
+
 def _session_has_checkpoint_signal(conn, session_id: str) -> bool:
     row = conn.execute(
         "SELECT 1 FROM checkpoints "
@@ -815,6 +835,10 @@ def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
         conn = get_db(repo_path)
         try:
             if _session_has_extraction_marker(conn, session_id):
+                return
+
+            min_turns = config.get("noise_gate_min_turns_with_files", 3)
+            if not _session_passes_noise_gate(conn, session_id, min_turns=min_turns):
                 return
 
             # Respect `config.decisions.extract_sources` so users who disable

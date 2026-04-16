@@ -540,6 +540,74 @@ class TestEndToEndExtraction:
 
 
 # ---------------------------------------------------------------------------
+# Confidence threshold tests
+# ---------------------------------------------------------------------------
+
+
+class TestConfidenceThreshold:
+    def test_score_below_threshold_filtered(self):
+        """Session candidate with no rationale/alts/files scores 0.30 — below 0.35 threshold."""
+        draft = CandidateDraft(
+            title="Bare decision",
+            rationale=None,
+            scope=None,
+            rejected_alternatives=[],
+            supporting_evidence=[],
+            source_type="session",
+            source_id="s1",
+            session_id="s1",
+            checkpoint_id=None,
+            assessment_id=None,
+            files=[],
+        )
+        dedup_result = DedupResult(dedup_key="test")
+        score, _breakdown = score_confidence(draft, dedup_result)
+        assert score < 0.35
+
+    def test_score_above_threshold_passes(self):
+        """Checkpoint candidate with rationale+alts scores well above 0.35."""
+        draft = CandidateDraft(
+            title="Use Redis for caching",
+            rationale="Redis provides persistence and pub/sub which memcached lacks for our use case",
+            scope=None,
+            rejected_alternatives=["memcached"],
+            supporting_evidence=[],
+            source_type="checkpoint",
+            source_id="cp1",
+            session_id="s1",
+            checkpoint_id="cp1",
+            assessment_id=None,
+            files=["src/cache.py"],
+        )
+        dedup_result = DedupResult(dedup_key="test")
+        score, _breakdown = score_confidence(draft, dedup_result)
+        assert score >= 0.35
+
+    def test_run_extraction_skips_below_threshold(self, ec_repo, ec_db, monkeypatch):
+        """run_extraction with min_confidence=1.0 should skip all candidates."""
+        session = _seed_session(ec_db, ec_repo, session_id="conf-threshold-skip")
+        _seed_turn(ec_db, session["id"], 1, "We decided something")
+        llm_response = json.dumps([{
+            "title": "Low confidence decision",
+            "rationale": "A rationale that is long enough to pass the 30 char check here",
+            "rejected_alternatives": ["option b"],
+        }])
+        monkeypatch.setattr(
+            "entirecontext.core.decision_extraction.call_extraction_llm",
+            lambda *a, **kw: llm_response,
+        )
+        monkeypatch.setattr(
+            "entirecontext.core.decision_extraction._load_decisions_config",
+            lambda _: {"extract_keywords": ["decided"], "extract_sources": ["session"]},
+        )
+        from entirecontext.core.decision_extraction import run_extraction
+
+        outcome = run_extraction(ec_db, session["id"], str(ec_repo), min_confidence=1.0)
+        assert outcome.candidates_inserted == 0
+        assert outcome.low_confidence_skipped >= 1
+
+
+# ---------------------------------------------------------------------------
 # Integration tests — confirm / reject flow
 # ---------------------------------------------------------------------------
 
