@@ -557,9 +557,12 @@ def decision_extract_candidates(
     """Extract candidate decisions from a session (background worker target)."""
     conn, repo_path = get_repo_connection()
     try:
+        from ..core.config import load_config
         from ..core.decision_extraction import run_extraction
 
-        outcome = run_extraction(conn, session_id, repo_path)
+        config = load_config(repo_path)
+        min_confidence = config.get("decisions", {}).get("candidate_min_confidence", 0.35)
+        outcome = run_extraction(conn, session_id, repo_path, min_confidence=min_confidence)
         console.print(
             f"[green]Extraction complete[/green] — bundles={outcome.bundles_collected} "
             f"drafts={outcome.drafts_parsed} inserted={outcome.candidates_inserted} "
