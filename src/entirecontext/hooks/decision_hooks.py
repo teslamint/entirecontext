@@ -250,7 +250,10 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                         d["selection_id"] = sel["id"]
                     conn.commit()
                 except Exception:
-                    pass
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
 
             # 4. Format sections (after telemetry so selection_ids are present).
             if file_related:
@@ -624,29 +627,15 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             if not decisions_out:
                 _cleanup_post_tool_fallback(fallback_root, session_id)
                 return None
-            entries = [_format_decision_entry(d) for d in decisions_out]
-            header = "## Related Decisions (current edit)\n\nThe file(s) you just edited are linked to the following prior decisions:\n\n"
-            body = header + "\n\n".join(entries)
-
-            # Write the PostToolUse-specific fallback file. A separate path
-            # from the SessionStart fallback keeps the two writers independent
-            # — deleting our file on empty results can never destroy the
-            # SessionStart context the agent may still be reading (PR #56
-            # Codex review round 3).
-            from pathlib import Path as _Path
-
-            fallback_path = _Path(fallback_root) / ".entirecontext" / _post_tool_fallback_name(session_id)
-            try:
-                fallback_path.parent.mkdir(parents=True, exist_ok=True)
-                fallback_path.write_text(body, encoding="utf-8")
-            except OSError:
-                pass  # never block tool execution
 
             # Persist the dedup state + telemetry event atomically (PR #56
             # review round 4). If any of these writes raise, we must NOT
             # leave the fallback file on disk — otherwise the next tool
             # call in the same turn sees stale metadata and re-surfaces
             # the same decisions, violating the documented per-turn guarantee.
+            #
+            # Telemetry stamps selection_ids on decisions_out BEFORE formatting
+            # so _format_decision_entry can include the Selection: line.
             new_ids = [d["id"] for d in decisions_out]
             new_session_wide = sorted(surfaced_session_wide | set(new_ids))
             post_tool_turns[turn_id] = new_ids
@@ -696,6 +685,21 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
                 # metadata record anchors.
                 _cleanup_post_tool_fallback(fallback_root, session_id)
                 return None
+
+            # Format entries AFTER telemetry so selection_ids appear in output.
+            entries = [_format_decision_entry(d) for d in decisions_out]
+            header = "## Related Decisions (current edit)\n\nThe file(s) you just edited are linked to the following prior decisions:\n\n"
+            body = header + "\n\n".join(entries)
+
+            # Write the PostToolUse-specific fallback file.
+            from pathlib import Path as _Path
+
+            fallback_path = _Path(fallback_root) / ".entirecontext" / _post_tool_fallback_name(session_id)
+            try:
+                fallback_path.parent.mkdir(parents=True, exist_ok=True)
+                fallback_path.write_text(body, encoding="utf-8")
+            except OSError:
+                pass  # never block tool execution
 
             return body
         finally:
