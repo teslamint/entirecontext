@@ -1616,6 +1616,133 @@ class TestExtractFromSessionCLI:
         assert len(call_count) == 0
 
 
+class TestIgnoredInference:
+    def test_infers_ignored_for_surfaced_unacted(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="ignored-inf")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Surfaced but unacted")
+        event = record_retrieval_event(
+            ec_db, source="hook", search_type="session_start", target="decision",
+            query="test", result_count=1, latency_ms=0, session_id=session["id"],
+        )
+        record_retrieval_selection(
+            ec_db, event["id"], "decision", d["id"], rank=1,
+            session_id=session["id"], turn_id=ec_db.execute(
+                "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+            ).fetchone()["id"],
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert outcomes[0]["outcome_type"] == "ignored"
+
+    def test_skips_acted_decisions(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.decisions import record_decision_outcome
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="acted-skip")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Already accepted")
+        event = record_retrieval_event(
+            ec_db, source="hook", search_type="session_start", target="decision",
+            query="test", result_count=1, latency_ms=0, session_id=session["id"],
+        )
+        sel = record_retrieval_selection(
+            ec_db, event["id"], "decision", d["id"], rank=1,
+            session_id=session["id"], turn_id=ec_db.execute(
+                "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+            ).fetchone()["id"],
+        )
+        turn1_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+        ).fetchone()["id"]
+        record_decision_outcome(
+            ec_db, d["id"], "accepted", retrieval_selection_id=sel["id"],
+            session_id=session["id"], turn_id=turn1_id,
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert outcomes[0]["outcome_type"] == "accepted"
+
+    def test_grace_period_skips_recent(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="grace-period")
+        for i in range(3):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Surfaced in last turn")
+        event = record_retrieval_event(
+            ec_db, source="hook", search_type="post_tool_use", target="decision",
+            query="test", result_count=1, latency_ms=0, session_id=session["id"],
+        )
+        last_turn_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 3", (session["id"],)
+        ).fetchone()["id"]
+        record_retrieval_selection(
+            ec_db, event["id"], "decision", d["id"], rank=1,
+            session_id=session["id"], turn_id=last_turn_id,
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchone()["n"]
+        assert outcomes == 0
+
+    def test_config_gated_default_off(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), "any-session")
+
+
 class TestHandlerIntegration:
     def test_session_start_prints_decisions(self, ec_repo, ec_db, monkeypatch, capsys):
         """Verify _handle_session_start prints decision context to stdout."""

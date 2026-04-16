@@ -275,6 +275,27 @@ async def ec_context_apply(
             session_id=session_id or current_session_id,
             turn_id=turn_id or current_turn_id,
         )
+
+        if (
+            application.get("source_type") == "decision"
+            and application.get("retrieval_selection_id")
+            and application_type in ("decision_change", "code_reuse")
+        ):
+            try:
+                from ...core.decisions import record_decision_outcome
+
+                record_decision_outcome(
+                    conn,
+                    application["source_id"],
+                    outcome_type="accepted",
+                    retrieval_selection_id=application["retrieval_selection_id"],
+                    session_id=application.get("session_id"),
+                    turn_id=application.get("turn_id"),
+                    note="auto: context_apply",
+                )
+            except Exception:
+                pass
+
         return json.dumps(application)
     except ValueError as exc:
         return runtime.error_payload(str(exc))
