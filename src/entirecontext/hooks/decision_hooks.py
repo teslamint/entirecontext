@@ -250,6 +250,8 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                         d["selection_id"] = sel["id"]
                     conn.commit()
                 except Exception:
+                    for d in all_surfaced:
+                        d.pop("selection_id", None)
                     try:
                         conn.rollback()
                     except Exception:
