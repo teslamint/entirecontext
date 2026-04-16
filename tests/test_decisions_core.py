@@ -65,6 +65,21 @@ class TestDecisionsCore:
         assert len(stale) == 1
         assert stale[0]["title"] == "Stale one"
 
+    def test_list_decisions_excludes_contradicted_by_default(self, ec_db):
+        fresh = create_decision(ec_db, title="Fresh keeper")
+        contradicted = create_decision(ec_db, title="Contradicted hidden")
+        update_decision_staleness(ec_db, contradicted["id"], "contradicted")
+
+        default_results = list_decisions(ec_db)
+        default_ids = [d["id"] for d in default_results]
+        assert fresh["id"] in default_ids
+        assert contradicted["id"] not in default_ids
+
+        inclusive_results = list_decisions(ec_db, include_contradicted=True)
+        inclusive_ids = [d["id"] for d in inclusive_results]
+        assert fresh["id"] in inclusive_ids
+        assert contradicted["id"] in inclusive_ids
+
     def test_list_decisions_file_filter_escapes_like_wildcards(self, ec_db):
         one = create_decision(ec_db, title="Target")
         two = create_decision(ec_db, title="Other")
@@ -1101,17 +1116,17 @@ class TestStalenessHardening:
         assert fresh["id"] in ids
         assert sup["id"] in ids
 
-    def test_fts_search_include_contradicted_default_and_opt_out(self, ec_db):
+    def test_fts_search_include_contradicted_default_and_opt_in(self, ec_db):
         c = create_decision(ec_db, title="keywordbravo")
         update_decision_staleness(ec_db, c["id"], "contradicted")
 
-        # Default: include_contradicted=True during the v0.2.x deprecation window.
+        # Default: include_contradicted=False — contradicted excluded.
         default_results = fts_search_decisions(ec_db, "keywordbravo")
-        assert any(r["id"] == c["id"] for r in default_results)
+        assert not any(r["id"] == c["id"] for r in default_results)
 
-        # Opt-in to future default.
-        strict_results = fts_search_decisions(ec_db, "keywordbravo", include_contradicted=False)
-        assert not any(r["id"] == c["id"] for r in strict_results)
+        # Explicit opt-in: include_contradicted=True — contradicted included.
+        inclusive_results = fts_search_decisions(ec_db, "keywordbravo", include_contradicted=True)
+        assert any(r["id"] == c["id"] for r in inclusive_results)
 
     def test_hybrid_search_inherits_filter(self, ec_db):
         fresh = create_decision(ec_db, title="keywordindia")

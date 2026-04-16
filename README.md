@@ -47,15 +47,15 @@ Decisions carry a `staleness_status` so old guidance can be prevented from domin
 | Entry point | fresh | stale | superseded | contradicted |
 |---|---|---|---|---|
 | `ec_decision_related` / `rank_related_decisions` | shown | demoted 0.85× | hidden (successor substituted) | hidden |
-| `ec_decision_search` / `fts_search_decisions` / `hybrid_search_decisions` | shown | shown | hidden | shown (v0.2.x) / hidden (v0.3.0) |
-| `ec_decision_list` / `ec decision list` | shown | shown | shown | shown (inventory — explicit status filter) |
+| `ec_decision_search` / `fts_search_decisions` / `hybrid_search_decisions` | shown | shown | hidden | hidden |
+| `ec_decision_list` / `ec decision list` | shown | shown | shown | hidden (pass `include_contradicted=True` for inventory) |
 | `ec_decision_get(id)` | shown (no successor) | shown | shown + `successor` pointer | shown |
 | Session-start hook | shown | shown | replaced by successor | hidden |
 
 Opt in to include filtered decisions via flags:
 - `include_stale` (default `True`) — stale decisions pass through with 0.85× demotion
 - `include_superseded` (default `False`) — returns the original without chain collapse
-- `include_contradicted` (default `False` in `rank_related_decisions`; `True` in FTS/hybrid during the v0.2.x deprecation window)
+- `include_contradicted` (default `False` everywhere)
 
 ### Supersession chain behavior
 
@@ -78,10 +78,6 @@ Configure the threshold via `[decisions]` in `.entirecontext/config.toml`:
 [decisions]
 auto_promotion_contradicted_threshold = 2
 ```
-
-### Deprecation window
-
-During the v0.2.x release, `fts_search_decisions` / `hybrid_search_decisions` / `ec decision search` default to `include_contradicted=True` to preserve existing caller behavior. The default will flip to `False` in **v0.3.0**. Pass `include_contradicted=False` now (or `--no-include-contradicted` from the CLI) to opt into the future default.
 
 ## Proactive Retrieval
 

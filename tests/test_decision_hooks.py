@@ -218,7 +218,7 @@ class TestOnSessionStartDecisions:
             staleness_status=None,
             file_path=None,
             limit=20,
-            include_contradicted=True,
+            include_contradicted=False,
         ):
             if file_path is not None:
                 file_path_calls.append(file_path)

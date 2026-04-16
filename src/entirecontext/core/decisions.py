@@ -264,14 +264,13 @@ def list_decisions(
     staleness_status: str | None = None,
     file_path: str | None = None,
     limit: int = 20,
-    include_contradicted: bool = True,
+    include_contradicted: bool = False,
 ) -> list[dict]:
     """List decisions with optional filters.
 
-    include_contradicted: default True for backward compatibility. When False,
-    contradicted decisions are excluded at the SQL level so downstream callers
-    (e.g. the session-start hook) do not lose fresh/stale/superseded results
-    behind a wall of contradicted rows that hit the row-count limit first.
+    include_contradicted: when False, contradicted decisions are excluded at
+    the SQL level so downstream callers do not lose fresh/stale/superseded
+    results behind a wall of contradicted rows that hit the row-count limit.
     The flag is ignored when `staleness_status` explicitly selects one status.
     """
     if staleness_status and staleness_status not in VALID_STALENESS:
@@ -1397,15 +1396,13 @@ def fts_search_decisions(
     limit: int = 20,
     include_stale: bool = True,
     include_superseded: bool = False,
-    include_contradicted: bool = True,
+    include_contradicted: bool = False,
 ) -> list[dict]:
     """FTS5 full-text search over decision title and rationale.
 
     Staleness policy (issue #39):
     - Superseded is excluded by default; set include_superseded=True to include.
-    - Contradicted defaults to True for the v0.2.x deprecation window; it will
-      flip to False in v0.3.0. Pass include_contradicted=False now to opt in
-      to the future default.
+    - Contradicted is excluded by default; set include_contradicted=True to include.
     - Stale decisions are included by default.
     """
     staleness_predicate, staleness_params = _staleness_sql_predicate(
@@ -1446,7 +1443,7 @@ def hybrid_search_decisions(
     k: int = 60,
     include_stale: bool = True,
     include_superseded: bool = False,
-    include_contradicted: bool = True,
+    include_contradicted: bool = False,
 ) -> list[dict]:
     """Hybrid search combining FTS5 relevance and recency via RRF.
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: `include_contradicted` default flipped to `False`** (#69) — `list_decisions`, `fts_search_decisions`, `hybrid_search_decisions`, `ec_decision_search` MCP tool, and `ec decision search` CLI now exclude contradicted decisions by default. Pass `include_contradicted=True` (or `--include-contradicted` from the CLI) to restore the previous behavior. The `ec_decision_list` MCP tool also gains a new `include_contradicted` parameter (default `False`).
+
 ### Added
 
 - **Contract-sync drift guards** — `tests/test_contract_sync.py` asserts `mcp/server.__all__` matches what `register_tools()` actually registers (driven by AST extraction of `server.py`'s module tuple, not a hardcoded copy), that every `ec_*` tool is present in the README `### Available Tools` section bidirectionally (catches stale rows as well as missing rows), that `decision_hooks` fallback filename constants are documented in README, and that the current `SCHEMA_VERSION` is cross-referenced in a CHANGELOG paragraph that also mentions "schema". Replaces `tests/test_mcp_registration.py`, whose hardcoded expected set had silently drifted (its registration loop omitted `tools.decision_candidates` and its expected set omitted the four candidate tools, so it passed via symmetric drift — the exact failure mode the v0.2.0 retrospective finding #2 named).
@@ -35,7 +39,7 @@ Database schema v11 → v13. v0.1.x databases auto-migrate on first `RepoContext
 
 ### Deprecated
 
-- **`fts_search_decisions` / `hybrid_search_decisions` / `ec decision search` `include_contradicted` default** — currently defaults to `True` for backward compatibility during v0.2.x. The default will flip to `False` in **v0.3.0**. Pass `include_contradicted=False` (or `--no-include-contradicted` from the CLI) now to opt into the future default.
+- ~~**`include_contradicted` default**~~ — completed in [Unreleased]: default flipped to `False`.
 
 ### Fixed
 

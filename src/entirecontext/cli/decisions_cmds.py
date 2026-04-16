@@ -35,12 +35,19 @@ def decision_list(
     status: Optional[str] = typer.Option(None, "--status", help="fresh|stale|superseded|contradicted"),
     file: Optional[str] = typer.Option(None, "--file", help="Filter by linked file path"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
+    include_contradicted: bool = typer.Option(
+        False,
+        "--include-contradicted/--no-include-contradicted",
+        help="Include contradicted decisions (default False)",
+    ),
 ):
     from ..core.decisions import list_decisions
 
     conn, _ = get_repo_connection()
     try:
-        decisions = list_decisions(conn, staleness_status=status, file_path=file, limit=limit)
+        decisions = list_decisions(
+            conn, staleness_status=status, file_path=file, limit=limit, include_contradicted=include_contradicted,
+        )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
@@ -316,9 +323,9 @@ def decision_search(
         False, "--include-superseded/--no-include-superseded", help="Include superseded decisions"
     ),
     include_contradicted: bool = typer.Option(
-        True,
+        False,
         "--include-contradicted/--no-include-contradicted",
-        help="Include contradicted decisions (default True; will flip to False in v0.3.0)",
+        help="Include contradicted decisions (default False)",
     ),
 ):
     """Search decisions by keyword."""
