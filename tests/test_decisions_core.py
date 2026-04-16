@@ -65,6 +65,21 @@ class TestDecisionsCore:
         assert len(stale) == 1
         assert stale[0]["title"] == "Stale one"
 
+    def test_list_decisions_excludes_contradicted_by_default(self, ec_db):
+        fresh = create_decision(ec_db, title="Fresh keeper")
+        contradicted = create_decision(ec_db, title="Contradicted hidden")
+        update_decision_staleness(ec_db, contradicted["id"], "contradicted")
+
+        default_results = list_decisions(ec_db)
+        default_ids = [d["id"] for d in default_results]
+        assert fresh["id"] in default_ids
+        assert contradicted["id"] not in default_ids
+
+        inclusive_results = list_decisions(ec_db, include_contradicted=True)
+        inclusive_ids = [d["id"] for d in inclusive_results]
+        assert fresh["id"] in inclusive_ids
+        assert contradicted["id"] in inclusive_ids
+
     def test_list_decisions_file_filter_escapes_like_wildcards(self, ec_db):
         one = create_decision(ec_db, title="Target")
         two = create_decision(ec_db, title="Other")
