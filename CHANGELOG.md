@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Retrieval telemetry completeness** (#70) — PostToolUse and SessionStart hooks now record per-decision `retrieval_selections` rows alongside the existing `retrieval_events` row, threading `selection_id` into Markdown fallback files. `record_retrieval_event` and `record_retrieval_selection` in `core/telemetry.py` accept a `commit` parameter (default `True`) so hook callers can defer commits for atomicity.
 - **Contract-sync drift guards** — `tests/test_contract_sync.py` asserts `mcp/server.__all__` matches what `register_tools()` actually registers (driven by AST extraction of `server.py`'s module tuple, not a hardcoded copy), that every `ec_*` tool is present in the README `### Available Tools` section bidirectionally (catches stale rows as well as missing rows), that `decision_hooks` fallback filename constants are documented in README, and that the current `SCHEMA_VERSION` is cross-referenced in a CHANGELOG paragraph that also mentions "schema". Replaces `tests/test_mcp_registration.py`, whose hardcoded expected set had silently drifted (its registration loop omitted `tools.decision_candidates` and its expected set omitted the four candidate tools, so it passed via symmetric drift — the exact failure mode the v0.2.0 retrospective finding #2 named).
 
 ## [0.2.0] - 2026-04-15

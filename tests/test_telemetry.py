@@ -73,3 +73,61 @@ class TestTelemetryHelpers:
             assert "Invalid application_type" in str(exc)
         else:
             raise AssertionError("expected ValueError")
+
+    def test_commit_false_defers_write(self, ec_repo, ec_db):
+        import sqlite3
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="telemetry-defer")
+        turn = create_turn(ec_db, session["id"], 1, user_message="test", assistant_summary="ok")
+
+        event = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+            turn_id=turn["id"],
+            commit=False,
+        )
+        sel = record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            "d-1",
+            rank=1,
+            commit=False,
+        )
+
+        assert event["id"] is not None
+        assert sel["id"] is not None
+
+        # A second connection must NOT see uncommitted rows (deferred-commit contract).
+        db_path = str(ec_repo / ".entirecontext" / "db" / "local.db")
+        second_conn = sqlite3.connect(db_path)
+        try:
+            pre = second_conn.execute(
+                "SELECT id FROM retrieval_events WHERE id = ?", (event["id"],)
+            ).fetchone()
+            assert pre is None, "row should not be visible to other connections before commit"
+        finally:
+            second_conn.close()
+
+        ec_db.commit()
+
+        # After commit, a second connection CAN see the rows.
+        second_conn = sqlite3.connect(db_path)
+        try:
+            post = second_conn.execute(
+                "SELECT id FROM retrieval_events WHERE id = ?", (event["id"],)
+            ).fetchone()
+            assert post is not None, "row should be visible after commit"
+            sel_post = second_conn.execute(
+                "SELECT id FROM retrieval_selections WHERE id = ?", (sel["id"],)
+            ).fetchone()
+            assert sel_post is not None, "selection should be visible after commit"
+        finally:
+            second_conn.close()
