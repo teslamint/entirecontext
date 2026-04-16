@@ -42,6 +42,40 @@ def _post_tool_fallback_name(session_id: str) -> str:
     return f"{_POST_TOOL_FALLBACK_BASE}-{safe}.md"
 
 
+def _get_uncommitted_diff(repo_path: str) -> str | None:
+    """Return uncommitted diff text, truncated to 8192 bytes. Returns None on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout[:8192]
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
+
+
+def _get_recent_commit_shas(repo_path: str, limit: int = 5) -> list[str]:
+    """Return recent commit SHAs. Returns empty list on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%H", f"-{limit}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return [s for s in result.stdout.strip().split("\n") if s]
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return []
+
+
 def _load_decisions_config(repo_path: str) -> dict:
     from ..core.config import load_config
 
@@ -117,6 +151,13 @@ def _format_decision_entry(d: dict, stale: bool = False) -> str:
         parts.append(f"  Files: {files}")
     if rationale_short:
         parts.append(f"  Rationale: {rationale_short}")
+    if d.get("score") is not None and d.get("score_breakdown"):
+        sb = d["score_breakdown"]
+        parts.append(
+            f"  Score: {d['score']:.1f}"
+            f" (file={sb.get('file_exact', 0)}+{sb.get('file_proximity', 0)},"
+            f" diff={sb.get('diff_relevance', 0)}, quality={sb.get('quality', 0)})"
+        )
     if d.get("selection_id"):
         parts.append(f"  Selection: {d['selection_id']}")
     return "\n".join(parts)
@@ -134,12 +175,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         if not config.get("show_related_on_start", False):
             return None
 
-        from ..core.decisions import (
-            _apply_staleness_policy,
-            get_decision,
-            list_decisions,
-            resolve_successor_chain,
-        )
+        from ..core.decisions import get_decision, list_decisions, rank_related_decisions
         from ..db import get_db
 
         conn = get_db(repo_path)
@@ -148,65 +184,42 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             seen_ids: set[str] = set()
             display_limit = 5
 
-            # 1. Recently changed files → linked decisions.
-            # Use `list_decisions(file_path=f)` per changed file so path matching
-            # preserves the existing LIKE-contains semantics (handles `./src/app.py`
-            # vs `src/app.py` divergence between git output and stored decision_files).
-            # Staleness policy: contradicted rows are dropped by the policy filter,
-            # but superseded rows are intentionally kept so the loop below can walk
-            # their supersession chain and substitute the terminal successor.
+            # 1. Assemble signals and rank decisions via the full multi-signal ranker.
             changed_files = _get_recently_changed_files(repo_path)
-            file_related = []
-            if changed_files:
-                raw_seen: set[str] = set()
-                for f in changed_files:
-                    if len(seen_ids) >= display_limit:
-                        break
+            diff_text = _get_uncommitted_diff(repo_path)
+            commit_shas = _get_recent_commit_shas(repo_path, limit=5)
 
-                    # Push contradicted-exclusion down to SQL so the limit=10
-                    # row cap can't hide fresh/superseded candidates behind a
-                    # wall of contradicted rows (PR #55 Codex review).
-                    file_rows: list[dict] = []
-                    for d in list_decisions(conn, file_path=f, limit=10, include_contradicted=False):
-                        if d["id"] in raw_seen:
-                            continue
-                        raw_seen.add(d["id"])
-                        file_rows.append(d)
+            assessment_ids: list[str] = []
+            try:
+                from ..core.futures import list_assessments
+                from datetime import datetime, timedelta, timezone
 
-                    if not file_rows:
-                        continue
+                lookback_hours = config.get("assessment_lookback_hours", 48)
+                since = (datetime.now(timezone.utc) - timedelta(hours=lookback_hours)).isoformat()
+                recent_assessments = list_assessments(conn, limit=20, since=since)
+                assessment_ids = [a["id"] for a in recent_assessments]
+            except Exception:
+                pass
 
-                    # SQL already dropped contradicted rows; the policy call
-                    # still enforces `include_superseded=True` so the chain
-                    # collapse branch below can substitute each one with its
-                    # terminal successor.
-                    kept, _stats = _apply_staleness_policy(
-                        file_rows,
-                        include_stale=True,
-                        include_superseded=True,
-                        include_contradicted=False,
-                    )
-                    for row in kept:
-                        if row["id"] in seen_ids:
-                            continue
-                        effective_id = row["id"]
-                        if row.get("staleness_status") == "superseded":
-                            if not row.get("superseded_by_id"):
-                                # No successor pointer — hide this orphaned record.
-                                continue
-                            terminal_id, terminal_status = resolve_successor_chain(conn, row["id"])
-                            if terminal_id == row["id"] or terminal_status in ("contradicted", "superseded"):
-                                # Unresolved chain or terminal is also filtered — skip.
-                                continue
-                            effective_id = terminal_id
-                            if effective_id in seen_ids:
-                                continue
-                        full = get_decision(conn, effective_id)
+            file_related: list[dict] = []
+            if changed_files or diff_text or commit_shas or assessment_ids:
+                ranked = rank_related_decisions(
+                    conn,
+                    file_paths=changed_files or [],
+                    diff_text=diff_text,
+                    commit_shas=commit_shas,
+                    assessment_ids=assessment_ids,
+                    limit=display_limit,
+                    include_contradicted=False,
+                )
+                for d in ranked:
+                    if d["id"] not in seen_ids:
+                        full = get_decision(conn, d["id"])
                         if full:
+                            full["score"] = d.get("score")
+                            full["score_breakdown"] = d.get("score_breakdown")
                             file_related.append(full)
-                            seen_ids.add(effective_id)
-                        if len(seen_ids) >= display_limit:
-                            break
+                            seen_ids.add(d["id"])
 
             # 2. Stale decisions — explicit status filter; separate from default policy.
             stale = list_decisions(conn, staleness_status="stale", limit=10)

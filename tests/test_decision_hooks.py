@@ -213,7 +213,7 @@ class TestOnSessionStartDecisions:
         entries = [line for line in result.split("\n") if line.strip().startswith("- [")]
         assert len(entries) <= 5
 
-    def test_session_start_stops_querying_changed_files_after_display_cap(self, ec_repo, ec_db, monkeypatch):
+    def test_session_start_ranker_respects_display_limit(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks._load_decisions_config",
             lambda _: {"show_related_on_start": True},
@@ -226,37 +226,25 @@ class TestOnSessionStartDecisions:
 
         monkeypatch.setattr("entirecontext.hooks.decision_hooks._get_recently_changed_files", lambda _: changed_files)
 
-        from entirecontext.core.decisions import list_decisions as core_list_decisions
+        from entirecontext.core.decisions import rank_related_decisions as core_ranker
 
-        file_path_calls: list[str] = []
+        ranker_calls: list[dict] = []
 
-        def spy_list_decisions(
-            conn,
-            staleness_status=None,
-            file_path=None,
-            limit=20,
-            include_contradicted=False,
-        ):
-            if file_path is not None:
-                file_path_calls.append(file_path)
-            return core_list_decisions(
-                conn,
-                staleness_status=staleness_status,
-                file_path=file_path,
-                limit=limit,
-                include_contradicted=include_contradicted,
-            )
+        def spy_ranker(conn, **kwargs):
+            ranker_calls.append(kwargs)
+            return core_ranker(conn, **kwargs)
 
-        monkeypatch.setattr("entirecontext.core.decisions.list_decisions", spy_list_decisions)
+        monkeypatch.setattr("entirecontext.core.decisions.rank_related_decisions", spy_ranker)
 
         from entirecontext.hooks.decision_hooks import on_session_start_decisions
 
         result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
 
         assert result is not None
-        assert file_path_calls == changed_files[:5]
+        assert len(ranker_calls) == 1
+        assert ranker_calls[0]["limit"] == 5
         entries = [line for line in result.split("\n") if line.strip().startswith("- [")]
-        assert len(entries) == 5
+        assert len(entries) <= 5
 
     def test_git_failure_returns_none(self, ec_repo, ec_db, monkeypatch):
         from unittest.mock import MagicMock
