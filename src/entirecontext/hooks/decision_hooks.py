@@ -175,7 +175,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         if not config.get("show_related_on_start", False):
             return None
 
-        from ..core.decisions import get_decision, list_decisions, rank_related_decisions
+        from ..core.decisions import _normalize_path, get_decision, list_decisions, rank_related_decisions
         from ..db import get_db
 
         conn = get_db(repo_path)
@@ -201,11 +201,13 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             except Exception:
                 pass
 
+            normalized_files = [_normalize_path(f) for f in changed_files if _normalize_path(f)]
+
             file_related: list[dict] = []
-            if changed_files or diff_text or commit_shas or assessment_ids:
+            if normalized_files or diff_text or commit_shas or assessment_ids:
                 ranked = rank_related_decisions(
                     conn,
-                    file_paths=changed_files or [],
+                    file_paths=normalized_files,
                     diff_text=diff_text,
                     commit_shas=commit_shas,
                     assessment_ids=assessment_ids,
