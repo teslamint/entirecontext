@@ -568,7 +568,7 @@ def decision_extract_candidates(
         console.print(
             f"[green]Extraction complete[/green] — bundles={outcome.bundles_collected} "
             f"drafts={outcome.drafts_parsed} inserted={outcome.candidates_inserted} "
-            f"duplicates={outcome.duplicates_skipped}"
+            f"duplicates={outcome.duplicates_skipped} low_confidence={outcome.low_confidence_skipped}"
         )
         if outcome.warnings:
             for warning in outcome.warnings:

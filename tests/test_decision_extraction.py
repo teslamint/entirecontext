@@ -604,6 +604,7 @@ class TestConfidenceThreshold:
 
         outcome = run_extraction(ec_db, session["id"], str(ec_repo), min_confidence=1.0)
         assert outcome.candidates_inserted == 0
+        assert outcome.low_confidence_skipped >= 1
 
 
 # ---------------------------------------------------------------------------

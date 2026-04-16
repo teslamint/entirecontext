@@ -811,6 +811,7 @@ class ExtractionOutcome:
     drafts_parsed: int = 0
     candidates_inserted: int = 0
     duplicates_skipped: int = 0
+    low_confidence_skipped: int = 0
     parsed_ok: bool = False
     marked: bool = False
     warnings: list[str] = field(default_factory=list)
@@ -848,7 +849,7 @@ def run_extraction(conn, session_id: str, repo_path: str, *, min_confidence: flo
             dedup_result = dedup(conn, draft)
             score, breakdown = score_confidence(draft, dedup_result)
             if score < min_confidence:
-                outcome.duplicates_skipped += 1
+                outcome.low_confidence_skipped += 1
                 continue
             persist_result = persist_candidate(conn, draft, score, breakdown, dedup_result)
             if persist_result.inserted:
