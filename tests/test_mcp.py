@@ -1354,6 +1354,33 @@ class TestMCPDecisionToolsExtended:
         assert d_fresh["id"] in ids
         assert d_stale["id"] not in ids
 
+    def test_ec_decision_list_excludes_contradicted_by_default(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, update_decision_staleness
+        from entirecontext.mcp.tools.decisions import ec_decision_list
+
+        d_fresh = create_decision(mock_repo_db, title="Fresh visible")
+        d_contradicted = create_decision(mock_repo_db, title="Contradicted hidden")
+        update_decision_staleness(mock_repo_db, d_contradicted["id"], "contradicted")
+
+        # Default: contradicted excluded (fixture returns raw conn — single MCP call only)
+        result = json.loads(asyncio.run(ec_decision_list()))
+        ids = [d["id"] for d in result["decisions"]]
+        assert d_fresh["id"] in ids
+        assert d_contradicted["id"] not in ids
+
+    def test_ec_decision_list_includes_contradicted_when_requested(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision, update_decision_staleness
+        from entirecontext.mcp.tools.decisions import ec_decision_list
+
+        d_fresh = create_decision(mock_repo_db, title="Fresh opt-in")
+        d_contradicted = create_decision(mock_repo_db, title="Contradicted opt-in")
+        update_decision_staleness(mock_repo_db, d_contradicted["id"], "contradicted")
+
+        result = json.loads(asyncio.run(ec_decision_list(include_contradicted=True)))
+        ids = [d["id"] for d in result["decisions"]]
+        assert d_fresh["id"] in ids
+        assert d_contradicted["id"] in ids
+
     def test_ec_decision_stale_check(self, mock_repo_db, monkeypatch):
         from unittest.mock import patch
 
