@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-03-12._
+_Updated against codebase on 2026-04-16._
 
 ## Product Thesis
 
@@ -33,64 +33,58 @@ That foundation is useful, but it is broader than the product wedge. The next ph
 
 The main implementation hardening gap still on the table is sync merge/retry policy alignment between runtime and docs.
 
-## Now
-
-- [ ] **Sharpen product messaging around decision memory**
-  - Keep README, roadmap, and product-facing docs centered on the decision-memory loop
-  - Move broad platform capabilities into supporting sections instead of leading with them
-  - Make the primary persona explicit: engineers and small teams already doing agentic coding
+## v0.2.0 (Shipped 2026-04-15)
 
 - [x] **Define a first-class decision model**
-  - Represent decision, rationale, rejected alternatives, supporting evidence, scope, and staleness
-  - Link decisions to commits, checkpoints, files, and assessments
-  - Clarify how decisions differ from summaries, assessments, and lessons (documented in README + CLI/MCP examples)
-
 - [x] **Make retrieval proactive, not just query-based** (#42)
-  - PostToolUse hook `on_post_tool_use_decisions` surfaces decisions linked to just-edited files mid-session
-  - New `ec_decision_context` MCP tool auto-assembles signals from the current session and returns the full ranker output in one call
-  - Per-turn + session-wide dedup across SessionStart and PostToolUse channels via `sessions.metadata` JSON markers
-  - Documented in README § Proactive Retrieval with CLI/MCP examples
-
-## Next (1-3 weeks)
-
-- [ ] **Decision extraction pipeline**
-  - Extract candidate decisions from sessions, checkpoints, and assessments
-  - Allow confidence scoring plus lightweight human or agent confirmation
-  - Validate extraction quality against noisy, real coding sessions
-
-- [ ] **Relevance-based reactivation**
-  - Use touched files, diff similarity, git relationships, and assessment links
-  - Present "read these past decisions first" suggestions before new work starts
-  - Verify usefulness on repeated-task and regression-fix scenarios
-
 - [x] **Staleness and contradiction handling** (#39)
-  - Retrieval hard-filters superseded/contradicted via central `_apply_staleness_policy` helper
-  - Supersession chain collapse substitutes terminal successors; cycle-safe via multi-hop detection and depth cap
-  - Auto-promotion of `contradicted` status from outcome feedback (configurable threshold, one-way ratchet)
-  - Documented retrieval policy matrix and deprecation window in README § Staleness Policy
-
-## Later (1-3 months)
-
 - [x] **Sync merge/retry 정책 정비** (P2, spec §10 #4)
-  - `sync/merge.py`에 merge helpers 존재하지만 `sync/engine.py`에서 미사용
-  - 선택지: app-level merge/retry 루프 구현 또는 docs/README에 정책 축소 명문화
-  - 영향 파일: `sync/engine.py`, `sync/merge.py`, docs
-  - 테스트: 선택한 정책의 구현/문서 일관성 검증
 
-- [ ] **Decision quality loop**
-  - Track whether retrieved guidance was accepted, ignored, or contradicted
-  - Measure which decisions and lessons actually improve later changes
-  - Use those outcomes to improve ranking and distillation quality
+## v0.3.0 — Close the Loop (In Progress)
+
+Theme: close the decision-memory feedback arc — retrieval records its footprint, extraction quality gets validated, outcome data flows back into ranking.
+
+- [ ] **E1. `include_contradicted` default flip** (#69)
+  - Breaking change committed in v0.2.0 deprecation notice
+  - Flip `True→False` in `fts_search_decisions`, `hybrid_search_decisions`, `list_decisions`, `ec_decision_search`
+
+- [ ] **E2. Retrieval telemetry completeness** (#70)
+  - SessionStart hook: add `record_retrieval_event` + `record_retrieval_selection`
+  - PostToolUse hook: add `record_retrieval_selection`
+  - Include `selection_id` in fallback Markdown for downstream outcome recording
+
+- [ ] **E3. Extraction validation & noise gate** (#71)
+  - Session noise gate: ≥1 checkpoint OR ≥3 turns with files_touched
+  - Confidence recalibration, dedup audit
+  - Enable `auto_extract=true` safely
+
+- [ ] **E4. Relevance-based reactivation** (#72)
+  - Upgrade SessionStart from file-list lookup to full `rank_related_decisions` ranker
+  - Signal assembly: uncommitted diff, recent commit files, checkpoint SHA
+
+- [ ] **E5. Minimal quality loop** (#73)
+  - `ec_context_apply` → auto-record "accepted" outcome
+  - SessionEnd: infer "ignored" for surfaced-but-unacted decisions (config-gated)
+  - Surface `quality_score` in retrieval output
+
+## Later
+
+- [ ] **Sharpen product messaging around decision memory**
+
+- [ ] **Decision quality loop (full)**
+  - Measure which decisions actually improve later changes
+  - Use outcomes to improve ranking and distillation quality
 
 - [ ] **Team policy and review memory**
   - Capture recurring team preferences, review heuristics, and architectural constraints
   - Separate repo-local norms from cross-repo lessons
-  - Generate team-facing reports about repeated decisions and repeated mistakes
 
 - [ ] **Sync and runtime hardening**
-  - Resolve merge/retry policy alignment in the sync engine or narrow the documented policy explicitly
-  - Keep docs and runtime behavior consistent for shared usage
+  - Resolve merge/retry policy alignment in the sync engine
   - Test divergent shadow-branch conflict scenarios
+
+- [ ] **UserPromptSubmit decision surfacing**
+  - Requires async worker pattern (currently SYNC handler)
 
 ## Done Foundations
 
