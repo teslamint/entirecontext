@@ -433,6 +433,7 @@ async def ec_decision_list(
     staleness_status: str | None = None,
     file_path: str | None = None,
     limit: int = 20,
+    include_contradicted: bool = False,
 ) -> str:
     """List decisions with optional filters.
 
@@ -440,6 +441,7 @@ async def ec_decision_list(
         staleness_status: Filter by status (fresh/stale/superseded/contradicted)
         file_path: Filter by linked file path
         limit: Maximum results (default 20)
+        include_contradicted: Include contradicted decisions (default False)
     """
     (conn, _), error = runtime.resolve_repo()
     if error:
@@ -447,7 +449,13 @@ async def ec_decision_list(
     try:
         from ...core.decisions import list_decisions
 
-        decisions = list_decisions(conn, staleness_status=staleness_status, file_path=file_path, limit=limit)
+        decisions = list_decisions(
+            conn,
+            staleness_status=staleness_status,
+            file_path=file_path,
+            limit=limit,
+            include_contradicted=include_contradicted,
+        )
         return json.dumps({"decisions": decisions, "count": len(decisions)})
     except ValueError as exc:
         return runtime.error_payload(str(exc))
@@ -486,7 +494,7 @@ async def ec_decision_search(
     repos: str | list[str] | None = None,
     include_stale: bool = True,
     include_superseded: bool = False,
-    include_contradicted: bool = True,
+    include_contradicted: bool = False,
 ) -> str:
     """Search decisions by keyword using FTS5 full-text search.
 
@@ -502,9 +510,7 @@ async def ec_decision_search(
                or a plain repo name string (coerced to a single-element list)
         include_stale: Include decisions marked stale (default True)
         include_superseded: Include decisions that have been superseded (default False)
-        include_contradicted: Include decisions marked contradicted.
-               Defaults True for v0.2.x backward compat; will flip to False in v0.3.0.
-               Pass include_contradicted=False now to opt in to the future default.
+        include_contradicted: Include contradicted decisions (default False)
     """
     if search_type not in ("fts", "hybrid"):
         return runtime.error_payload(f"Invalid search_type '{search_type}'. Use 'fts' or 'hybrid'.")

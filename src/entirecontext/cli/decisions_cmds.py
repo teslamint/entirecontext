@@ -316,9 +316,9 @@ def decision_search(
         False, "--include-superseded/--no-include-superseded", help="Include superseded decisions"
     ),
     include_contradicted: bool = typer.Option(
-        True,
+        False,
         "--include-contradicted/--no-include-contradicted",
-        help="Include contradicted decisions (default True; will flip to False in v0.3.0)",
+        help="Include contradicted decisions (default False)",
     ),
 ):
     """Search decisions by keyword."""

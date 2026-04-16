@@ -1101,17 +1101,17 @@ class TestStalenessHardening:
         assert fresh["id"] in ids
         assert sup["id"] in ids
 
-    def test_fts_search_include_contradicted_default_and_opt_out(self, ec_db):
+    def test_fts_search_include_contradicted_default_and_opt_in(self, ec_db):
         c = create_decision(ec_db, title="keywordbravo")
         update_decision_staleness(ec_db, c["id"], "contradicted")
 
-        # Default: include_contradicted=True during the v0.2.x deprecation window.
+        # Default: include_contradicted=False — contradicted excluded.
         default_results = fts_search_decisions(ec_db, "keywordbravo")
-        assert any(r["id"] == c["id"] for r in default_results)
+        assert not any(r["id"] == c["id"] for r in default_results)
 
-        # Opt-in to future default.
-        strict_results = fts_search_decisions(ec_db, "keywordbravo", include_contradicted=False)
-        assert not any(r["id"] == c["id"] for r in strict_results)
+        # Explicit opt-in: include_contradicted=True — contradicted included.
+        inclusive_results = fts_search_decisions(ec_db, "keywordbravo", include_contradicted=True)
+        assert any(r["id"] == c["id"] for r in inclusive_results)
 
     def test_hybrid_search_inherits_filter(self, ec_db):
         fresh = create_decision(ec_db, title="keywordindia")

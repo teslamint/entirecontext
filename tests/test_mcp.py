@@ -1437,24 +1437,24 @@ class TestMCPStalenessHardening:
         result = json.loads(asyncio.run(ec_decision_get(a["id"])))
         assert result.get("successor") == {"id": b["id"], "title": "Post"}
 
-    def test_ec_decision_search_opt_in_contradicted(self, mock_repo_db):
+    def test_ec_decision_search_contradicted_default_excluded(self, mock_repo_db):
         from entirecontext.core.decisions import create_decision, update_decision_staleness
         from entirecontext.mcp.tools.decisions import ec_decision_search
 
         d = create_decision(mock_repo_db, title="searchkeywordxray")
         update_decision_staleness(mock_repo_db, d["id"], "contradicted")
 
-        # Default (deprecation window): include_contradicted=True → decision is returned.
+        # Default: include_contradicted=False — contradicted excluded.
         default_result = json.loads(asyncio.run(ec_decision_search(query="searchkeywordxray", search_type="fts")))
         default_ids = [r["id"] for r in default_result["decisions"]]
-        assert d["id"] in default_ids
+        assert d["id"] not in default_ids
 
-        # Opt in to future default: contradicted excluded.
-        strict_result = json.loads(
-            asyncio.run(ec_decision_search(query="searchkeywordxray", search_type="fts", include_contradicted=False))
+        # Explicit opt-in: contradicted included.
+        inclusive_result = json.loads(
+            asyncio.run(ec_decision_search(query="searchkeywordxray", search_type="fts", include_contradicted=True))
         )
-        strict_ids = [r["id"] for r in strict_result["decisions"]]
-        assert d["id"] not in strict_ids
+        inclusive_ids = [r["id"] for r in inclusive_result["decisions"]]
+        assert d["id"] in inclusive_ids
 
 
 class TestEcDecisionContext:
