@@ -505,7 +505,7 @@ def _invoke_get_llm_response(summaries: str, repo_path: str, source_type: str) -
     return _get_llm_response(summaries, repo_path)
 
 
-def _extract_from_session_impl(conn, session_id: str, repo_path: str) -> None:
+def _extract_from_session_impl(conn, session_id: str, repo_path: str, *, min_confidence: float | None = None) -> None:
     """Back-compat shim that drives the candidate pipeline while keeping
     monkeypatches on _get_llm_response effective. Writes into
     decision_candidates, NOT decisions — legacy tests were migrated."""
@@ -544,6 +544,8 @@ def _extract_from_session_impl(conn, session_id: str, repo_path: str) -> None:
         for draft in drafts:
             dedup_result = ex.dedup(conn, draft)
             score, breakdown = ex.score_confidence(draft, dedup_result)
+            if min_confidence is not None and score < min_confidence:
+                continue
             ex.persist_candidate(conn, draft, score, breakdown, dedup_result)
 
     if parsed_ok:
@@ -585,7 +587,11 @@ def decision_extract_from_session(
     """Back-compat alias for the candidate extraction pipeline."""
     conn, repo_path = get_repo_connection()
     try:
-        _extract_from_session_impl(conn, session_id, repo_path)
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        min_confidence = config.get("decisions", {}).get("candidate_min_confidence", 0.35)
+        _extract_from_session_impl(conn, session_id, repo_path, min_confidence=min_confidence)
     except Exception as exc:
         console.print(f"[red]Extraction failed: {exc}[/red]")
         raise typer.Exit(1)
