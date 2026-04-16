@@ -143,12 +143,17 @@ class TestOnSessionStartDecisions:
         assert result is None
 
     def test_related_decisions_shown(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.project import get_project
+
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks._load_decisions_config",
             lambda _: {"show_related_on_start": True},
         )
         d = create_decision(ec_db, title="Arch decision")
         link_decision_to_file(ec_db, d["id"], "src/app.py")
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="s1-telemetry")
 
         test_file = ec_repo / "src" / "app.py"
         test_file.parent.mkdir(parents=True, exist_ok=True)
@@ -162,10 +167,22 @@ class TestOnSessionStartDecisions:
 
         from entirecontext.hooks.decision_hooks import on_session_start_decisions
 
-        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
+        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": session["id"]})
         assert result is not None
         assert "Arch decision" in result
         assert "Related Decisions" in result
+
+        events = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM retrieval_events WHERE search_type = 'session_start'"
+        ).fetchone()["n"]
+        assert events == 1
+
+        selections = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM retrieval_selections WHERE result_type = 'decision'"
+        ).fetchone()["n"]
+        assert selections >= 1
+
+        assert "Selection:" in result
 
     def test_stale_decisions_shown(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
@@ -480,11 +497,15 @@ class TestOnPostToolUseDecisions:
         assert fallback.exists()
         assert "Routing strategy" in fallback.read_text(encoding="utf-8")
 
-        # Single compact retrieval_event row (no per-selection rows in hook path)
         events = ec_db.execute(
             "SELECT COUNT(*) AS n FROM retrieval_events WHERE search_type = 'post_tool_use'"
         ).fetchone()["n"]
         assert events == 1
+
+        selections = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM retrieval_selections WHERE result_type = 'decision'"
+        ).fetchone()["n"]
+        assert selections >= 1
 
     def test_respects_turn_interval_gate(self, ec_repo, ec_db, monkeypatch):
         from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions

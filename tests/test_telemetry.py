@@ -73,3 +73,39 @@ class TestTelemetryHelpers:
             assert "Invalid application_type" in str(exc)
         else:
             raise AssertionError("expected ValueError")
+
+    def test_commit_false_defers_write(self, ec_repo, ec_db):
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="telemetry-defer")
+        turn = create_turn(ec_db, session["id"], 1, user_message="test", assistant_summary="ok")
+
+        event = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+            turn_id=turn["id"],
+            commit=False,
+        )
+        sel = record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            "d-1",
+            rank=1,
+            commit=False,
+        )
+
+        assert event["id"] is not None
+        assert sel["id"] is not None
+
+        ec_db.commit()
+
+        row = ec_db.execute("SELECT id FROM retrieval_events WHERE id = ?", (event["id"],)).fetchone()
+        assert row is not None
+        sel_row = ec_db.execute("SELECT id FROM retrieval_selections WHERE id = ?", (sel["id"],)).fetchone()
+        assert sel_row is not None

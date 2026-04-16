@@ -117,6 +117,8 @@ def _format_decision_entry(d: dict, stale: bool = False) -> str:
         parts.append(f"  Files: {files}")
     if rationale_short:
         parts.append(f"  Rationale: {rationale_short}")
+    if d.get("selection_id"):
+        parts.append(f"  Selection: {d['selection_id']}")
     return "\n".join(parts)
 
 
@@ -206,23 +208,59 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                         if len(seen_ids) >= display_limit:
                             break
 
-                if file_related:
-                    entries = [_format_decision_entry(d) for d in file_related[:display_limit]]
-                    sections.append(
-                        "## Related Decisions\n\n"
-                        "The following decisions are linked to recently changed files:\n\n" + "\n\n".join(entries)
-                    )
-
             # 2. Stale decisions — explicit status filter; separate from default policy.
             stale = list_decisions(conn, staleness_status="stale", limit=10)
             stale_new = [d for d in stale if d["id"] not in seen_ids]
             remaining = display_limit - len(seen_ids)
+            stale_full: list[dict] = []
             if stale_new and remaining > 0:
-                stale_entries = []
                 for d in stale_new[:remaining]:
                     full = get_decision(conn, d["id"]) or d
-                    stale_entries.append(_format_decision_entry(full, stale=True))
+                    stale_full.append(full)
                     seen_ids.add(d["id"])
+
+            # 3. Retrieval telemetry: stamp selection_ids before formatting.
+            all_surfaced = file_related + stale_full
+            if all_surfaced:
+                try:
+                    from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+
+                    surfacing_session_id_tel = data.get("session_id")
+                    event = record_retrieval_event(
+                        conn,
+                        source="hook",
+                        search_type="session_start",
+                        target="decision",
+                        query=",".join(changed_files) if changed_files else "",
+                        result_count=len(all_surfaced),
+                        latency_ms=0,
+                        session_id=surfacing_session_id_tel,
+                        file_filter=",".join(changed_files) if changed_files else None,
+                        commit=False,
+                    )
+                    for idx, d in enumerate(all_surfaced, start=1):
+                        sel = record_retrieval_selection(
+                            conn,
+                            event["id"],
+                            result_type="decision",
+                            result_id=d["id"],
+                            rank=idx,
+                            commit=False,
+                        )
+                        d["selection_id"] = sel["id"]
+                    conn.commit()
+                except Exception:
+                    pass
+
+            # 4. Format sections (after telemetry so selection_ids are present).
+            if file_related:
+                entries = [_format_decision_entry(d) for d in file_related[:display_limit]]
+                sections.append(
+                    "## Related Decisions\n\n"
+                    "The following decisions are linked to recently changed files:\n\n" + "\n\n".join(entries)
+                )
+            if stale_full:
+                stale_entries = [_format_decision_entry(d, stale=True) for d in stale_full]
                 sections.append(
                     "## Stale Decisions (action needed)\n\n"
                     + "\n\n".join(stale_entries)
@@ -613,17 +651,8 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             new_session_wide = sorted(surfaced_session_wide | set(new_ids))
             post_tool_turns[turn_id] = new_ids
             try:
-                from ..core.telemetry import record_retrieval_event
+                from ..core.telemetry import record_retrieval_event, record_retrieval_selection
 
-                # _write_session_metadata_patch MUST run before
-                # record_retrieval_event: the latter commits internally
-                # (telemetry.record_retrieval_event ends with conn.commit),
-                # so reversing this order would leave an orphaned telemetry
-                # row on disk if the metadata write then fails — the
-                # rollback in the except handler cannot undo an already-
-                # committed row. With this ordering, the metadata UPDATE
-                # is still pending when record_retrieval_event commits,
-                # so both writes flush together in one transaction.
                 _write_session_metadata_patch(
                     conn,
                     session_id,
@@ -632,7 +661,7 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
                         "$.post_tool_surfaced_turns": post_tool_turns,
                     },
                 )
-                record_retrieval_event(
+                event = record_retrieval_event(
                     conn,
                     source="hook",
                     search_type="post_tool_use",
@@ -643,7 +672,18 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
                     session_id=session_id,
                     turn_id=turn_id,
                     file_filter=",".join(files),
+                    commit=False,
                 )
+                for idx, d in enumerate(decisions_out, start=1):
+                    sel = record_retrieval_selection(
+                        conn,
+                        event["id"],
+                        result_type="decision",
+                        result_id=d["id"],
+                        rank=idx,
+                        commit=False,
+                    )
+                    d["selection_id"] = sel["id"]
                 conn.commit()
             except Exception:
                 try:
