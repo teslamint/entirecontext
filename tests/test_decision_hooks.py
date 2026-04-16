@@ -294,10 +294,10 @@ class TestOnSessionStartDecisions:
         assert "Contradicted choice" not in result
 
     def test_session_start_hot_file_with_many_contradicted_still_surfaces_fresh(self, ec_repo, ec_db, monkeypatch):
-        """PR #55 Codex review: when a hot file has more than list_decisions'
-        row cap of contradicted entries, a fresh decision just beyond that
-        cap must still surface — the filter has to push down into SQL so the
-        10-row cap can't hide valid guidance.
+        """When a hot file has many contradicted decisions, a fresh decision
+        must still surface — rank_related_decisions excludes contradicted
+        entries via include_contradicted=False so they cannot suppress valid
+        guidance.
         """
         from entirecontext.core.decisions import update_decision_staleness
 
