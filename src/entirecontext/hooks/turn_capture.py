@@ -107,6 +107,8 @@ def _maybe_launch_prompt_surfacing_worker(
                 "ec",
                 "decision",
                 "surface-prompt",
+                "--repo-path",
+                repo_path,
                 "--session",
                 session_id,
                 "--turn",

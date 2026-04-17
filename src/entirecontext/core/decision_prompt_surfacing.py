@@ -23,6 +23,11 @@ from typing import Any
 _FALLBACK_BASE = "decisions-context-prompt"
 
 
+def _sanitize_id_for_path(value: str) -> str:
+    """Strip filesystem-unsafe characters from an identifier."""
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in value or "unknown")
+
+
 def _get_uncommitted_diff(repo_path: str) -> str | None:
     """Return uncommitted diff text, truncated to 8192 bytes. ``None`` on failure.
 
@@ -62,15 +67,51 @@ def _get_recent_commit_shas(repo_path: str, limit: int = 5) -> list[str]:
     return []
 
 
-def _fallback_name(session_id: str) -> str:
-    """Sanitize the session id into a safe filename suffix.
+def _fallback_name(session_id: str, turn_id: str) -> str:
+    """Turn-scoped filename so concurrent prompts in one session don't race.
 
-    Session ids are UUIDs under normal operation; defensively strip
-    anything outside ``[A-Za-z0-9_-]`` in case a caller passes something
-    unusual (matches ``decision_hooks._post_tool_fallback_name``).
+    Two prompts in the same session launch two workers in parallel; the
+    worker that finishes second would otherwise overwrite (or in the
+    no-results branch, delete) the file the other just wrote, leaving
+    stale or missing guidance. Turn-scoping eliminates the race: each
+    worker writes its own artifact and readers pick the one matching
+    the active turn.
+
+    Session ids and turn ids are UUIDs in normal operation; defensively
+    strip anything outside ``[A-Za-z0-9_-]`` so the result is always a
+    safe filename (matches ``decision_hooks._post_tool_fallback_name``).
     """
-    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in session_id or "unknown")
-    return f"{_FALLBACK_BASE}-{safe}.md"
+    safe_session = _sanitize_id_for_path(session_id)
+    safe_turn = _sanitize_id_for_path(turn_id)
+    return f"{_FALLBACK_BASE}-{safe_session}-{safe_turn}.md"
+
+
+def _cleanup_older_session_fallbacks(repo_path: str, session_id: str, keep_name: str) -> None:
+    """Best-effort delete of prior prompt fallbacks for the same session.
+
+    Turn-scoped filenames remove the write race, but without cleanup a
+    long session accumulates N files per N prompts. This sweep runs
+    after the current turn's file is written and silently removes the
+    session's other ``decisions-context-prompt-<session>-*.md`` files.
+    Best-effort: any OSError is swallowed so a cleanup failure never
+    fails the primary write path.
+    """
+    try:
+        base_dir = Path(repo_path) / ".entirecontext"
+        if not base_dir.is_dir():
+            return
+        safe_session = _sanitize_id_for_path(session_id)
+        prefix = f"{_FALLBACK_BASE}-{safe_session}-"
+        for entry in base_dir.iterdir():
+            if entry.name == keep_name:
+                continue
+            if entry.name.startswith(prefix) and entry.name.endswith(".md"):
+                try:
+                    entry.unlink()
+                except OSError:
+                    pass
+    except OSError:
+        pass
 
 
 def _atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
@@ -250,7 +291,8 @@ def run_prompt_surface_worker(
 
         result["count"] = len(surfaced)
 
-        fallback_path = Path(repo_path) / ".entirecontext" / _fallback_name(session_id)
+        fallback_name = _fallback_name(session_id, turn_id)
+        fallback_path = Path(repo_path) / ".entirecontext" / fallback_name
         if surfaced:
             entries = [_format_decision_entry(d, d["rank"]) for d in surfaced]
             body = (
@@ -261,11 +303,20 @@ def run_prompt_surface_worker(
                 _atomic_write_text(fallback_path, body)
                 result["wrote"] = True
                 result["output_path"] = str(fallback_path)
+                # After the current turn's file is durable, sweep older
+                # prompt fallbacks for this session so a long session
+                # doesn't leak N files per N prompts. Runs AFTER the
+                # write so readers never see a "everything deleted,
+                # nothing written yet" intermediate state.
+                _cleanup_older_session_fallbacks(repo_path, session_id, keep_name=fallback_name)
             except OSError as exc:
                 result["warnings"].append(f"write_fallback:{exc}")
         else:
-            # No ranked decisions — do not leave a stale file from a prior
-            # prompt hanging around; remove it if present.
+            # No ranked decisions for this turn — remove only this turn's
+            # file if it somehow exists from a prior run. Older turns'
+            # files (from the same session) are left alone: a newer turn
+            # with no hits shouldn't erase guidance the user may still
+            # be acting on from an earlier prompt.
             if fallback_path.exists():
                 try:
                     fallback_path.unlink()
