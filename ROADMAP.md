@@ -92,10 +92,15 @@ Plan reference: `~/.claude/plans/v0-4-0-streamed-pond.md`.
   - Worker assembles prompt + diff + recent commits signals and writes `.entirecontext/decisions-context-prompt-<session>.md`
   - Gated by `[decisions] surface_on_user_prompt` (default off)
 
-- [ ] **F5. Outcome type enum extension (breaking)**
-  - Add `refined` (+0.3) and `replaced` (0.0) to `VALID_DECISION_OUTCOME_TYPES`
-  - Schema v14: table-rebuild, data-preserving migration for the CHECK constraint
-  - Automatic recording paths for the new types deferred to v0.5
+Scope note: outcome type enum extension (`refined`/`replaced`) was originally scoped here as F5 but is deferred to the v0.5 breaking track so that enum change + schema v14 + automatic recording paths land together in one release rather than split across two.
+
+## Hardening Backlog
+
+Structural debt that does not fit the "decision memory depth" wedge but still blocks reliable releases. Surfaced explicitly so milestone planning does not read more optimistic than the real implementation risk.
+
+- [ ] **`LEGACY_TRANSACTION_CONTROL` dependency** — `src/entirecontext/core/context.py:18` and `tests/test_transaction_helper.py:4` rely on Python 3.12's legacy transaction mode. Needs re-verification under Python 3.13+ autocommit semantics before we can claim cross-version support.
+- [ ] **`confirm_candidate` non-atomic flow** — `src/entirecontext/core/decision_candidates.py:92-224` uses CAS-claim + internal per-call commits because `create_decision`/`link_decision_to_*` each commit independently. A crash between step 2 and step 3 leaves the candidate in `confirmed` state with `promoted_decision_id IS NULL`. Resolve either by adding a recovery detector or by refactoring to a single outer transaction.
+- [ ] **Review-bot noise reduction** — `.github/workflows/claude-code-review.yml` and `.github/workflows/tidy-pilot.yml` currently produce sticky comments regardless of whether a PR is substantive (see PR #82 Tidy Pilot comment as a reference case). Needs thresholding, disable path, or filter.
 
 ## Later
 
