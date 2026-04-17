@@ -67,7 +67,7 @@ Theme: close the decision-memory feedback arc — retrieval records its footprin
   - SessionEnd: infer "ignored" for surfaced-but-unacted decisions (config-gated)
   - Surface `quality_score` in retrieval output
 
-## v0.4.0 — Feed the Loop (Planned)
+## v0.4.0 — Feed the Loop (Ready for Release)
 
 Theme: deepen the decision-memory loop so outcome data flows into both ranking and extraction, and add UserPromptSubmit as a new retrieval signal channel.
 
@@ -78,7 +78,7 @@ Plan reference: `~/.claude/plans/v0-4-0-streamed-pond.md`.
   - New config `[decisions.quality] recency_half_life_days` (default 30)
   - Single-outcome smoothing (`min_volume`) to avoid ranking swings
 
-- [ ] **F2. Outcome → extraction feedback (penalty only)** (PR #84 open)
+- [x] **F2. Outcome → extraction feedback (penalty only)** (#84 merged)
   - `run_extraction` penalises candidate confidence when the candidate's files have historical contradicted outcomes
   - Ratio gate to limit false positives; accepted-boost deferred to v0.5 to avoid self-reinforcing loops
   - New config `[decisions.extraction] outcome_feedback_*`
@@ -87,10 +87,14 @@ Plan reference: `~/.claude/plans/v0-4-0-streamed-pond.md`.
   - `[decisions.ranking]` section replaces hardcoded `_STALENESS_FACTORS`, `_ASSESSMENT_RELATION_WEIGHTS`, and file/commit signal weights
   - Defaults unchanged; `score_breakdown` keys stable (additive only)
 
-- [ ] **F4. UserPromptSubmit async decision surfacing** (PR #86 open)
+- [x] **F4. UserPromptSubmit async decision surfacing** (#86 merged)
   - Prompt text redacted in-memory before any tmp write, then `launch_worker` for ranking
-  - Worker assembles prompt + diff + recent commits signals and writes `.entirecontext/decisions-context-prompt-<session>.md`
+  - Worker assembles prompt + diff + recent commits signals and writes `.entirecontext/decisions-context-prompt-<session>-<turn>.md`
   - Gated by `[decisions] surface_on_user_prompt` (default off)
+
+- [x] **E2E coverage** (`tests/test_e2e_feed_the_loop.py`)
+  - Single scenario wires F1 decay + F2 penalty + F3 ranking config + F4 surfacing against one repo and one decision
+  - Verifies contradicted-default filter (negative assertion), O_EXCL 0600 tmp mode, turn-scoped filename, and end-to-end redaction of `sk-[A-Za-z0-9]{48}` patterns through hook → tmp → worker → Markdown
 
 Scope note: outcome type enum extension (`refined`/`replaced`) was originally scoped here as F5 but is deferred to the v0.5 breaking track so that enum change + schema v14 + automatic recording paths land together in one release rather than split across two.
 
