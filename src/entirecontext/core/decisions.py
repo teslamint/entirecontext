@@ -157,10 +157,11 @@ def calculate_decision_quality_score(
         accepted * 1.0 - ignored * 0.5 - contradicted * 2.0, clamped to [-4, +4].
 
     When ``decayed_counts`` is provided, the same linear combination runs over
-    the already time-decayed totals instead. ``counts`` still drives the volume
-    smoother so the rank is not swung by a single fresh outcome: if the number
-    of real outcomes is below ``min_volume``, the decayed score is linearly
-    attenuated toward zero by ``total / min_volume``.
+    the already time-decayed totals instead. The volume smoother also uses the
+    effective decayed/valid outcome volume so rows that decayed away (or were
+    skipped as invalid) do not suppress low-volume attenuation: if the
+    effective outcome volume is below ``min_volume``, the decayed score is
+    linearly attenuated toward zero by ``total / min_volume``.
     """
     if decayed_counts is None:
         raw_score = (
@@ -176,7 +177,7 @@ def calculate_decision_quality_score(
         - 2.0 * float(decayed_counts.get("contradicted", 0.0))
     )
     if min_volume > 1:
-        total = sum(int(counts.get(k, 0)) for k in ("accepted", "ignored", "contradicted"))
+        total = sum(float(decayed_counts.get(k, 0.0)) for k in ("accepted", "ignored", "contradicted"))
         if 0 < total < min_volume:
             raw_score *= total / min_volume
     return max(-4.0, min(4.0, raw_score))

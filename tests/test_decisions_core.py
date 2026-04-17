@@ -1130,13 +1130,14 @@ class TestDecisionQualityDecay:
         """When decayed_counts is supplied, it drives the score (not counts)."""
         from entirecontext.core.decisions import calculate_decision_quality_score
 
-        # 3 accepted across history, but decayed sum is 1.5 (recent-weighted).
-        # Legacy answer would be 3.0; decayed answer must be 1.5.
+        # 3 accepted across history, but decayed sum is 2.5 (recent-weighted).
+        # Legacy answer would be 3.0; decayed answer must be 2.5.
         counts = {"accepted": 3}
-        decayed = {"accepted": 1.5}
+        decayed = {"accepted": 2.5}
         score = calculate_decision_quality_score(counts, decayed_counts=decayed, min_volume=2)
-        assert score == 1.5
-        # With contradicted mixed in, sign still reflects decayed weight.
+        assert score == 2.5
+        # With contradicted mixed in, sign still reflects decayed weight when
+        # the effective volume is high enough that smoothing does not fire.
         counts = {"accepted": 2, "contradicted": 3}
         decayed = {"accepted": 0.4, "contradicted": 1.8}
         score = calculate_decision_quality_score(counts, decayed_counts=decayed, min_volume=2)
@@ -1170,6 +1171,15 @@ class TestDecisionQualityDecay:
         # At volume = min_volume, smoothing does not fire.
         score_full = calculate_decision_quality_score({"accepted": 2}, decayed_counts={"accepted": 2.0}, min_volume=2)
         assert score_full == 2.0
+
+    def test_quality_score_min_volume_uses_decayed_effective_volume(self):
+        """Low effective volume must still smooth even when raw lifetime counts are high."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        counts = {"accepted": 5}
+        decayed = {"accepted": 1.0}
+        score = calculate_decision_quality_score(counts, decayed_counts=decayed, min_volume=2)
+        assert score == 0.5
 
     def test_fetch_decayed_outcome_counts_empty_ids_returns_empty(self, ec_db):
         from entirecontext.core.decisions import _fetch_decayed_outcome_counts
