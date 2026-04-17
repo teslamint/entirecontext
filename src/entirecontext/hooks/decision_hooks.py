@@ -184,7 +184,14 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         if not config.get("show_related_on_start", False):
             return None
 
-        from ..core.decisions import _normalize_path, get_decision, list_decisions, rank_related_decisions
+        from ..core.config import load_config
+        from ..core.decisions import (
+            _load_ranking_weights,
+            _normalize_path,
+            get_decision,
+            list_decisions,
+            rank_related_decisions,
+        )
         from ..db import get_db
 
         conn = get_db(repo_path)
@@ -212,6 +219,8 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
 
             normalized_files = [_normalize_path(f) for f in changed_files if _normalize_path(f)]
 
+            ranking_weights = _load_ranking_weights(load_config(repo_path))
+
             file_related: list[dict] = []
             if normalized_files or diff_text or commit_shas or assessment_ids:
                 ranked = rank_related_decisions(
@@ -222,6 +231,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     assessment_ids=assessment_ids,
                     limit=display_limit,
                     include_contradicted=False,
+                    ranking=ranking_weights,
                 )
                 for d in ranked:
                     if d["id"] not in seen_ids:
@@ -812,10 +822,13 @@ def _session_passes_noise_gate(conn, session_id: str, min_turns: int = 3) -> boo
 
     Requires at least 1 checkpoint OR at least min_turns turns with non-empty files_touched.
     """
-    has_checkpoint = conn.execute(
-        "SELECT 1 FROM checkpoints WHERE session_id = ? LIMIT 1",
-        (session_id,),
-    ).fetchone() is not None
+    has_checkpoint = (
+        conn.execute(
+            "SELECT 1 FROM checkpoints WHERE session_id = ? LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        is not None
+    )
     if has_checkpoint:
         return True
 

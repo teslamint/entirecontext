@@ -28,7 +28,12 @@ from entirecontext.core.decisions import (
 )
 from entirecontext.core.futures import create_assessment, list_assessments
 from entirecontext.core.project import get_project
-from entirecontext.core.decisions import rank_related_decisions
+from entirecontext.core.decisions import (
+    _DEFAULT_RANKING_WEIGHTS,
+    RankingWeights,
+    _load_ranking_weights,
+    rank_related_decisions,
+)
 from entirecontext.core.session import create_session
 from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
 from entirecontext.core.turn import create_turn
@@ -917,6 +922,161 @@ class TestRankingSignals:
         item = ranked[0]
         for key in ("id", "title", "staleness_status", "updated_at", "base_score", "quality_score", "score"):
             assert key in item
+
+
+# ---------------------------------------------------------------------------
+# Issue #85 (v0.4.0 F3): ranking weight configuration
+# ---------------------------------------------------------------------------
+
+
+class TestRankingWeightsConfig:
+    """[decisions.ranking] config → RankingWeights injection into rank_related_decisions."""
+
+    _EXPECTED_BREAKDOWN_KEYS = frozenset(
+        {
+            "file_exact",
+            "file_proximity",
+            "assessment",
+            "diff_relevance",
+            "git_commit",
+            "quality",
+            "staleness_factor",
+        }
+    )
+
+    def test_score_breakdown_keys_stable(self, ec_db):
+        """score_breakdown keys are a stable additive-only contract (#85)."""
+        d = create_decision(ec_db, title="Key stability decision")
+        link_decision_to_file(ec_db, d["id"], "src/contract.py")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/contract.py"])
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert set(item["score_breakdown"].keys()) == set(self._EXPECTED_BREAKDOWN_KEYS), (
+            "score_breakdown keys changed — MCP ec_decision_related callers rely on these exact names; "
+            "rename is forbidden, add-only is allowed."
+        )
+
+    def test_rank_default_matches_legacy(self, ec_db):
+        """ranking=None preserves legacy hardcoded constants (pre-F3 numbers)."""
+        d_a = create_decision(ec_db, title="Fresh file decision")
+        link_decision_to_file(ec_db, d_a["id"], "src/legacy.py")
+        d_b = create_decision(ec_db, title="Commit decision")
+        link_decision_to_commit(ec_db, d_b["id"], "abc1234")
+
+        ranked_files = rank_related_decisions(ec_db, file_paths=["src/legacy.py"])
+        item_a = next(r for r in ranked_files if r["id"] == d_a["id"])
+        assert item_a["score_breakdown"]["file_exact"] == 3.0
+        assert item_a["score_breakdown"]["staleness_factor"] == 1.0
+
+        ranked_commits = rank_related_decisions(ec_db, commit_shas=["abc1234"])
+        item_b = next(r for r in ranked_commits if r["id"] == d_b["id"])
+        assert item_b["score_breakdown"]["git_commit"] == 3.0
+
+        assert _DEFAULT_RANKING_WEIGHTS.staleness_factors == {
+            "fresh": 1.0,
+            "stale": 0.85,
+            "superseded": 0.5,
+            "contradicted": 0.25,
+        }
+        assert _DEFAULT_RANKING_WEIGHTS.assessment_relation_weights == {
+            "supports": 4.0,
+            "informed_by": 4.0,
+            "contradicts": 5.0,
+            "supersedes": 3.0,
+        }
+        assert _DEFAULT_RANKING_WEIGHTS.file_exact_weight == 3.0
+        assert _DEFAULT_RANKING_WEIGHTS.git_commit_weight == 3.0
+        assert _DEFAULT_RANKING_WEIGHTS.directory_proximity_cap_levels == 3
+
+    def test_rank_uses_config_staleness_factors(self, ec_db):
+        """A staleness_factors override in [decisions.ranking] reshapes the staleness demotion."""
+        d = create_decision(ec_db, title="Stale-boost decision", staleness_status="stale")
+        link_decision_to_file(ec_db, d["id"], "src/override.py")
+
+        default_ranked = rank_related_decisions(ec_db, file_paths=["src/override.py"])
+        default_item = next(r for r in default_ranked if r["id"] == d["id"])
+        assert default_item["score_breakdown"]["staleness_factor"] == 0.85  # legacy "stale" default
+
+        boosted = RankingWeights(
+            staleness_factors={**_DEFAULT_RANKING_WEIGHTS.staleness_factors, "stale": 2.0},
+        )
+        override_ranked = rank_related_decisions(ec_db, file_paths=["src/override.py"], ranking=boosted)
+        override_item = next(r for r in override_ranked if r["id"] == d["id"])
+        assert override_item["score_breakdown"]["staleness_factor"] == 2.0
+        assert override_item["score"] > default_item["score"]
+
+    def test_load_ranking_weights_deep_merges_partial_override(self):
+        """Partial [decisions.ranking] override keeps un-specified factors at legacy defaults."""
+        weights = _load_ranking_weights(
+            {
+                "decisions": {
+                    "ranking": {
+                        "staleness_factors": {"fresh": 3.0},
+                        "file_exact_weight": 5.0,
+                    }
+                }
+            }
+        )
+        assert weights.staleness_factors["fresh"] == 3.0
+        assert weights.staleness_factors["stale"] == 0.85  # legacy default preserved
+        assert weights.file_exact_weight == 5.0
+        assert weights.git_commit_weight == 3.0  # legacy default preserved
+        assert weights.assessment_relation_weights == _DEFAULT_RANKING_WEIGHTS.assessment_relation_weights
+
+    def test_load_ranking_weights_empty_config_returns_defaults_by_value(self):
+        """Empty/missing config yields a fresh instance with default values (never the singleton)."""
+        for empty in (None, {}, {"decisions": {}}, {"decisions": {"ranking": {}}}):
+            weights = _load_ranking_weights(empty)
+            assert weights.staleness_factors == _DEFAULT_RANKING_WEIGHTS.staleness_factors
+            assert weights.assessment_relation_weights == _DEFAULT_RANKING_WEIGHTS.assessment_relation_weights
+            assert weights.file_exact_weight == _DEFAULT_RANKING_WEIGHTS.file_exact_weight
+            assert weights.git_commit_weight == _DEFAULT_RANKING_WEIGHTS.git_commit_weight
+            assert weights.directory_proximity_cap_levels == _DEFAULT_RANKING_WEIGHTS.directory_proximity_cap_levels
+            # Isolation: returned instance must never be the module-level singleton,
+            # otherwise a caller mutating staleness_factors would contaminate defaults.
+            assert weights is not _DEFAULT_RANKING_WEIGHTS
+            assert weights.staleness_factors is not _DEFAULT_RANKING_WEIGHTS.staleness_factors
+
+    def test_load_ranking_weights_mutation_does_not_contaminate_singleton(self):
+        """Mutating an in-field dict on a returned instance must not leak into defaults."""
+        poisoned = _load_ranking_weights(None)
+        poisoned.staleness_factors["fresh"] = 999.0
+
+        fresh = _load_ranking_weights(None)
+        assert fresh.staleness_factors["fresh"] == 1.0
+        assert _DEFAULT_RANKING_WEIGHTS.staleness_factors["fresh"] == 1.0
+
+    def test_load_ranking_weights_rejects_non_numeric_with_field_name(self):
+        """Coercion errors must name the offending config key."""
+        with pytest.raises(ValueError, match=r"decisions\.ranking\.file_exact_weight"):
+            _load_ranking_weights({"decisions": {"ranking": {"file_exact_weight": "not-a-number"}}})
+        with pytest.raises(ValueError, match=r"decisions\.ranking\.directory_proximity_cap_levels"):
+            _load_ranking_weights({"decisions": {"ranking": {"directory_proximity_cap_levels": "deep"}}})
+
+    def test_rank_cap_levels_override_widens_candidate_gathering(self, ec_db):
+        """Config cap_levels > 3 must widen _gather_candidates_by_files, not just the scorer.
+
+        Setup: linked file is shallow ("src/a/file.py"); queried file is deep
+        ("src/a/b/c/d/e/deep.py"). They share only "src/a" — a 4-hop ancestor of
+        the queried file. Default cap=3 keeps the queried file's ancestor search
+        shallow enough that it never generates "src/a" as an ancestor dir, so the
+        linked file is not a candidate at all (and its proximity score would be
+        zero anyway under depth_from_match=4 > cap=3). Raising cap to 4 widens
+        both sides.
+        """
+        d_far = create_decision(ec_db, title="Four hops away")
+        link_decision_to_file(ec_db, d_far["id"], "src/a/file.py")
+        deep_path = ["src/a/b/c/d/e/deep.py"]
+
+        default_ranked = rank_related_decisions(ec_db, file_paths=deep_path)
+        assert not any(r["id"] == d_far["id"] for r in default_ranked)
+
+        wide = _load_ranking_weights({"decisions": {"ranking": {"directory_proximity_cap_levels": 4}}})
+        assert wide.directory_proximity_cap_levels == 4
+        wide_ranked = rank_related_decisions(ec_db, file_paths=deep_path, ranking=wide)
+        assert any(r["id"] == d_far["id"] for r in wide_ranked), (
+            "directory_proximity_cap_levels=4 must widen candidate gathering, not just scoring."
+        )
 
 
 # ---------------------------------------------------------------------------

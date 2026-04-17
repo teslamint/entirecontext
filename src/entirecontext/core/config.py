@@ -91,6 +91,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "noise_gate_min_turns_with_files": 3,
         "candidate_dedup_similarity_threshold": 0.5,
         "candidate_redact_secrets": True,
+        "ranking": {
+            "staleness_factors": {
+                "fresh": 1.0,
+                "stale": 0.85,
+                "superseded": 0.5,
+                "contradicted": 0.25,
+            },
+            "assessment_relation_weights": {
+                "supports": 4.0,
+                "informed_by": 4.0,
+                "contradicts": 5.0,
+                "supersedes": 3.0,
+            },
+            "file_exact_weight": 3.0,
+            "git_commit_weight": 3.0,
+            "directory_proximity_cap_levels": 3,
+        },
     },
 }
 
