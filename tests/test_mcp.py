@@ -1122,6 +1122,29 @@ class TestMCPDashboard:
         ).fetchone()["n"]
         assert outcomes == 0
 
+    def test_context_apply_auto_accepted_without_selection(self, mock_repo_db):
+        """Direct decision apply (no selection_id) must still produce an accepted outcome."""
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.mcp.server import ec_context_apply
+
+        decision = create_decision(mock_repo_db, title="Direct apply no selection")
+        asyncio.run(
+            ec_context_apply(
+                "decision_change",
+                source_type="decision",
+                source_id=decision["id"],
+            )
+        )
+
+        rows = mock_repo_db.execute(
+            "SELECT outcome_type, retrieval_selection_id, note FROM decision_outcomes WHERE decision_id = ?",
+            (decision["id"],),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["outcome_type"] == "accepted"
+        assert rows[0]["retrieval_selection_id"] is None
+        assert rows[0]["note"] == "auto: context_apply"
+
 
 class TestMCPDecisionTools:
     @pytest.fixture(autouse=True)

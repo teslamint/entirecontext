@@ -321,9 +321,11 @@ def _maybe_infer_ignored_decisions(repo_path: str, session_id: str) -> None:
                 SELECT rs.id AS selection_id, rs.result_id AS decision_id,
                        rs.turn_id, t.turn_number
                 FROM retrieval_selections rs
+                JOIN retrieval_events re ON re.id = rs.retrieval_event_id
                 LEFT JOIN turns t ON t.id = rs.turn_id
                 WHERE rs.session_id = ?
                   AND rs.result_type = 'decision'
+                  AND re.source = 'hook'
                   AND NOT EXISTS (
                       SELECT 1 FROM decision_outcomes do
                       WHERE do.decision_id = rs.result_id

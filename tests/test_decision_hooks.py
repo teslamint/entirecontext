@@ -1904,6 +1904,59 @@ class TestIgnoredInference:
         # Earliest surfacing (SessionStart, NULL turn_id) wins the representative slot via COALESCE(..., 0).
         assert rows[0]["retrieval_selection_id"] == sel_start["id"]
 
+    def test_skips_mcp_tool_selections(self, ec_repo, ec_db, monkeypatch):
+        """MCP tool lookups (source='mcp') are exploratory, not surfacing — must not be inferred as ignored.
+
+        Before the fix the query matched every decision selection in the session regardless of
+        source. After the fix, the JOIN on `retrieval_events.source = 'hook'` limits inference
+        to selections that were actually surfaced to the user by a hook.
+        """
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="mcp-skip")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Looked up via MCP, never surfaced")
+        turn1_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+        ).fetchone()["id"]
+        event = record_retrieval_event(
+            ec_db,
+            source="mcp",
+            search_type="regex",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=turn1_id,
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchone()["n"]
+        assert outcomes == 0
+
     def test_grace_period_uses_earliest_surfacing(self, ec_repo, ec_db, monkeypatch):
         """Late surfacing must not mask an earlier surfacing that satisfies the grace period."""
         from entirecontext.core.project import get_project
