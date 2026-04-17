@@ -67,7 +67,7 @@ Theme: close the decision-memory feedback arc — retrieval records its footprin
   - SessionEnd: infer "ignored" for surfaced-but-unacted decisions (config-gated)
   - Surface `quality_score` in retrieval output
 
-## v0.4.0 — Feed the Loop (Ready for Release)
+## v0.4.0 — Feed the Loop (Shipped)
 
 Theme: deepen the decision-memory loop so outcome data flows into both ranking and extraction, and add UserPromptSubmit as a new retrieval signal channel.
 
