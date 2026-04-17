@@ -308,10 +308,13 @@ def _maybe_infer_ignored_decisions(repo_path: str, session_id: str) -> None:
 
         conn = get_db(repo_path)
         try:
-            max_turn = conn.execute(
-                "SELECT MAX(turn_number) FROM turns WHERE session_id = ?",
-                (session_id,),
-            ).fetchone()[0] or 0
+            max_turn = (
+                conn.execute(
+                    "SELECT MAX(turn_number) FROM turns WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()[0]
+                or 0
+            )
 
             rows = conn.execute(
                 """
@@ -326,26 +329,36 @@ def _maybe_infer_ignored_decisions(repo_path: str, session_id: str) -> None:
                       WHERE do.decision_id = rs.result_id
                         AND do.session_id = ?
                   )
+                ORDER BY rs.result_id, COALESCE(t.turn_number, 0) ASC
                 """,
                 (session_id, session_id),
             ).fetchall()
 
+            seen_decisions: set[str] = set()
             for row in rows:
+                decision_id = row["decision_id"]
+                if decision_id in seen_decisions:
+                    continue
+                seen_decisions.add(decision_id)
                 turn_number = row["turn_number"] or 0
                 if max_turn - turn_number < min_turn_gap:
                     continue
                 try:
+                    infer_session = session_id
+                    infer_turn = row["turn_id"]
+                    if infer_session and not infer_turn:
+                        infer_session = None
                     record_decision_outcome(
                         conn,
-                        row["decision_id"],
+                        decision_id,
                         outcome_type="ignored",
                         retrieval_selection_id=row["selection_id"],
-                        session_id=session_id,
-                        turn_id=row["turn_id"],
+                        session_id=infer_session,
+                        turn_id=infer_turn,
                         note="auto: session_end inference",
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _record_hook_warning(repo_path, "infer_ignored_outcome_failed", exc)
         finally:
             conn.close()
     except Exception as exc:
