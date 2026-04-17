@@ -46,7 +46,11 @@ def decision_list(
     conn, _ = get_repo_connection()
     try:
         decisions = list_decisions(
-            conn, staleness_status=status, file_path=file, limit=limit, include_contradicted=include_contradicted,
+            conn,
+            staleness_status=status,
+            file_path=file,
+            limit=limit,
+            include_contradicted=include_contradicted,
         )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -597,6 +601,57 @@ def decision_extract_from_session(
         raise typer.Exit(1)
     finally:
         conn.close()
+
+
+@decision_app.command("surface-prompt")
+def decision_surface_prompt(
+    session_id: str = typer.Option(..., "--session", help="Session ID that originated the prompt"),
+    turn_id: str = typer.Option(..., "--turn", help="Turn ID that originated the prompt"),
+    prompt_file: str = typer.Option(..., "--prompt-file", help="Path to the tmp file holding the redacted prompt"),
+    repo_path_arg: Optional[str] = typer.Option(
+        None, "--repo-path", help="Absolute repo root (required when the worker inherits cwd outside the repo)"
+    ),
+):
+    """Background worker: rank decisions against the current user prompt.
+
+    Invoked by ``on_user_prompt`` via ``launch_worker`` when
+    ``[decisions] surface_on_user_prompt = true``. Reads the redacted
+    prompt from ``--prompt-file`` (defense-in-depth: re-applies secret
+    filters), writes Markdown to
+    ``.entirecontext/decisions-context-prompt-<session>-<turn>.md``,
+    and deletes the tmp prompt file in ``try/finally`` regardless of
+    outcome. Never exits nonzero on surfacing errors.
+
+    ``--repo-path`` is the primary resolution path — the hook passes it
+    explicitly because ``launch_worker`` does not set ``cwd`` on the
+    child process, so a worker that falls back to ``find_git_root()``
+    would read whatever directory the parent hook was launched from
+    (which may be outside the repo when Claude Code runs from a
+    different cwd than ``data["cwd"]``).
+    """
+    from pathlib import Path
+
+    from ..core.decision_prompt_surfacing import run_prompt_surface_worker
+    from ..core.project import find_git_root
+
+    prompt_path = Path(prompt_file)
+    repo_path = repo_path_arg or find_git_root()
+    if not repo_path:
+        # Either the caller (the hook) forgot to pass --repo-path AND the
+        # worker's inherited cwd is outside a git tree, or the repo was
+        # removed mid-run. Clean up the tmp file before exit so a
+        # misconfigured invocation cannot leak the prompt payload on disk.
+        try:
+            prompt_path.unlink()
+        except OSError:
+            pass
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    result = run_prompt_surface_worker(repo_path, session_id, turn_id, prompt_path)
+    if result.get("warnings"):
+        for warning in result["warnings"]:
+            console.print(f"[yellow]warning:[/yellow] {warning}")
 
 
 candidates_app = typer.Typer(help="Candidate decision review flow")

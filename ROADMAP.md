@@ -87,7 +87,7 @@ Plan reference: `~/.claude/plans/v0-4-0-streamed-pond.md`.
   - `[decisions.ranking]` section replaces hardcoded `_STALENESS_FACTORS`, `_ASSESSMENT_RELATION_WEIGHTS`, and file/commit signal weights
   - Defaults unchanged; `score_breakdown` keys stable (additive only)
 
-- [ ] **F4. UserPromptSubmit async decision surfacing**
+- [ ] **F4. UserPromptSubmit async decision surfacing** (PR #86 open)
   - Prompt text redacted in-memory before any tmp write, then `launch_worker` for ranking
   - Worker assembles prompt + diff + recent commits signals and writes `.entirecontext/decisions-context-prompt-<session>.md`
   - Gated by `[decisions] surface_on_user_prompt` (default off)

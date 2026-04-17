@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,95 @@ def _save_content_file(repo_path: str, session_id: str, turn_id: str, content: s
     file_path.write_text(content, encoding="utf-8")
     rel_path = f"content/{session_id}/{turn_id}.jsonl"
     return rel_path, len(content.encode("utf-8"))
+
+
+def _sanitize_id_for_path(value: str) -> str:
+    """Strip filesystem-unsafe characters from an identifier.
+
+    Used on session and turn ids that feed into tmp-file names and the
+    ``pid_name`` slot consumed by ``launch_worker``. Matches the defensive
+    sanitization in ``decision_hooks._post_tool_fallback_name``.
+    """
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in value or "unknown")
+
+
+def _maybe_launch_prompt_surfacing_worker(
+    repo_path: str,
+    session_id: str,
+    turn_id: str,
+    redacted_prompt: str,
+    config: dict[str, Any],
+) -> None:
+    """Write the redacted prompt to a 0600 tmp file and launch the surfacing worker.
+
+    Called from ``on_user_prompt`` only when
+    ``[decisions] surface_on_user_prompt = true``. The tmp file's
+    ``O_EXCL`` flag prevents symlink/race attacks: if the path exists
+    (even as a symlink into a restricted location), ``os.open`` raises
+    ``FileExistsError`` and we skip the launch rather than clobber or
+    follow the link. Never raises — any failure is swallowed so the
+    surrounding turn insert is not disrupted.
+    """
+    tmp_path: Path | None = None
+    try:
+        from ..core.async_worker import launch_worker
+        from ..core.content_filter import redact_for_query
+        from ..core.security import filter_secrets
+
+        # Defense-in-depth: the prompt arriving here is already filtered by
+        # the capture-time ``redact_content`` call upstream in on_user_prompt,
+        # but this is the last chance before the text touches disk. Apply
+        # the security module's hard secret patterns (always on) and the
+        # configurable query-time redaction patterns.
+        safe = filter_secrets(redacted_prompt)
+        safe = redact_for_query(safe, config)
+
+        safe_session = _sanitize_id_for_path(session_id)
+        safe_turn = _sanitize_id_for_path(turn_id)
+        tmp_dir = Path(repo_path) / ".entirecontext" / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = tmp_dir / f"prompt-{safe_session}-{safe_turn}.txt"
+
+        # O_EXCL guards against the file already existing (symlink/race
+        # attack surface). Mode 0600 applied at creation so the payload
+        # never lives on disk with broader perms.
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        fd = os.open(str(tmp_path), flags, 0o600)
+        try:
+            os.write(fd, safe.encode("utf-8"))
+        finally:
+            os.close(fd)
+
+        # pid_name is bounded so race-prone concurrent prompts don't
+        # collide on the same PID file. launch_worker writes to
+        # .entirecontext/<pid_name>.pid.
+        pid_name = f"prompt-{safe_session}-{safe_turn}"[:100]
+        launch_worker(
+            repo_path,
+            [
+                "ec",
+                "decision",
+                "surface-prompt",
+                "--repo-path",
+                repo_path,
+                "--session",
+                session_id,
+                "--turn",
+                turn_id,
+                "--prompt-file",
+                str(tmp_path),
+            ],
+            pid_name=pid_name,
+        )
+    except Exception:
+        # Surfacing must never disrupt the turn insert. Best-effort tmp
+        # cleanup on exception — the worker's finally block is the primary
+        # cleanup path but it never runs if launch failed.
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def on_user_prompt(data: dict[str, Any]) -> None:
@@ -93,6 +183,13 @@ def on_user_prompt(data: dict[str, Any]) -> None:
             (now, now, session_id),
         )
         conn.commit()
+
+        # F4: optional async decision surfacing against the prompt text.
+        # Kept strictly after the commit so the turn row is durable before
+        # the worker launches, and guarded inside the helper so a launch
+        # failure cannot roll back the turn insert.
+        if config.get("decisions", {}).get("surface_on_user_prompt", False):
+            _maybe_launch_prompt_surfacing_worker(repo_path, session_id, turn_id, prompt, config)
     finally:
         conn.close()
 
