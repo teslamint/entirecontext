@@ -587,11 +587,15 @@ class TestConfidenceThreshold:
         """run_extraction with min_confidence=1.0 should skip all candidates."""
         session = _seed_session(ec_db, ec_repo, session_id="conf-threshold-skip")
         _seed_turn(ec_db, session["id"], 1, "We decided something")
-        llm_response = json.dumps([{
-            "title": "Low confidence decision",
-            "rationale": "A rationale that is long enough to pass the 30 char check here",
-            "rejected_alternatives": ["option b"],
-        }])
+        llm_response = json.dumps(
+            [
+                {
+                    "title": "Low confidence decision",
+                    "rationale": "A rationale that is long enough to pass the 30 char check here",
+                    "rejected_alternatives": ["option b"],
+                }
+            ]
+        )
         monkeypatch.setattr(
             "entirecontext.core.decision_extraction.call_extraction_llm",
             lambda *a, **kw: llm_response,
@@ -920,3 +924,274 @@ class TestDedupAndNoise:
         assert len(all_candidates) == 1
         assert all_candidates[0]["confidence"] < 0.5
         assert len(filtered) == 0
+
+
+# ---------------------------------------------------------------------------
+# F2: outcome → extraction penalty feedback
+# ---------------------------------------------------------------------------
+
+
+class TestOutcomeFeedbackPenalty:
+    """Outcome history on a file attenuates new-candidate confidence."""
+
+    def _seed_decision_with_outcomes(
+        self,
+        ec_db,
+        *,
+        title: str,
+        file_paths: list[str],
+        outcome_types: list[str],
+    ) -> str:
+        """Create a decision, link files, and record outcomes. Returns decision id."""
+        from entirecontext.core.decisions import (
+            link_decision_to_file,
+            record_decision_outcome,
+        )
+
+        decision = create_decision(
+            ec_db,
+            title=title,
+            rationale="seed rationale for outcome-feedback test",
+        )
+        for fp in file_paths:
+            link_decision_to_file(ec_db, decision["id"], fp)
+        for ot in outcome_types:
+            record_decision_outcome(ec_db, decision["id"], ot)
+        return decision["id"]
+
+    def test_outcome_feedback_penalty_on_contradicted_files(self, ec_repo, ec_db):
+        """Files with majority-contradicted history get the penalty applied."""
+        from entirecontext.core.decision_extraction import (
+            apply_outcome_feedback_to_confidence,
+            get_file_outcome_stats,
+        )
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Prior decision on payment",
+            file_paths=["src/service/payment.py"],
+            outcome_types=["contradicted", "contradicted", "accepted"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=60)
+        assert stats["contradicted"] == 2
+        assert stats["accepted"] == 1
+        assert stats["total"] == 3
+
+        breakdown = {"final": 0.60, "penalties": {}}
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
+        # 2/3 > 0.5 → penalty applied.
+        assert adjusted == pytest.approx(0.45)
+        assert new_breakdown["outcome_feedback"]["applied"] is True
+        assert new_breakdown["outcome_feedback"]["ratio"] == pytest.approx(2 / 3, abs=1e-4)
+        assert new_breakdown["final_before_outcome_feedback"] == 0.60
+        assert new_breakdown["final"] == pytest.approx(0.45)
+
+    def test_outcome_feedback_disabled_no_change(self, ec_repo, ec_db):
+        """lookback_days<=0 short-circuits to zeros, skipping the penalty entirely."""
+        from entirecontext.core.decision_extraction import (
+            apply_outcome_feedback_to_confidence,
+            get_file_outcome_stats,
+        )
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Prior decision on payment",
+            file_paths=["src/service/payment.py"],
+            outcome_types=["contradicted", "contradicted", "contradicted"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=0)
+        assert stats == {"accepted": 0, "ignored": 0, "contradicted": 0, "total": 0}
+
+        breakdown = {"final": 0.60, "penalties": {}}
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
+        assert adjusted == 0.60
+        assert new_breakdown["outcome_feedback"]["applied"] is False
+        assert new_breakdown["outcome_feedback"]["total"] == 0
+        # Unchanged path does not add the "final_before_outcome_feedback" key.
+        assert "final_before_outcome_feedback" not in new_breakdown
+
+    def test_outcome_feedback_penalty_respects_ratio_gate(self, ec_repo, ec_db):
+        """Contradicted ratio of exactly 0.5 must NOT trigger penalty (strict > gate)."""
+        from entirecontext.core.decision_extraction import (
+            apply_outcome_feedback_to_confidence,
+            get_file_outcome_stats,
+        )
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Borderline decision",
+            file_paths=["src/service/payment.py"],
+            outcome_types=["contradicted", "accepted"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=60)
+        assert stats["contradicted"] == 1
+        assert stats["accepted"] == 1
+        assert stats["total"] == 2
+
+        breakdown = {"final": 0.60, "penalties": {}}
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
+        # 1/2 is NOT strictly > 0.5 — no penalty.
+        assert adjusted == 0.60
+        assert new_breakdown["outcome_feedback"]["applied"] is False
+        assert new_breakdown["outcome_feedback"]["ratio"] == pytest.approx(0.5)
+
+    def test_outcome_feedback_sql_path_normalization(self, ec_repo, ec_db):
+        """Stored ``./src/...`` and backslash paths must match normalized inputs."""
+        from entirecontext.core.decision_extraction import get_file_outcome_stats
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Decision stored with ./prefix",
+            file_paths=["./src/service/payment.py"],
+            outcome_types=["contradicted", "contradicted"],
+        )
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Decision stored with backslash",
+            file_paths=["src\\service\\auth.py"],
+            outcome_types=["accepted"],
+        )
+
+        # Input uses the canonical ``src/...`` form; both rows must match.
+        stats = get_file_outcome_stats(
+            ec_db,
+            ["src/service/payment.py", "src/service/auth.py"],
+            lookback_days=60,
+        )
+        assert stats["contradicted"] == 2
+        assert stats["accepted"] == 1
+        assert stats["total"] == 3
+
+    def test_outcome_feedback_lookback_cutoff(self, ec_repo, ec_db):
+        """Outcomes older than the lookback window must be excluded."""
+        from entirecontext.core.decision_extraction import get_file_outcome_stats
+        from entirecontext.core.decisions import link_decision_to_file
+
+        decision = create_decision(
+            ec_db,
+            title="Decision with old outcomes",
+            rationale="seeded with both fresh and ancient outcomes",
+        )
+        link_decision_to_file(ec_db, decision["id"], "src/service/payment.py")
+
+        # Recent row (within window) — written via datetime('now')
+        ec_db.execute(
+            "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at)"
+            " VALUES (?, ?, 'contradicted', datetime('now'))",
+            ("recent-1", decision["id"]),
+        )
+        # Old row (outside 60d window) — explicitly backdated 120 days
+        ec_db.execute(
+            "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at)"
+            " VALUES (?, ?, 'contradicted', datetime('now', '-120 days'))",
+            ("old-1", decision["id"]),
+        )
+        ec_db.commit()
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=60)
+        assert stats["contradicted"] == 1  # only the recent one
+        assert stats["total"] == 1
+
+    def test_run_extraction_applies_outcome_feedback(self, ec_repo, ec_db, monkeypatch):
+        """End-to-end: high-confidence candidate gets penalized when history is bad."""
+        from entirecontext.core.decision_extraction import (
+            ExtractionWeights,
+            run_extraction,
+        )
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Prior payment decision",
+            file_paths=["src/service/payment.py"],
+            outcome_types=["contradicted", "contradicted", "contradicted"],
+        )
+
+        session = _seed_session(ec_db, ec_repo, session_id="feedback-penalty-e2e")
+        _seed_turn(
+            ec_db,
+            session["id"],
+            1,
+            "We chose approach A for payments after comparing B",
+            files=["src/service/payment.py"],
+        )
+        llm_response = json.dumps(
+            [
+                {
+                    "title": "Use approach A for payments",
+                    "rationale": "chosen approach A over B for predictable rollback behavior",
+                    "rejected_alternatives": ["approach B"],
+                    "files": ["src/service/payment.py"],
+                }
+            ]
+        )
+        monkeypatch.setattr(
+            "entirecontext.core.decision_extraction.call_extraction_llm",
+            lambda *a, **kw: llm_response,
+        )
+        monkeypatch.setattr(
+            "entirecontext.core.decision_extraction._load_decisions_config",
+            lambda _: {"extract_keywords": ["chose"], "extract_sources": ["session"]},
+        )
+
+        outcome = run_extraction(
+            ec_db,
+            session["id"],
+            str(ec_repo),
+            extraction_weights=ExtractionWeights(
+                outcome_feedback_enabled=True,
+                outcome_feedback_lookback_days=60,
+                contradicted_penalty=0.15,
+            ),
+        )
+        assert outcome.candidates_inserted == 1
+
+        candidates = list_candidates(ec_db, session_id=session["id"])
+        assert len(candidates) == 1
+        breakdown = candidates[0]["confidence_breakdown"]
+        assert breakdown["outcome_feedback"]["applied"] is True
+        assert breakdown["outcome_feedback"]["contradicted"] == 3
+        assert "final_before_outcome_feedback" in breakdown
+
+
+class TestExtractionWeightsConfig:
+    """Config loading for [decisions.extraction]."""
+
+    def test_defaults_when_missing(self):
+        from entirecontext.core.decision_extraction import (
+            _DEFAULT_EXTRACTION_WEIGHTS,
+            _load_extraction_weights,
+        )
+
+        result = _load_extraction_weights(None)
+        assert result.outcome_feedback_enabled is True
+        assert result.outcome_feedback_lookback_days == 60
+        assert result.contradicted_penalty == 0.15
+        # Must return a fresh instance (singleton contamination guard).
+        assert result is not _DEFAULT_EXTRACTION_WEIGHTS
+
+    def test_override_from_config(self):
+        from entirecontext.core.decision_extraction import _load_extraction_weights
+
+        result = _load_extraction_weights(
+            {
+                "decisions": {
+                    "extraction": {
+                        "outcome_feedback_enabled": False,
+                        "outcome_feedback_lookback_days": 30,
+                        "contradicted_penalty": 0.25,
+                    }
+                }
+            }
+        )
+        assert result.outcome_feedback_enabled is False
+        assert result.outcome_feedback_lookback_days == 30
+        assert result.contradicted_penalty == 0.25
+
+    def test_invalid_value_raises(self):
+        from entirecontext.core.decision_extraction import _load_extraction_weights
+
+        with pytest.raises(ValueError, match="contradicted_penalty"):
+            _load_extraction_weights({"decisions": {"extraction": {"contradicted_penalty": "not-a-number"}}})

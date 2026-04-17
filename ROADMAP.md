@@ -73,17 +73,17 @@ Theme: deepen the decision-memory loop so outcome data flows into both ranking a
 
 Plan reference: `~/.claude/plans/v0-4-0-streamed-pond.md`.
 
-- [ ] **F1. Outcome recency decay**
+- [x] **F1. Outcome recency decay** (#83 merged)
   - Time-decayed contribution in `calculate_decision_quality_score`
   - New config `[decisions.quality] recency_half_life_days` (default 30)
   - Single-outcome smoothing (`min_volume`) to avoid ranking swings
 
-- [ ] **F2. Outcome → extraction feedback (penalty only)**
+- [ ] **F2. Outcome → extraction feedback (penalty only)** (PR #84 open)
   - `run_extraction` penalises candidate confidence when the candidate's files have historical contradicted outcomes
   - Ratio gate to limit false positives; accepted-boost deferred to v0.5 to avoid self-reinforcing loops
   - New config `[decisions.extraction] outcome_feedback_*`
 
-- [ ] **F3. Ranking weight config**
+- [x] **F3. Ranking weight config** (#85 merged)
   - `[decisions.ranking]` section replaces hardcoded `_STALENESS_FACTORS`, `_ASSESSMENT_RELATION_WEIGHTS`, and file/commit signal weights
   - Defaults unchanged; `score_breakdown` keys stable (additive only)
 
