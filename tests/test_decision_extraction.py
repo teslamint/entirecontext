@@ -1195,3 +1195,69 @@ class TestExtractionWeightsConfig:
 
         with pytest.raises(ValueError, match="contradicted_penalty"):
             _load_extraction_weights({"decisions": {"extraction": {"contradicted_penalty": "not-a-number"}}})
+
+    def test_negative_penalty_rejected(self):
+        """A negative ``contradicted_penalty`` would invert the penalty into a
+        confidence boost when contradicted history dominates — that contradicts
+        the penalty-only contract of this feature. Config load must refuse."""
+        from entirecontext.core.decision_extraction import _load_extraction_weights
+
+        with pytest.raises(ValueError, match=">= 0"):
+            _load_extraction_weights({"decisions": {"extraction": {"contradicted_penalty": -0.15}}})
+
+    def test_zero_penalty_accepted(self):
+        """Zero is a valid penalty (effectively disables the subtraction without
+        disabling the feedback path entirely — useful for breakdown-only mode)."""
+        from entirecontext.core.decision_extraction import _load_extraction_weights
+
+        result = _load_extraction_weights({"decisions": {"extraction": {"contradicted_penalty": 0.0}}})
+        assert result.contradicted_penalty == 0.0
+
+
+class TestRunExtractionConfigGuardrails:
+    """run_extraction must degrade gracefully on malformed config."""
+
+    def test_malformed_config_falls_back_to_defaults(self, ec_repo, ec_db, monkeypatch):
+        """A TOML parse error in [decisions.extraction] must not abort the run.
+
+        The rest of ``run_extraction`` degrades gracefully on expected failures
+        (LLM unavailable, parse errors); a config read crash would be a new
+        hard-fail path that breaks the graceful-degradation contract.
+        """
+        from entirecontext.core.decision_extraction import run_extraction
+
+        session = _seed_session(ec_db, ec_repo, session_id="malformed-config-guard")
+        _seed_turn(
+            ec_db,
+            session["id"],
+            1,
+            "We decided to use approach A after comparing B",
+            files=["src/service/payment.py"],
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _p: (_ for _ in ()).throw(RuntimeError("simulated malformed TOML")),
+        )
+        monkeypatch.setattr(
+            "entirecontext.core.decision_extraction._load_decisions_config",
+            lambda _: {"extract_keywords": ["decided"], "extract_sources": ["session"]},
+        )
+        monkeypatch.setattr(
+            "entirecontext.core.decision_extraction.call_extraction_llm",
+            lambda *a, **kw: json.dumps(
+                [
+                    {
+                        "title": "Use approach A",
+                        "rationale": "A provides better rollback behavior than B in our case",
+                        "rejected_alternatives": ["B"],
+                        "files": ["src/service/payment.py"],
+                    }
+                ]
+            ),
+        )
+
+        # Should not raise — must fall back to defaults and continue.
+        outcome = run_extraction(ec_db, session["id"], str(ec_repo))
+        assert outcome.candidates_inserted == 1
+        assert any(w.startswith("extraction_weights_load:") for w in outcome.warnings)

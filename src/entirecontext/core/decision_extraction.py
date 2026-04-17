@@ -804,6 +804,20 @@ def _coerce_extraction_float(section: dict, key: str, default: float) -> float:
         raise ValueError(f"decisions.extraction.{key} must be a number, got {raw!r}") from exc
 
 
+def _coerce_extraction_nonneg_float(section: dict, key: str, default: float) -> float:
+    """Variant of :func:`_coerce_extraction_float` that rejects negatives.
+
+    ``contradicted_penalty`` must be >= 0 because ``apply_outcome_feedback_to_confidence``
+    subtracts it directly: a negative value would convert the penalty into a
+    boost when contradicted outcomes dominate, inverting the 'penalty-only'
+    contract of this feature.
+    """
+    value = _coerce_extraction_float(section, key, default)
+    if value < 0.0:
+        raise ValueError(f"decisions.extraction.{key} must be >= 0, got {value!r}")
+    return value
+
+
 def _load_extraction_weights(config: dict | None) -> ExtractionWeights:
     """Build :class:`ExtractionWeights` from ``[decisions.extraction]``.
 
@@ -824,7 +838,7 @@ def _load_extraction_weights(config: dict | None) -> ExtractionWeights:
             "outcome_feedback_lookback_days",
             _DEFAULT_EXTRACTION_WEIGHTS.outcome_feedback_lookback_days,
         ),
-        contradicted_penalty=_coerce_extraction_float(
+        contradicted_penalty=_coerce_extraction_nonneg_float(
             section, "contradicted_penalty", _DEFAULT_EXTRACTION_WEIGHTS.contradicted_penalty
         ),
     )
@@ -1022,7 +1036,16 @@ def run_extraction(
     if extraction_weights is None:
         from entirecontext.core.config import load_config
 
-        extraction_weights = _load_extraction_weights(load_config(repo_path))
+        # Guard against malformed TOML: the extraction pipeline degrades
+        # gracefully on expected failures (LLM unavailable, parse errors),
+        # so a config read that crashes here must not abort the whole run.
+        # Fall back to defaults + a warning so the session still gets its
+        # candidates and the operator still sees the misconfiguration.
+        try:
+            extraction_weights = _load_extraction_weights(load_config(repo_path))
+        except Exception as exc:
+            outcome.warnings.append(f"extraction_weights_load:{exc}")
+            extraction_weights = ExtractionWeights()
 
     for bundle in bundles:
         prompt_text = assemble_prompt(bundle)
