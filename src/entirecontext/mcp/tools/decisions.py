@@ -60,9 +60,11 @@ async def ec_decision_related(
         return error
     try:
         from ...core.config import load_config
-        from ...core.decisions import _load_ranking_weights, rank_related_decisions
+        from ...core.decisions import _load_quality_weights, _load_ranking_weights, rank_related_decisions
 
-        ranking_weights = _load_ranking_weights(load_config(repo_path))
+        full_config = load_config(repo_path)
+        ranking_weights = _load_ranking_weights(full_config)
+        quality_weights = _load_quality_weights(full_config)
 
         started_at = time.perf_counter()
         decisions, filter_stats = rank_related_decisions(
@@ -76,6 +78,7 @@ async def ec_decision_related(
             include_superseded=include_superseded,
             include_contradicted=include_contradicted,
             ranking=ranking_weights,
+            quality=quality_weights,
             _return_stats=True,
         )
         tracked_event_id = runtime.record_search_event(
@@ -151,10 +154,17 @@ async def ec_decision_context(
         return error
     try:
         from ...core.config import load_config
-        from ...core.decisions import _load_ranking_weights, _normalize_path, rank_related_decisions
+        from ...core.decisions import (
+            _load_quality_weights,
+            _load_ranking_weights,
+            _normalize_path,
+            rank_related_decisions,
+        )
         from ...core.telemetry import detect_current_context
 
-        ranking_weights = _load_ranking_weights(load_config(repo_path))
+        full_config = load_config(repo_path)
+        ranking_weights = _load_ranking_weights(full_config)
+        quality_weights = _load_quality_weights(full_config)
 
         # Track whether the caller explicitly pinned a session. When they
         # did, we must NOT fold repo-wide signals (like `git diff HEAD`)
@@ -301,6 +311,7 @@ async def ec_decision_context(
             limit=limit,
             include_stale=include_stale,
             ranking=ranking_weights,
+            quality=quality_weights,
             _return_stats=True,
         )
 

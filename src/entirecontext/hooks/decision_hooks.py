@@ -180,12 +180,20 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         if not repo_path:
             return None
 
-        config = _load_decisions_config(repo_path)
+        # Load the full config exactly once — the decisions section, quality
+        # weights, and any future F-series subsections all consume the same
+        # merged TOML snapshot. Prior to F1 this was one disk read via
+        # _load_decisions_config; keep it at one read now that F1 also needs
+        # [decisions.quality] parameters.
+        from ..core.config import load_config
+
+        full_config = load_config(repo_path)
+        config = full_config.get("decisions", {})
         if not config.get("show_related_on_start", False):
             return None
 
-        from ..core.config import load_config
         from ..core.decisions import (
+            _load_quality_weights,
             _load_ranking_weights,
             _normalize_path,
             get_decision,
@@ -219,7 +227,8 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
 
             normalized_files = [_normalize_path(f) for f in changed_files if _normalize_path(f)]
 
-            ranking_weights = _load_ranking_weights(load_config(repo_path))
+            ranking_weights = _load_ranking_weights(full_config)
+            quality_weights = _load_quality_weights(full_config)
 
             file_related: list[dict] = []
             if normalized_files or diff_text or commit_shas or assessment_ids:
@@ -232,6 +241,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     limit=display_limit,
                     include_contradicted=False,
                     ranking=ranking_weights,
+                    quality=quality_weights,
                 )
                 for d in ranked:
                     if d["id"] not in seen_ids:

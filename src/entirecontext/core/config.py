@@ -108,6 +108,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "git_commit_weight": 3.0,
             "directory_proximity_cap_levels": 3,
         },
+        "quality": {
+            "recency_half_life_days": 30.0,
+            "min_volume": 2,
+        },
     },
 }
 

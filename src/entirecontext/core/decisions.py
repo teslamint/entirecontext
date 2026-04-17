@@ -145,18 +145,168 @@ def _parse_decision_json_fields(decision: dict[str, Any]) -> dict[str, Any]:
     return decision
 
 
-def calculate_decision_quality_score(counts: dict[str, int]) -> float:
+def calculate_decision_quality_score(
+    counts: dict[str, int],
+    *,
+    decayed_counts: dict[str, float] | None = None,
+    min_volume: int = 2,
+) -> float:
     """Calculate a quality score from outcome counts.
 
-    Formula: accepted * 1.0 - ignored * 0.5 - contradicted * 2.0, clamped to [-4, +4].
-    Contradictions are penalised heavily; ignored outcomes have mild negative weight.
+    Legacy formula (1-arg or ``decayed_counts=None``):
+        accepted * 1.0 - ignored * 0.5 - contradicted * 2.0, clamped to [-4, +4].
+
+    When ``decayed_counts`` is provided, the same linear combination runs over
+    the already time-decayed totals instead. ``counts`` still drives the volume
+    smoother so the rank is not swung by a single fresh outcome: if the number
+    of real outcomes is below ``min_volume``, the decayed score is linearly
+    attenuated toward zero by ``total / min_volume``.
+
+    Contract note (F1 scope, see also decision record): this function is used
+    by both ``rank_related_decisions`` and ``get_decision_quality_summary``.
+    Only the ranker passes ``decayed_counts``; the summary path keeps legacy
+    uniform-count semantics so CLI/MCP reporting output remains stable.
     """
+    if decayed_counts is None:
+        raw_score = (
+            float(counts.get("accepted", 0))
+            - (0.5 * float(counts.get("ignored", 0)))
+            - (2.0 * float(counts.get("contradicted", 0)))
+        )
+        return max(-4.0, min(4.0, raw_score))
+
     raw_score = (
-        float(counts.get("accepted", 0))
-        - (0.5 * float(counts.get("ignored", 0)))
-        - (2.0 * float(counts.get("contradicted", 0)))
+        float(decayed_counts.get("accepted", 0.0))
+        - 0.5 * float(decayed_counts.get("ignored", 0.0))
+        - 2.0 * float(decayed_counts.get("contradicted", 0.0))
     )
+    if min_volume > 1:
+        total = sum(int(counts.get(k, 0)) for k in ("accepted", "ignored", "contradicted"))
+        if 0 < total < min_volume:
+            raw_score *= total / min_volume
     return max(-4.0, min(4.0, raw_score))
+
+
+def _parse_outcome_timestamp(raw: str | None) -> datetime | None:
+    """Parse a ``decision_outcomes.created_at`` cell into an aware UTC datetime.
+
+    Production writes via ``record_decision_outcome`` use ``_now_iso`` (aware
+    ISO with ``+00:00``). The column's SQLite ``DEFAULT (datetime('now'))``
+    produces a naive ``YYYY-MM-DD HH:MM:SS`` string; treat those as UTC.
+    Returns ``None`` on unparseable values so decay can ignore corrupt rows
+    rather than crash the ranker.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace(" ", "T"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _fetch_decayed_outcome_counts(
+    conn,
+    decision_ids: list[str],
+    half_life_days: float,
+    now: datetime | None = None,
+) -> dict[str, dict[str, float]]:
+    """Sum outcome weights per decision with exponential time decay.
+
+    ``weight = 0.5 ** (age_days / half_life_days)``. Ages below zero (clock
+    skew) clamp to 0 so a future-stamped outcome never gets more than full
+    weight. Returns ``{decision_id: {outcome_type: decayed_sum}}``. Missing
+    keys default to 0.0 at the caller.
+
+    Contract:
+    - ``decision_ids=[]`` → ``{}`` (no query, no cruft).
+    - ``half_life_days<=0`` → ``{}`` (decay disabled; caller falls back to
+      legacy counts). A positive value is required to activate decay.
+    """
+    if not decision_ids or half_life_days <= 0:
+        return {}
+    if now is None:
+        now = datetime.now(timezone.utc)
+    placeholders = ",".join("?" for _ in decision_ids)
+    result: dict[str, dict[str, float]] = {did: {} for did in decision_ids}
+    rows = conn.execute(
+        f"SELECT decision_id, outcome_type, created_at FROM decision_outcomes WHERE decision_id IN ({placeholders})",  # noqa: S608
+        decision_ids,
+    ).fetchall()
+    for row in rows:
+        created = _parse_outcome_timestamp(row["created_at"])
+        if created is None:
+            continue
+        age_seconds = (now - created).total_seconds()
+        # Future-stamped rows indicate clock skew or corrupt data. Skip rather
+        # than clamp to ``max(0, …)``; a silent clamp would grant the bad row
+        # weight 1.0 and let it dominate ranking.
+        if age_seconds < 0:
+            continue
+        age_days = age_seconds / 86400.0
+        weight = 0.5 ** (age_days / half_life_days)
+        bucket = result.setdefault(row["decision_id"], {})
+        bucket[row["outcome_type"]] = bucket.get(row["outcome_type"], 0.0) + weight
+    return result
+
+
+@dataclass(frozen=True)
+class QualityWeights:
+    """Quality-score parameters consumed by ``rank_related_decisions``.
+
+    ``[decisions.quality]`` config overrides these defaults. Kept separate
+    from ``[decisions.ranking]`` (F3) because quality-score aggregation and
+    ranking-signal weights have distinct semantic owners; combining the two
+    sections would conflate independent responsibilities and make future
+    additions ambiguous (see F3 decision record).
+    """
+
+    recency_half_life_days: float = 30.0
+    min_volume: int = 2
+
+
+_DEFAULT_QUALITY_WEIGHTS = QualityWeights()
+
+
+def _coerce_quality_float(section: dict, key: str, default: float) -> float:
+    raw = section.get(key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"decisions.quality.{key} must be a number, got {raw!r}") from exc
+
+
+def _coerce_quality_int(section: dict, key: str, default: int) -> int:
+    raw = section.get(key)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"decisions.quality.{key} must be an integer, got {raw!r}") from exc
+
+
+def _load_quality_weights(config: dict | None) -> QualityWeights:
+    """Build :class:`QualityWeights` from the ``[decisions.quality]`` section.
+
+    Always returns a fresh instance so callers can never contaminate the
+    module-level ``_DEFAULT_QUALITY_WEIGHTS`` singleton by mutation.
+    """
+    if not config:
+        return QualityWeights()
+    section = (config.get("decisions") or {}).get("quality") or {}
+    if not section:
+        return QualityWeights()
+    return QualityWeights(
+        recency_half_life_days=_coerce_quality_float(
+            section, "recency_half_life_days", _DEFAULT_QUALITY_WEIGHTS.recency_half_life_days
+        ),
+        min_volume=_coerce_quality_int(section, "min_volume", _DEFAULT_QUALITY_WEIGHTS.min_volume),
+    )
 
 
 def _resolve_outcome_context(
@@ -1146,6 +1296,7 @@ def rank_related_decisions(
     include_superseded: bool = False,
     include_contradicted: bool = False,
     ranking: RankingWeights | None = None,
+    quality: QualityWeights | None = None,
     _return_stats: bool = False,
 ) -> list[dict] | tuple[list[dict], dict]:
     """Rank decisions by current-change relevance using multi-signal scoring.
@@ -1172,6 +1323,7 @@ def rank_related_decisions(
     - Set _return_stats=True to get (results, filter_stats).
     """
     weights = ranking if ranking is not None else _DEFAULT_RANKING_WEIGHTS
+    quality_weights = quality if quality is not None else _DEFAULT_QUALITY_WEIGHTS
     file_paths = [_normalize_path(p) for p in (file_paths or [])]
     assessment_ids = assessment_ids or []
     commit_shas = commit_shas or []
@@ -1372,6 +1524,12 @@ def rank_related_decisions(
     ).fetchall():
         outcome_counts_by_decision.setdefault(row["decision_id"], {})[row["outcome_type"]] = row["total"] or 0
 
+    # Decayed outcome weights — F1 recency decay. Disabled (empty dict) when
+    # ``recency_half_life_days <= 0``; scorer then falls back to uniform counts.
+    decayed_outcome_counts_by_decision = _fetch_decayed_outcome_counts(
+        conn, decision_ids, quality_weights.recency_half_life_days
+    )
+
     # --- 3. Score each candidate ---
     commit_set = set(commit_shas)
     scored: list[dict] = []
@@ -1417,7 +1575,11 @@ def rank_related_decisions(
         if base_score <= 0:
             continue
 
-        quality_score = calculate_decision_quality_score(outcome_counts_by_decision.get(did, {}))
+        quality_score = calculate_decision_quality_score(
+            outcome_counts_by_decision.get(did, {}),
+            decayed_counts=decayed_outcome_counts_by_decision.get(did) or None,
+            min_volume=quality_weights.min_volume,
+        )
         staleness_factor = weights.staleness_factors.get(d.get("staleness_status", "fresh"), 1.0)
         score = base_score * staleness_factor + quality_score
 
