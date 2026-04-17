@@ -1285,9 +1285,7 @@ class TestDecisionQualityDecay:
 
         for mv in (0, 1):
             assert (
-                calculate_decision_quality_score(
-                    {"accepted": 1}, decayed_counts={"accepted": 1.0}, min_volume=mv
-                )
+                calculate_decision_quality_score({"accepted": 1}, decayed_counts={"accepted": 1.0}, min_volume=mv)
                 == 1.0
             )
 
