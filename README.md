@@ -2,7 +2,7 @@
 
 **Git-anchored decision memory for coding agents.**
 
-![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue) ![Version 0.3.0](https://img.shields.io/badge/version-0.3.0-green) ![Status Experimental](https://img.shields.io/badge/status-experimental-orange) ![License MIT](https://img.shields.io/badge/license-MIT-lightgrey)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue) ![Version 0.4.0](https://img.shields.io/badge/version-0.4.0-green) ![Status Experimental](https://img.shields.io/badge/status-experimental-orange) ![License MIT](https://img.shields.io/badge/license-MIT-lightgrey)
 
 > ⚠️ **Experimental** — API and data format may change without notice.
 
