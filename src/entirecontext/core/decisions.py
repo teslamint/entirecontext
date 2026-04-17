@@ -228,7 +228,8 @@ def _fetch_decayed_outcome_counts(
     placeholders = ",".join("?" for _ in decision_ids)
     result: dict[str, dict[str, float]] = {did: {} for did in decision_ids}
     rows = conn.execute(
-        f"SELECT decision_id, outcome_type, created_at FROM decision_outcomes WHERE decision_id IN ({placeholders})",  # noqa: S608
+        "SELECT decision_id, outcome_type, created_at FROM decision_outcomes"
+        f" WHERE decision_id IN ({placeholders})",  # noqa: S608
         decision_ids,
     ).fetchall()
     for row in rows:
