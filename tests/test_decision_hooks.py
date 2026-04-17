@@ -1616,6 +1616,422 @@ class TestExtractFromSessionCLI:
         assert len(call_count) == 0
 
 
+class TestIgnoredInference:
+    def test_infers_ignored_for_surfaced_unacted(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="ignored-inf")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Surfaced but unacted")
+        event = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=ec_db.execute(
+                "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+            ).fetchone()["id"],
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert outcomes[0]["outcome_type"] == "ignored"
+
+    def test_skips_acted_decisions(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.decisions import record_decision_outcome
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="acted-skip")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Already accepted")
+        event = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        sel = record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=ec_db.execute(
+                "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+            ).fetchone()["id"],
+        )
+        turn1_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+        ).fetchone()["id"]
+        record_decision_outcome(
+            ec_db,
+            d["id"],
+            "accepted",
+            retrieval_selection_id=sel["id"],
+            session_id=session["id"],
+            turn_id=turn1_id,
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert outcomes[0]["outcome_type"] == "accepted"
+
+    def test_grace_period_skips_recent(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="grace-period")
+        for i in range(3):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Surfaced in last turn")
+        event = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="post_tool_use",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        last_turn_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 3", (session["id"],)
+        ).fetchone()["id"]
+        record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=last_turn_id,
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchone()["n"]
+        assert outcomes == 0
+
+    def test_config_gated_default_off(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), "any-session")
+
+    def test_infers_ignored_with_null_turn_id(self, ec_repo, ec_db, monkeypatch):
+        """SessionStart-style selections (turn_id NULL) must still produce ignored outcomes.
+
+        Before the fix, record_decision_outcome raised ValueError (pair constraint) and was
+        silently swallowed by ``except Exception: pass``. After the fix, we pass session_id=None
+        when turn_id is NULL, and ``_resolve_outcome_context`` inherits session_id from the
+        retrieval_selection via its fallback path — preserving audit trail without tripping
+        the pair check.
+        """
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="null-turn-id")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Surfaced with null turn_id")
+        event = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=None,
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        rows = ec_db.execute(
+            "SELECT outcome_type, session_id, turn_id FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["outcome_type"] == "ignored"
+        assert rows[0]["session_id"] == session["id"]
+        assert rows[0]["turn_id"] is None
+
+    def test_infers_ignored_deduplicates_multiple_surfacings(self, ec_repo, ec_db, monkeypatch):
+        """Same decision surfaced at SessionStart and PostToolUse must yield exactly one ignored outcome."""
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="dedupe-multi")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Surfaced twice")
+        event_start = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        sel_start = record_retrieval_selection(
+            ec_db,
+            event_start["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=None,
+        )
+        event_tool = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="post_tool_use",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        turn2_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 2", (session["id"],)
+        ).fetchone()["id"]
+        record_retrieval_selection(
+            ec_db,
+            event_tool["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=turn2_id,
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        rows = ec_db.execute(
+            "SELECT outcome_type, retrieval_selection_id FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["outcome_type"] == "ignored"
+        # Earliest surfacing (SessionStart, NULL turn_id) wins the representative slot via COALESCE(..., 0).
+        assert rows[0]["retrieval_selection_id"] == sel_start["id"]
+
+    def test_skips_mcp_tool_selections(self, ec_repo, ec_db, monkeypatch):
+        """MCP tool lookups (source='mcp') are exploratory, not surfacing — must not be inferred as ignored.
+
+        Before the fix the query matched every decision selection in the session regardless of
+        source. After the fix, the JOIN on `retrieval_events.source = 'hook'` limits inference
+        to selections that were actually surfaced to the user by a hook.
+        """
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="mcp-skip")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Looked up via MCP, never surfaced")
+        turn1_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+        ).fetchone()["id"]
+        event = record_retrieval_event(
+            ec_db,
+            source="mcp",
+            search_type="regex",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=turn1_id,
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchone()["n"]
+        assert outcomes == 0
+
+    def test_grace_period_uses_earliest_surfacing(self, ec_repo, ec_db, monkeypatch):
+        """Late surfacing must not mask an earlier surfacing that satisfies the grace period."""
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="earliest-wins")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Surfaced early and late")
+        turn1_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+        ).fetchone()["id"]
+        turn5_id = ec_db.execute(
+            "SELECT id FROM turns WHERE session_id = ? AND turn_number = 5", (session["id"],)
+        ).fetchone()["id"]
+
+        event_early = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        record_retrieval_selection(
+            ec_db,
+            event_early["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=turn1_id,
+        )
+        event_late = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="post_tool_use",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        record_retrieval_selection(
+            ec_db,
+            event_late["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=turn5_id,
+        )
+
+        # max_turn=5, early surfacing at turn=1 → gap=4 ≥ 2 (passes).
+        # Late surfacing at turn=5 → gap=0 < 2 (would fail if it won the slot).
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        rows = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (d["id"],),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["outcome_type"] == "ignored"
+
+
 class TestHandlerIntegration:
     def test_session_start_prints_decisions(self, ec_repo, ec_db, monkeypatch, capsys):
         """Verify _handle_session_start prints decision context to stdout."""

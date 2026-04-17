@@ -85,6 +85,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "instead of",
         ],
         "extract_sources": ["session", "checkpoint", "assessment"],
+        "infer_ignored_on_session_end": False,
+        "ignored_inference_min_turn_gap": 2,
         "candidate_min_confidence": 0.35,
         "noise_gate_min_turns_with_files": 3,
         "candidate_dedup_similarity_threshold": 0.5,

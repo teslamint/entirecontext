@@ -1068,6 +1068,83 @@ class TestMCPDashboard:
         assert result["application_type"] == "lesson_applied"
         assert result["retrieval_selection_id"] == selection["id"]
 
+    def test_context_apply_auto_records_accepted_outcome(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+        from entirecontext.mcp.server import ec_context_apply
+
+        decision = create_decision(mock_repo_db, title="Auto outcome test")
+        event = record_retrieval_event(
+            mock_repo_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id="s1",
+            turn_id="t1",
+        )
+        selection = record_retrieval_selection(mock_repo_db, event["id"], "decision", decision["id"])
+        asyncio.run(ec_context_apply("decision_change", selection_id=selection["id"]))
+
+        outcomes = mock_repo_db.execute(
+            "SELECT outcome_type, note FROM decision_outcomes WHERE decision_id = ?",
+            (decision["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert outcomes[0]["outcome_type"] == "accepted"
+        assert outcomes[0]["note"] == "auto: context_apply"
+
+    def test_context_apply_reference_no_auto_outcome(self, mock_repo_db):
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+        from entirecontext.mcp.server import ec_context_apply
+
+        decision = create_decision(mock_repo_db, title="Reference no outcome")
+        event = record_retrieval_event(
+            mock_repo_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id="s1",
+            turn_id="t1",
+        )
+        selection = record_retrieval_selection(mock_repo_db, event["id"], "decision", decision["id"])
+        asyncio.run(ec_context_apply("reference", selection_id=selection["id"]))
+
+        outcomes = mock_repo_db.execute(
+            "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",
+            (decision["id"],),
+        ).fetchone()["n"]
+        assert outcomes == 0
+
+    def test_context_apply_auto_accepted_without_selection(self, mock_repo_db):
+        """Direct decision apply (no selection_id) must still produce an accepted outcome."""
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.mcp.server import ec_context_apply
+
+        decision = create_decision(mock_repo_db, title="Direct apply no selection")
+        asyncio.run(
+            ec_context_apply(
+                "decision_change",
+                source_type="decision",
+                source_id=decision["id"],
+            )
+        )
+
+        rows = mock_repo_db.execute(
+            "SELECT outcome_type, retrieval_selection_id, note FROM decision_outcomes WHERE decision_id = ?",
+            (decision["id"],),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["outcome_type"] == "accepted"
+        assert rows[0]["retrieval_selection_id"] is None
+        assert rows[0]["note"] == "auto: context_apply"
+
 
 class TestMCPDecisionTools:
     @pytest.fixture(autouse=True)

@@ -158,6 +158,15 @@ def _format_decision_entry(d: dict, stale: bool = False) -> str:
             f" (file={sb.get('file_exact', 0)}+{sb.get('file_proximity', 0)},"
             f" diff={sb.get('diff_relevance', 0)}, quality={sb.get('quality', 0)})"
         )
+    quality = d.get("quality_summary") or {}
+    counts = quality.get("counts") or {}
+    if any(counts.get(k, 0) > 0 for k in ("accepted", "ignored", "contradicted")):
+        outcome_parts = []
+        for k in ("accepted", "ignored", "contradicted"):
+            v = counts.get(k, 0)
+            if v > 0:
+                outcome_parts.append(f"{v} {k}")
+        parts.append(f"  Outcomes: {', '.join(outcome_parts)}")
     if d.get("selection_id"):
         parts.append(f"  Selection: {d['selection_id']}")
     return "\n".join(parts)

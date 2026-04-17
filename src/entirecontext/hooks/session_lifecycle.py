@@ -288,6 +288,83 @@ def on_session_end(data: dict[str, Any]) -> None:
     _maybe_trigger_auto_embed(repo_path)
     _maybe_check_stale_decisions(repo_path)
     _maybe_extract_decisions(repo_path, session_id)
+    _maybe_infer_ignored_decisions(repo_path, session_id)
+
+
+def _maybe_infer_ignored_decisions(repo_path: str, session_id: str) -> None:
+    """Infer 'ignored' outcome for decisions surfaced but never acted on. Config-gated."""
+    try:
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        decisions_config = config.get("decisions", {})
+        if not decisions_config.get("infer_ignored_on_session_end", False):
+            return
+
+        min_turn_gap = decisions_config.get("ignored_inference_min_turn_gap", 2)
+
+        from ..core.decisions import record_decision_outcome
+        from ..db import get_db
+
+        conn = get_db(repo_path)
+        try:
+            max_turn = (
+                conn.execute(
+                    "SELECT MAX(turn_number) FROM turns WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()[0]
+                or 0
+            )
+
+            rows = conn.execute(
+                """
+                SELECT rs.id AS selection_id, rs.result_id AS decision_id,
+                       rs.turn_id, t.turn_number
+                FROM retrieval_selections rs
+                JOIN retrieval_events re ON re.id = rs.retrieval_event_id
+                LEFT JOIN turns t ON t.id = rs.turn_id
+                WHERE rs.session_id = ?
+                  AND rs.result_type = 'decision'
+                  AND re.source = 'hook'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM decision_outcomes do
+                      WHERE do.decision_id = rs.result_id
+                        AND do.session_id = ?
+                  )
+                ORDER BY rs.result_id, COALESCE(t.turn_number, 0) ASC
+                """,
+                (session_id, session_id),
+            ).fetchall()
+
+            seen_decisions: set[str] = set()
+            for row in rows:
+                decision_id = row["decision_id"]
+                if decision_id in seen_decisions:
+                    continue
+                seen_decisions.add(decision_id)
+                turn_number = row["turn_number"] or 0
+                if max_turn - turn_number < min_turn_gap:
+                    continue
+                try:
+                    infer_session = session_id
+                    infer_turn = row["turn_id"]
+                    if infer_session and not infer_turn:
+                        infer_session = None
+                    record_decision_outcome(
+                        conn,
+                        decision_id,
+                        outcome_type="ignored",
+                        retrieval_selection_id=row["selection_id"],
+                        session_id=infer_session,
+                        turn_id=infer_turn,
+                        note="auto: session_end inference",
+                    )
+                except Exception as exc:
+                    _record_hook_warning(repo_path, "infer_ignored_outcome_failed", exc)
+        finally:
+            conn.close()
+    except Exception as exc:
+        _record_hook_warning(repo_path, "infer_ignored_decisions", exc)
 
 
 def _session_has_change_signals(conn, session_id: str) -> bool:
