@@ -40,29 +40,29 @@ The main implementation hardening gap still on the table is sync merge/retry pol
 - [x] **Staleness and contradiction handling** (#39)
 - [x] **Sync merge/retry 정책 정비** (P2, spec §10 #4)
 
-## v0.3.0 — Close the Loop (In Progress)
+## v0.3.0 — Close the Loop (Shipped 2026-04-17)
 
 Theme: close the decision-memory feedback arc — retrieval records its footprint, extraction quality gets validated, outcome data flows back into ranking.
 
-- [ ] **E1. `include_contradicted` default flip** (#69)
+- [x] **E1. `include_contradicted` default flip** (#69)
   - Breaking change committed in v0.2.0 deprecation notice
   - Flip `True→False` in `fts_search_decisions`, `hybrid_search_decisions`, `list_decisions`, `ec_decision_search`
 
-- [ ] **E2. Retrieval telemetry completeness** (#70)
+- [x] **E2. Retrieval telemetry completeness** (#70)
   - SessionStart hook: add `record_retrieval_event` + `record_retrieval_selection`
   - PostToolUse hook: add `record_retrieval_selection`
   - Include `selection_id` in fallback Markdown for downstream outcome recording
 
-- [ ] **E3. Extraction validation & noise gate** (#71)
+- [x] **E3. Extraction validation & noise gate** (#71)
   - Session noise gate: ≥1 checkpoint OR ≥3 turns with files_touched
   - Confidence recalibration, dedup audit
   - Enable `auto_extract=true` safely
 
-- [ ] **E4. Relevance-based reactivation** (#72)
+- [x] **E4. Relevance-based reactivation** (#72)
   - Upgrade SessionStart from file-list lookup to full `rank_related_decisions` ranker
   - Signal assembly: uncommitted diff, recent commit files, checkpoint SHA
 
-- [ ] **E5. Minimal quality loop** (#73)
+- [x] **E5. Minimal quality loop** (#73)
   - `ec_context_apply` → auto-record "accepted" outcome
   - SessionEnd: infer "ignored" for surfaced-but-unacted decisions (config-gated)
   - Surface `quality_score` in retrieval output

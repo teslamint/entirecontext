@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-17
+
+v0.3.0 closes the decision-memory feedback arc: retrieval records its footprint, extraction quality gets validated before candidates enter the pipeline, and outcome data flows back into ranking. No schema change — still v13.
+
 ### Changed
 
 - **BREAKING: `include_contradicted` default flipped to `False`** (#69) — `list_decisions`, `fts_search_decisions`, `hybrid_search_decisions`, `ec_decision_search` MCP tool, and `ec decision search` CLI now exclude contradicted decisions by default. Pass `include_contradicted=True` (or `--include-contradicted` from the CLI) to restore the previous behavior. The `ec_decision_list` MCP tool also gains a new `include_contradicted` parameter (default `False`).
