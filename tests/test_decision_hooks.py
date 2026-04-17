@@ -2119,3 +2119,238 @@ class TestStdoutContract:
         result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "cleanup-test"})
         assert result is None
         assert not fallback_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# F4: UserPromptSubmit async decision surfacing
+# ---------------------------------------------------------------------------
+
+
+class TestOnUserPromptSurfacing:
+    """on_user_prompt launches the background surfacing worker when enabled."""
+
+    def _make_session(self, ec_db, ec_repo, session_id: str = "f4-session") -> dict:
+        from entirecontext.core.project import get_project
+
+        project = get_project(str(ec_repo))
+        return create_session(ec_db, project["id"], session_id=session_id)
+
+    def test_fast_return_no_worker_when_disabled(self, ec_repo, ec_db, monkeypatch):
+        """surface_on_user_prompt=false must NOT launch a worker or write a tmp file."""
+        session = self._make_session(ec_db, ec_repo, session_id="f4-disabled")
+
+        launch_calls: list[tuple] = []
+        monkeypatch.setattr(
+            "entirecontext.core.async_worker.launch_worker",
+            lambda *a, **kw: launch_calls.append((a, kw)) or 1,
+        )
+
+        from entirecontext.hooks.turn_capture import on_user_prompt
+
+        on_user_prompt(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session["id"],
+                "prompt": "Why did we choose Redis over memcached?",
+            }
+        )
+
+        assert launch_calls == []
+        tmp_dir = ec_repo / ".entirecontext" / "tmp"
+        assert not tmp_dir.exists() or not any(tmp_dir.iterdir())
+
+    def test_launches_worker_when_enabled(self, ec_repo, ec_db, monkeypatch):
+        """surface_on_user_prompt=true must write tmp file and call launch_worker once."""
+        import tomllib as _tomllib  # noqa: F401 — imported for sanity
+
+        session = self._make_session(ec_db, ec_repo, session_id="f4-enabled")
+
+        cfg_path = ec_repo / ".entirecontext" / "config.toml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text(
+            "[decisions]\nsurface_on_user_prompt = true\nsurface_on_user_prompt_limit = 3\n",
+            encoding="utf-8",
+        )
+
+        launch_calls: list[dict] = []
+
+        def _fake_launch(repo_path, cmd, pid_name="worker"):
+            launch_calls.append({"repo_path": repo_path, "cmd": list(cmd), "pid_name": pid_name})
+            return 424242
+
+        monkeypatch.setattr("entirecontext.core.async_worker.launch_worker", _fake_launch)
+
+        from entirecontext.hooks.turn_capture import on_user_prompt
+
+        prompt = "Why did we choose Redis over memcached for our caching layer?"
+        on_user_prompt({"cwd": str(ec_repo), "session_id": session["id"], "prompt": prompt})
+
+        assert len(launch_calls) == 1
+        call = launch_calls[0]
+        cmd = call["cmd"]
+        assert cmd[0:3] == ["ec", "decision", "surface-prompt"]
+        # --session / --turn / --prompt-file present with expected session id.
+        assert "--session" in cmd and session["id"] in cmd
+        assert "--turn" in cmd
+        assert "--prompt-file" in cmd
+        prompt_file_idx = cmd.index("--prompt-file") + 1
+        tmp_path = cmd[prompt_file_idx]
+        assert tmp_path.startswith(str(ec_repo))
+        # pid_name scoped by session+turn so concurrent prompts don't collide.
+        assert call["pid_name"].startswith("prompt-")
+
+    def test_tmp_file_contains_redacted_text_only(self, ec_repo, ec_db, monkeypatch):
+        """Secret must never hit the tmp file — defense-in-depth redaction."""
+        session = self._make_session(ec_db, ec_repo, session_id="f4-redact")
+
+        cfg_path = ec_repo / ".entirecontext" / "config.toml"
+        cfg_path.parent.mkdir(parents=True, exist_ok=True)
+        cfg_path.write_text("[decisions]\nsurface_on_user_prompt = true\n", encoding="utf-8")
+
+        tmp_files: list[str] = []
+
+        def _fake_launch(repo_path, cmd, pid_name="worker"):
+            # capture the prompt-file arg before the worker deletes it
+            idx = cmd.index("--prompt-file") + 1
+            tmp_files.append(cmd[idx])
+            return 1
+
+        monkeypatch.setattr("entirecontext.core.async_worker.launch_worker", _fake_launch)
+
+        from entirecontext.hooks.turn_capture import on_user_prompt
+
+        # One of security.DEFAULT_PATTERNS: api_key=... is matched case-insensitively.
+        secret = "sk-FAKESECRETABC1234567890123456789012345678901234"
+        prompt = f"My api_key={secret} should never be surfaced."
+        on_user_prompt({"cwd": str(ec_repo), "session_id": session["id"], "prompt": prompt})
+
+        assert len(tmp_files) == 1
+        from pathlib import Path
+
+        content = Path(tmp_files[0]).read_text(encoding="utf-8")
+        assert secret not in content
+        # Redaction marker present — either [REDACTED] (security) or [FILTERED] (content_filter)
+        assert "REDACTED" in content or "FILTERED" in content
+
+        # File mode is 0600 (owner read/write only).
+
+        mode = Path(tmp_files[0]).stat().st_mode & 0o777
+        assert mode == 0o600
+
+
+class TestRunPromptSurfaceWorker:
+    """The worker body: reads tmp, ranks, writes fallback, always deletes tmp."""
+
+    def _write_tmp(self, repo_path, text: str, name: str = "test-prompt.txt") -> str:
+        from pathlib import Path
+
+        tmp_dir = Path(repo_path) / ".entirecontext" / "tmp"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        p = tmp_dir / name
+        p.write_text(text, encoding="utf-8")
+        return str(p)
+
+    def test_writes_fallback_md_with_ranked_decisions(self, ec_repo, ec_db):
+        """A prompt referencing an existing decision's keywords produces Markdown output."""
+        # Seed a decision with distinctive tokens so the FTS-against-prompt signal hits.
+        decision = create_decision(
+            ec_db,
+            title="Use Redis for caching over memcached persistence",
+            rationale="Redis provides persistence and pub/sub which memcached lacks for our use case",
+            scope="cache",
+        )
+        link_decision_to_file(ec_db, decision["id"], "src/cache.py")
+
+        tmp_path = self._write_tmp(
+            str(ec_repo),
+            "We are debating our caching choice between redis and memcached for persistence reasons",
+            name="redis-prompt.txt",
+        )
+
+        from entirecontext.core.decision_prompt_surfacing import run_prompt_surface_worker
+
+        result = run_prompt_surface_worker(str(ec_repo), "sess-1", "turn-1", tmp_path)
+
+        assert result["wrote"] is True
+        assert result["count"] >= 1
+        assert result["deleted_tmp"] is True
+
+        from pathlib import Path
+
+        output_path = Path(result["output_path"])
+        assert output_path.exists()
+        body = output_path.read_text(encoding="utf-8")
+        assert "Related Decisions" in body
+        assert "Redis" in body or "redis" in body.lower()
+        # tmp file gone
+        assert not Path(tmp_path).exists()
+
+    def test_always_deletes_tmp_file_even_on_worker_error(self, ec_repo, ec_db, monkeypatch):
+        """The finally block must delete tmp regardless of internal failures."""
+        tmp_path = self._write_tmp(str(ec_repo), "any prompt")
+
+        # Force rank_related_decisions to raise to trigger the exception branch.
+        import entirecontext.core.decision_prompt_surfacing as mod
+
+        def _boom(*a, **kw):
+            raise RuntimeError("simulated ranker failure")
+
+        monkeypatch.setattr("entirecontext.core.decisions.rank_related_decisions", _boom)
+
+        result = mod.run_prompt_surface_worker(str(ec_repo), "sess", "turn", tmp_path)
+
+        from pathlib import Path
+
+        assert result["deleted_tmp"] is True
+        assert not Path(tmp_path).exists()
+        assert any("worker:" in w or "ranker" in w or "simulated" in w for w in result["warnings"])
+
+    def test_no_decisions_cleans_stale_fallback(self, ec_repo, ec_db):
+        """When no decisions rank, a prior fallback MD from an earlier prompt is removed."""
+        from pathlib import Path
+
+        fallback_name = "decisions-context-prompt-stale-session.md"
+        fallback = Path(str(ec_repo)) / ".entirecontext" / fallback_name
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        fallback.write_text("OLD CONTENT FROM PRIOR PROMPT", encoding="utf-8")
+
+        tmp_path = self._write_tmp(str(ec_repo), "x")  # too-short prompt → no FTS tokens
+
+        from entirecontext.core.decision_prompt_surfacing import run_prompt_surface_worker
+
+        result = run_prompt_surface_worker(str(ec_repo), "stale-session", "t", tmp_path)
+
+        assert result["wrote"] is False
+        assert result["count"] == 0
+        assert not fallback.exists()
+        assert result["deleted_tmp"] is True
+
+    def test_worker_defense_in_depth_redaction(self, ec_repo, ec_db):
+        """Tmp file containing a raw secret must NOT surface the secret in Markdown.
+
+        The hook is the first redaction pass; this test simulates a scenario where
+        the tmp file already has a secret (tampered or written by a different path)
+        and verifies the worker-side re-redaction catches it.
+        """
+        create_decision(
+            ec_db,
+            title="Use Redis for caching",
+            rationale="persistence and pub/sub support drives the choice",
+            scope="cache",
+        )
+
+        secret = "sk-RAWBYPASSSECRET1234567890123456789012345678901234"
+        raw = f"Redis caching and persistence — api_key={secret} should be redacted before markdown"
+        tmp_path = self._write_tmp(str(ec_repo), raw)
+
+        from entirecontext.core.decision_prompt_surfacing import run_prompt_surface_worker
+
+        result = run_prompt_surface_worker(str(ec_repo), "def-in-depth", "t", tmp_path)
+        # Whether or not a decision was surfaced, tmp is gone and secret is not leaked.
+        from pathlib import Path
+
+        assert result["deleted_tmp"] is True
+        if result["output_path"]:
+            body = Path(result["output_path"]).read_text(encoding="utf-8")
+            # Secret must not appear in markdown even though it was present in tmp.
+            assert secret not in body
