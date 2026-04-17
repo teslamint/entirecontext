@@ -1316,12 +1316,12 @@ class TestDecisionQualityDecay:
         accepted = decayed.get(d["id"], {}).get("accepted", 0.0)
         assert 0.75 <= accepted <= 0.82, accepted
 
-    def test_rank_decay_on_outcome_free_decision_uses_legacy_zero(self, ec_db):
-        """Decay enabled but zero outcomes → ``.get(did) or None`` gate routes back to legacy → quality=0.
+    def test_rank_decay_on_outcome_free_decision_yields_zero(self, ec_db):
+        """Decay enabled + zero outcomes → decay path with empty bucket → quality=0.
 
-        Exercises the ``_fetch_decayed_outcome_counts`` pre-populated empty
-        bucket (``{did: {}}`` truthy key, falsy value) and the caller's
-        ``or None`` guard that keeps that case on the legacy calculator.
+        After PR #88 review-round-1 fix (``.get(did)`` not ``.get(did) or None``),
+        the empty bucket stays on the decay path rather than silently switching
+        to legacy uniform counts. raw_score=0 + smoothing=0 → quality=0.
         """
         from entirecontext.core.decisions import (
             QualityWeights,
@@ -1341,6 +1341,56 @@ class TestDecisionQualityDecay:
         item = next(r for r in ranked if r["id"] == d["id"])
         assert item["quality_score"] == 0.0
         assert item["score_breakdown"]["quality"] == 0.0
+
+    def test_rank_decay_all_future_stamped_rows_stay_on_decay_path(self, ec_db):
+        """Regression guard for PR #88 review round 1 (#discussion_r3098602944).
+
+        If every outcome row is future-stamped (clock skew / corrupt), the
+        decayed bucket ends up empty (``{did: {}}``) while the un-decayed
+        ``outcome_counts_by_decision`` still contains those rows. The old
+        ``.get(did) or None`` pattern treated the empty dict as falsy, routed
+        the ranker back to legacy counts, and let the corrupt rows dominate
+        quality — undoing the future-stamp skip safeguard. The fix pins the
+        decay path on the empty bucket; quality_score collapses to 0 instead
+        of mirroring legacy-count arithmetic over the bad rows.
+        """
+        import uuid
+        from datetime import datetime, timedelta, timezone
+
+        from entirecontext.core.decisions import (
+            QualityWeights,
+            create_decision,
+            link_decision_to_file,
+            rank_related_decisions,
+        )
+
+        d = create_decision(ec_db, title="All-future-stamped decision")
+        link_decision_to_file(ec_db, d["id"], "src/corrupt.py")
+
+        now = datetime.now(timezone.utc)
+        for delta_days in (1, 3, 5, 10, 20):
+            ec_db.execute(
+                "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at) VALUES (?, ?, ?, ?)",
+                (
+                    str(uuid.uuid4()),
+                    d["id"],
+                    "contradicted",
+                    (now + timedelta(days=delta_days)).isoformat(),
+                ),
+            )
+        ec_db.commit()
+
+        ranked = rank_related_decisions(
+            ec_db,
+            file_paths=["src/corrupt.py"],
+            quality=QualityWeights(recency_half_life_days=30, min_volume=2),
+        )
+        item = next(r for r in ranked if r["id"] == d["id"])
+        # Legacy path over 5 contradicted rows → -2.0*5 = -10 clamped to -4.
+        # Decay path over the empty bucket gives 0.0 (raw_score=0).
+        assert item["quality_score"] == 0.0, (
+            f"future-stamped rows leaked into legacy path: quality={item['quality_score']}"
+        )
 
 
 # ---------------------------------------------------------------------------

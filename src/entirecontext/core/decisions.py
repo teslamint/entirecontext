@@ -1575,9 +1575,17 @@ def rank_related_decisions(
         if base_score <= 0:
             continue
 
+        # ``.get(did)`` (no ``or None`` fallback): the empty bucket ``{}`` must
+        # stay on the decay path, not silently switch back to legacy counts.
+        # _fetch_decayed_outcome_counts's contract guarantees the whole dict
+        # is ``{}`` only when decay is disabled (``half_life_days<=0``); when
+        # enabled it always returns ``{did: {...}}``, possibly empty. Passing
+        # ``{}`` to calculate_decision_quality_score keeps the score at ~0
+        # instead of re-using un-decayed counts that may include skipped
+        # corrupt rows (PR #88 review round 1 — #discussion_r3098602944).
         quality_score = calculate_decision_quality_score(
             outcome_counts_by_decision.get(did, {}),
-            decayed_counts=decayed_outcome_counts_by_decision.get(did) or None,
+            decayed_counts=decayed_outcome_counts_by_decision.get(did),
             min_volume=quality_weights.min_volume,
         )
         staleness_factor = weights.staleness_factors.get(d.get("staleness_status", "fresh"), 1.0)
