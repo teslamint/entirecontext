@@ -6,6 +6,7 @@ import json
 import re
 import sqlite3
 import subprocess
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -135,12 +136,12 @@ def _escape_like_contains(value: str) -> str:
 
 
 def _parse_decision_json_fields(decision: dict[str, Any]) -> dict[str, Any]:
-    for field in ("rejected_alternatives", "supporting_evidence"):
-        raw = decision.get(field)
+    for json_field in ("rejected_alternatives", "supporting_evidence"):
+        raw = decision.get(json_field)
         try:
-            decision[field] = json.loads(raw) if raw else []
+            decision[json_field] = json.loads(raw) if raw else []
         except (json.JSONDecodeError, TypeError):
-            decision[field] = []
+            decision[json_field] = []
     return decision
 
 
@@ -811,6 +812,101 @@ _ASSESSMENT_RELATION_WEIGHTS: dict[str, float] = {
     "supersedes": 3.0,
 }
 
+
+@dataclass(frozen=True)
+class RankingWeights:
+    """Weights consumed by ``rank_related_decisions``.
+
+    ``[decisions.ranking]`` config overrides merge into these defaults.
+    """
+
+    staleness_factors: dict[str, float] = field(default_factory=lambda: dict(_STALENESS_FACTORS))
+    assessment_relation_weights: dict[str, float] = field(default_factory=lambda: dict(_ASSESSMENT_RELATION_WEIGHTS))
+    file_exact_weight: float = 3.0
+    git_commit_weight: float = 3.0
+    directory_proximity_cap_levels: int = 3
+
+
+_DEFAULT_RANKING_WEIGHTS = RankingWeights()
+
+
+def _coerce_ranking_float(section: dict, key: str, default: float) -> float:
+    raw = section.get(key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"decisions.ranking.{key} must be a number, got {raw!r}") from exc
+
+
+def _coerce_ranking_int(section: dict, key: str, default: int) -> int:
+    raw = section.get(key)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"decisions.ranking.{key} must be an integer, got {raw!r}") from exc
+
+
+def _coerce_ranking_weight_map(
+    section_name: str, override: dict | None, defaults: dict[str, float]
+) -> dict[str, float]:
+    """Deep-merge an override map into defaults, coercing each value to ``float``.
+
+    Catches non-numeric map values (quoted numbers, booleans reified as strings,
+    lists, etc.) at config-load time with a clear ``decisions.ranking.<section>.<key>``
+    error path, instead of letting them slip through and explode later inside
+    ranking arithmetic.
+    """
+    merged = dict(defaults)
+    if not override:
+        return merged
+    for key, raw in override.items():
+        try:
+            merged[key] = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"decisions.ranking.{section_name}.{key} must be a number, got {raw!r}") from exc
+    return merged
+
+
+def _load_ranking_weights(config: dict | None) -> RankingWeights:
+    """Build :class:`RankingWeights` from an ``[decisions.ranking]`` config section.
+
+    Always returns a fresh :class:`RankingWeights` instance — never the
+    module-level ``_DEFAULT_RANKING_WEIGHTS`` singleton — so a caller that
+    mutates an in-field dict (``weights.staleness_factors['fresh'] = 999``)
+    cannot contaminate subsequent calls. ``frozen=True`` on the dataclass
+    only protects attribute reassignment, not the referenced dict contents.
+    """
+    if not config:
+        return RankingWeights()
+    section = (config.get("decisions") or {}).get("ranking") or {}
+    if not section:
+        return RankingWeights()
+
+    return RankingWeights(
+        staleness_factors=_coerce_ranking_weight_map(
+            "staleness_factors", section.get("staleness_factors"), _STALENESS_FACTORS
+        ),
+        assessment_relation_weights=_coerce_ranking_weight_map(
+            "assessment_relation_weights",
+            section.get("assessment_relation_weights"),
+            _ASSESSMENT_RELATION_WEIGHTS,
+        ),
+        file_exact_weight=_coerce_ranking_float(
+            section, "file_exact_weight", _DEFAULT_RANKING_WEIGHTS.file_exact_weight
+        ),
+        git_commit_weight=_coerce_ranking_float(
+            section, "git_commit_weight", _DEFAULT_RANKING_WEIGHTS.git_commit_weight
+        ),
+        directory_proximity_cap_levels=_coerce_ranking_int(
+            section, "directory_proximity_cap_levels", _DEFAULT_RANKING_WEIGHTS.directory_proximity_cap_levels
+        ),
+    )
+
+
 _CODE_STOPWORDS: frozenset[str] = frozenset(
     {
         "function",
@@ -860,11 +956,12 @@ def _normalize_path(path: str) -> str:
     return p
 
 
-def _directory_proximity_score(path_a: str, path_b: str) -> float:
+def _directory_proximity_score(path_a: str, path_b: str, cap_levels: int = 3) -> float:
     """Score directory proximity between two file paths.
 
-    Same directory = 1.5, parent = 0.75, grandparent = 0.375 (halves per level, cap 3).
-    Returns 0.0 if paths share no directory components.
+    Same directory = 1.5, parent = 0.75, grandparent = 0.375 (halves per level,
+    truncated to zero beyond ``cap_levels``). Returns 0.0 if paths share no
+    directory components.
     """
     parts_a = PurePosixPath(_normalize_path(path_a)).parts[:-1]
     parts_b = PurePosixPath(_normalize_path(path_b)).parts[:-1]
@@ -878,7 +975,7 @@ def _directory_proximity_score(path_a: str, path_b: str) -> float:
     if shared == 0:
         return 0.0
     depth_from_match = max(len(parts_a), len(parts_b)) - shared
-    if depth_from_match > 3:
+    if depth_from_match > cap_levels:
         return 0.0
     return 1.5 * (0.5**depth_from_match)
 
@@ -979,8 +1076,13 @@ def _fts_rank_decisions_from_diff(conn, diff_text: str, limit: int = 50) -> dict
     return result
 
 
-def _gather_candidates_by_files(conn, file_paths: list[str]) -> set[str]:
-    """Find decision IDs linked to the given files or sharing a parent directory."""
+def _gather_candidates_by_files(conn, file_paths: list[str], cap_levels: int = 3) -> set[str]:
+    """Find decision IDs linked to the given files or sharing a parent directory.
+
+    ``cap_levels`` mirrors :func:`_directory_proximity_score`'s cap so candidate
+    collection scales with the configured ``directory_proximity_cap_levels``.
+    Passing a value larger than 3 only matters if the scorer cap is also raised.
+    """
     if not file_paths:
         return set()
     candidates: set[str] = set()
@@ -996,13 +1098,14 @@ def _gather_candidates_by_files(conn, file_paths: list[str]) -> set[str]:
     ).fetchall()
     candidates.update(r["decision_id"] for r in rows)
 
-    # Ancestor directory matches (for proximity scoring up to 3 levels).
-    # _directory_proximity_score returns non-zero for depth_from_match <= 3, so we must gather
-    # candidates from ancestor dirs at each level to avoid silently excluding sibling/cousin files.
+    # Ancestor directory matches — must match the scorer's proximity cap so a
+    # configured higher cap actually pulls deeper siblings into the candidate
+    # pool rather than silently filtering them.
+    ancestor_levels = max(0, cap_levels) + 1
     ancestor_dirs: set[str] = set()
     for p in normalized:
         parts = PurePosixPath(p).parts[:-1]  # directory components, excluding filename
-        for depth in range(min(len(parts), 4)):
+        for depth in range(min(len(parts), ancestor_levels)):
             ancestor_parts = parts[: len(parts) - depth]
             ancestor = str(PurePosixPath(*ancestor_parts))
             if ancestor and ancestor != ".":
@@ -1042,6 +1145,7 @@ def rank_related_decisions(
     include_stale: bool = True,
     include_superseded: bool = False,
     include_contradicted: bool = False,
+    ranking: RankingWeights | None = None,
     _return_stats: bool = False,
 ) -> list[dict] | tuple[list[dict], dict]:
     """Rank decisions by current-change relevance using multi-signal scoring.
@@ -1067,13 +1171,14 @@ def rank_related_decisions(
       successor passes the filter; otherwise the entire chain is dropped.
     - Set _return_stats=True to get (results, filter_stats).
     """
+    weights = ranking if ranking is not None else _DEFAULT_RANKING_WEIGHTS
     file_paths = [_normalize_path(p) for p in (file_paths or [])]
     assessment_ids = assessment_ids or []
     commit_shas = commit_shas or []
 
     # --- 1. Gather candidates from each signal source ---
     candidate_ids: set[str] = set()
-    candidate_ids |= _gather_candidates_by_files(conn, file_paths)
+    candidate_ids |= _gather_candidates_by_files(conn, file_paths, cap_levels=weights.directory_proximity_cap_levels)
     candidate_ids |= _gather_candidates_by_commits(conn, commit_shas)
 
     resolved_assessment_ids: set[str] = set()
@@ -1218,9 +1323,9 @@ def rank_related_decisions(
         aid = row["assessment_id"]
         rtype = row["relation_type"]
         # Keep max weight per assessment_id
-        if aid not in existing or _ASSESSMENT_RELATION_WEIGHTS.get(rtype, 0) > _ASSESSMENT_RELATION_WEIGHTS.get(
-            existing[aid], 0
-        ):
+        if aid not in existing or weights.assessment_relation_weights.get(
+            rtype, 0
+        ) > weights.assessment_relation_weights.get(existing[aid], 0):
             existing[aid] = rtype
 
     # Commit links
@@ -1240,9 +1345,9 @@ def rank_related_decisions(
         for anc_id in ancestor_ids:
             merged_files |= file_links_by_decision.get(anc_id, set())
             for aid, rtype in assessment_links_by_decision.get(anc_id, {}).items():
-                if aid not in merged_assessments or _ASSESSMENT_RELATION_WEIGHTS.get(
+                if aid not in merged_assessments or weights.assessment_relation_weights.get(
                     rtype, 0
-                ) > _ASSESSMENT_RELATION_WEIGHTS.get(merged_assessments[aid], 0):
+                ) > weights.assessment_relation_weights.get(merged_assessments[aid], 0):
                     merged_assessments[aid] = rtype
             merged_commits |= commit_links_by_decision.get(anc_id, set())
         file_links_by_decision[terminal_id] = merged_files
@@ -1285,13 +1390,13 @@ def rank_related_decisions(
                 exact_matched = False
                 for linked in linked_files:
                     if _normalize_path(linked) == fp:
-                        file_exact += 3.0
+                        file_exact += weights.file_exact_weight
                         exact_matched = True
                         break
                 if not exact_matched:
                     best_prox = 0.0
                     for linked in linked_files:
-                        prox = _directory_proximity_score(fp, linked)
+                        prox = _directory_proximity_score(fp, linked, cap_levels=weights.directory_proximity_cap_levels)
                         if prox > best_prox:
                             best_prox = prox
                     file_proximity += best_prox
@@ -1301,19 +1406,19 @@ def rank_related_decisions(
             links = assessment_links_by_decision.get(did, {})
             for aid, rtype in links.items():
                 if aid in resolved_assessment_ids:
-                    assessment_score += _ASSESSMENT_RELATION_WEIGHTS.get(rtype, 4.0)
+                    assessment_score += weights.assessment_relation_weights.get(rtype, 4.0)
 
         # Git commit signal
         if commit_set:
             linked_commits = commit_links_by_decision.get(did, set())
-            git_commit = 3.0 * len(linked_commits & commit_set)
+            git_commit = weights.git_commit_weight * len(linked_commits & commit_set)
 
         base_score = file_exact + file_proximity + assessment_score + diff_relevance + git_commit
         if base_score <= 0:
             continue
 
         quality_score = calculate_decision_quality_score(outcome_counts_by_decision.get(did, {}))
-        staleness_factor = _STALENESS_FACTORS.get(d.get("staleness_status", "fresh"), 1.0)
+        staleness_factor = weights.staleness_factors.get(d.get("staleness_status", "fresh"), 1.0)
         score = base_score * staleness_factor + quality_score
 
         scored.append(

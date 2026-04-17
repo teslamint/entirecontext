@@ -55,11 +55,14 @@ async def ec_decision_related(
     - Superseded candidates collapse to their terminal successor when it passes the filter.
     - Set include_filter_stats=True to receive a breakdown of what was filtered.
     """
-    (conn, _), error = runtime.resolve_repo()
+    (conn, repo_path), error = runtime.resolve_repo()
     if error:
         return error
     try:
-        from ...core.decisions import rank_related_decisions
+        from ...core.config import load_config
+        from ...core.decisions import _load_ranking_weights, rank_related_decisions
+
+        ranking_weights = _load_ranking_weights(load_config(repo_path))
 
         started_at = time.perf_counter()
         decisions, filter_stats = rank_related_decisions(
@@ -72,6 +75,7 @@ async def ec_decision_related(
             include_stale=include_stale,
             include_superseded=include_superseded,
             include_contradicted=include_contradicted,
+            ranking=ranking_weights,
             _return_stats=True,
         )
         tracked_event_id = runtime.record_search_event(
@@ -146,8 +150,11 @@ async def ec_decision_context(
     if error:
         return error
     try:
-        from ...core.decisions import _normalize_path, rank_related_decisions
+        from ...core.config import load_config
+        from ...core.decisions import _load_ranking_weights, _normalize_path, rank_related_decisions
         from ...core.telemetry import detect_current_context
+
+        ranking_weights = _load_ranking_weights(load_config(repo_path))
 
         # Track whether the caller explicitly pinned a session. When they
         # did, we must NOT fold repo-wide signals (like `git diff HEAD`)
@@ -293,6 +300,7 @@ async def ec_decision_context(
             commit_shas=commit_shas,
             limit=limit,
             include_stale=include_stale,
+            ranking=ranking_weights,
             _return_stats=True,
         )
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`[decisions.ranking]` config section** (#85) — staleness factors, assessment relation weights, exact-file and git-commit weights, and directory proximity cap are now tunable per repo through the new `[decisions.ranking]` TOML section (defaults unchanged). `rank_related_decisions` accepts a `ranking: RankingWeights` kwarg, and the SessionStart hook and `ec_decision_related` MCP tool load repo config automatically. The `score_breakdown` key set (`file_exact`, `file_proximity`, `assessment`, `diff_relevance`, `git_commit`, `quality`, `staleness_factor`) is now pinned as an additive-only public contract — renames are a breaking change.
+
 ## [0.3.0] - 2026-04-17
 
 v0.3.0 closes the decision-memory feedback arc: retrieval records its footprint, extraction quality gets validated before candidates enter the pipeline, and outcome data flows back into ranking. No schema change — still v13.
