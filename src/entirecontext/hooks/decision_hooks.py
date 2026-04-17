@@ -180,18 +180,11 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         if not repo_path:
             return None
 
-        # Load the full config exactly once — the decisions section, quality
-        # weights, and any future F-series subsections all consume the same
-        # merged TOML snapshot. Prior to F1 this was one disk read via
-        # _load_decisions_config; keep it at one read now that F1 also needs
-        # [decisions.quality] parameters.
-        from ..core.config import load_config
-
-        full_config = load_config(repo_path)
-        config = full_config.get("decisions", {})
+        config = _load_decisions_config(repo_path)
         if not config.get("show_related_on_start", False):
             return None
 
+        from ..core.config import load_config
         from ..core.decisions import (
             _load_quality_weights,
             _load_ranking_weights,
@@ -201,6 +194,14 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             rank_related_decisions,
         )
         from ..db import get_db
+
+        # NOTE: F1 review round 1 (codex:rescue) flagged that F1 adds a
+        # second load_config read here (first is via _load_decisions_config).
+        # Deferred rather than inlined because the existing test suite
+        # monkeypatches _load_decisions_config by name; consolidating the
+        # two reads requires a coordinated test refactor. Tracked as
+        # follow-up in the v0.4.x hardening backlog.
+        full_config = load_config(repo_path)
 
         conn = get_db(repo_path)
         try:
