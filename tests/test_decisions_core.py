@@ -1102,6 +1102,298 @@ class TestRankingWeightsConfig:
 
 
 # ---------------------------------------------------------------------------
+# Outcome recency decay
+# ---------------------------------------------------------------------------
+
+
+class TestDecisionQualityDecay:
+    """calculate_decision_quality_score + _fetch_decayed_outcome_counts + QualityWeights."""
+
+    def test_quality_score_legacy_signature_unchanged(self):
+        """The 1-arg call must produce byte-identical output to the pre-F1 formula."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        cases = [
+            ({}, 0.0),
+            ({"accepted": 2}, 2.0),
+            ({"ignored": 4}, -2.0),
+            ({"contradicted": 1}, -2.0),
+            ({"accepted": 1, "ignored": 2, "contradicted": 1}, 1.0 - 1.0 - 2.0),
+            # Clamps
+            ({"accepted": 10}, 4.0),
+            ({"contradicted": 10}, -4.0),
+        ]
+        for counts, expected in cases:
+            assert calculate_decision_quality_score(counts) == expected, counts
+
+    def test_quality_score_with_decay_applies_decayed_weights(self):
+        """When decayed_counts is supplied, it drives the score (not counts)."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        # 3 accepted across history, but decayed sum is 1.5 (recent-weighted).
+        # Legacy answer would be 3.0; decayed answer must be 1.5.
+        counts = {"accepted": 3}
+        decayed = {"accepted": 1.5}
+        score = calculate_decision_quality_score(counts, decayed_counts=decayed, min_volume=2)
+        assert score == 1.5
+        # With contradicted mixed in, sign still reflects decayed weight.
+        counts = {"accepted": 2, "contradicted": 3}
+        decayed = {"accepted": 0.4, "contradicted": 1.8}
+        score = calculate_decision_quality_score(counts, decayed_counts=decayed, min_volume=2)
+        expected = 0.4 - 2.0 * 1.8
+        assert score == max(-4.0, min(4.0, expected))
+
+    def test_quality_score_half_life_zero_disables_decay(self):
+        """half_life<=0 → _fetch_decayed_outcome_counts returns empty → ranker uses legacy path.
+
+        advisor-reviewed semantic: "decay disabled" is the implementable
+        meaning. "latest only" as a math limit isn't what we ship.
+        """
+        from entirecontext.core.decisions import _fetch_decayed_outcome_counts
+
+        class _StubConn:
+            def execute(self, *_a, **_kw):  # pragma: no cover — must not be called
+                raise AssertionError("decay must not query when half_life<=0")
+
+        assert _fetch_decayed_outcome_counts(_StubConn(), ["d1"], 0) == {}
+        assert _fetch_decayed_outcome_counts(_StubConn(), ["d1"], -7.5) == {}
+
+    def test_quality_score_min_volume_smooths_single_outcome(self):
+        """A single fresh outcome gets attenuated toward zero by min_volume."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        counts = {"accepted": 1}
+        decayed = {"accepted": 1.0}
+        # total=1 < min_volume=2 → score scaled by 1/2
+        score = calculate_decision_quality_score(counts, decayed_counts=decayed, min_volume=2)
+        assert score == 0.5
+        # At volume = min_volume, smoothing does not fire.
+        score_full = calculate_decision_quality_score({"accepted": 2}, decayed_counts={"accepted": 2.0}, min_volume=2)
+        assert score_full == 2.0
+
+    def test_fetch_decayed_outcome_counts_empty_ids_returns_empty(self, ec_db):
+        from entirecontext.core.decisions import _fetch_decayed_outcome_counts
+
+        assert _fetch_decayed_outcome_counts(ec_db, [], 30) == {}
+
+    def test_fetch_decayed_outcome_counts_handles_aware_and_naive_timestamps(self, ec_db):
+        """Production INSERTs write aware ISO (_now_iso); legacy DEFAULT rows are
+        naive — both must parse to aware UTC and produce finite decay weights."""
+        import uuid
+        from datetime import datetime, timedelta, timezone
+
+        from entirecontext.core.decisions import _fetch_decayed_outcome_counts, create_decision
+
+        d = create_decision(ec_db, title="Decay parse target")
+        now = datetime.now(timezone.utc)
+        aware_row = (now - timedelta(days=0)).isoformat()  # weight = 1.0
+        naive_row = (now - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")  # naive → treated UTC
+
+        for row_time in (aware_row, naive_row):
+            ec_db.execute(
+                "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at) VALUES (?, ?, ?, ?)",
+                (str(uuid.uuid4()), d["id"], "accepted", row_time),
+            )
+        ec_db.commit()
+
+        decayed = _fetch_decayed_outcome_counts(ec_db, [d["id"]], half_life_days=30.0, now=now)
+        # aware (age=0) → 1.0; naive (age≈30d) → 0.5; sum → 1.5
+        assert d["id"] in decayed
+        total = decayed[d["id"]].get("accepted", 0.0)
+        assert 1.49 <= total <= 1.51, total
+
+    def test_rank_related_decisions_surfaces_recent_contradicted_over_old_accepted(self, ec_db):
+        """End-to-end decay in ranker: a recent contradicted dominates older accepted runs."""
+        import uuid
+        from datetime import datetime, timedelta, timezone
+
+        from entirecontext.core.decisions import (
+            QualityWeights,
+            create_decision,
+            link_decision_to_file,
+            rank_related_decisions,
+        )
+
+        d = create_decision(ec_db, title="Decay-weighted decision")
+        link_decision_to_file(ec_db, d["id"], "src/decay.py")
+
+        now = datetime.now(timezone.utc)
+        outcomes = [
+            ("accepted", now - timedelta(days=200)),
+            ("accepted", now - timedelta(days=180)),
+            ("accepted", now - timedelta(days=150)),
+            ("contradicted", now - timedelta(days=2)),
+            ("contradicted", now - timedelta(days=1)),
+        ]
+        for outcome_type, created in outcomes:
+            ec_db.execute(
+                "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at) VALUES (?, ?, ?, ?)",
+                (str(uuid.uuid4()), d["id"], outcome_type, created.isoformat()),
+            )
+        ec_db.commit()
+
+        # Legacy (decay off) — uniform counts say 3 accepted vs 2 contradicted.
+        # calculate_decision_quality_score legacy: 3 - 2*2 = -1 (still net negative
+        # because contradicted weight is 2× accepted). So decay must push *more*
+        # negative for the test to measurably separate from legacy.
+        off = rank_related_decisions(
+            ec_db, file_paths=["src/decay.py"], quality=QualityWeights(recency_half_life_days=0)
+        )
+        on = rank_related_decisions(
+            ec_db, file_paths=["src/decay.py"], quality=QualityWeights(recency_half_life_days=30)
+        )
+        off_item = next(r for r in off if r["id"] == d["id"])
+        on_item = next(r for r in on if r["id"] == d["id"])
+        # With decay, the 3 accepted from >150d ago decay to ~0, leaving recent
+        # contradicted dominant → quality score more negative than legacy path.
+        assert on_item["quality_score"] < off_item["quality_score"], (
+            f"decay should push quality more negative: off={off_item['quality_score']}, on={on_item['quality_score']}"
+        )
+
+    def test_load_quality_weights_rejects_non_numeric(self):
+        from entirecontext.core.decisions import _load_quality_weights
+
+        with pytest.raises(ValueError, match=r"decisions\.quality\.recency_half_life_days"):
+            _load_quality_weights({"decisions": {"quality": {"recency_half_life_days": "not-a-number"}}})
+        with pytest.raises(ValueError, match=r"decisions\.quality\.min_volume"):
+            _load_quality_weights({"decisions": {"quality": {"min_volume": "two"}}})
+
+    def test_load_quality_weights_returns_fresh_defaults(self):
+        """Empty/missing config always yields a fresh instance (no singleton exposure)."""
+        from entirecontext.core.decisions import _DEFAULT_QUALITY_WEIGHTS, _load_quality_weights
+
+        for empty in (None, {}, {"decisions": {}}, {"decisions": {"quality": {}}}):
+            loaded = _load_quality_weights(empty)
+            assert loaded.recency_half_life_days == _DEFAULT_QUALITY_WEIGHTS.recency_half_life_days
+            assert loaded.min_volume == _DEFAULT_QUALITY_WEIGHTS.min_volume
+
+    # --- previously-uncovered branches ---
+
+    def test_quality_score_explicit_none_decayed_counts_uses_legacy(self):
+        """Passing decayed_counts=None explicitly must hit the legacy branch."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        assert (
+            calculate_decision_quality_score({"accepted": 3}, decayed_counts=None)
+            == calculate_decision_quality_score({"accepted": 3})
+            == 3.0
+        )
+
+    def test_quality_score_min_volume_zero_or_one_disables_smoothing(self):
+        """min_volume<=1 short-circuits the smoother so single-outcome decay is not attenuated."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        for mv in (0, 1):
+            assert (
+                calculate_decision_quality_score({"accepted": 1}, decayed_counts={"accepted": 1.0}, min_volume=mv)
+                == 1.0
+            )
+
+    def test_fetch_decayed_outcome_counts_skips_future_stamped_rows(self, ec_db):
+        """A row stamped in the future (clock skew / corrupt data) is excluded, not clamped to weight 1.0."""
+        import uuid
+        from datetime import datetime, timedelta, timezone
+
+        from entirecontext.core.decisions import _fetch_decayed_outcome_counts, create_decision
+
+        d = create_decision(ec_db, title="Future-stamp target")
+        now = datetime.now(timezone.utc)
+        future_row = (now + timedelta(days=30)).isoformat()
+        past_row = (now - timedelta(days=10)).isoformat()
+        ec_db.execute(
+            "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at) VALUES (?, ?, ?, ?)",
+            (str(uuid.uuid4()), d["id"], "accepted", future_row),
+        )
+        ec_db.execute(
+            "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at) VALUES (?, ?, ?, ?)",
+            (str(uuid.uuid4()), d["id"], "accepted", past_row),
+        )
+        ec_db.commit()
+
+        decayed = _fetch_decayed_outcome_counts(ec_db, [d["id"]], half_life_days=30.0, now=now)
+        # Only the past (10-day-old) row counts: 0.5 ** (10/30) ≈ 0.7937.
+        # A clamp implementation would have added 1.0 for the future row, producing >= 1.79.
+        accepted = decayed.get(d["id"], {}).get("accepted", 0.0)
+        assert 0.75 <= accepted <= 0.82, accepted
+
+    def test_rank_decay_on_outcome_free_decision_yields_zero(self, ec_db):
+        """Decay enabled + zero outcomes → decay path with empty bucket → quality=0.
+
+        After PR #88 review-round-1 fix (``.get(did)`` not ``.get(did) or None``),
+        the empty bucket stays on the decay path rather than silently switching
+        to legacy uniform counts. raw_score=0 + smoothing=0 → quality=0.
+        """
+        from entirecontext.core.decisions import (
+            QualityWeights,
+            create_decision,
+            link_decision_to_file,
+            rank_related_decisions,
+        )
+
+        d = create_decision(ec_db, title="No-outcome decision")
+        link_decision_to_file(ec_db, d["id"], "src/no_outcome.py")
+
+        ranked = rank_related_decisions(
+            ec_db,
+            file_paths=["src/no_outcome.py"],
+            quality=QualityWeights(recency_half_life_days=30, min_volume=2),
+        )
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["quality_score"] == 0.0
+        assert item["score_breakdown"]["quality"] == 0.0
+
+    def test_rank_decay_all_future_stamped_rows_stay_on_decay_path(self, ec_db):
+        """Regression guard for PR #88 review round 1 (#discussion_r3098602944).
+
+        If every outcome row is future-stamped (clock skew / corrupt), the
+        decayed bucket ends up empty (``{did: {}}``) while the un-decayed
+        ``outcome_counts_by_decision`` still contains those rows. The old
+        ``.get(did) or None`` pattern treated the empty dict as falsy, routed
+        the ranker back to legacy counts, and let the corrupt rows dominate
+        quality — undoing the future-stamp skip safeguard. The fix pins the
+        decay path on the empty bucket; quality_score collapses to 0 instead
+        of mirroring legacy-count arithmetic over the bad rows.
+        """
+        import uuid
+        from datetime import datetime, timedelta, timezone
+
+        from entirecontext.core.decisions import (
+            QualityWeights,
+            create_decision,
+            link_decision_to_file,
+            rank_related_decisions,
+        )
+
+        d = create_decision(ec_db, title="All-future-stamped decision")
+        link_decision_to_file(ec_db, d["id"], "src/corrupt.py")
+
+        now = datetime.now(timezone.utc)
+        for delta_days in (1, 3, 5, 10, 20):
+            ec_db.execute(
+                "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at) VALUES (?, ?, ?, ?)",
+                (
+                    str(uuid.uuid4()),
+                    d["id"],
+                    "contradicted",
+                    (now + timedelta(days=delta_days)).isoformat(),
+                ),
+            )
+        ec_db.commit()
+
+        ranked = rank_related_decisions(
+            ec_db,
+            file_paths=["src/corrupt.py"],
+            quality=QualityWeights(recency_half_life_days=30, min_volume=2),
+        )
+        item = next(r for r in ranked if r["id"] == d["id"])
+        # Legacy path over 5 contradicted rows → -2.0*5 = -10 clamped to -4.
+        # Decay path over the empty bucket gives 0.0 (raw_score=0).
+        assert item["quality_score"] == 0.0, (
+            f"future-stamped rows leaked into legacy path: quality={item['quality_score']}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Issue #39: staleness/contradiction hardening regression tests
 # ---------------------------------------------------------------------------
 

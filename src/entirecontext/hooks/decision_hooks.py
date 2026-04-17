@@ -186,6 +186,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
 
         from ..core.config import load_config
         from ..core.decisions import (
+            _load_quality_weights,
             _load_ranking_weights,
             _normalize_path,
             get_decision,
@@ -193,6 +194,11 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             rank_related_decisions,
         )
         from ..db import get_db
+
+        # load_config is called separately from _load_decisions_config above;
+        # consolidating the two reads requires refactoring how tests monkeypatch
+        # _load_decisions_config by name.
+        full_config = load_config(repo_path)
 
         conn = get_db(repo_path)
         try:
@@ -219,7 +225,8 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
 
             normalized_files = [_normalize_path(f) for f in changed_files if _normalize_path(f)]
 
-            ranking_weights = _load_ranking_weights(load_config(repo_path))
+            ranking_weights = _load_ranking_weights(full_config)
+            quality_weights = _load_quality_weights(full_config)
 
             file_related: list[dict] = []
             if normalized_files or diff_text or commit_shas or assessment_ids:
@@ -232,6 +239,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     limit=display_limit,
                     include_contradicted=False,
                     ranking=ranking_weights,
+                    quality=quality_weights,
                 )
                 for d in ranked:
                     if d["id"] not in seen_ids:

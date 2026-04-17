@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`[decisions.ranking]` config section** (#85) — staleness factors, assessment relation weights, exact-file and git-commit weights, and directory proximity cap are now tunable per repo through the new `[decisions.ranking]` TOML section (defaults unchanged). `rank_related_decisions` accepts a `ranking: RankingWeights` kwarg, and the SessionStart hook and `ec_decision_related` MCP tool load repo config automatically. The `score_breakdown` key set (`file_exact`, `file_proximity`, `assessment`, `diff_relevance`, `git_commit`, `quality`, `staleness_factor`) is now pinned as an additive-only public contract — renames are a breaking change.
+- **Outcome recency decay in decision quality score** (#83) — `calculate_decision_quality_score` now accepts an optional `decayed_counts` keyword argument; `rank_related_decisions` feeds it an exponential time-decayed sum per outcome type (`weight = 0.5 ** (age_days / half_life_days)`) so recent feedback dominates historical. Decay lives under `[decisions.quality]` (new namespace, deliberately separate from `[decisions.ranking]`): `recency_half_life_days` (default 30) and `min_volume` (default 2, smooths single-outcome swings toward zero). `half_life<=0` disables decay and falls back to legacy uniform counts. `get_decision_quality_summary` intentionally keeps the legacy 1-arg path so CLI/MCP quality-summary output stays stable.
 
 ## [0.3.0] - 2026-04-17
 
