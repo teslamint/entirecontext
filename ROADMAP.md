@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-04-16._
+_Updated against codebase on 2026-04-17._
 
 ## Product Thesis
 
@@ -31,7 +31,7 @@ The project already has broad infrastructure in place:
 
 That foundation is useful, but it is broader than the product wedge. The next phase should narrow EntireContext around **decision memory for coding agents**, not expand it horizontally as a generic memory platform.
 
-The main implementation hardening gap still on the table is sync merge/retry policy alignment between runtime and docs.
+With v0.3.0 the decision-memory loop is closed at a minimal level: retrieval telemetry, noise-gated extraction, relevance-based reactivation, and automatic outcome recording. The next milestone (v0.4.0) deepens the loop — making outcome data flow into ranking and extraction, and opening a new signal channel through UserPromptSubmit.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -67,24 +67,51 @@ Theme: close the decision-memory feedback arc — retrieval records its footprin
   - SessionEnd: infer "ignored" for surfaced-but-unacted decisions (config-gated)
   - Surface `quality_score` in retrieval output
 
+## v0.4.0 — Feed the Loop (Planned)
+
+Theme: deepen the decision-memory loop so outcome data flows into both ranking and extraction, and add UserPromptSubmit as a new retrieval signal channel.
+
+Plan reference: `~/.claude/plans/v0-4-0-streamed-pond.md`.
+
+- [ ] **F1. Outcome recency decay**
+  - Time-decayed contribution in `calculate_decision_quality_score`
+  - New config `[decisions.quality] recency_half_life_days` (default 30)
+  - Single-outcome smoothing (`min_volume`) to avoid ranking swings
+
+- [ ] **F2. Outcome → extraction feedback (penalty only)**
+  - `run_extraction` penalises candidate confidence when the candidate's files have historical contradicted outcomes
+  - Ratio gate to limit false positives; accepted-boost deferred to v0.5 to avoid self-reinforcing loops
+  - New config `[decisions.extraction] outcome_feedback_*`
+
+- [ ] **F3. Ranking weight config**
+  - `[decisions.ranking]` section replaces hardcoded `_STALENESS_FACTORS`, `_ASSESSMENT_RELATION_WEIGHTS`, and file/commit signal weights
+  - Defaults unchanged; `score_breakdown` keys stable (additive only)
+
+- [ ] **F4. UserPromptSubmit async decision surfacing**
+  - Prompt text redacted in-memory before any tmp write, then `launch_worker` for ranking
+  - Worker assembles prompt + diff + recent commits signals and writes `.entirecontext/decisions-context-prompt-<session>.md`
+  - Gated by `[decisions] surface_on_user_prompt` (default off)
+
+Scope note: outcome type enum extension (`refined`/`replaced`) was originally scoped here as F5 but is deferred to the v0.5 breaking track so that enum change + schema v14 + automatic recording paths land together in one release rather than split across two.
+
+## Hardening Backlog
+
+Structural debt that does not fit the "decision memory depth" wedge but still blocks reliable releases. Surfaced explicitly so milestone planning does not read more optimistic than the real implementation risk.
+
+- [ ] **`LEGACY_TRANSACTION_CONTROL` dependency** — `src/entirecontext/core/context.py:18` and `tests/test_transaction_helper.py:4` rely on Python 3.12's legacy transaction mode. Needs re-verification under Python 3.13+ autocommit semantics before we can claim cross-version support.
+- [ ] **`confirm_candidate` non-atomic flow** — `src/entirecontext/core/decision_candidates.py:92-224` uses CAS-claim + internal per-call commits because `create_decision`/`link_decision_to_*` each commit independently. A crash between step 2 and step 3 leaves the candidate in `confirmed` state with `promoted_decision_id IS NULL`. Resolve either by adding a recovery detector or by refactoring to a single outer transaction.
+- [ ] **Review-bot noise reduction** — `.github/workflows/claude-code-review.yml` and `.github/workflows/tidy-pilot.yml` currently produce sticky comments regardless of whether a PR is substantive (see PR #82 Tidy Pilot comment as a reference case). Needs thresholding, disable path, or filter.
+
 ## Later
 
 - [ ] **Sharpen product messaging around decision memory**
-
-- [ ] **Decision quality loop (full)**
-  - Measure which decisions actually improve later changes
-  - Use outcomes to improve ranking and distillation quality
 
 - [ ] **Team policy and review memory**
   - Capture recurring team preferences, review heuristics, and architectural constraints
   - Separate repo-local norms from cross-repo lessons
 
-- [ ] **Sync and runtime hardening**
-  - Resolve merge/retry policy alignment in the sync engine
-  - Test divergent shadow-branch conflict scenarios
-
-- [ ] **UserPromptSubmit decision surfacing**
-  - Requires async worker pattern (currently SYNC handler)
+- [ ] **Decision file rename tracking**
+  - Preserve historical outcome trail when `decision_files` paths are renamed or moved
 
 ## Done Foundations
 
@@ -92,6 +119,7 @@ Theme: close the decision-memory feedback arc — retrieval records its footprin
 - [x] Hybrid search, AST search, graph/dashboard tooling, and MCP exposure
 - [x] Futures assessments, typed relationships, feedback, lessons, and trend analysis
 - [x] Async workers, filtering, export, consolidation, and cross-repo support
+- [x] Sync merge/retry policy and shadow-branch conflict handling (spec §6.3, v0.2.0)
 
 ## Exploration
 
