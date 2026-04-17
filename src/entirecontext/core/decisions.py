@@ -161,11 +161,6 @@ def calculate_decision_quality_score(
     smoother so the rank is not swung by a single fresh outcome: if the number
     of real outcomes is below ``min_volume``, the decayed score is linearly
     attenuated toward zero by ``total / min_volume``.
-
-    Contract note (F1 scope, see also decision record): this function is used
-    by both ``rank_related_decisions`` and ``get_decision_quality_summary``.
-    Only the ranker passes ``decayed_counts``; the summary path keeps legacy
-    uniform-count semantics so CLI/MCP reporting output remains stable.
     """
     if decayed_counts is None:
         raw_score = (
@@ -216,9 +211,10 @@ def _fetch_decayed_outcome_counts(
     """Sum outcome weights per decision with exponential time decay.
 
     ``weight = 0.5 ** (age_days / half_life_days)``. Ages below zero (clock
-    skew) clamp to 0 so a future-stamped outcome never gets more than full
-    weight. Returns ``{decision_id: {outcome_type: decayed_sum}}``. Missing
-    keys default to 0.0 at the caller.
+    skew) are skipped entirely; a silent clamp to ``max(0, ...)`` would grant
+    such rows full weight (1.0) and let corrupt data dominate ranking.
+    Returns ``{decision_id: {outcome_type: decayed_sum}}``. Missing keys
+    default to 0.0 at the caller.
 
     Contract:
     - ``decision_ids=[]`` → ``{}`` (no query, no cruft).
@@ -257,10 +253,10 @@ class QualityWeights:
     """Quality-score parameters consumed by ``rank_related_decisions``.
 
     ``[decisions.quality]`` config overrides these defaults. Kept separate
-    from ``[decisions.ranking]`` (F3) because quality-score aggregation and
+    from ``[decisions.ranking]`` because quality-score aggregation and
     ranking-signal weights have distinct semantic owners; combining the two
     sections would conflate independent responsibilities and make future
-    additions ambiguous (see F3 decision record).
+    additions ambiguous.
     """
 
     recency_half_life_days: float = 30.0
@@ -1524,8 +1520,6 @@ def rank_related_decisions(
     ).fetchall():
         outcome_counts_by_decision.setdefault(row["decision_id"], {})[row["outcome_type"]] = row["total"] or 0
 
-    # Decayed outcome weights — F1 recency decay. Disabled (empty dict) when
-    # ``recency_half_life_days <= 0``; scorer then falls back to uniform counts.
     decayed_outcome_counts_by_decision = _fetch_decayed_outcome_counts(
         conn, decision_ids, quality_weights.recency_half_life_days
     )

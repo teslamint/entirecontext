@@ -1102,7 +1102,7 @@ class TestRankingWeightsConfig:
 
 
 # ---------------------------------------------------------------------------
-# Issue #83 (v0.4.0 F1): outcome recency decay
+# Outcome recency decay
 # ---------------------------------------------------------------------------
 
 
@@ -1267,7 +1267,7 @@ class TestDecisionQualityDecay:
             assert loaded.recency_half_life_days == _DEFAULT_QUALITY_WEIGHTS.recency_half_life_days
             assert loaded.min_volume == _DEFAULT_QUALITY_WEIGHTS.min_volume
 
-    # --- codex:rescue round-1 follow-ups: previously-uncovered F1 branches ---
+    # --- previously-uncovered branches ---
 
     def test_quality_score_explicit_none_decayed_counts_uses_legacy(self):
         """Passing decayed_counts=None explicitly must hit the legacy branch."""

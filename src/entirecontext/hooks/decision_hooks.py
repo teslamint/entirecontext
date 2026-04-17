@@ -195,12 +195,9 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         )
         from ..db import get_db
 
-        # NOTE: F1 review round 1 (codex:rescue) flagged that F1 adds a
-        # second load_config read here (first is via _load_decisions_config).
-        # Deferred rather than inlined because the existing test suite
-        # monkeypatches _load_decisions_config by name; consolidating the
-        # two reads requires a coordinated test refactor. Tracked as
-        # follow-up in the v0.4.x hardening backlog.
+        # load_config is called separately from _load_decisions_config above;
+        # consolidating the two reads requires refactoring how tests monkeypatch
+        # _load_decisions_config by name.
         full_config = load_config(repo_path)
 
         conn = get_db(repo_path)
