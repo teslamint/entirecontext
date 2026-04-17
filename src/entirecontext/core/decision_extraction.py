@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from entirecontext.core.decisions import _normalize_path
+
 
 class DecisionExtractionError(Exception):
     """Expected failure mode in the extraction pipeline.
@@ -741,6 +743,203 @@ def score_confidence(draft: CandidateDraft, dedup_result: DedupResult) -> tuple[
 
 
 # ---------------------------------------------------------------------------
+# Outcome → extraction feedback (F2)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExtractionWeights:
+    """Extraction feedback parameters loaded from ``[decisions.extraction]``.
+
+    The ratio gate (0.5) is intentionally hardcoded: it is the midpoint where
+    'more contradicted than not' becomes a signal, and exposing it as config
+    invites bikeshedding without unlocking meaningful behavior. Magnitude of
+    the penalty and the lookback horizon are the knobs worth tuning.
+    """
+
+    outcome_feedback_enabled: bool = True
+    outcome_feedback_lookback_days: int = 60
+    contradicted_penalty: float = 0.15
+
+
+_DEFAULT_EXTRACTION_WEIGHTS = ExtractionWeights()
+
+_OUTCOME_FEEDBACK_RATIO_THRESHOLD = 0.5
+
+
+def _coerce_extraction_bool(section: dict, key: str, default: bool) -> bool:
+    raw = section.get(key)
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return bool(raw)
+    if isinstance(raw, str):
+        lowered = raw.strip().lower()
+        if lowered in ("true", "yes", "1", "on"):
+            return True
+        if lowered in ("false", "no", "0", "off"):
+            return False
+    raise ValueError(f"decisions.extraction.{key} must be a boolean, got {raw!r}")
+
+
+def _coerce_extraction_int(section: dict, key: str, default: int) -> int:
+    raw = section.get(key)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"decisions.extraction.{key} must be an integer, got {raw!r}") from exc
+
+
+def _coerce_extraction_float(section: dict, key: str, default: float) -> float:
+    raw = section.get(key)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"decisions.extraction.{key} must be a number, got {raw!r}") from exc
+
+
+def _coerce_extraction_nonneg_float(section: dict, key: str, default: float) -> float:
+    """Variant of :func:`_coerce_extraction_float` that rejects negatives.
+
+    ``contradicted_penalty`` must be >= 0 because ``apply_outcome_feedback_to_confidence``
+    subtracts it directly: a negative value would convert the penalty into a
+    boost when contradicted outcomes dominate, inverting the 'penalty-only'
+    contract of this feature.
+    """
+    value = _coerce_extraction_float(section, key, default)
+    if value < 0.0:
+        raise ValueError(f"decisions.extraction.{key} must be >= 0, got {value!r}")
+    return value
+
+
+def _load_extraction_weights(config: dict | None) -> ExtractionWeights:
+    """Build :class:`ExtractionWeights` from ``[decisions.extraction]``.
+
+    Always returns a fresh instance so callers cannot mutate the module-level
+    ``_DEFAULT_EXTRACTION_WEIGHTS`` singleton.
+    """
+    if not config:
+        return ExtractionWeights()
+    section = (config.get("decisions") or {}).get("extraction") or {}
+    if not section:
+        return ExtractionWeights()
+    return ExtractionWeights(
+        outcome_feedback_enabled=_coerce_extraction_bool(
+            section, "outcome_feedback_enabled", _DEFAULT_EXTRACTION_WEIGHTS.outcome_feedback_enabled
+        ),
+        outcome_feedback_lookback_days=_coerce_extraction_int(
+            section,
+            "outcome_feedback_lookback_days",
+            _DEFAULT_EXTRACTION_WEIGHTS.outcome_feedback_lookback_days,
+        ),
+        contradicted_penalty=_coerce_extraction_nonneg_float(
+            section, "contradicted_penalty", _DEFAULT_EXTRACTION_WEIGHTS.contradicted_penalty
+        ),
+    )
+
+
+def get_file_outcome_stats(
+    conn,
+    file_paths: list[str],
+    lookback_days: int,
+) -> dict[str, int]:
+    """Aggregate outcome counts across decisions that touch the given files.
+
+    Uses SQL-side path normalization matching ``_gather_candidates_by_files``
+    so stored entries like ``"./src/foo.py"`` or ``"src\\foo.py"`` match
+    normalized inputs. Paths are deduplicated at the decision level (same
+    decision linked to multiple files in ``file_paths`` counts once per
+    outcome).
+
+    Returns ``{"accepted": N, "ignored": N, "contradicted": N, "total": N}``
+    (zeros when nothing matches). ``lookback_days <= 0`` short-circuits to
+    zeros so callers can disable the feedback path via config without a
+    separate branch.
+    """
+    zero: dict[str, int] = {"accepted": 0, "ignored": 0, "contradicted": 0, "total": 0}
+    if not file_paths or lookback_days <= 0:
+        return zero
+
+    normalized = [_normalize_path(p) for p in file_paths]
+    placeholders = ",".join("?" for _ in normalized)
+    rows = conn.execute(
+        "SELECT o.outcome_type, COUNT(DISTINCT o.id) AS n"
+        " FROM decision_outcomes o"
+        " JOIN ("
+        "   SELECT DISTINCT decision_id FROM decision_files"
+        f"   WHERE REPLACE(CASE WHEN file_path LIKE './%' THEN SUBSTR(file_path, 3)"  # noqa: S608
+        f"                 ELSE file_path END, '\\', '/') IN ({placeholders})"
+        " ) df ON df.decision_id = o.decision_id"
+        " WHERE datetime(o.created_at) >= datetime('now', ?)"
+        " GROUP BY o.outcome_type",
+        [*normalized, f"-{int(lookback_days)} days"],
+    ).fetchall()
+
+    stats = dict(zero)
+    for row in rows:
+        ot = row["outcome_type"]
+        n = int(row["n"] or 0)
+        if ot in ("accepted", "ignored", "contradicted"):
+            stats[ot] = n
+            stats["total"] += n
+    return stats
+
+
+def apply_outcome_feedback_to_confidence(
+    confidence: float,
+    breakdown: dict[str, Any],
+    stats: dict[str, int],
+    *,
+    penalty: float = 0.15,
+) -> tuple[float, dict[str, Any]]:
+    """Apply a confidence penalty when contradicted outcomes dominate history.
+
+    Penalty logic: if aggregated ``contradicted / total`` strictly exceeds
+    :data:`_OUTCOME_FEEDBACK_RATIO_THRESHOLD` (0.5) across the draft's files,
+    subtract ``penalty`` from ``confidence`` and clamp to ``[0.0, 1.0]``.
+    Otherwise return the input unchanged.
+
+    The returned breakdown always includes an ``outcome_feedback`` section
+    (even when no penalty applied) so telemetry and UI can render a
+    consistent shape without branching on presence.
+    """
+    total = int(stats.get("total", 0))
+    contradicted = int(stats.get("contradicted", 0))
+    accepted = int(stats.get("accepted", 0))
+    ignored = int(stats.get("ignored", 0))
+
+    ratio = (contradicted / total) if total > 0 else 0.0
+    applied = ratio > _OUTCOME_FEEDBACK_RATIO_THRESHOLD
+    penalty_amount = penalty if applied else 0.0
+    final = max(0.0, min(1.0, confidence - penalty_amount))
+
+    feedback = {
+        "applied": applied,
+        "contradicted": contradicted,
+        "accepted": accepted,
+        "ignored": ignored,
+        "total": total,
+        "ratio": round(ratio, 4),
+        "ratio_threshold": _OUTCOME_FEEDBACK_RATIO_THRESHOLD,
+        "penalty": round(penalty_amount, 4),
+    }
+    new_breakdown = dict(breakdown)
+    new_breakdown["outcome_feedback"] = feedback
+    if applied:
+        # Keep the original score next to the adjusted final so downstream
+        # review can see what was deducted without re-running the calc.
+        new_breakdown["final_before_outcome_feedback"] = round(confidence, 4)
+        new_breakdown["final"] = round(final, 4)
+    return final, new_breakdown
+
+
+# ---------------------------------------------------------------------------
 # Persistence
 # ---------------------------------------------------------------------------
 
@@ -817,7 +1016,14 @@ class ExtractionOutcome:
     warnings: list[str] = field(default_factory=list)
 
 
-def run_extraction(conn, session_id: str, repo_path: str, *, min_confidence: float = 0.35) -> ExtractionOutcome:
+def run_extraction(
+    conn,
+    session_id: str,
+    repo_path: str,
+    *,
+    min_confidence: float = 0.35,
+    extraction_weights: ExtractionWeights | None = None,
+) -> ExtractionOutcome:
     outcome = ExtractionOutcome()
     if is_session_extracted(conn, session_id):
         return outcome
@@ -826,6 +1032,20 @@ def run_extraction(conn, session_id: str, repo_path: str, *, min_confidence: flo
     outcome.bundles_collected = len(bundles)
     if not bundles:
         return outcome
+
+    if extraction_weights is None:
+        from entirecontext.core.config import load_config
+
+        # Guard against malformed TOML: the extraction pipeline degrades
+        # gracefully on expected failures (LLM unavailable, parse errors),
+        # so a config read that crashes here must not abort the whole run.
+        # Fall back to defaults + a warning so the session still gets its
+        # candidates and the operator still sees the misconfiguration.
+        try:
+            extraction_weights = _load_extraction_weights(load_config(repo_path))
+        except Exception as exc:
+            outcome.warnings.append(f"extraction_weights_load:{exc}")
+            extraction_weights = ExtractionWeights()
 
     for bundle in bundles:
         prompt_text = assemble_prompt(bundle)
@@ -840,7 +1060,6 @@ def run_extraction(conn, session_id: str, repo_path: str, *, min_confidence: flo
         try:
             drafts = parse_llm_response(raw, bundle)
         except DecisionExtractionError as exc:
-            # Parse failure does NOT count as a successful extraction pass.
             outcome.warnings.append(f"parse:{bundle.source_type}:{exc}")
             continue
         outcome.parsed_ok = True
@@ -848,6 +1067,18 @@ def run_extraction(conn, session_id: str, repo_path: str, *, min_confidence: flo
         for draft in drafts:
             dedup_result = dedup(conn, draft)
             score, breakdown = score_confidence(draft, dedup_result)
+            if extraction_weights.outcome_feedback_enabled and draft.files:
+                stats = get_file_outcome_stats(
+                    conn,
+                    list(draft.files),
+                    extraction_weights.outcome_feedback_lookback_days,
+                )
+                score, breakdown = apply_outcome_feedback_to_confidence(
+                    score,
+                    breakdown,
+                    stats,
+                    penalty=extraction_weights.contradicted_penalty,
+                )
             if score < min_confidence:
                 outcome.low_confidence_skipped += 1
                 continue

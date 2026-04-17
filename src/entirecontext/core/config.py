@@ -112,6 +112,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "recency_half_life_days": 30.0,
             "min_volume": 2,
         },
+        "extraction": {
+            "outcome_feedback_enabled": True,
+            "outcome_feedback_lookback_days": 60,
+            "contradicted_penalty": 0.15,
+        },
     },
 }
 
