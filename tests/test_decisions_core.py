@@ -1053,6 +1053,28 @@ class TestRankingWeightsConfig:
         with pytest.raises(ValueError, match=r"decisions\.ranking\.directory_proximity_cap_levels"):
             _load_ranking_weights({"decisions": {"ranking": {"directory_proximity_cap_levels": "deep"}}})
 
+    def test_load_ranking_weights_rejects_non_numeric_map_values(self):
+        """Weight-map values are coerced to float at load time with a path-qualified error.
+
+        PR #87 review comment #discussion_r3098094096: a quoted/wrong-type override like
+        ``staleness_factors.stale = "not-numeric"`` used to slip through the
+        ``{**default, **override}`` merge and only explode later inside scoring
+        arithmetic. Values must now be validated eagerly at config load.
+        """
+        with pytest.raises(ValueError, match=r"decisions\.ranking\.staleness_factors\.stale"):
+            _load_ranking_weights({"decisions": {"ranking": {"staleness_factors": {"stale": "not-numeric"}}}})
+        with pytest.raises(
+            ValueError,
+            match=r"decisions\.ranking\.assessment_relation_weights\.supports",
+        ):
+            _load_ranking_weights(
+                {"decisions": {"ranking": {"assessment_relation_weights": {"supports": ["list-not-scalar"]}}}}
+            )
+        # A valid numeric-string override still coerces cleanly; strict float()
+        # is the contract, not strict type-identity.
+        coerced = _load_ranking_weights({"decisions": {"ranking": {"staleness_factors": {"stale": "0.9"}}}})
+        assert coerced.staleness_factors["stale"] == 0.9
+
     def test_rank_cap_levels_override_widens_candidate_gathering(self, ec_db):
         """Config cap_levels > 3 must widen _gather_candidates_by_files, not just the scorer.
 

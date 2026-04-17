@@ -850,6 +850,27 @@ def _coerce_ranking_int(section: dict, key: str, default: int) -> int:
         raise ValueError(f"decisions.ranking.{key} must be an integer, got {raw!r}") from exc
 
 
+def _coerce_ranking_weight_map(
+    section_name: str, override: dict | None, defaults: dict[str, float]
+) -> dict[str, float]:
+    """Deep-merge an override map into defaults, coercing each value to ``float``.
+
+    Catches non-numeric map values (quoted numbers, booleans reified as strings,
+    lists, etc.) at config-load time with a clear ``decisions.ranking.<section>.<key>``
+    error path, instead of letting them slip through and explode later inside
+    ranking arithmetic.
+    """
+    merged = dict(defaults)
+    if not override:
+        return merged
+    for key, raw in override.items():
+        try:
+            merged[key] = float(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"decisions.ranking.{section_name}.{key} must be a number, got {raw!r}") from exc
+    return merged
+
+
 def _load_ranking_weights(config: dict | None) -> RankingWeights:
     """Build :class:`RankingWeights` from an ``[decisions.ranking]`` config section.
 
@@ -865,11 +886,15 @@ def _load_ranking_weights(config: dict | None) -> RankingWeights:
     if not section:
         return RankingWeights()
 
-    staleness_override = section.get("staleness_factors") or {}
-    assessment_override = section.get("assessment_relation_weights") or {}
     return RankingWeights(
-        staleness_factors={**_STALENESS_FACTORS, **staleness_override},
-        assessment_relation_weights={**_ASSESSMENT_RELATION_WEIGHTS, **assessment_override},
+        staleness_factors=_coerce_ranking_weight_map(
+            "staleness_factors", section.get("staleness_factors"), _STALENESS_FACTORS
+        ),
+        assessment_relation_weights=_coerce_ranking_weight_map(
+            "assessment_relation_weights",
+            section.get("assessment_relation_weights"),
+            _ASSESSMENT_RELATION_WEIGHTS,
+        ),
         file_exact_weight=_coerce_ranking_float(
             section, "file_exact_weight", _DEFAULT_RANKING_WEIGHTS.file_exact_weight
         ),
