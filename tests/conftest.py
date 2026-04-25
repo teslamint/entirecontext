@@ -51,6 +51,23 @@ def isolated_global_config(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def subprocess_isolated_home(tmp_path, monkeypatch, isolated_global_db):
+    """HOME env var isolation for subprocesses.
+
+    ``isolated_global_db`` patches module-level ``_GLOBAL_DB_DIR`` —
+    in-process Python state only. Subprocesses re-import and resolve
+    ``Path.home() / ".entirecontext"`` afresh, hitting the user's real
+    ``~/.entirecontext``. Setting HOME redirects subprocess
+    ``Path.home()`` to a tmp dir. Layered atop ``isolated_global_db``
+    so existing tests are unaffected.
+    """
+    home = tmp_path / "subprocess_home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    return home
+
+
+@pytest.fixture
 def ec_repo(git_repo, isolated_global_db):
     """Git repo with EntireContext initialized."""
     from entirecontext.core.project import init_project
