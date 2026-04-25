@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Review-bot post-push noise reduction (S4)** — `.github/workflows/claude-code-review.yml` and `tidy-pilot.yml` now set `concurrency: cancel-in-progress` keyed by PR number, so consecutive `synchronize` events cancel any in-flight review run instead of stacking (addresses the stale-commit race seen on PR #59). The explicit "Skip the already reviewed check entirely" prompt directive in claude-code-review.yml has also been removed, allowing claude-code-action's built-in dedup to suppress trivial re-reviews (e.g., the test-comment garbage on PR #55). `tidy-pilot.yml`'s prompt/script body is unchanged in this PR; same-pattern deeper hardening for the second bot is deferred to a follow-up. Tracks ec decisions `eaa24b32` (D.6 origin) and `e98f85a4` (v0.5.0 implement-not-wontfix commitment).
+
 ## [0.4.0] - 2026-04-17
 
 v0.4.0 deepens the decision-memory loop so outcome data flows into both ranking and extraction, and adds UserPromptSubmit as a new retrieval signal channel. No schema change — still v13.

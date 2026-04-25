@@ -9,6 +9,10 @@ permissions:
   pull-requests: write
   models: read
 
+concurrency:
+  group: tidy-pilot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   assess:
     runs-on: ubuntu-latest
