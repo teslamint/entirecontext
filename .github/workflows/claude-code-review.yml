@@ -8,6 +8,10 @@ on:
       - "src/**/*.py"
       - "tests/**/*.py"
 
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   claude-review:
     # Optional: Filter by PR author
@@ -39,8 +43,6 @@ jobs:
           plugins: 'code-review@claude-code-plugins'
           prompt: |
             /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
-
-            IMPORTANT: This is an automated review triggered by a push event. Even if Claude has previously commented on this PR, you MUST still review it — new commits may have been pushed since the last review. Skip the "already reviewed" check entirely and always proceed with the review.
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
           use_sticky_comment: true
