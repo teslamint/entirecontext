@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-04-17._
+_Updated against codebase on 2026-04-25._
 
 ## Product Thesis
 
@@ -31,7 +31,7 @@ The project already has broad infrastructure in place:
 
 That foundation is useful, but it is broader than the product wedge. The next phase should narrow EntireContext around **decision memory for coding agents**, not expand it horizontally as a generic memory platform.
 
-With v0.3.0 the decision-memory loop is closed at a minimal level: retrieval telemetry, noise-gated extraction, relevance-based reactivation, and automatic outcome recording. The next milestone (v0.4.0) deepens the loop — making outcome data flow into ranking and extraction, and opening a new signal channel through UserPromptSubmit.
+With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. The next milestone (v0.5.0) hardens the loop by closing 3x-deferred correctness debt before adding new feature surface.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -67,7 +67,7 @@ Theme: close the decision-memory feedback arc — retrieval records its footprin
   - SessionEnd: infer "ignored" for surfaced-but-unacted decisions (config-gated)
   - Surface `quality_score` in retrieval output
 
-## v0.4.0 — Feed the Loop (Shipped)
+## v0.4.0 — Feed the Loop (Shipped 2026-04-17)
 
 Theme: deepen the decision-memory loop so outcome data flows into both ranking and extraction, and add UserPromptSubmit as a new retrieval signal channel.
 
@@ -96,15 +96,42 @@ Plan reference: `~/.claude/plans/v0-4-0-streamed-pond.md`.
   - Single scenario wires F1 decay + F2 penalty + F3 ranking config + F4 surfacing against one repo and one decision
   - Verifies contradicted-default filter (negative assertion), O_EXCL 0600 tmp mode, turn-scoped filename, and end-to-end redaction of `sk-[A-Za-z0-9]{48}` patterns through hook → tmp → worker → Markdown
 
-Scope note: outcome type enum extension (`refined`/`replaced`) was originally scoped here as F5 but is deferred to the v0.5 breaking track so that enum change + schema v14 + automatic recording paths land together in one release rather than split across two.
+Scope note: outcome type enum extension (`refined`/`replaced`) was originally scoped here as F5 but is deferred to the v0.6 breaking track so the enum change + schema v14 + automatic recording paths land together in one release. Held out of v0.5.0 to keep the "Stabilize the Loop" theme free of schema bumps.
+
+## v0.5.0 — Stabilize the Loop
+
+Theme: close the 3x-deferred correctness debt before adding new feature surface — zero new product features, zero schema changes.
+
+Holding hardening separate from the same-day v0.3.0 → v0.4.0 release pattern (no soak window) so unfixed atomicity and transaction-control debt does not compound under more product weight.
+
+- [ ] **S1. `confirm_candidate` atomicity** (D.4)
+  - `src/entirecontext/core/decision_candidates.py:92-224` currently uses CAS-claim + per-helper internal commits because `create_decision`/`link_decision_to_*` each commit independently. A crash between step 2 and step 3 leaves the candidate in `confirmed` state with `promoted_decision_id IS NULL`.
+  - Resolve via single outer transaction (refactor helpers to commit-free) OR add a recovery detector that re-promotes orphaned `confirmed` rows on next access.
+  - References: ec decisions `e59c78eb` (original D.4), `4c7893b0` (promotion to v0.5.0 primary).
+
+- [ ] **S2. `LEGACY_TRANSACTION_CONTROL` migration** (D.5)
+  - `src/entirecontext/core/context.py:18` and `tests/test_transaction_helper.py:4` rely on Python 3.12's legacy transaction mode. Re-verify under Python 3.13+ autocommit semantics before claiming cross-version support.
+  - Decide: migrate to autocommit (preferred) or pin to Python 3.12 with explicit support note.
+  - References: ec decision `dcc64267`.
+
+- [ ] **S3. F4 subprocess-path E2E**
+  - `tests/test_e2e_feed_the_loop.py:213` runs the prompt surfacing worker in-process (direct function call), so F4's security model — `O_EXCL` + `0600` tmp file (`turn_capture.py:90`), detached subprocess isolation (`turn_capture.py:76`), worker-side defense-in-depth re-redaction (`decision_prompt_surfacing.py:184`) — is not exercised end-to-end.
+  - Add a new integration test (separate file or named subtest) that launches the actual subprocess, plants a raw secret in the tmp file, and asserts: (a) tmp created with `O_EXCL` + `0600`, (b) worker re-applies redaction even when tmp contains raw secrets, (c) tmp removed in success and failure paths, (d) symlink at tmp path is rejected.
+  - References: ec decision `03ab3e25`.
+
+- [ ] **S4. Review-bot noise reduction** (D.6)
+  - `.github/workflows/claude-code-review.yml` and `.github/workflows/tidy-pilot.yml` produce sticky comments on every `synchronize` event regardless of substance (claude[bot] = 71% of inline comments in v0.2.0 audit; PR #59 stale-commit race + PR #55 test-comment garbage as concrete noise instances).
+  - Apply at minimum: `concurrency: cancel-in-progress` on review workflow + remove the explicit "Skip the already reviewed check entirely" directive (`.github/workflows/claude-code-review.yml:40-43`). Tighter `paths` filter and post-push cooldown are stretch.
+  - Validation: open a no-op PR after the change and verify only one review run completes.
+  - References: ec decision `eaa24b32`.
+
+Scope note: F5 (outcome type enum extension `refined`/`replaced` + schema v14 migration) is intentionally held out of v0.5.0 and deferred to v0.6.0's breaking track. Mixing schema bumps into a hardening release would re-introduce the exact "feature on top of correctness debt" risk that v0.5.0 is designed to close (per ec decision `4c7893b0`). v0.5.0 ships zero schema changes — still v13.
+
+E2E coverage note: v0.5.0 does not need a single integrated E2E like v0.4.0's `test_e2e_feed_the_loop.py` because S1–S4 each have their own focused integration test. S3 in particular IS the missing E2E for v0.4.0's F4.
 
 ## Hardening Backlog
 
-Structural debt that does not fit the "decision memory depth" wedge but still blocks reliable releases. Surfaced explicitly so milestone planning does not read more optimistic than the real implementation risk.
-
-- [ ] **`LEGACY_TRANSACTION_CONTROL` dependency** — `src/entirecontext/core/context.py:18` and `tests/test_transaction_helper.py:4` rely on Python 3.12's legacy transaction mode. Needs re-verification under Python 3.13+ autocommit semantics before we can claim cross-version support.
-- [ ] **`confirm_candidate` non-atomic flow** — `src/entirecontext/core/decision_candidates.py:92-224` uses CAS-claim + internal per-call commits because `create_decision`/`link_decision_to_*` each commit independently. A crash between step 2 and step 3 leaves the candidate in `confirmed` state with `promoted_decision_id IS NULL`. Resolve either by adding a recovery detector or by refactoring to a single outer transaction.
-- [ ] **Review-bot noise reduction** — `.github/workflows/claude-code-review.yml` and `.github/workflows/tidy-pilot.yml` currently produce sticky comments regardless of whether a PR is substantive (see PR #82 Tidy Pilot comment as a reference case). Needs thresholding, disable path, or filter.
+Structural debt outside the "decision memory depth" wedge. The three items previously listed here (`confirm_candidate` atomicity, `LEGACY_TRANSACTION_CONTROL`, review-bot noise) have been absorbed into v0.5.0 — see S1, S2, S4 above. New items go here as they are surfaced.
 
 ## Later
 
