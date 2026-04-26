@@ -187,6 +187,15 @@ def generate_embeddings(
     turns = conn.execute("SELECT id, user_message, assistant_summary FROM turns").fetchall()
     sessions = conn.execute("SELECT id, session_title, session_summary FROM sessions").fetchall()
 
+    # Skip the writer transaction when there is no DML to issue. Pre-S2a's
+    # implicit-tx model deferred BEGIN to the first DML, so a force=False
+    # call with all embeddings already cached stayed read-only. Without this
+    # short-circuit, S2a's wrap would acquire the writer lock unconditionally.
+    turns_need_work = force or any(t["id"] not in existing_turn_ids for t in turns)
+    sessions_need_work = force or any(s["id"] not in existing_session_ids for s in sessions)
+    if not (turns_need_work or sessions_need_work):
+        return 0
+
     with transaction(conn):
         for turn in turns:
             if not force and turn["id"] in existing_turn_ids:

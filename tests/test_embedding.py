@@ -90,6 +90,25 @@ def test_generate_embeddings_skip_existing(conn):
     assert len(rows) == 2
 
 
+def test_generate_embeddings_skip_existing_does_not_open_writer_transaction(conn, monkeypatch):
+    db, session_id = conn
+    _seed_turn(db, session_id, "implement auth", "added auth module")
+    mock_model = _make_mock_model()
+
+    with _patch_sentence_transformers(mock_model):
+        first_count = generate_embeddings(db, "/tmp/test-repo")
+        assert first_count == 2
+
+        def _fail_transaction(conn):
+            raise AssertionError("transaction() must not be called when all embeddings already exist")
+
+        monkeypatch.setattr("entirecontext.core.embedding.transaction", _fail_transaction)
+
+        second_count = generate_embeddings(db, "/tmp/test-repo")
+
+    assert second_count == 0
+
+
 def test_generate_embeddings_force(conn):
     db, session_id = conn
     _seed_turn(db, session_id, "implement auth", "added auth module")

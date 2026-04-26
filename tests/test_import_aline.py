@@ -235,6 +235,30 @@ class TestImportFromAline:
         total = ec_db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         assert total == 0
 
+    def test_dry_run_does_not_open_writer_transaction(self, ec_db, ec_repo, aline_db, monkeypatch):
+        """Regression for PR #102 #discussion_r3143746064: ec import --dry-run
+        must not acquire SQLite's writer lock. S2a's `with transaction(conn):`
+        wrap initially fired BEGIN IMMEDIATE unconditionally, regressing the
+        pre-S2a read-only contract. Verified by replacing transaction() with a
+        sentinel that raises if invoked — pre-fix, the dry_run path raises and
+        import_from_aline's outer except surfaces the error; post-fix, dry_run
+        uses contextlib.nullcontext() and the sentinel is never called."""
+        from entirecontext.core import import_aline as import_aline_module
+        from entirecontext.core.import_aline import import_from_aline
+
+        def _fail_transaction(conn):
+            raise AssertionError("transaction() must not be called during dry_run")
+
+        monkeypatch.setattr(import_aline_module, "transaction", _fail_transaction)
+
+        project_id = ec_db.execute("SELECT id FROM projects").fetchone()["id"]
+        result = import_from_aline(ec_db, aline_db["path"], project_id, str(ec_repo), dry_run=True)
+
+        # No errors surfaced: the sentinel was never tripped.
+        assert result.errors == [], f"transaction() was unexpectedly invoked: {result.errors}"
+        # Counts match the regular dry_run baseline (proves all phases ran).
+        assert result.sessions == 2
+
     def test_workspace_filter(self, ec_db, ec_repo, aline_db):
         from entirecontext.core.import_aline import import_from_aline
 

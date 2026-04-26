@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import sqlite3
 from dataclasses import dataclass, field
@@ -78,10 +79,15 @@ def _import_sessions(
 
     rows = aline_conn.execute(query, params).fetchall()
 
-    # `with transaction(conn):` only rolls back on exceptions that escape this
-    # block. Per-row try/except below intentionally suppresses errors and
-    # continues; suppressed rows' DML still lands in the batch, by design.
-    with transaction(ec_conn):
+    # Two interaction notes for the wrapped batch below:
+    # (1) `with transaction(conn):` only rolls back on exceptions that escape
+    #     this block. Per-row try/except below intentionally suppresses errors
+    #     and continues; suppressed rows' DML still lands in the batch, by design.
+    # (2) `dry_run` swaps the writer transaction for `contextlib.nullcontext()`
+    #     so `ec import --dry-run` never acquires SQLite's writer lock — the
+    #     pre-S2a path was read-only and we preserve that contract.
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
         for row in rows:
             if dry_run:
                 result.sessions += 1
@@ -132,7 +138,8 @@ def _import_turns(
         list(ec_session_ids),
     ).fetchall()
 
-    with transaction(ec_conn):
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
         for row in rows:
             if dry_run:
                 result.turns += 1
@@ -193,7 +200,8 @@ def _import_turn_content(
 
     content_dir = Path(repo_path) / ".entirecontext" / "content"
 
-    with transaction(ec_conn):
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
         for row in rows:
             if row["turn_id"] in existing:
                 result.skipped += 1
@@ -239,7 +247,8 @@ def _generate_checkpoints(
         )"""
     ).fetchall()
 
-    with transaction(ec_conn):
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
         for row in rows:
             if dry_run:
                 result.checkpoints += 1
@@ -266,7 +275,8 @@ def _import_events(
     except sqlite3.OperationalError:
         return
 
-    with transaction(ec_conn):
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
         for row in event_rows:
             if dry_run:
                 result.events += 1
@@ -303,7 +313,8 @@ def _import_events(
     ec_session_ids = _get_imported_session_ids(ec_conn)
     ec_event_ids = {r["id"] for r in ec_conn.execute("SELECT id FROM events").fetchall()}
 
-    with transaction(ec_conn):
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
         for row in link_rows:
             if row["event_id"] not in ec_event_ids or row["session_id"] not in ec_session_ids:
                 continue
