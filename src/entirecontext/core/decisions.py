@@ -741,12 +741,12 @@ def link_decision_to_commit(conn, decision_id: str, commit_sha: str) -> dict:
     if full_decision_id is None:
         raise ValueError(f"Decision '{decision_id}' not found")
 
-    conn.execute(
-        "INSERT OR IGNORE INTO decision_commits (decision_id, commit_sha) VALUES (?, ?)",
-        (full_decision_id, commit_sha),
-    )
-    conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
-    conn.commit()
+    with transaction(conn):
+        conn.execute(
+            "INSERT OR IGNORE INTO decision_commits (decision_id, commit_sha) VALUES (?, ?)",
+            (full_decision_id, commit_sha),
+        )
+        conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
     row = conn.execute(
         "SELECT decision_id, commit_sha, added_at FROM decision_commits WHERE decision_id = ? AND commit_sha = ?",
         (full_decision_id, commit_sha),

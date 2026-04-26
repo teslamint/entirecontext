@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .context import transaction
+
 logger = logging.getLogger(__name__)
 
 
@@ -121,9 +123,9 @@ def consolidate_turn_content(
     # Update DB first (commit), then delete the file.
     # This ordering ensures DB consistency even if the process is interrupted
     # after commit but before unlink — the orphaned file can be reclaimed later.
-    conn.execute("DELETE FROM turn_content WHERE turn_id = ?", (turn_id,))
-    conn.execute("UPDATE turns SET consolidated_at = ? WHERE id = ?", (_iso_now(), turn_id))
-    conn.commit()
+    with transaction(conn):
+        conn.execute("DELETE FROM turn_content WHERE turn_id = ?", (turn_id,))
+        conn.execute("UPDATE turns SET consolidated_at = ? WHERE id = ?", (_iso_now(), turn_id))
 
     if content_file.exists():
         content_file.unlink()

@@ -494,6 +494,45 @@ class TestUnlinkDecision:
         assert unlink_decision_from_checkpoint(ec_db, d["id"], checkpoint["id"]) is True
 
 
+class TestLinkDecisionAtomicity:
+    """S2a regressions: link_decision_to_* helpers wrap their INSERT + UPDATE
+    pair in a single BEGIN IMMEDIATE so a failure between them rolls back both
+    sides. Pre-S2a, link_decision_to_commit committed independently and a
+    failure during the updated_at UPDATE left an orphan decision_commits row
+    plus an unbumped decisions row visible to the same connection."""
+
+    def test_link_decision_to_commit_atomic_rollback(self, ec_db, monkeypatch):
+        d = create_decision(ec_db, title="Atomicity test")
+
+        before = ec_db.execute("SELECT updated_at FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        before_updated_at = before["updated_at"]
+
+        # Setup's create_decision already called _now_iso. Patch it to fail on
+        # the very next call — which is the UPDATE arg in link_decision_to_commit.
+        # The INSERT runs first; then _now_iso() raises; the wrapped tx rolls
+        # back both sides.
+        def _failing_now_iso() -> str:
+            raise RuntimeError("simulated update failure")
+
+        monkeypatch.setattr("entirecontext.core.decisions._now_iso", _failing_now_iso)
+
+        with pytest.raises(RuntimeError, match="simulated update failure"):
+            link_decision_to_commit(ec_db, d["id"], "deadbeef")
+
+        # Wrapped transaction rolled back; same connection sees no orphan row.
+        commit_count = ec_db.execute(
+            "SELECT COUNT(*) AS c FROM decision_commits WHERE decision_id = ?", (d["id"],)
+        ).fetchone()["c"]
+        assert commit_count == 0
+
+        # UPDATE never landed; decisions.updated_at unchanged from setup.
+        after = ec_db.execute("SELECT updated_at FROM decisions WHERE id = ?", (d["id"],)).fetchone()
+        assert after["updated_at"] == before_updated_at
+
+        # Rollback completed cleanly — connection is no longer in a transaction.
+        assert ec_db.in_transaction is False
+
+
 class TestCheckStaleness:
     def test_no_files_not_stale(self, ec_db, ec_repo):
         d = create_decision(ec_db, title="No files")
