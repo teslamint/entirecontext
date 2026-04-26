@@ -214,6 +214,15 @@ class TestF4SecurityModelE2E:
         )
         assert proc.returncode == 0, f"success scenario failed: {proc.stderr.decode('utf-8', errors='replace')}"
         assert not success_tmp.exists(), "success path: tmp should be deleted"
+        # Inverse of the failure-scenario oracle — confirms ``worker:`` is
+        # specific to the outer ``except Exception`` path (the only branch
+        # whose warning starts with ``worker:``). If this leaks into the
+        # success path, the failure-path assertion's specificity is
+        # compromised.
+        assert b"worker:" not in proc.stdout, (
+            "success path: 'worker:' warning should be exclusive to the "
+            f"failure scenario; stdout: {proc.stdout.decode('utf-8', errors='replace')!r}"
+        )
 
         failure_tmp = tmp_dir / "prompt-failure-001.txt"
         failure_tmp.write_text("Some prompt content here", encoding="utf-8")
@@ -245,6 +254,21 @@ class TestF4SecurityModelE2E:
         # CLI handler swallows worker errors via ``run_prompt_surface_worker``
         # collecting warnings and returning normally — exit code stays 0.
         assert proc.returncode == 0
+        # Oracle that the worker actually entered the failure path. Without
+        # it, ``returncode == 0`` and ``not failure_tmp.exists()`` could
+        # both pass via the success branch (e.g., if a future SQLite/loader
+        # change stops raising on this corruption shape, or if DB access
+        # gets bypassed), and the cleanup-from-``finally`` invariant could
+        # regress silently. ``warning: worker:...`` is what the CLI prints
+        # only when ``run_prompt_surface_worker``'s outer ``except Exception``
+        # catches — i.e., the same path that runs the ``finally`` block
+        # which deletes the tmp.
+        assert b"worker:" in proc.stdout, (
+            "expected 'warning: worker:...' in stdout proving the DB error "
+            "reached the worker's outer except (and thus the finally cleanup); "
+            f"stdout: {proc.stdout.decode('utf-8', errors='replace')!r}\n"
+            f"stderr: {proc.stderr.decode('utf-8', errors='replace')!r}"
+        )
         assert not failure_tmp.exists(), (
             "failure path: tmp must be deleted by run_prompt_surface_worker's "
             "try/finally (decision_prompt_surfacing.py:329-333)"
