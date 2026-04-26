@@ -147,8 +147,9 @@ def confirm_candidate(
         raise ValueError(f"Candidate '{candidate['id']}' is already {status}")
     conn.commit()
 
-    # Step 2: create the decision and link provenance. Each helper below
-    # auto-commits, so every write after this point is durable.
+    # Step 2: create the decision and link provenance inside a single
+    # BEGIN IMMEDIATE (via transaction()). Helpers defer to the outer
+    # transaction owner when conn.in_transaction is True.
     from .decisions import (
         create_decision,
         link_decision_to_assessment,
