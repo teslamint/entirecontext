@@ -784,6 +784,74 @@ class TestConfirmRejectFlow:
         decision_count = ec_db.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()["c"]
         assert decision_count == 0
 
+    def test_confirm_atomic_rollback_on_step3_failure(self, ec_repo, ec_db, monkeypatch):
+        """Atomicity regression (S1): Step 2 (create_decision + provenance
+        links + promoted_decision_id back-pointer UPDATE) is wrapped in a
+        single BEGIN IMMEDIATE. If the back-pointer UPDATE fails after
+        decision + links have already INSERTed, the entire transaction
+        rolls back — no orphan `decisions` row, no orphan join rows.
+
+        Pre-refactor, `create_decision` and each `link_*` helper called
+        their own `conn.commit()`, so a failure between those commits and
+        the Step 3 UPDATE left durable orphan state. This test fails
+        under the pre-refactor code (assertions on the empty join tables
+        would all see ≥1) and passes under the wrapped transaction."""
+        session = _seed_session(ec_db, ec_repo, session_id="atomic-step3-fail")
+        _seed_turn(ec_db, session["id"], 1, "work", files=["a.py"])
+        cp = _seed_checkpoint(ec_db, session["id"], diff_summary="a.py|1\nb.py|1", commit_hash="cp-atomic")
+        assess_id = create_assessment(
+            ec_db,
+            verdict="expand",
+            impact_summary="x",
+            checkpoint_id=cp["id"],
+        )["id"]
+        # Seed a candidate with files + checkpoint_id + assessment_id so
+        # all three link paths run before Step 3 fails — atomicity must
+        # cover every join table, not just decision_files.
+        cid = self._seed_candidate(
+            ec_db,
+            ec_repo,
+            session_id="atomic-step3-fail-cand",
+            checkpoint_id=cp["id"],
+            assessment_id=assess_id,
+        )
+
+        # Make _now_iso fail on its 2nd call within decision_candidates.
+        # Calls in confirm_candidate (the only call sites in this module):
+        #   call 1: Step 1 claim UPDATE — succeeds
+        #   call 2: Step 3 back-pointer UPDATE — raises
+        #   call 3: outer-except claim rollback UPDATE — succeeds
+        # Failure on call 2 means decisions + links have already INSERTed
+        # in the wrapped transaction; the raise tears it down.
+        # decisions._now_iso is a separate module-local function so the
+        # helpers' updated_at timestamps are unaffected by this patch.
+        import entirecontext.core.decision_candidates as dc_module
+
+        original_now_iso = dc_module._now_iso
+        call_count = {"n": 0}
+
+        def maybe_failing_now_iso():
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise RuntimeError("simulated step 3 failure")
+            return original_now_iso()
+
+        monkeypatch.setattr(dc_module, "_now_iso", maybe_failing_now_iso)
+
+        with pytest.raises(RuntimeError, match="simulated step 3 failure"):
+            confirm_candidate(ec_db, cid, reviewer="cli")
+
+        # Atomicity: every Step 2 write rolled back together.
+        assert ec_db.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()["c"] == 0
+        assert ec_db.execute("SELECT COUNT(*) AS c FROM decision_files").fetchone()["c"] == 0
+        assert ec_db.execute("SELECT COUNT(*) AS c FROM decision_checkpoints").fetchone()["c"] == 0
+        assert ec_db.execute("SELECT COUNT(*) AS c FROM decision_assessments").fetchone()["c"] == 0
+        # Outer-except's claim rollback UPDATE ran (call 3 succeeded), so
+        # the candidate is retryable.
+        after = get_candidate(ec_db, cid)
+        assert after["review_status"] == "pending"
+        assert after["promoted_decision_id"] is None
+
 
 # ---------------------------------------------------------------------------
 # Integration tests — dedup and noisy-input harness (Tier 1)

@@ -352,14 +352,14 @@ def create_decision(
     rejected_json = json.dumps(rejected_alternatives or [])
     evidence_json = json.dumps(supporting_evidence or [])
 
-    conn.execute(
-        """INSERT INTO decisions (
-            id, title, rationale, scope, staleness_status,
-            rejected_alternatives, supporting_evidence, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (decision_id, title, rationale, scope, staleness_status, rejected_json, evidence_json, now, now),
-    )
-    conn.commit()
+    with transaction(conn):
+        conn.execute(
+            """INSERT INTO decisions (
+                id, title, rationale, scope, staleness_status,
+                rejected_alternatives, supporting_evidence, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (decision_id, title, rationale, scope, staleness_status, rejected_json, evidence_json, now, now),
+        )
     return get_decision(conn, decision_id) or {}
 
 
@@ -699,15 +699,15 @@ def link_decision_to_assessment(conn, decision_id: str, assessment_id: str, rela
     if full_assessment_id is None:
         raise ValueError(f"Assessment '{assessment_id}' not found")
 
-    conn.execute(
-        # Duplicate inserts for the same typed link are ignored, while the same
-        # decision-assessment pair may coexist with additional relation types.
-        """INSERT OR IGNORE INTO decision_assessments (decision_id, assessment_id, relation_type)
-        VALUES (?, ?, ?)""",
-        (full_decision_id, full_assessment_id, relation_type),
-    )
-    conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
-    conn.commit()
+    with transaction(conn):
+        conn.execute(
+            # Duplicate inserts for the same typed link are ignored, while the same
+            # decision-assessment pair may coexist with additional relation types.
+            """INSERT OR IGNORE INTO decision_assessments (decision_id, assessment_id, relation_type)
+            VALUES (?, ?, ?)""",
+            (full_decision_id, full_assessment_id, relation_type),
+        )
+        conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
     row = conn.execute(
         (
             "SELECT decision_id, assessment_id, relation_type, added_at "
@@ -723,12 +723,12 @@ def link_decision_to_file(conn, decision_id: str, file_path: str) -> dict:
     if full_decision_id is None:
         raise ValueError(f"Decision '{decision_id}' not found")
 
-    conn.execute(
-        "INSERT OR IGNORE INTO decision_files (decision_id, file_path) VALUES (?, ?)",
-        (full_decision_id, file_path),
-    )
-    conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
-    conn.commit()
+    with transaction(conn):
+        conn.execute(
+            "INSERT OR IGNORE INTO decision_files (decision_id, file_path) VALUES (?, ?)",
+            (full_decision_id, file_path),
+        )
+        conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
     row = conn.execute(
         "SELECT decision_id, file_path, added_at FROM decision_files WHERE decision_id = ? AND file_path = ?",
         (full_decision_id, file_path),
@@ -763,12 +763,12 @@ def link_decision_to_checkpoint(conn, decision_id: str, checkpoint_id: str) -> d
     if full_checkpoint_id is None:
         raise ValueError(f"Checkpoint '{checkpoint_id}' not found")
 
-    conn.execute(
-        "INSERT OR IGNORE INTO decision_checkpoints (decision_id, checkpoint_id) VALUES (?, ?)",
-        (full_decision_id, full_checkpoint_id),
-    )
-    conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
-    conn.commit()
+    with transaction(conn):
+        conn.execute(
+            "INSERT OR IGNORE INTO decision_checkpoints (decision_id, checkpoint_id) VALUES (?, ?)",
+            (full_decision_id, full_checkpoint_id),
+        )
+        conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
     row = conn.execute(
         (
             "SELECT decision_id, checkpoint_id, added_at "
