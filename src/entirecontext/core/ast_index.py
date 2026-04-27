@@ -24,6 +24,8 @@ import ast
 import json
 from uuid import uuid4
 
+from .context import transaction
+
 
 def _decorator_names(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> list[str]:
     """Return a list of decorator name strings for *node*.
@@ -168,33 +170,32 @@ def index_file_ast(
     Returns:
         The list of symbol dicts that were inserted (may be empty).
     """
-    # Remove all existing symbols for this file (idempotent re-index)
-    conn.execute("DELETE FROM ast_symbols WHERE file_path = ?", (file_path,))
-
     symbols = extract_ast_symbols(source_code, file_path)
-    for sym in symbols:
-        conn.execute(
-            """INSERT INTO ast_symbols
-               (id, file_path, symbol_type, name, qualified_name,
-                start_line, end_line, docstring, decorators, parent_name,
-                turn_id, git_commit_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                str(uuid4()),
-                file_path,
-                sym["symbol_type"],
-                sym["name"],
-                sym["qualified_name"],
-                sym["start_line"],
-                sym["end_line"],
-                sym["docstring"],
-                json.dumps(sym["decorators"]) if sym["decorators"] else None,
-                sym["parent_name"],
-                turn_id,
-                git_commit_hash,
-            ),
-        )
-    conn.commit()  # commit the DELETE + INSERT batch atomically
+    with transaction(conn):
+        # Remove all existing symbols for this file (idempotent re-index)
+        conn.execute("DELETE FROM ast_symbols WHERE file_path = ?", (file_path,))
+        for sym in symbols:
+            conn.execute(
+                """INSERT INTO ast_symbols
+                   (id, file_path, symbol_type, name, qualified_name,
+                    start_line, end_line, docstring, decorators, parent_name,
+                    turn_id, git_commit_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    str(uuid4()),
+                    file_path,
+                    sym["symbol_type"],
+                    sym["name"],
+                    sym["qualified_name"],
+                    sym["start_line"],
+                    sym["end_line"],
+                    sym["docstring"],
+                    json.dumps(sym["decorators"]) if sym["decorators"] else None,
+                    sym["parent_name"],
+                    turn_id,
+                    git_commit_hash,
+                ),
+            )
     return symbols
 
 

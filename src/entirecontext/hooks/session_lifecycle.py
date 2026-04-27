@@ -67,7 +67,6 @@ def _ensure_project(conn, repo_path: str) -> str:
         "INSERT INTO projects (id, name, repo_path) VALUES (?, ?, ?)",
         (project_id, Path(repo_path).name, repo_path),
     )
-    conn.commit()
     return project_id
 
 
@@ -97,7 +96,6 @@ def on_session_start(data: dict[str, Any]) -> None:
                     "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
                     (now, now, session_id),
                 )
-                conn.commit()
                 return
 
         if not session_id:
@@ -109,7 +107,6 @@ def on_session_start(data: dict[str, Any]) -> None:
             VALUES (?, ?, ?, ?, ?, ?)""",
             (session_id, project_id, "claude", cwd, now, now),
         )
-        conn.commit()
 
         try:
             import json
@@ -128,7 +125,6 @@ def on_session_start(data: dict[str, Any]) -> None:
                     "UPDATE sessions SET metadata = ? WHERE id = ? AND metadata IS NULL",
                     (metadata, session_id),
                 )
-                conn.commit()
         except Exception as exc:
             _record_hook_warning(repo_path, "session_start_metadata", exc)
     finally:
@@ -169,17 +165,19 @@ def _populate_session_summary(conn, session_id: str) -> None:
             updates["session_summary"] = combined[:500]
 
     if updates:
-        if "session_title" in updates:
-            conn.execute(
-                "UPDATE sessions SET session_title = ? WHERE id = ?",
-                (updates["session_title"], session_id),
-            )
-        if "session_summary" in updates:
-            conn.execute(
-                "UPDATE sessions SET session_summary = ? WHERE id = ?",
-                (updates["session_summary"], session_id),
-            )
-        conn.commit()
+        from ..core.context import transaction
+
+        with transaction(conn):
+            if "session_title" in updates:
+                conn.execute(
+                    "UPDATE sessions SET session_title = ? WHERE id = ?",
+                    (updates["session_title"], session_id),
+                )
+            if "session_summary" in updates:
+                conn.execute(
+                    "UPDATE sessions SET session_summary = ? WHERE id = ?",
+                    (updates["session_summary"], session_id),
+                )
 
     _maybe_generate_intent_summary(conn, session_id)
 
@@ -228,7 +226,6 @@ def _maybe_generate_intent_summary(conn, session_id: str) -> None:
         summary = backend.complete(system, context)
 
         conn.execute("UPDATE sessions SET session_summary = ? WHERE id = ?", (summary[:500], session_id))
-        conn.commit()
     except Exception as exc:
         _record_hook_warning(project["repo_path"] if project else "unknown", "intent_summary", exc)
 
@@ -257,7 +254,6 @@ def on_session_end(data: dict[str, Any]) -> None:
             "UPDATE sessions SET ended_at = ?, updated_at = ? WHERE id = ?",
             (now, now, session_id),
         )
-        conn.commit()
 
         session_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         turn_count = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
@@ -275,7 +271,6 @@ def on_session_end(data: dict[str, Any]) -> None:
                 "UPDATE repo_index SET session_count = ?, turn_count = ? WHERE repo_path = ?",
                 (session_count, turn_count, repo_path),
             )
-            gconn.commit()
         finally:
             gconn.close()
     except Exception as exc:

@@ -228,8 +228,7 @@ def _fetch_decayed_outcome_counts(
     placeholders = ",".join("?" for _ in decision_ids)
     result: dict[str, dict[str, float]] = {did: {} for did in decision_ids}
     rows = conn.execute(
-        "SELECT decision_id, outcome_type, created_at FROM decision_outcomes"
-        f" WHERE decision_id IN ({placeholders})",  # noqa: S608
+        f"SELECT decision_id, outcome_type, created_at FROM decision_outcomes WHERE decision_id IN ({placeholders})",  # noqa: S608
         decision_ids,
     ).fetchall()
     for row in rows:
@@ -470,7 +469,6 @@ def update_decision_staleness(conn, decision_id: str, status: str) -> dict:
             "UPDATE decisions SET staleness_status = ?, updated_at = ? WHERE id = ?",
             (status, now, full_id),
         )
-    conn.commit()
     return get_decision(conn, full_id) or {}
 
 
@@ -819,7 +817,6 @@ def update_decision(
     params.append(full_id)
 
     conn.execute(f"UPDATE decisions SET {', '.join(updates)} WHERE id = ?", params)
-    conn.commit()
     return get_decision(conn, full_id) or {}
 
 
@@ -898,7 +895,6 @@ def unlink_decision_from_file(conn, decision_id: str, file_path: str) -> bool:
     if full_id is None:
         return False
     cursor = conn.execute("DELETE FROM decision_files WHERE decision_id = ? AND file_path = ?", (full_id, file_path))
-    conn.commit()
     return cursor.rowcount > 0
 
 
@@ -909,7 +905,6 @@ def unlink_decision_from_commit(conn, decision_id: str, commit_sha: str) -> bool
     cursor = conn.execute(
         "DELETE FROM decision_commits WHERE decision_id = ? AND commit_sha = ?", (full_id, commit_sha)
     )
-    conn.commit()
     return cursor.rowcount > 0
 
 
@@ -924,7 +919,6 @@ def unlink_decision_from_assessment(
         "DELETE FROM decision_assessments WHERE decision_id = ? AND assessment_id = ? AND relation_type = ?",
         (full_decision_id, full_assessment_id, relation_type),
     )
-    conn.commit()
     return cursor.rowcount > 0
 
 
@@ -937,7 +931,6 @@ def unlink_decision_from_checkpoint(conn, decision_id: str, checkpoint_id: str) 
         "DELETE FROM decision_checkpoints WHERE decision_id = ? AND checkpoint_id = ?",
         (full_decision_id, full_checkpoint_id),
     )
-    conn.commit()
     return cursor.rowcount > 0
 
 

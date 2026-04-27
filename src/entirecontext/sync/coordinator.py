@@ -68,7 +68,16 @@ class SyncResult:
         return data
 
 
-def _record_phase(conn, *, source: str, operation_name: str, phase: str, status: str, started_at: float, error: Exception | None = None) -> dict:
+def _record_phase(
+    conn,
+    *,
+    source: str,
+    operation_name: str,
+    phase: str,
+    status: str,
+    started_at: float,
+    error: Exception | None = None,
+) -> dict:
     latency_ms = int((time.perf_counter() - started_at) * 1000)
     session_id, turn_id = detect_current_context(conn)
     event = record_operation_event(
@@ -86,7 +95,9 @@ def _record_phase(conn, *, source: str, operation_name: str, phase: str, status:
     return {"phase": phase, "status": status, "latency_ms": latency_ms, "event_id": event["id"]}
 
 
-def _update_sync_metadata(conn, *, last_export_at: str | None = None, last_import_at: str | None = None, duration_ms: int | None = None) -> None:
+def _update_sync_metadata(
+    conn, *, last_export_at: str | None = None, last_import_at: str | None = None, duration_ms: int | None = None
+) -> None:
     try:
         conn.execute(
             """
@@ -100,7 +111,6 @@ def _update_sync_metadata(conn, *, last_export_at: str | None = None, last_impor
             """,
             (last_export_at, last_import_at, duration_ms),
         )
-        conn.commit()
     except Exception as exc:
         raise SyncMetadataError(str(exc)) from exc
 
@@ -126,14 +136,22 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
         phase_start = time.perf_counter()
         worktree_path = create_worktree(repo_path, SHADOW_BRANCH, "ec-sync-")
         worktrees_to_remove.append(worktree_path)
-        result.phases.append(_record_phase(conn, source="sync", operation_name="perform_sync", phase="prepare", status="ok", started_at=phase_start))
+        result.phases.append(
+            _record_phase(
+                conn, source="sync", operation_name="perform_sync", phase="prepare", status="ok", started_at=phase_start
+            )
+        )
 
         phase_start = time.perf_counter()
         export_result = run_export(conn, repo_path, worktree_path, last_export=last_export, config=config)
         result.exported_sessions = export_result.exported_sessions
         result.exported_checkpoints = export_result.exported_checkpoints
         result.committed = export_result.committed
-        result.phases.append(_record_phase(conn, source="sync", operation_name="perform_sync", phase="export", status="ok", started_at=phase_start))
+        result.phases.append(
+            _record_phase(
+                conn, source="sync", operation_name="perform_sync", phase="export", status="ok", started_at=phase_start
+            )
+        )
 
         push_on_sync = config.get("push_on_sync", True)
         if result.committed and push_on_sync:
@@ -141,7 +159,16 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
             push_result = push_shadow_branch(worktree_path)
             result.pushed = push_result.returncode == 0
             if result.pushed:
-                result.phases.append(_record_phase(conn, source="sync", operation_name="perform_sync", phase="push", status="ok", started_at=phase_start))
+                result.phases.append(
+                    _record_phase(
+                        conn,
+                        source="sync",
+                        operation_name="perform_sync",
+                        phase="push",
+                        status="ok",
+                        started_at=phase_start,
+                    )
+                )
             elif is_non_fast_forward_push(push_result):
                 result.retry_count = 1
                 fetch_shadow_branch(repo_path)
@@ -175,7 +202,14 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
                     retry_error = retry_push.stderr.strip() or retry_push.stdout.strip() or "git push retry failed"
                     raise GitCommandError(f"git push retry failed: {retry_error}")
                 result.phases.append(
-                    _record_phase(conn, source="sync", operation_name="perform_sync", phase="retry_merge", status="ok", started_at=retry_start)
+                    _record_phase(
+                        conn,
+                        source="sync",
+                        operation_name="perform_sync",
+                        phase="retry_merge",
+                        status="ok",
+                        started_at=retry_start,
+                    )
                 )
             else:
                 result.phases.append(
@@ -186,22 +220,38 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
                         phase="push",
                         status="warning",
                         started_at=phase_start,
-                        error=GitCommandError(push_result.stderr.strip() or push_result.stdout.strip() or "push failed"),
+                        error=GitCommandError(
+                            push_result.stderr.strip() or push_result.stdout.strip() or "push failed"
+                        ),
                     )
                 )
 
-        should_update_metadata = result.error is None and (
-            not push_on_sync or result.pushed or not result.committed
-        )
+        should_update_metadata = result.error is None and (not push_on_sync or result.pushed or not result.committed)
     except (GitCommandError, ShadowMergeError, SyncMetadataError, ValueError) as exc:
         result.error = str(exc)
         result.phases.append(
-            _record_phase(conn, source="sync", operation_name="perform_sync", phase="finalize", status="error", started_at=time.perf_counter(), error=exc)
+            _record_phase(
+                conn,
+                source="sync",
+                operation_name="perform_sync",
+                phase="finalize",
+                status="error",
+                started_at=time.perf_counter(),
+                error=exc,
+            )
         )
     except Exception as exc:
         result.error = str(exc)
         result.phases.append(
-            _record_phase(conn, source="sync", operation_name="perform_sync", phase="finalize", status="error", started_at=time.perf_counter(), error=exc)
+            _record_phase(
+                conn,
+                source="sync",
+                operation_name="perform_sync",
+                phase="finalize",
+                status="error",
+                started_at=time.perf_counter(),
+                error=exc,
+            )
         )
     finally:
         result.duration_ms = int((time.monotonic() - start) * 1000)

@@ -44,7 +44,6 @@ def record_retrieval_event(
     commit_filter: str | None = None,
     agent_filter: str | None = None,
     since_filter: str | None = None,
-    commit: bool = True,
 ) -> dict:
     event_id = str(uuid4())
     now = _now_iso()
@@ -73,8 +72,6 @@ def record_retrieval_event(
             now,
         ),
     )
-    if commit:
-        conn.commit()
     return {
         "id": event_id,
         "session_id": session_id,
@@ -103,7 +100,6 @@ def record_retrieval_selection(
     rank: int = 1,
     session_id: str | None = None,
     turn_id: str | None = None,
-    commit: bool = True,
 ) -> dict:
     event = get_retrieval_event(conn, retrieval_event_id)
     if not event:
@@ -128,8 +124,6 @@ def record_retrieval_selection(
             now,
         ),
     )
-    if commit:
-        conn.commit()
     return {
         "id": selection_id,
         "retrieval_event_id": retrieval_event_id,
@@ -194,7 +188,6 @@ def record_context_application(
             now,
         ),
     )
-    conn.commit()
     return {
         "id": application_id,
         "session_id": session_id,
@@ -249,7 +242,6 @@ def record_operation_event(
             now,
         ),
     )
-    conn.commit()
     return {
         "id": event_id,
         "session_id": session_id,

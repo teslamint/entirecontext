@@ -80,7 +80,6 @@ def create_attribution(
             confidence,
         ),
     )
-    conn.commit()
     return {
         "id": attr_id,
         "checkpoint_id": checkpoint_id,

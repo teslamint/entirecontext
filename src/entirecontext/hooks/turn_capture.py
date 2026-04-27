@@ -172,22 +172,24 @@ def on_user_prompt(data: dict[str, Any]) -> None:
         turn_id = str(uuid4())
         turn_number = _get_next_turn_number(conn, session_id)
 
-        conn.execute(
-            """INSERT INTO turns
-            (id, session_id, turn_number, user_message, content_hash, timestamp, turn_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (turn_id, session_id, turn_number, prompt, _content_hash(prompt, ""), now, "in_progress"),
-        )
-        conn.execute(
-            "UPDATE sessions SET last_activity_at = ?, total_turns = total_turns + 1, updated_at = ? WHERE id = ?",
-            (now, now, session_id),
-        )
-        conn.commit()
+        from ..core.context import transaction
+
+        with transaction(conn):
+            conn.execute(
+                """INSERT INTO turns
+                (id, session_id, turn_number, user_message, content_hash, timestamp, turn_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (turn_id, session_id, turn_number, prompt, _content_hash(prompt, ""), now, "in_progress"),
+            )
+            conn.execute(
+                "UPDATE sessions SET last_activity_at = ?, total_turns = total_turns + 1, updated_at = ? WHERE id = ?",
+                (now, now, session_id),
+            )
 
         # F4: optional async decision surfacing against the prompt text.
-        # Kept strictly after the commit so the turn row is durable before
-        # the worker launches, and guarded inside the helper so a launch
-        # failure cannot roll back the turn insert.
+        # Kept strictly after the wrapped commit so the turn row is durable
+        # before the worker launches, and guarded inside the helper so a
+        # launch failure cannot roll back the turn insert.
         if config.get("decisions", {}).get("surface_on_user_prompt", False):
             _maybe_launch_prompt_surfacing_worker(repo_path, session_id, turn_id, prompt, config)
     finally:
@@ -241,24 +243,32 @@ def on_stop(data: dict[str, Any]) -> None:
             content = redact_content(content, config)
 
         c_hash = _content_hash(user_message, summary)
-        conn.execute(
-            "UPDATE turns SET assistant_summary = ?, content_hash = ?, turn_status = 'completed' WHERE id = ?",
-            (summary, c_hash, turn_id),
-        )
 
+        rel_path: str | None = None
+        size: int = 0
+        file_hash: str = ""
         if content:
             rel_path, size = _save_content_file(repo_path, session_id, turn_id, content)
             file_hash = hashlib.md5(content.encode()).hexdigest()
+
+        from ..core.context import transaction
+
+        with transaction(conn):
             conn.execute(
-                "INSERT OR REPLACE INTO turn_content (turn_id, content_path, content_size, content_hash) VALUES (?, ?, ?, ?)",
-                (turn_id, rel_path, size, file_hash),
+                "UPDATE turns SET assistant_summary = ?, content_hash = ?, turn_status = 'completed' WHERE id = ?",
+                (summary, c_hash, turn_id),
             )
 
-        conn.execute(
-            "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
-            (now, now, session_id),
-        )
-        conn.commit()
+            if rel_path is not None:
+                conn.execute(
+                    "INSERT OR REPLACE INTO turn_content (turn_id, content_path, content_size, content_hash) VALUES (?, ?, ?, ?)",
+                    (turn_id, rel_path, size, file_hash),
+                )
+
+            conn.execute(
+                "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
+                (now, now, session_id),
+            )
     finally:
         conn.close()
 
@@ -318,6 +328,5 @@ def on_tool_use(data: dict[str, Any]) -> None:
             "UPDATE turns SET tools_used = ?, files_touched = ? WHERE id = ?",
             (json.dumps(tools), json.dumps(files), turn_id),
         )
-        conn.commit()
     finally:
         conn.close()

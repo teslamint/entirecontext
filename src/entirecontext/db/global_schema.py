@@ -1,5 +1,9 @@
 """Global database schema for cross-repo index."""
 
+from __future__ import annotations
+
+import sqlite3
+
 GLOBAL_TABLES = {
     "repo_index": """
 CREATE TABLE IF NOT EXISTS repo_index (
@@ -14,8 +18,7 @@ CREATE TABLE IF NOT EXISTS repo_index (
 }
 
 
-def init_global_schema(conn) -> None:
+def init_global_schema(conn: sqlite3.Connection) -> None:
     """Initialize the global database schema."""
     for sql in GLOBAL_TABLES.values():
         conn.execute(sql)
-    conn.commit()

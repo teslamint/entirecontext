@@ -886,16 +886,14 @@ class TestOnPostToolUseDecisions:
 
     def test_metadata_failure_leaves_no_orphan_telemetry(self, ec_repo, ec_db, monkeypatch):
         """PR #56 round 7 (#discussion_r3080485995) regression:
-        ``record_retrieval_event`` commits internally (telemetry.py:75),
-        so if it runs before ``_write_session_metadata_patch`` and the
-        metadata write subsequently fails, the rollback in the except
-        handler cannot undo the already-committed telemetry row.
-
-        The fix reorders the writes so the metadata patch runs first.
-        This test asserts that when the metadata patch raises, ZERO
-        rows end up in ``retrieval_events`` — proving telemetry was
-        never called (let alone committed) before the metadata failure.
-        A regression that re-orders the calls would leave one orphan row.
+        when ``_write_session_metadata_patch`` fails inside the PostToolUse
+        decision-surfacing flow, no orphan ``retrieval_events`` row may
+        remain. Originally (pre-S2b) ``record_retrieval_event(commit=False)``
+        with manual ``conn.commit()/rollback()`` enforced this; under S2b's
+        autocommit + ``with transaction(conn):`` wrap, the wrapped block
+        rolls back atomically when the metadata patch raises. Either way,
+        the post-condition is identical: ZERO post_tool_use rows in
+        ``retrieval_events`` after the simulated failure.
         """
         import sqlite3
 

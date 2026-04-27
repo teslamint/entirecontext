@@ -43,19 +43,20 @@ def should_pull(conn: sqlite3.Connection, config: dict) -> bool:
 
 def acquire_sync_lock(conn: sqlite3.Connection) -> bool:
     """Atomic lock acquisition via conditional UPDATE. Returns True if acquired."""
-    conn.execute("INSERT OR IGNORE INTO sync_metadata (id, sync_status) VALUES (1, 'idle')")
-    cursor = conn.execute(
-        "UPDATE sync_metadata SET sync_status = 'syncing', sync_pid = ? WHERE id = 1 AND sync_status = 'idle'",
-        (os.getpid(),),
-    )
-    conn.commit()
+    from ..core.context import transaction
+
+    with transaction(conn):
+        conn.execute("INSERT OR IGNORE INTO sync_metadata (id, sync_status) VALUES (1, 'idle')")
+        cursor = conn.execute(
+            "UPDATE sync_metadata SET sync_status = 'syncing', sync_pid = ? WHERE id = 1 AND sync_status = 'idle'",
+            (os.getpid(),),
+        )
     return cursor.rowcount > 0
 
 
 def release_sync_lock(conn: sqlite3.Connection) -> None:
     """Release sync lock."""
     conn.execute("UPDATE sync_metadata SET sync_status = 'idle', sync_pid = NULL WHERE id = 1")
-    conn.commit()
 
 
 def _is_lock_stale(conn: sqlite3.Connection) -> bool:
@@ -106,14 +107,12 @@ def run_sync(repo_path: str) -> None:
                 "UPDATE sync_metadata SET last_sync_error = ? WHERE id = 1",
                 (result["error"],),
             )
-            conn.commit()
     except Exception as exc:
         try:
             conn.execute(
                 "UPDATE sync_metadata SET last_sync_error = ? WHERE id = 1",
                 (str(exc),),
             )
-            conn.commit()
         except Exception:
             pass
     finally:

@@ -57,7 +57,6 @@ def create_agent(
            VALUES (?, ?, ?, ?, ?, ?)""",
         (agent_id, parent_agent_id, agent_type, role, name, spawn_context),
     )
-    conn.commit()
     return {
         "id": agent_id,
         "parent_agent_id": parent_agent_id,

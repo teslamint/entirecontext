@@ -1,10 +1,15 @@
 """Regression pins for ``entirecontext.core.context.transaction``.
 
-These tests lock down the helper's behavior under Python 3.12's
-``LEGACY_TRANSACTION_CONTROL`` mode — the same mode ``_configure_connection``
-leaves on every real ``RepoContext.conn``. If a future runtime migration to
-``autocommit=True`` lands without updating the helper, these cases will fail
-and surface the semantic change before silent atomicity regressions ship.
+These tests lock down the helper's behavior under autocommit mode — the
+mode ``_configure_connection`` enables on every real ``RepoContext.conn``.
+Under autocommit, each DML self-commits unless an explicit ``BEGIN`` is
+open. The helper owns ``BEGIN IMMEDIATE`` on outer entry, defers to an
+outer owner via a per-connection depth counter on nested entry, and
+issues ``COMMIT``/``ROLLBACK`` only when the depth returns to 0.
+
+Assertions are behavioral (post-conditions on table state and on the
+depth counter). The depth counter is technically an implementation
+detail; tests probe it sparingly to surface helper-internal regressions.
 """
 
 from __future__ import annotations
@@ -19,7 +24,6 @@ from entirecontext.db.connection import get_memory_db
 def conn():
     c = get_memory_db()
     c.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT NOT NULL)")
-    c.commit()
     yield c
     c.close()
 
@@ -27,24 +31,21 @@ def conn():
 def test_happy_path_commits_on_normal_exit(conn):
     with transaction(conn):
         conn.execute("INSERT INTO t (v) VALUES (?)", ("alpha",))
-    assert conn.in_transaction is False
     rows = conn.execute("SELECT v FROM t ORDER BY id").fetchall()
     assert [r["v"] for r in rows] == ["alpha"]
+    assert getattr(conn, "_ec_tx_depth", 0) == 0
 
 
 def test_nested_defers_to_outer_owner(conn):
-    conn.execute("INSERT INTO t (v) VALUES (?)", ("outer",))
-    assert conn.in_transaction is True
-
     with transaction(conn):
-        conn.execute("INSERT INTO t (v) VALUES (?)", ("inner",))
-
-    # Nested path must not commit — outer still owns the boundary.
-    assert conn.in_transaction is True
-    conn.commit()
-
+        conn.execute("INSERT INTO t (v) VALUES (?)", ("outer",))
+        with transaction(conn):
+            conn.execute("INSERT INTO t (v) VALUES (?)", ("inner",))
+            assert getattr(conn, "_ec_tx_depth", 0) == 2
+        assert getattr(conn, "_ec_tx_depth", 0) == 1
     rows = conn.execute("SELECT v FROM t ORDER BY id").fetchall()
     assert [r["v"] for r in rows] == ["outer", "inner"]
+    assert getattr(conn, "_ec_tx_depth", 0) == 0
 
 
 def test_exception_rolls_back_owned_boundary(conn):
@@ -56,6 +57,29 @@ def test_exception_rolls_back_owned_boundary(conn):
             conn.execute("INSERT INTO t (v) VALUES (?)", ("rolled-back",))
             raise Boom()
 
-    assert conn.in_transaction is False
     rows = conn.execute("SELECT v FROM t").fetchall()
     assert rows == []
+    assert getattr(conn, "_ec_tx_depth", 0) == 0
+
+
+def test_defers_to_raw_sql_outer_transaction(conn):
+    """PR #103 codex P2 (#discussion ...): a caller that opens ``BEGIN IMMEDIATE``
+    directly via raw SQL (without setting ``_ec_tx_depth``) must still cause
+    a nested ``transaction()`` call to defer. Without the ``conn.in_transaction``
+    fallback the helper would issue another BEGIN IMMEDIATE and SQLite would
+    raise ``cannot start a transaction within a transaction``.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # Nested transaction() must defer to this raw outer — no second BEGIN.
+        with transaction(conn):
+            conn.execute("INSERT INTO t (v) VALUES (?)", ("inner-from-raw-outer",))
+        # Helper did not touch depth (raw outer is not helper-tracked).
+        assert getattr(conn, "_ec_tx_depth", 0) == 0
+        # Row not yet visible to a fresh connection (still inside raw outer tx).
+        # Verify by rolling back: the row must vanish.
+    finally:
+        conn.execute("ROLLBACK")
+
+    rows = conn.execute("SELECT v FROM t").fetchall()
+    assert rows == [], "raw outer ROLLBACK must undo the helper's nested INSERT"

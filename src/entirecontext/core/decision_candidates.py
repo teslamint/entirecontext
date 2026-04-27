@@ -101,26 +101,28 @@ def confirm_candidate(
 ) -> dict[str, Any]:
     """Promote a candidate to a real decision with atomic concurrency safety.
 
-    Two commit boundaries cooperate to give both concurrency safety and
-    atomic promotion:
+    Three independent commit boundaries cooperate to give both concurrency
+    safety and atomic promotion. Under autocommit, each DML self-commits
+    unless wrapped in `transaction()`, so the boundaries are implicit:
 
       1. CAS-claim the candidate with
-         `UPDATE ... WHERE id=? AND review_status='pending'` and commit.
-         Only one caller sees rowcount=1; everyone else raises. The claim
-         must persist before promotion starts so concurrent callers see
-         the gate flipped.
+         `UPDATE ... WHERE id=? AND review_status='pending'` (self-commits
+         under autocommit). Only one caller sees rowcount=1; everyone else
+         raises. The claim must persist before promotion starts so
+         concurrent callers see the gate flipped.
       2. Inside a single `BEGIN IMMEDIATE` (via `core/context.transaction`),
          create the decision, link provenance, and store the
          `promoted_decision_id` back-pointer. If anything in this block
          raises, the entire promotion rolls back atomically — no orphan
          `decisions` row, no orphan join rows.
       3. On Step-2 failure, an outer-except conditional UPDATE rolls the
-         claim back to `pending` so the candidate can be retried. The
-         rollback runs in its own commit boundary because Step 1 already
-         committed (SQLite ROLLBACK cannot reach across that boundary).
+         claim back to `pending` so the candidate can be retried. This
+         compensating UPDATE is independent of Step 2's wrapped tx because
+         Step 1 already self-committed; SQLite ROLLBACK cannot reach across
+         that boundary.
 
     The only mid-flight stuck state remaining is "claim committed, Step 2
-    not started" (process crash between Step 1 commit and Step 2 BEGIN).
+    not started" (process crash between Step 1's UPDATE and Step 2 BEGIN).
     The v0.2.0 gap — `decisions` row durable but candidate back-pointer
     missing — is closed.
     """
@@ -145,11 +147,10 @@ def confirm_candidate(
         fresh = get_candidate(conn, candidate["id"])
         status = fresh.get("review_status") if fresh else "unknown"
         raise ValueError(f"Candidate '{candidate['id']}' is already {status}")
-    conn.commit()
 
     # Step 2: create the decision and link provenance inside a single
     # BEGIN IMMEDIATE (via transaction()). Helpers defer to the outer
-    # transaction owner when conn.in_transaction is True.
+    # transaction owner when the per-conn depth counter is non-zero.
     from .decisions import (
         create_decision,
         link_decision_to_assessment,
@@ -218,7 +219,6 @@ def confirm_candidate(
             "WHERE id=? AND review_status='confirmed' AND promoted_decision_id IS NULL",
             (_now_iso(), candidate["id"]),
         )
-        conn.commit()
         raise
 
     _record_event(
@@ -266,7 +266,6 @@ def reject_candidate(
         fresh = get_candidate(conn, candidate["id"])
         status = fresh.get("review_status") if fresh else "unknown"
         raise ValueError(f"Candidate '{candidate['id']}' is already {status}")
-    conn.commit()
 
     _record_event(
         conn,
