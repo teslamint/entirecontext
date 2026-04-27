@@ -1,0 +1,12 @@
+{
+  "id": "2f2ab3c7-9822-4979-a8a4-87e8e6911c12",
+  "session_id": "5b688db2-db29-4508-aade-5d6fcda03670",
+  "git_commit_hash": "efe1cc4e9dddc6f6099feff5c721dafaec54d144",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/hooks/decision_hooks.py |  51 +++++++++---\n src/entirecontext/mcp/server.py           |  10 ++-\n src/entirecontext/mcp/tools/decisions.py  |  37 ++++++++-\n tests/test_decision_hooks.py              | 127 +++++++++++++++++++++++++++++-\n tests/test_mcp.py                         |  71 +++++++++++++++++\n 5 files changed, 279 insertions(+), 17 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-15 02:26:17",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

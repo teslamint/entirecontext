@@ -1,0 +1,12 @@
+{
+  "id": "b0598acc-5161-4a2a-8469-d7bc34af806b",
+  "session_id": "ead8ef01-8430-45ad-8652-b2cd14e0ab36",
+  "git_commit_hash": "ac5b6cc8a3f5f1c6ee9cea68c1b1a9a2d5a4e220",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CLAUDE.md                                          |   6 +-\n scripts/generate_noisy_candidate_fixtures.py       | 161 ++++\n src/entirecontext/cli/decisions_cmds.py            | 326 +++++---\n src/entirecontext/core/config.py                   |   4 +\n src/entirecontext/core/decision_candidates.py      | 295 +++++++\n src/entirecontext/core/decision_extraction.py      | 860 +++++++++++++++++++++\n src/entirecontext/db/migrations/__init__.py        |   7 +-\n src/entirecontext/db/migrations/v013.py            | 118 +++\n src/entirecontext/db/schema.py                     |  68 +-\n src/entirecontext/hooks/decision_hooks.py          |  82 +-\n src/entirecontext/mcp/server.py                    |  14 +-\n src/entirecontext/mcp/tools/decision_candidates.py | 110 +++\n tests/test_decision_extraction.py                  | 854 ++++++++++++++++++++\n tests/test_decision_hooks.py                       | 125 ++-\n tests/test_decisions_cli.py                        |   9 +-\n tests/test_mcp.py                                  |   4 +-\n 16 files changed, 2906 insertions(+), 137 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-15 10:55:23",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

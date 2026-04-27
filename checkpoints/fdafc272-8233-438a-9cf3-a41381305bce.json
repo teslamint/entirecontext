@@ -1,0 +1,12 @@
+{
+  "id": "fdafc272-8233-438a-9cf3-a41381305bce",
+  "session_id": "5b688db2-db29-4508-aade-5d6fcda03670",
+  "git_commit_hash": "1343cd8090dd1ede541cefbd6b3c159bc7775f78",
+  "git_branch": "fix/issue-44-mcp-input-normalization",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/cross_repo.py      |   8 +-\n src/entirecontext/core/search.py          |  30 ++++-\n src/entirecontext/mcp/runtime.py          |   8 +-\n src/entirecontext/mcp/tools/checkpoint.py |  14 +-\n src/entirecontext/mcp/tools/decisions.py  |  31 ++++-\n src/entirecontext/mcp/tools/futures.py    |   5 +-\n src/entirecontext/mcp/tools/search.py     |  51 +++++---\n src/entirecontext/mcp/tools/session.py    |  21 +--\n tests/test_mcp_input_normalization.py     | 210 ++++++++++++++++++++++++++++++\n 9 files changed, 328 insertions(+), 50 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-12 11:42:55",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

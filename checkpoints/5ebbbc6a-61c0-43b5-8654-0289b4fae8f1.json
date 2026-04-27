@@ -1,0 +1,12 @@
+{
+  "id": "5ebbbc6a-61c0-43b5-8654-0289b4fae8f1",
+  "session_id": "91a4129e-1ad8-4431-a056-b46047ba99c5",
+  "git_commit_hash": "5bfbf1ef3ee75a15497bbe520bcde6ddb7bf2bac",
+  "git_branch": "feat/lesson-guidance-and-decision-search",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "AGENTS.md                                          |  49 +++--\n README.md                                          |  17 +-\n ...recontext-maintainer-decision-reuse-template.md |  46 ++--\n .../entirecontext-user-decision-reuse-template.md  |  39 ++--\n src/entirecontext/cli/decisions_cmds.py            |  45 ++++\n src/entirecontext/core/cross_repo.py               |  10 +-\n src/entirecontext/core/decisions.py                |  67 ++++++\n src/entirecontext/mcp/server.py                    |  11 +-\n src/entirecontext/mcp/tools/decisions.py           | 107 +++++++++\n tests/test_auto_sync.py                            |  75 +++++++\n tests/test_decisions_cli.py                        | 240 +++++++++++++++++++++\n tests/test_decisions_core.py                       | 138 ++++++++++--\n tests/test_embedding.py                            | 138 ++++++++++++\n tests/test_futures_cmds_assess.py                  | 155 +++++++++++++\n tests/test_futures_cmds_relationships.py           | 142 ++++++++++++\n tests/test_handler.py                              |  98 +++++++++\n tests/test_hooks.py                                |  28 ++-\n tests/test_import_cmds.py                          |  91 ++++++++\n tests/test_llm.py                                  | 120 ++++++++++-\n tests/test_mcp.py                                  | 193 +++++++++++++++++\n tests/test_mcp_registration.py                     |   1 +\n tests/test_search_redaction.py                     | 143 ++++++++++++\n 22 files changed, 1890 insertions(+), 63 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-11 03:23:20",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}
