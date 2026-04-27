@@ -38,7 +38,6 @@ def create_event(
         VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)""",
         (event_id, title, description, event_type, now, now, now, metadata),
     )
-    conn.commit()
     return {"id": event_id, "title": title, "event_type": event_type, "status": "active", "created_at": now}
 
 
@@ -96,7 +95,6 @@ def update_event(conn, event_id: str, **kwargs) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [event_id]
     conn.execute(f"UPDATE events SET {set_clause} WHERE id = ?", values)
-    conn.commit()
 
 
 def link_event_session(conn, event_id: str, session_id: str) -> None:
@@ -105,7 +103,6 @@ def link_event_session(conn, event_id: str, session_id: str) -> None:
         "INSERT OR IGNORE INTO event_sessions (event_id, session_id) VALUES (?, ?)",
         (event_id, session_id),
     )
-    conn.commit()
 
 
 def link_event_checkpoint(conn, event_id: str, checkpoint_id: str) -> None:
@@ -114,7 +111,6 @@ def link_event_checkpoint(conn, event_id: str, checkpoint_id: str) -> None:
         "INSERT OR IGNORE INTO event_checkpoints (event_id, checkpoint_id) VALUES (?, ?)",
         (event_id, checkpoint_id),
     )
-    conn.commit()
 
 
 def get_event_sessions(conn, event_id: str) -> list[dict]:

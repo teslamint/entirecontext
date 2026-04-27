@@ -270,7 +270,6 @@ def run_prompt_surface_worker(
                             latency_ms=0,
                             session_id=session_id,
                             file_filter=None,
-                            commit=False,
                         )
                         for d in surfaced:
                             sel = record_retrieval_selection(
@@ -279,7 +278,6 @@ def run_prompt_surface_worker(
                                 result_type="decision",
                                 result_id=d["id"],
                                 rank=d["rank"],
-                                commit=False,
                             )
                             d["selection_id"] = sel["id"]
                 except Exception as exc:

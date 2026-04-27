@@ -63,7 +63,6 @@ def create_assessment(
             now,
         ),
     )
-    conn.commit()
     return {
         "id": assessment_id,
         "checkpoint_id": checkpoint_id,
@@ -138,7 +137,6 @@ def add_feedback(conn, assessment_id: str, feedback: str, feedback_reason: str |
         "UPDATE assessments SET feedback = ?, feedback_reason = ? WHERE id = ?",
         (feedback, feedback_reason, full_id),
     )
-    conn.commit()
 
 
 def get_lessons(conn, limit: int = 50) -> list[dict]:
@@ -256,7 +254,6 @@ def add_assessment_relationship(
         "VALUES (?, ?, ?, ?, ?, ?)",
         (rel_id, full_source_id, full_target_id, relationship_type, note, now),
     )
-    conn.commit()
     return {
         "id": rel_id,
         "source_id": full_source_id,
@@ -334,5 +331,4 @@ def remove_assessment_relationship(
         "DELETE FROM assessment_relationships WHERE source_id = ? AND target_id = ? AND relationship_type = ?",
         (full_source_id, full_target_id, relationship_type),
     )
-    conn.commit()
     return cursor.rowcount > 0

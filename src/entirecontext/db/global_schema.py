@@ -18,4 +18,3 @@ def init_global_schema(conn) -> None:
     """Initialize the global database schema."""
     for sql in GLOBAL_TABLES.values():
         conn.execute(sql)
-    conn.commit()

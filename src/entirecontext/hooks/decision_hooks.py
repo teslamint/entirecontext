@@ -265,39 +265,34 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             all_surfaced = file_related + stale_full
             if all_surfaced:
                 try:
+                    from ..core.context import transaction
                     from ..core.telemetry import record_retrieval_event, record_retrieval_selection
 
                     surfacing_session_id_tel = data.get("session_id")
-                    event = record_retrieval_event(
-                        conn,
-                        source="hook",
-                        search_type="session_start",
-                        target="decision",
-                        query=",".join(changed_files) if changed_files else "",
-                        result_count=len(all_surfaced),
-                        latency_ms=0,
-                        session_id=surfacing_session_id_tel,
-                        file_filter=",".join(changed_files) if changed_files else None,
-                        commit=False,
-                    )
-                    for idx, d in enumerate(all_surfaced, start=1):
-                        sel = record_retrieval_selection(
+                    with transaction(conn):
+                        event = record_retrieval_event(
                             conn,
-                            event["id"],
-                            result_type="decision",
-                            result_id=d["id"],
-                            rank=idx,
-                            commit=False,
+                            source="hook",
+                            search_type="session_start",
+                            target="decision",
+                            query=",".join(changed_files) if changed_files else "",
+                            result_count=len(all_surfaced),
+                            latency_ms=0,
+                            session_id=surfacing_session_id_tel,
+                            file_filter=",".join(changed_files) if changed_files else None,
                         )
-                        d["selection_id"] = sel["id"]
-                    conn.commit()
+                        for idx, d in enumerate(all_surfaced, start=1):
+                            sel = record_retrieval_selection(
+                                conn,
+                                event["id"],
+                                result_type="decision",
+                                result_id=d["id"],
+                                rank=idx,
+                            )
+                            d["selection_id"] = sel["id"]
                 except Exception:
                     for d in all_surfaced:
                         d.pop("selection_id", None)
-                    try:
-                        conn.rollback()
-                    except Exception:
-                        pass
 
             # 4. Format sections (after telemetry so selection_ids are present).
             if file_related:
@@ -336,7 +331,6 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                             surfacing_session_id,
                             {"$.surfaced_decisions": merged},
                         )
-                        conn.commit()
                     except Exception:
                         pass
                 return output
@@ -684,45 +678,40 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             new_session_wide = sorted(surfaced_session_wide | set(new_ids))
             post_tool_turns[turn_id] = new_ids
             try:
+                from ..core.context import transaction
                 from ..core.telemetry import record_retrieval_event, record_retrieval_selection
 
-                _write_session_metadata_patch(
-                    conn,
-                    session_id,
-                    {
-                        "$.surfaced_decisions": new_session_wide,
-                        "$.post_tool_surfaced_turns": post_tool_turns,
-                    },
-                )
-                event = record_retrieval_event(
-                    conn,
-                    source="hook",
-                    search_type="post_tool_use",
-                    target="decision",
-                    query=",".join(files),
-                    result_count=len(decisions_out),
-                    latency_ms=0,
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    file_filter=",".join(files),
-                    commit=False,
-                )
-                for idx, d in enumerate(decisions_out, start=1):
-                    sel = record_retrieval_selection(
+                with transaction(conn):
+                    _write_session_metadata_patch(
                         conn,
-                        event["id"],
-                        result_type="decision",
-                        result_id=d["id"],
-                        rank=idx,
-                        commit=False,
+                        session_id,
+                        {
+                            "$.surfaced_decisions": new_session_wide,
+                            "$.post_tool_surfaced_turns": post_tool_turns,
+                        },
                     )
-                    d["selection_id"] = sel["id"]
-                conn.commit()
+                    event = record_retrieval_event(
+                        conn,
+                        source="hook",
+                        search_type="post_tool_use",
+                        target="decision",
+                        query=",".join(files),
+                        result_count=len(decisions_out),
+                        latency_ms=0,
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        file_filter=",".join(files),
+                    )
+                    for idx, d in enumerate(decisions_out, start=1):
+                        sel = record_retrieval_selection(
+                            conn,
+                            event["id"],
+                            result_type="decision",
+                            result_id=d["id"],
+                            rank=idx,
+                        )
+                        d["selection_id"] = sel["id"]
             except Exception:
-                try:
-                    conn.rollback()
-                except sqlite3.Error:
-                    pass
                 # Keep dedup state and the fallback file in sync: if the
                 # dedup write failed, remove the fallback so the next call
                 # re-surfaces cleanly instead of reading a file that no

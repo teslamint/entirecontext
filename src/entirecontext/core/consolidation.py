@@ -108,7 +108,6 @@ def consolidate_turn_content(
     if row is None:
         # Nothing to consolidate for this turn; still mark as consolidated.
         conn.execute("UPDATE turns SET consolidated_at = ? WHERE id = ?", (_iso_now(), turn_id))
-        conn.commit()
         return True
 
     content_path = row["content_path"]

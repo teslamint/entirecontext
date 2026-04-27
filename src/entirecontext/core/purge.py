@@ -55,7 +55,6 @@ def purge_turns(conn, repo_path: str, turn_ids: list[str], dry_run: bool = True)
             _delete_content_file(repo_path, tc["content_path"])
 
     conn.execute(f"DELETE FROM turns WHERE id IN ({placeholders})", turn_ids)
-    conn.commit()
 
     return {"matched_turns": len(rows), "deleted": len(rows), "dry_run": False, "previews": previews}
 
@@ -87,7 +86,6 @@ def purge_session(conn, repo_path: str, session_id: str, dry_run: bool = True) -
             _delete_content_file(repo_path, tc["content_path"])
 
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
-    conn.commit()
 
     content_dir = Path(repo_path) / ".entirecontext" / "content" / session_id
     if content_dir.exists() and not any(content_dir.iterdir()):
@@ -129,6 +127,5 @@ def purge_by_pattern(conn, repo_path: str, pattern: str, dry_run: bool = True) -
 
     placeholders = ",".join("?" for _ in turn_ids)
     conn.execute(f"DELETE FROM turns WHERE id IN ({placeholders})", turn_ids)
-    conn.commit()
 
     return {"matched_turns": len(matched), "deleted": len(matched), "dry_run": False, "previews": previews}

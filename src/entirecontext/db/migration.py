@@ -35,7 +35,6 @@ def bootstrap_schema(conn: sqlite3.Connection) -> None:
         "INSERT OR IGNORE INTO schema_version (version, description) VALUES (?, ?)",
         (SCHEMA_VERSION, "Initial schema"),
     )
-    conn.commit()
 
 
 def check_and_migrate(conn: sqlite3.Connection) -> None:
@@ -71,7 +70,6 @@ def apply_migrations(conn: sqlite3.Connection, from_version: int, to_version: in
                 "INSERT INTO schema_version (version, description) VALUES (?, ?)",
                 (version, f"Migration to v{version}"),
             )
-    conn.commit()
 
 
 def _apply_migrations(conn: sqlite3.Connection, current_version: int) -> None:

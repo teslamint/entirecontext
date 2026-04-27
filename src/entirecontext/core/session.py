@@ -30,7 +30,6 @@ def create_session(
         VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (session_id, project_id, agent_id, session_type, workspace_path, now, now),
     )
-    conn.commit()
     return {"id": session_id, "project_id": project_id, "started_at": now}
 
 
@@ -83,4 +82,3 @@ def update_session(conn, session_id: str, **kwargs) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [session_id]
     conn.execute(f"UPDATE sessions SET {set_clause} WHERE id = ?", values)
-    conn.commit()

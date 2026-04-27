@@ -28,24 +28,7 @@ from pathlib import Path
 # ``src/entirecontext/core/``. This set is a ratchet: it may SHRINK over time,
 # never grow. When a PR lands that removes the last ``conn.commit()`` from one
 # of these modules, drop it from the set in the same PR.
-ALLOWLIST = frozenset(
-    {
-        "agent_graph.py",
-        "attribution.py",
-        "checkpoint.py",
-        "consolidation.py",
-        "decision_candidates.py",
-        "decision_extraction.py",
-        "decisions.py",
-        "event.py",
-        "futures.py",
-        "project.py",
-        "purge.py",
-        "session.py",
-        "telemetry.py",
-        "turn.py",
-    }
-)
+ALLOWLIST: frozenset[str] = frozenset()
 
 CORE_DIR = Path(__file__).resolve().parent.parent / "src" / "entirecontext" / "core"
 

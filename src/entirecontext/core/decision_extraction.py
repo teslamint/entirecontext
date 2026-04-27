@@ -258,7 +258,6 @@ def mark_session_extracted(conn, session_id: str) -> None:
         "'$.candidates_extracted', json('true')) WHERE id = ?",
         (session_id,),
     )
-    conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -987,7 +986,6 @@ def persist_candidate(
                 now,
             ),
         )
-        conn.commit()
         return PersistResult(candidate_id=candidate_id, inserted=True)
     except Exception as exc:
         # Unique-index violation on (source_type, source_id, dedup_key) is

@@ -146,7 +146,6 @@ def _ensure_project(conn, repo_path: str) -> str:
         "INSERT INTO projects (id, name, repo_path) VALUES (?, ?, ?)",
         (project_id, Path(repo_path).name, repo_path),
     )
-    conn.commit()
     return project_id
 
 
@@ -262,7 +261,6 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
                 VALUES (?, ?, ?, ?, ?, ?)""",
                 (session_id, project_id, "codex", meta.get("cwd") or cwd, meta.get("started_at") or now, now),
             )
-            conn.commit()
 
         existing_turns = conn.execute("SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)).fetchone()[0]
         pending = turns[existing_turns:]
@@ -294,6 +292,5 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
             "UPDATE sessions SET total_turns = ?, last_activity_at = ?, updated_at = ? WHERE id = ?",
             (existing_turns + len(pending), now, now, session_id),
         )
-        conn.commit()
     finally:
         conn.close()

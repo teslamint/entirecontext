@@ -52,7 +52,6 @@ def create_turn(
             kwargs.get("tools_used"),
         ),
     )
-    conn.commit()
     return {"id": turn_id, "session_id": session_id, "turn_number": turn_number}
 
 
@@ -92,5 +91,4 @@ def save_turn_content(
         "INSERT OR REPLACE INTO turn_content (turn_id, content_path, content_size, content_hash) VALUES (?, ?, ?, ?)",
         (turn_id, rel_path, size, file_hash),
     )
-    conn.commit()
     return rel_path

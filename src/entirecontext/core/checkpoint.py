@@ -45,7 +45,6 @@ def create_checkpoint(
             metadata_json,
         ),
     )
-    conn.commit()
     return {
         "id": checkpoint_id,
         "session_id": session_id,

@@ -76,7 +76,6 @@ def init_project(repo_path: str | Path | None = None) -> dict:
                 "INSERT INTO projects (id, name, repo_path, remote_url) VALUES (?, ?, ?, ?)",
                 (project_id, project_name, repo_path, remote_url),
             )
-            conn.commit()
     finally:
         conn.close()
 
@@ -97,7 +96,6 @@ def _register_in_global_db(repo_path: str, repo_name: str) -> None:
                 VALUES (?, ?, ?, datetime('now'))""",
                 (repo_path, repo_name, db_path),
             )
-            gconn.commit()
         finally:
             gconn.close()
     except Exception:
