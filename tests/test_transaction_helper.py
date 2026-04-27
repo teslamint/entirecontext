@@ -60,3 +60,26 @@ def test_exception_rolls_back_owned_boundary(conn):
     rows = conn.execute("SELECT v FROM t").fetchall()
     assert rows == []
     assert getattr(conn, "_ec_tx_depth", 0) == 0
+
+
+def test_defers_to_raw_sql_outer_transaction(conn):
+    """PR #103 codex P2 (#discussion ...): a caller that opens ``BEGIN IMMEDIATE``
+    directly via raw SQL (without setting ``_ec_tx_depth``) must still cause
+    a nested ``transaction()`` call to defer. Without the ``conn.in_transaction``
+    fallback the helper would issue another BEGIN IMMEDIATE and SQLite would
+    raise ``cannot start a transaction within a transaction``.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        # Nested transaction() must defer to this raw outer — no second BEGIN.
+        with transaction(conn):
+            conn.execute("INSERT INTO t (v) VALUES (?)", ("inner-from-raw-outer",))
+        # Helper did not touch depth (raw outer is not helper-tracked).
+        assert getattr(conn, "_ec_tx_depth", 0) == 0
+        # Row not yet visible to a fresh connection (still inside raw outer tx).
+        # Verify by rolling back: the row must vanish.
+    finally:
+        conn.execute("ROLLBACK")
+
+    rows = conn.execute("SELECT v FROM t").fetchall()
+    assert rows == [], "raw outer ROLLBACK must undo the helper's nested INSERT"

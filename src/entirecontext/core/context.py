@@ -21,9 +21,19 @@ def transaction(conn: sqlite3.Connection) -> Iterator[None]:
     outer entry, increments a per-connection depth counter on nested entry,
     and only issues ``COMMIT``/``ROLLBACK`` when the depth returns to 0.
 
-    The depth counter (``conn._ec_tx_depth``) replaces the legacy-mode
-    ``conn.in_transaction`` nesting detector, which is unreliable under
-    autocommit (a pure SELECT no longer flips an implicit BEGIN).
+    Three nesting cases handled:
+
+      1. **Helper-owned outer** (``_ec_tx_depth > 0``): increment depth,
+         defer commit to the outermost helper exit. Symmetric tracking.
+      2. **Raw-SQL outer** (``conn.in_transaction`` True with depth 0): a
+         caller has opened ``BEGIN IMMEDIATE`` directly without coordinating
+         with the depth counter. Defer without touching either marker; the
+         raw caller manages its own COMMIT/ROLLBACK. This restores the
+         deferral safety the previous ``conn.in_transaction``-based detector
+         provided, so callers don't need to know about the private depth
+         counter for nested correctness.
+      3. **No outer** (both false): open a fresh ``BEGIN IMMEDIATE`` and own
+         the boundary.
     """
     depth = getattr(conn, "_ec_tx_depth", 0)
     if depth > 0:
@@ -32,6 +42,12 @@ def transaction(conn: sqlite3.Connection) -> Iterator[None]:
             yield
         finally:
             conn._ec_tx_depth -= 1
+        return
+
+    if conn.in_transaction:
+        # Raw-SQL outer owner; defer entirely without touching depth or
+        # issuing COMMIT/ROLLBACK. The outer caller controls the boundary.
+        yield
         return
 
     # Under conn.autocommit=True, conn.commit()/rollback() are no-ops because
