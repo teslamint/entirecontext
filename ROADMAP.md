@@ -129,6 +129,44 @@ Scope note: F5 (outcome type enum extension `refined`/`replaced` + schema v14 mi
 
 E2E coverage note: v0.5.0 does not need a single integrated E2E like v0.4.0's `test_e2e_feed_the_loop.py` because S1–S4 each have their own focused integration test. S3 in particular IS the missing E2E for v0.4.0's F4.
 
+## v0.6.0 — Outcome Semantics (Breaking Track)
+
+Theme: strengthen the decision outcome lifecycle — agents can distinguish guidance that was accepted, ignored, contradicted, refined, or replaced. Narrow scope: outcome recording and ranking behavior only. No extraction confidence changes, no storage rework beyond the minimum for outcome semantics.
+
+Plan reference: `docs/brainstorms/v0-6-0-roadmap-plan.md`.
+
+- [ ] **F5. Outcome type enum expansion** (deferred from v0.4.0)
+  - Add `refined` and `replaced` outcome types to `decision_outcomes.outcome_type`
+  - Schema v14 migration: rebuild constrained table safely, preserve existing rows, recreate indexes, test v13→v14 migration and rollback behavior
+  - Define and document the outcome truth table: quality score signal, staleness auto-promotion, successor-chain mutation, extraction confidence effect for all five types (`accepted`, `ignored`, `contradicted`, `refined`, `replaced`)
+
+- [ ] **F5a. Recording paths for expanded outcome vocabulary**
+  - Manual outcome recording accepts all five outcome values through CLI and MCP
+  - Existing `ec_context_apply` accepted recording remains unchanged
+  - SessionEnd ignored inference remains limited to `ignored`
+  - `ec decision supersede` explicitly defines whether it records `replaced`, updates successor state, or both — `replaced` must not become a second incompatible supersession mechanism
+  - Candidate confirmation does not infer `refined` or `replaced` without an explicit source event
+
+- [ ] **F5b. Accepted ranking verification**
+  - Verify whether existing quality-score path already provides accepted ranking boost
+  - If a delta is still needed: define exact weight, cap, config key, score breakdown label, and regression tests proving accepted outcomes are counted once
+  - Accepted boost must stay out of extraction confidence in v0.6.0 (deferred to v0.7.0)
+
+- [ ] **F5c. Tests and documentation**
+  - Tests proving extraction confidence is unchanged by accepted ranking and by `refined`/`replaced` outcomes
+  - Update README, CHANGELOG, MCP tool documentation with schema v14 breaking note and expanded outcome vocabulary
+
+## v0.6.1 — Rejected-Alternative Quality
+
+Theme: clean up the rejected-alternatives data shape without mutating existing records or inventing rationale.
+
+- [ ] Rejected alternative normalization helpers in `core/decisions.py` accepting legacy strings and structured objects
+- [ ] `ec decision alternatives audit` — list reasonless, malformed, mixed, or legacy alternatives without mutating data
+- [ ] `ec decision alternatives normalize` — convert legacy strings to structured objects; use `"Unknown from recorded context"` for missing reasons
+- [ ] `ec decision alternatives set` or equivalent manual update command for explicit structured replacements
+- [ ] Tighten extraction prompts to request rejected-alternative reasons only when source text contains enough evidence; parser and candidate-confirmation paths share the same normalizer
+- [ ] Tests: legacy string compatibility, malformed JSON detection, mixed arrays, empty alternatives, empty reasons, audit categories, normalization idempotency, manual set behavior
+
 ## Hardening Backlog
 
 Structural debt outside the "decision memory depth" wedge. The three items previously listed here (`confirm_candidate` atomicity, `LEGACY_TRANSACTION_CONTROL`, review-bot noise) have been absorbed into v0.5.0 — see S1, S2, S4 above. New items go here as they are surfaced.
@@ -154,10 +192,25 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 
 ## Exploration
 
-- **Temporal queries** — how decisions and lessons change over time
-- **Agent learning reports** — where prior guidance helped and where it was ignored
-- **Decision packs by area** — reusable memory bundles for domains like sync, testing, or search
-- **Human-in-the-loop correction UX** — fast review of extracted decisions and stale lessons
+Items below have been evaluated in the 2026-04-27 ideation session ([docs/ideation/2026-04-27-product-roadmap-ideation.md](docs/ideation/2026-04-27-product-roadmap-ideation.md)) and promoted to concrete candidates. Items marked "moved from v0.6.0" were initially proposed for the breaking track but fall outside the outcome-lifecycle scope defined in `docs/brainstorms/v0-6-0-roadmap-plan.md`.
+
+- **Proactive Decision Injection** — `UserPromptSubmit` hook auto-pushes top-k relevant decisions into `additionalContext` without agent query; Context Budget Optimizer (token cap + confidence threshold) gates noise. Highest-leverage retrieval improvement — converts AGENTS.md policy from opt-in to default behavior. _(Confidence 92%, Medium complexity)_
+
+- **Temporal Query Language (TQL)** — `--at <ref>`, `since:`, `between:` syntax for all search/retrieval commands; queries evaluate against memory state at a specific git commit or date. Exploits EC's unique moat (git-anchored time-travel) — no competitor offers this. _(Confidence 88%, Medium complexity)_
+
+- **`ec blame` — Decision-Annotated Git Blame** — `ec blame <file> [line]` traverses `decision_commits` → `decision_checkpoints` → decision records to answer "why does this code exist?" with rationale and rejected alternatives. `blame_cmds` module already in CLI architecture. _(Confidence 85%, Medium complexity)_
+
+- **Retroactive Git Archaeology (`ec archaeologize`)** — `git log --patch` + merged PR bodies through the existing extraction pipeline; generates a `source:inferred` bootstrapped decision corpus. Eliminates cold-start — the largest adoption barrier. _(Confidence 80%, Medium-High complexity)_
+
+- **Alive Session Memory (Rolling WAL Capture)** — `PostToolUse` writes turn content to append-only JSONL shard immediately; `core/async_worker.py` background thread consolidates on a 30-second rolling window. Makes EC crash-safe for long-running CI and agentic tasks. _(Confidence 83%, Medium complexity)_
+
+- **Agent Learning Report (After-Action Digest)** — `SessionEnd` hook emits a structured AAR (new decisions extracted, prior decisions surfaced, `ec_context_apply` signal). Full "lessons applied / stale reversed" accounting requires new tracking instrumentation and runs as a detached background worker (5-second SessionEnd budget is a hard constraint). _(Confidence 90%, Low-Medium complexity; moved from v0.6.0 — out of scope for outcome lifecycle track)_
+
+- **Decision Conflict Flagging** — on new decision write, `fts_decisions` keyword-overlap check surfaces flagged pairs as `decision_candidates` for human review via `ec review` queue. Does NOT auto-generate `contradicted` outcomes — keyword co-occurrence ≠ semantic contradiction; auto-write would corrupt F2 penalty scoring. _(Confidence 78%, Medium complexity; moved from v0.6.0 — out of scope for outcome lifecycle track)_
+
+- **Decision packs by area** — reusable memory bundles for domains like sync, testing, or search (original exploration item; Decision Keystone Detection is a prerequisite for intelligent pack assembly)
+
+- **Human-in-the-loop correction UX** — fast review of extracted decisions and stale lessons via `ec review` interactive HITL queue (original exploration item)
 
 ## Non-Goals for This Phase
 
