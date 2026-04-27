@@ -426,13 +426,22 @@ class TestSupersedeDecision:
         old = create_decision(ec_db, title="Old approach")
         new = create_decision(ec_db, title="New approach")
 
+        # Simulate an outer caller that owns its own BEGIN IMMEDIATE boundary.
+        # Under autocommit, raw conn.execute("BEGIN IMMEDIATE") opens a real
+        # transaction but does NOT touch the helper's depth counter, so we
+        # bracket it with _ec_tx_depth=1 to make supersede_decision's nested
+        # transaction() call defer instead of trying to start another BEGIN.
+        # ROLLBACK must also be issued via SQL: conn.rollback() is a no-op
+        # under autocommit (Python's sqlite3 only tracks tx it opened itself).
         ec_db.execute("BEGIN IMMEDIATE")
+        ec_db._ec_tx_depth = 1
         try:
             result = supersede_decision(ec_db, old["id"], new["id"])
             assert result["superseded_by_id"] == new["id"]
-            assert ec_db.in_transaction
+            assert getattr(ec_db, "_ec_tx_depth", 0) >= 1
         finally:
-            ec_db.rollback()
+            ec_db._ec_tx_depth = 0
+            ec_db.execute("ROLLBACK")
 
         row = ec_db.execute(
             "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
@@ -449,7 +458,8 @@ class TestSupersedeDecision:
         with pytest.raises(ValueError, match="cycle"):
             supersede_decision(ec_db, b["id"], a["id"])
 
-        assert ec_db.in_transaction is False
+        # Helper rolled back its owned boundary cleanly; depth back to 0.
+        assert getattr(ec_db, "_ec_tx_depth", 0) == 0
         row = ec_db.execute(
             "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
             (b["id"],),
@@ -529,8 +539,8 @@ class TestLinkDecisionAtomicity:
         after = ec_db.execute("SELECT updated_at FROM decisions WHERE id = ?", (d["id"],)).fetchone()
         assert after["updated_at"] == before_updated_at
 
-        # Rollback completed cleanly — connection is no longer in a transaction.
-        assert ec_db.in_transaction is False
+        # Rollback completed cleanly — depth back to 0, helper released its boundary.
+        assert getattr(ec_db, "_ec_tx_depth", 0) == 0
 
 
 class TestCheckStaleness:
@@ -1772,13 +1782,19 @@ class TestStalenessHardening:
         # (which must detect the nested case and skip its own commit),
         # then rolls back the outer scope. The nested INSERT must also
         # disappear — proving no implicit commit happened inside.
+        # Coordinate the manual BEGIN IMMEDIATE with the helper's depth
+        # counter so the nested transaction() call inside record_decision_outcome
+        # sees depth>0 and defers to this outer owner. Also use SQL ROLLBACK
+        # since conn.rollback() is a no-op under autocommit.
         ec_db.execute("BEGIN IMMEDIATE")
+        ec_db._ec_tx_depth = 1
         try:
             result = record_decision_outcome(ec_db, d["id"], "accepted")
             assert result["decision_id"] == d["id"]
-            assert ec_db.in_transaction  # outer tx still owns the boundary
+            assert getattr(ec_db, "_ec_tx_depth", 0) >= 1  # outer tx still owns the boundary
         finally:
-            ec_db.rollback()
+            ec_db._ec_tx_depth = 0
+            ec_db.execute("ROLLBACK")
 
         row = ec_db.execute(
             "SELECT COUNT(*) AS n FROM decision_outcomes WHERE decision_id = ?",

@@ -51,11 +51,11 @@ class CrossRepoPolicy:
             if not config.get("sync", {}).get("auto_pull", False):
                 return
             from ..sync.auto_sync import run_pull, should_pull
-            from ..db.connection import _configure_connection
+            from ..db.connection import _configure_connection, _ECConnection
 
             for repo in repo_list:
                 try:
-                    conn = sqlite3.connect(repo["db_path"])
+                    conn = sqlite3.connect(repo["db_path"], factory=_ECConnection)
                     _configure_connection(conn)
                     repo_config = load_config(repo["repo_path"]).get("sync", {})
                     if should_pull(conn, repo_config):
@@ -87,7 +87,7 @@ class RepoExecutor:
         sort_key: str | None = None,
         limit: int = 20,
     ) -> tuple[list[dict], list[WarningEntry]]:
-        from ..db.connection import _configure_connection
+        from ..db.connection import _configure_connection, _ECConnection
         from ..db.migration import check_and_migrate
 
         repo_list = self.registry.list_repos(repos)
@@ -98,7 +98,7 @@ class RepoExecutor:
         for repo in repo_list:
             conn = None
             try:
-                conn = sqlite3.connect(repo["db_path"])
+                conn = sqlite3.connect(repo["db_path"], factory=_ECConnection)
                 _configure_connection(conn)
                 check_and_migrate(conn)
                 results = fn(conn, repo)
@@ -124,7 +124,7 @@ class RepoExecutor:
         *,
         repos: list[str] | None = None,
     ) -> tuple[dict | None, list[WarningEntry]]:
-        from ..db.connection import _configure_connection
+        from ..db.connection import _configure_connection, _ECConnection
         from ..db.migration import check_and_migrate
 
         repo_list = self.registry.list_repos(repos)
@@ -134,7 +134,7 @@ class RepoExecutor:
         for repo in repo_list:
             conn = None
             try:
-                conn = sqlite3.connect(repo["db_path"])
+                conn = sqlite3.connect(repo["db_path"], factory=_ECConnection)
                 _configure_connection(conn)
                 check_and_migrate(conn)
                 result = fn(conn, repo)
@@ -447,12 +447,12 @@ def cross_repo_assessment_trends(
     total_count = 0
     with_feedback = 0
 
-    from ..db.connection import _configure_connection
+    from ..db.connection import _configure_connection, _ECConnection
     from ..db.migration import check_and_migrate
 
     for repo in repo_list:
         try:
-            conn = sqlite3.connect(repo["db_path"])
+            conn = sqlite3.connect(repo["db_path"], factory=_ECConnection)
             _configure_connection(conn)
             check_and_migrate(conn)
             assessments = list_assessments(conn, limit=10000)

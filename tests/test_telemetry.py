@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from entirecontext.core.project import get_project
 from entirecontext.core.session import create_session
 from entirecontext.core.telemetry import (
@@ -74,6 +76,11 @@ class TestTelemetryHelpers:
         else:
             raise AssertionError("expected ValueError")
 
+    @pytest.mark.skip(
+        reason="S2b autocommit flip invalidates the v0.3.0 commit=False deferred-commit "
+        "contract this test encodes. The `commit` parameter is removed in S2b commit 3 "
+        "along with this test."
+    )
     def test_commit_false_defers_write(self, ec_repo, ec_db):
         import sqlite3
 
@@ -109,9 +116,7 @@ class TestTelemetryHelpers:
         db_path = str(ec_repo / ".entirecontext" / "db" / "local.db")
         second_conn = sqlite3.connect(db_path)
         try:
-            pre = second_conn.execute(
-                "SELECT id FROM retrieval_events WHERE id = ?", (event["id"],)
-            ).fetchone()
+            pre = second_conn.execute("SELECT id FROM retrieval_events WHERE id = ?", (event["id"],)).fetchone()
             assert pre is None, "row should not be visible to other connections before commit"
         finally:
             second_conn.close()
@@ -121,13 +126,9 @@ class TestTelemetryHelpers:
         # After commit, a second connection CAN see the rows.
         second_conn = sqlite3.connect(db_path)
         try:
-            post = second_conn.execute(
-                "SELECT id FROM retrieval_events WHERE id = ?", (event["id"],)
-            ).fetchone()
+            post = second_conn.execute("SELECT id FROM retrieval_events WHERE id = ?", (event["id"],)).fetchone()
             assert post is not None, "row should be visible after commit"
-            sel_post = second_conn.execute(
-                "SELECT id FROM retrieval_selections WHERE id = ?", (sel["id"],)
-            ).fetchone()
+            sel_post = second_conn.execute("SELECT id FROM retrieval_selections WHERE id = ?", (sel["id"],)).fetchone()
             assert sel_post is not None, "selection should be visible after commit"
         finally:
             second_conn.close()

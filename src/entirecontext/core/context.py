@@ -15,26 +15,42 @@ from typing import Any
 def transaction(conn: sqlite3.Connection) -> Iterator[None]:
     """Own a BEGIN IMMEDIATE boundary, or defer to an outer owner if nested.
 
-    Relies on Python 3.12 ``LEGACY_TRANSACTION_CONTROL`` semantics: ``conn.in_transaction``
-    is ``True`` only after DML has started an implicit transaction. A pure ``SELECT``
-    does not flip the flag, so entering this helper from a read-only caller starts a
-    real ``BEGIN IMMEDIATE``. If the connection is migrated to ``autocommit=True`` in
-    the future, ``tests/test_transaction_helper.py`` will fail and flag the semantic
-    change before silent atomicity regressions ship.
+    Connections are configured with ``conn.autocommit = True`` (see
+    ``db.connection._configure_connection``), so each DML self-commits unless
+    an explicit ``BEGIN`` is open. This helper opens ``BEGIN IMMEDIATE`` on
+    outer entry, increments a per-connection depth counter on nested entry,
+    and only issues ``COMMIT``/``ROLLBACK`` when the depth returns to 0.
+
+    The depth counter (``conn._ec_tx_depth``) replaces the legacy-mode
+    ``conn.in_transaction`` nesting detector, which is unreliable under
+    autocommit (a pure SELECT no longer flips an implicit BEGIN).
     """
-    if conn.in_transaction:
-        yield
+    depth = getattr(conn, "_ec_tx_depth", 0)
+    if depth > 0:
+        conn._ec_tx_depth = depth + 1
+        try:
+            yield
+        finally:
+            conn._ec_tx_depth -= 1
         return
+
+    # Under conn.autocommit=True, conn.commit()/rollback() are no-ops because
+    # Python's sqlite3 driver only tracks transactions it opened itself via
+    # implicit BEGIN. Since we open BEGIN IMMEDIATE explicitly, we must close
+    # it with explicit COMMIT/ROLLBACK SQL statements.
     conn.execute("BEGIN IMMEDIATE")
+    conn._ec_tx_depth = 1
     try:
         yield
-        conn.commit()
+        conn.execute("COMMIT")
     except BaseException:
         try:
-            conn.rollback()
+            conn.execute("ROLLBACK")
         except sqlite3.Error:
             pass
         raise
+    finally:
+        conn._ec_tx_depth = 0
 
 
 def _find_git_root(path: str | Path = ".") -> str | None:
