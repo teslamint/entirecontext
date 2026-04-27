@@ -60,7 +60,9 @@ def _write_snapshot(
         )
 
     for checkpoint_id, checkpoint_data in (checkpoints or {}).items():
-        (root / "checkpoints" / f"{checkpoint_id}.json").write_text(json.dumps(checkpoint_data, indent=2), encoding="utf-8")
+        (root / "checkpoints" / f"{checkpoint_id}.json").write_text(
+            json.dumps(checkpoint_data, indent=2), encoding="utf-8"
+        )
 
     if manifest is not None:
         (root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -99,7 +101,11 @@ def _mk_subprocess_side_effect(
             (worktree_path / "sessions").mkdir(exist_ok=True)
             (worktree_path / "checkpoints").mkdir(exist_ok=True)
 
-            if ref == SHADOW_BRANCH and worktree_path.name.startswith("ec-sync-local-") and state["branch_worktree"] is not None:
+            if (
+                ref == SHADOW_BRANCH
+                and worktree_path.name.startswith("ec-sync-local-")
+                and state["branch_worktree"] is not None
+            ):
                 _copy_tree(state["branch_worktree"], worktree_path)
             elif ref == SHADOW_BRANCH:
                 state["branch_worktree"] = worktree_path
@@ -331,11 +337,16 @@ class TestPerformSync:
             result = perform_sync(sync_db, str(ec_repo), {"push_on_sync": True})
 
         branch_worktree = state["branch_worktree"]
-        merged_meta = json.loads((branch_worktree / "sessions" / "shared-session" / "meta.json").read_text(encoding="utf-8"))
+        merged_meta = json.loads(
+            (branch_worktree / "sessions" / "shared-session" / "meta.json").read_text(encoding="utf-8")
+        )
         merged_manifest = json.loads((branch_worktree / "manifest.json").read_text(encoding="utf-8"))
-        transcript_lines = (branch_worktree / "sessions" / "shared-session" / "transcript.jsonl").read_text(
-            encoding="utf-8"
-        ).strip().splitlines()
+        transcript_lines = (
+            (branch_worktree / "sessions" / "shared-session" / "transcript.jsonl")
+            .read_text(encoding="utf-8")
+            .strip()
+            .splitlines()
+        )
         transcript_ids = [json.loads(line)["id"] for line in transcript_lines]
 
         assert result["error"] is None
@@ -418,7 +429,9 @@ class TestPerformSync:
 
         def update_manifest_stub(conn, worktree_path):
             (Path(worktree_path) / "manifest.json").write_text(
-                json.dumps({"version": 1, "sessions": {"shared-session": {"total_turns": 2}}, "checkpoints": {}}, indent=2),
+                json.dumps(
+                    {"version": 1, "sessions": {"shared-session": {"total_turns": 2}}, "checkpoints": {}}, indent=2
+                ),
                 encoding="utf-8",
             )
 

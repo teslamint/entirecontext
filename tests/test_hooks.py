@@ -286,7 +286,9 @@ class TestAutoCleanupNoChanges:
 
     @patch("entirecontext.hooks.session_lifecycle._find_git_root")
     @patch("entirecontext.db.get_db")
-    def test_session_end_auto_cleanup_no_changes_deletes_content_when_enabled(self, mock_get_db, mock_git_root, tmp_path):
+    def test_session_end_auto_cleanup_no_changes_deletes_content_when_enabled(
+        self, mock_get_db, mock_git_root, tmp_path
+    ):
         conn, repo_path, turn_id, content_file = self._setup_session_with_content(tmp_path)
         mock_git_root.return_value = repo_path
         mock_get_db.return_value = conn
@@ -372,7 +374,9 @@ class TestAutoCleanupNoChanges:
 
         from entirecontext.hooks.session_lifecycle import _maybe_auto_cleanup_no_changes
 
-        with patch("entirecontext.core.config.load_config", return_value={"capture": {"auto_cleanup_no_changes": True}}):
+        with patch(
+            "entirecontext.core.config.load_config", return_value={"capture": {"auto_cleanup_no_changes": True}}
+        ):
             _maybe_auto_cleanup_no_changes(repo_path, "s1")
 
         assert content_file.exists() is True

@@ -8,6 +8,7 @@ from rich.table import Table
 
 console = Console()
 
+
 def graph_cmd(
     session_id: str | None = typer.Option(None, "--session", "-s", help="Restrict graph to a single session ID"),
     since: str | None = typer.Option(None, "--since", help="Only include turns on or after this date (YYYY-MM-DD)"),

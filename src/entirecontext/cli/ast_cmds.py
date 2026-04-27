@@ -8,6 +8,7 @@ from rich.table import Table
 
 console = Console()
 
+
 def ast_search_cmd(
     query: str = typer.Argument(..., help="Search query (name, docstring keyword, etc.)"),
     symbol_type: str | None = typer.Option(

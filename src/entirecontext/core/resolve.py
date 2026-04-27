@@ -22,7 +22,9 @@ def resolve_id(conn, table: str, id_value: str) -> str | None:
         raise ValueError(f"Table '{table}' is not allowed. Must be one of: {sorted(_ALLOWED_TABLES)}")
     row = conn.execute(f"SELECT id FROM {table} WHERE id = ?", (id_value,)).fetchone()
     if row is None:
-        row = conn.execute(f"SELECT id FROM {table} WHERE id LIKE ? ESCAPE '\\'", (f"{escape_like(id_value)}%",)).fetchone()
+        row = conn.execute(
+            f"SELECT id FROM {table} WHERE id LIKE ? ESCAPE '\\'", (f"{escape_like(id_value)}%",)
+        ).fetchone()
     return row["id"] if row else None
 
 

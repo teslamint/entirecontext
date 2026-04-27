@@ -95,7 +95,16 @@ class TestGetDashboardStats:
     def test_returns_dict_with_required_keys(self, ec_repo, ec_db):
         _seed_db(ec_repo, ec_db)
         stats = get_dashboard_stats(ec_db)
-        for key in ("sessions", "checkpoints", "assessments", "telemetry", "maturity_score", "maturity_grade", "since", "limit"):
+        for key in (
+            "sessions",
+            "checkpoints",
+            "assessments",
+            "telemetry",
+            "maturity_score",
+            "maturity_grade",
+            "since",
+            "limit",
+        ):
             assert key in stats
 
     def test_sessions_total_count(self, ec_repo, ec_db):
