@@ -31,7 +31,6 @@ from pathlib import Path
 ALLOWLIST = frozenset(
     {
         "agent_graph.py",
-        "ast_index.py",
         "attribution.py",
         "checkpoint.py",
         "consolidation.py",

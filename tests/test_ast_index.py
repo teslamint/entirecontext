@@ -5,6 +5,7 @@ from __future__ import annotations
 import textwrap
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
@@ -317,6 +318,46 @@ class TestIndexFileAst:
         index_file_ast(ec_db, "auth.py", _SYNTAX_ERROR_MODULE)
         count = ec_db.execute("SELECT COUNT(*) FROM ast_symbols WHERE file_path='auth.py'").fetchone()[0]
         assert count == 0
+
+
+class TestIndexFileAstAtomicity:
+    """S2b regression: index_file_ast wraps DELETE + INSERT-loop in
+    `with transaction(conn):` so a mid-loop failure rolls back both the
+    DELETE and any prior INSERTs in the batch. Without the wrap, under
+    autocommit each statement self-commits and a crash mid-loop leaves
+    the file with zero (or partial) symbols durably written — even
+    though the caller raised and never reached commit.
+    """
+
+    def test_index_file_ast_rolls_back_on_mid_loop_failure(self, ec_repo, ec_db, monkeypatch):
+        index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE)
+        baseline_count = ec_db.execute(
+            "SELECT COUNT(*) AS c FROM ast_symbols WHERE file_path = ?", ("auth.py",)
+        ).fetchone()["c"]
+        assert baseline_count > 1, "baseline must have multiple symbols for the mid-loop failure to be meaningful"
+
+        from entirecontext.core import ast_index as ast_index_mod
+
+        original_uuid4 = ast_index_mod.uuid4
+        call_count = {"n": 0}
+
+        def _boom_uuid4():
+            call_count["n"] += 1
+            if call_count["n"] >= 2:
+                raise RuntimeError("simulated mid-loop failure")
+            return original_uuid4()
+
+        monkeypatch.setattr(ast_index_mod, "uuid4", _boom_uuid4)
+
+        with pytest.raises(RuntimeError, match="simulated mid-loop failure"):
+            index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE)
+
+        after_count = ec_db.execute(
+            "SELECT COUNT(*) AS c FROM ast_symbols WHERE file_path = ?", ("auth.py",)
+        ).fetchone()["c"]
+        assert after_count == baseline_count, (
+            "rollback must preserve baseline: DELETE and any partial INSERTs both rolled back"
+        )
 
 
 class TestGetAstSymbolsForFile:
