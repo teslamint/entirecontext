@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
+
+from .context import transaction
 
 
 @dataclass
@@ -76,41 +79,47 @@ def _import_sessions(
 
     rows = aline_conn.execute(query, params).fetchall()
 
-    for row in rows:
-        if dry_run:
-            result.sessions += 1
-            continue
-
-        try:
-            cursor = ec_conn.execute(
-                """INSERT OR IGNORE INTO sessions
-                (id, project_id, session_type, workspace_path, started_at, last_activity_at,
-                 session_title, session_summary, total_turns, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    row["id"],
-                    project_id,
-                    row["session_type"] or "claude",
-                    row["workspace_path"],
-                    row["started_at"] or row["last_activity_at"] or "1970-01-01T00:00:00",
-                    row["last_activity_at"] or row["started_at"] or "1970-01-01T00:00:00",
-                    row["session_title"],
-                    row["session_summary"],
-                    row["total_turns"] or 0,
-                    row["started_at"] or "1970-01-01T00:00:00",
-                    row["last_activity_at"] or "1970-01-01T00:00:00",
-                ),
-            )
-            if cursor.rowcount > 0:
+    # Two interaction notes for the wrapped batch below:
+    # (1) `with transaction(conn):` only rolls back on exceptions that escape
+    #     this block. Per-row try/except below intentionally suppresses errors
+    #     and continues; suppressed rows' DML still lands in the batch, by design.
+    # (2) `dry_run` swaps the writer transaction for `contextlib.nullcontext()`
+    #     so `ec import --dry-run` never acquires SQLite's writer lock — the
+    #     pre-S2a path was read-only and we preserve that contract.
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
+        for row in rows:
+            if dry_run:
                 result.sessions += 1
-            else:
-                result.skipped += 1
-        except Exception as e:
-            result.errors.append(f"Session {row['id']}: {e}")
-            result.skipped += 1
+                continue
 
-    if not dry_run:
-        ec_conn.commit()
+            try:
+                cursor = ec_conn.execute(
+                    """INSERT OR IGNORE INTO sessions
+                    (id, project_id, session_type, workspace_path, started_at, last_activity_at,
+                     session_title, session_summary, total_turns, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        row["id"],
+                        project_id,
+                        row["session_type"] or "claude",
+                        row["workspace_path"],
+                        row["started_at"] or row["last_activity_at"] or "1970-01-01T00:00:00",
+                        row["last_activity_at"] or row["started_at"] or "1970-01-01T00:00:00",
+                        row["session_title"],
+                        row["session_summary"],
+                        row["total_turns"] or 0,
+                        row["started_at"] or "1970-01-01T00:00:00",
+                        row["last_activity_at"] or "1970-01-01T00:00:00",
+                    ),
+                )
+                if cursor.rowcount > 0:
+                    result.sessions += 1
+                else:
+                    result.skipped += 1
+            except Exception as e:
+                result.errors.append(f"Session {row['id']}: {e}")
+                result.skipped += 1
 
 
 def _import_turns(
@@ -129,42 +138,41 @@ def _import_turns(
         list(ec_session_ids),
     ).fetchall()
 
-    for row in rows:
-        if dry_run:
-            result.turns += 1
-            continue
-
-        content_hash = row["content_hash"] or hashlib.md5((row["user_message"] or "").encode()).hexdigest()
-
-        try:
-            cursor = ec_conn.execute(
-                """INSERT OR IGNORE INTO turns
-                (id, session_id, turn_number, user_message, assistant_summary,
-                 model_name, git_commit_hash, content_hash, timestamp, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    row["id"],
-                    row["session_id"],
-                    row["turn_number"],
-                    row["user_message"],
-                    row["assistant_summary"],
-                    row["model_name"],
-                    row["git_commit_hash"],
-                    content_hash,
-                    row["started_at"] if "started_at" in row.keys() else "1970-01-01T00:00:00",
-                    row["started_at"] if "started_at" in row.keys() else "1970-01-01T00:00:00",
-                ),
-            )
-            if cursor.rowcount > 0:
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
+        for row in rows:
+            if dry_run:
                 result.turns += 1
-            else:
-                result.skipped += 1
-        except Exception as e:
-            result.errors.append(f"Turn {row['id']}: {e}")
-            result.skipped += 1
+                continue
 
-    if not dry_run:
-        ec_conn.commit()
+            content_hash = row["content_hash"] or hashlib.md5((row["user_message"] or "").encode()).hexdigest()
+
+            try:
+                cursor = ec_conn.execute(
+                    """INSERT OR IGNORE INTO turns
+                    (id, session_id, turn_number, user_message, assistant_summary,
+                     model_name, git_commit_hash, content_hash, timestamp, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        row["id"],
+                        row["session_id"],
+                        row["turn_number"],
+                        row["user_message"],
+                        row["assistant_summary"],
+                        row["model_name"],
+                        row["git_commit_hash"],
+                        content_hash,
+                        row["started_at"] if "started_at" in row.keys() else "1970-01-01T00:00:00",
+                        row["started_at"] if "started_at" in row.keys() else "1970-01-01T00:00:00",
+                    ),
+                )
+                if cursor.rowcount > 0:
+                    result.turns += 1
+                else:
+                    result.skipped += 1
+            except Exception as e:
+                result.errors.append(f"Turn {row['id']}: {e}")
+                result.skipped += 1
 
 
 def _import_turn_content(
@@ -192,37 +200,36 @@ def _import_turn_content(
 
     content_dir = Path(repo_path) / ".entirecontext" / "content"
 
-    for row in rows:
-        if row["turn_id"] in existing:
-            result.skipped += 1
-            continue
-
-        if dry_run:
-            result.turn_content += 1
-            continue
-
-        content = row["content"] or ""
-        content_hash = hashlib.md5(content.encode()).hexdigest()
-        content_path = str(content_dir / f"{row['turn_id']}.jsonl")
-
-        content_dir.mkdir(parents=True, exist_ok=True)
-        Path(content_path).write_text(content, encoding="utf-8")
-
-        try:
-            cursor = ec_conn.execute(
-                "INSERT OR IGNORE INTO turn_content (turn_id, content_path, content_size, content_hash) VALUES (?, ?, ?, ?)",
-                (row["turn_id"], content_path, len(content.encode()), content_hash),
-            )
-            if cursor.rowcount > 0:
-                result.turn_content += 1
-            else:
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
+        for row in rows:
+            if row["turn_id"] in existing:
                 result.skipped += 1
-        except Exception as e:
-            result.errors.append(f"Content {row['turn_id']}: {e}")
-            result.skipped += 1
+                continue
 
-    if not dry_run:
-        ec_conn.commit()
+            if dry_run:
+                result.turn_content += 1
+                continue
+
+            content = row["content"] or ""
+            content_hash = hashlib.md5(content.encode()).hexdigest()
+            content_path = str(content_dir / f"{row['turn_id']}.jsonl")
+
+            content_dir.mkdir(parents=True, exist_ok=True)
+            Path(content_path).write_text(content, encoding="utf-8")
+
+            try:
+                cursor = ec_conn.execute(
+                    "INSERT OR IGNORE INTO turn_content (turn_id, content_path, content_size, content_hash) VALUES (?, ?, ?, ?)",
+                    (row["turn_id"], content_path, len(content.encode()), content_hash),
+                )
+                if cursor.rowcount > 0:
+                    result.turn_content += 1
+                else:
+                    result.skipped += 1
+            except Exception as e:
+                result.errors.append(f"Content {row['turn_id']}: {e}")
+                result.skipped += 1
 
 
 def _generate_checkpoints(
@@ -240,22 +247,21 @@ def _generate_checkpoints(
         )"""
     ).fetchall()
 
-    for row in rows:
-        if dry_run:
-            result.checkpoints += 1
-            continue
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
+        for row in rows:
+            if dry_run:
+                result.checkpoints += 1
+                continue
 
-        try:
-            ec_conn.execute(
-                "INSERT OR IGNORE INTO checkpoints (id, session_id, git_commit_hash, created_at) VALUES (?, ?, ?, ?)",
-                (str(uuid4()), row["session_id"], row["git_commit_hash"], row["timestamp"]),
-            )
-            result.checkpoints += 1
-        except Exception as e:
-            result.errors.append(f"Checkpoint for turn {row['id']}: {e}")
-
-    if not dry_run:
-        ec_conn.commit()
+            try:
+                ec_conn.execute(
+                    "INSERT OR IGNORE INTO checkpoints (id, session_id, git_commit_hash, created_at) VALUES (?, ?, ?, ?)",
+                    (str(uuid4()), row["session_id"], row["git_commit_hash"], row["timestamp"]),
+                )
+                result.checkpoints += 1
+            except Exception as e:
+                result.errors.append(f"Checkpoint for turn {row['id']}: {e}")
 
 
 def _import_events(
@@ -269,36 +275,35 @@ def _import_events(
     except sqlite3.OperationalError:
         return
 
-    for row in event_rows:
-        if dry_run:
-            result.events += 1
-            continue
-
-        try:
-            cursor = ec_conn.execute(
-                """INSERT OR IGNORE INTO events
-                (id, title, description, event_type, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    row["id"],
-                    row["title"],
-                    row["description"],
-                    row["event_type"] or "task",
-                    row["status"] or "active",
-                    row["created_at"] if "created_at" in row.keys() else "1970-01-01T00:00:00",
-                    row["created_at"] if "created_at" in row.keys() else "1970-01-01T00:00:00",
-                ),
-            )
-            if cursor.rowcount > 0:
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
+        for row in event_rows:
+            if dry_run:
                 result.events += 1
-            else:
-                result.skipped += 1
-        except Exception as e:
-            result.errors.append(f"Event {row['id']}: {e}")
-            result.skipped += 1
+                continue
 
-    if not dry_run:
-        ec_conn.commit()
+            try:
+                cursor = ec_conn.execute(
+                    """INSERT OR IGNORE INTO events
+                    (id, title, description, event_type, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        row["id"],
+                        row["title"],
+                        row["description"],
+                        row["event_type"] or "task",
+                        row["status"] or "active",
+                        row["created_at"] if "created_at" in row.keys() else "1970-01-01T00:00:00",
+                        row["created_at"] if "created_at" in row.keys() else "1970-01-01T00:00:00",
+                    ),
+                )
+                if cursor.rowcount > 0:
+                    result.events += 1
+                else:
+                    result.skipped += 1
+            except Exception as e:
+                result.errors.append(f"Event {row['id']}: {e}")
+                result.skipped += 1
 
     try:
         link_rows = aline_conn.execute("SELECT * FROM event_sessions").fetchall()
@@ -308,23 +313,22 @@ def _import_events(
     ec_session_ids = _get_imported_session_ids(ec_conn)
     ec_event_ids = {r["id"] for r in ec_conn.execute("SELECT id FROM events").fetchall()}
 
-    for row in link_rows:
-        if row["event_id"] not in ec_event_ids or row["session_id"] not in ec_session_ids:
-            continue
+    ctx = contextlib.nullcontext() if dry_run else transaction(ec_conn)
+    with ctx:
+        for row in link_rows:
+            if row["event_id"] not in ec_event_ids or row["session_id"] not in ec_session_ids:
+                continue
 
-        if dry_run:
-            result.event_links += 1
-            continue
-
-        try:
-            cursor = ec_conn.execute(
-                "INSERT OR IGNORE INTO event_sessions (event_id, session_id) VALUES (?, ?)",
-                (row["event_id"], row["session_id"]),
-            )
-            if cursor.rowcount > 0:
+            if dry_run:
                 result.event_links += 1
-        except Exception as e:
-            result.errors.append(f"Event link {row['event_id']}-{row['session_id']}: {e}")
+                continue
 
-    if not dry_run:
-        ec_conn.commit()
+            try:
+                cursor = ec_conn.execute(
+                    "INSERT OR IGNORE INTO event_sessions (event_id, session_id) VALUES (?, ?)",
+                    (row["event_id"], row["session_id"]),
+                )
+                if cursor.rowcount > 0:
+                    result.event_links += 1
+            except Exception as e:
+                result.errors.append(f"Event link {row['event_id']}-{row['session_id']}: {e}")

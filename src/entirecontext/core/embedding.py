@@ -7,6 +7,8 @@ import sqlite3
 import struct
 from uuid import uuid4
 
+from .context import transaction
+
 
 def embed_text(text: str, model_name: str = "all-MiniLM-L6-v2") -> bytes:
     """Encode text to embedding bytes using sentence-transformers."""
@@ -183,52 +185,72 @@ def generate_embeddings(
         existing_session_ids = {r[0] for r in rows}
 
     turns = conn.execute("SELECT id, user_message, assistant_summary FROM turns").fetchall()
-    for turn in turns:
-        if not force and turn["id"] in existing_turn_ids:
-            continue
-        text = f"{turn['user_message'] or ''} {turn['assistant_summary'] or ''}".strip()
-        if not text:
-            continue
-        vector = model.encode(text)
-        vector_bytes = vector.tobytes()
-        text_hash = hashlib.md5(text.encode()).hexdigest()
-
-        if force:
-            conn.execute(
-                "DELETE FROM embeddings WHERE source_type = 'turn' AND source_id = ? AND model_name = ?",
-                (turn["id"], model_name),
-            )
-
-        conn.execute(
-            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (str(uuid4()), "turn", turn["id"], model_name, vector_bytes, len(vector), text_hash),
-        )
-        count += 1
-
     sessions = conn.execute("SELECT id, session_title, session_summary FROM sessions").fetchall()
-    for session in sessions:
-        if not force and session["id"] in existing_session_ids:
-            continue
-        text = f"{session['session_title'] or ''} {session['session_summary'] or ''}".strip()
-        if not text:
-            continue
-        vector = model.encode(text)
-        vector_bytes = vector.tobytes()
-        text_hash = hashlib.md5(text.encode()).hexdigest()
 
-        if force:
+    # Skip the writer transaction when there is no DML to issue. Pre-S2a's
+    # implicit-tx model deferred BEGIN to the first DML, so a force=False
+    # call with all embeddings already cached stayed read-only. Without this
+    # short-circuit, S2a's wrap would acquire the writer lock unconditionally.
+    # The text check mirrors the loop body's `if not text: continue` gate
+    # exactly — a row with no embedding but blank text still produces no DML.
+    turns_need_work = any(
+        (force or t["id"] not in existing_turn_ids)
+        and f"{t['user_message'] or ''} {t['assistant_summary'] or ''}".strip()
+        for t in turns
+    )
+    sessions_need_work = any(
+        (force or s["id"] not in existing_session_ids)
+        and f"{s['session_title'] or ''} {s['session_summary'] or ''}".strip()
+        for s in sessions
+    )
+    if not (turns_need_work or sessions_need_work):
+        return 0
+
+    with transaction(conn):
+        for turn in turns:
+            if not force and turn["id"] in existing_turn_ids:
+                continue
+            text = f"{turn['user_message'] or ''} {turn['assistant_summary'] or ''}".strip()
+            if not text:
+                continue
+            vector = model.encode(text)
+            vector_bytes = vector.tobytes()
+            text_hash = hashlib.md5(text.encode()).hexdigest()
+
+            if force:
+                conn.execute(
+                    "DELETE FROM embeddings WHERE source_type = 'turn' AND source_id = ? AND model_name = ?",
+                    (turn["id"], model_name),
+                )
+
             conn.execute(
-                "DELETE FROM embeddings WHERE source_type = 'session' AND source_id = ? AND model_name = ?",
-                (session["id"], model_name),
+                "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (str(uuid4()), "turn", turn["id"], model_name, vector_bytes, len(vector), text_hash),
             )
+            count += 1
 
-        conn.execute(
-            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (str(uuid4()), "session", session["id"], model_name, vector_bytes, len(vector), text_hash),
-        )
-        count += 1
+        for session in sessions:
+            if not force and session["id"] in existing_session_ids:
+                continue
+            text = f"{session['session_title'] or ''} {session['session_summary'] or ''}".strip()
+            if not text:
+                continue
+            vector = model.encode(text)
+            vector_bytes = vector.tobytes()
+            text_hash = hashlib.md5(text.encode()).hexdigest()
 
-    conn.commit()
+            if force:
+                conn.execute(
+                    "DELETE FROM embeddings WHERE source_type = 'session' AND source_id = ? AND model_name = ?",
+                    (session["id"], model_name),
+                )
+
+            conn.execute(
+                "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (str(uuid4()), "session", session["id"], model_name, vector_bytes, len(vector), text_hash),
+            )
+            count += 1
+
     return count

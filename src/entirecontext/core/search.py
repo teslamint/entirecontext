@@ -16,6 +16,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from .context import transaction
+
 
 def _apply_query_redaction(results: list[dict], config: dict[str, Any] | None) -> list[dict]:
     """Apply query-time redaction to search results."""
@@ -392,14 +394,14 @@ def rebuild_fts_indexes(conn: sqlite3.Connection) -> dict:
     """Rebuild FTS5 content-sync tables using the FTS5 'rebuild' command."""
     counts = {}
 
-    conn.execute("INSERT INTO fts_turns(fts_turns) VALUES('rebuild')")
-    counts["fts_turns"] = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
+    with transaction(conn):
+        conn.execute("INSERT INTO fts_turns(fts_turns) VALUES('rebuild')")
+        counts["fts_turns"] = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
 
-    conn.execute("INSERT INTO fts_events(fts_events) VALUES('rebuild')")
-    counts["fts_events"] = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        conn.execute("INSERT INTO fts_events(fts_events) VALUES('rebuild')")
+        counts["fts_events"] = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
 
-    conn.execute("INSERT INTO fts_sessions(fts_sessions) VALUES('rebuild')")
-    counts["fts_sessions"] = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        conn.execute("INSERT INTO fts_sessions(fts_sessions) VALUES('rebuild')")
+        counts["fts_sessions"] = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
 
-    conn.commit()
     return counts
