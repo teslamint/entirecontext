@@ -191,8 +191,18 @@ def generate_embeddings(
     # implicit-tx model deferred BEGIN to the first DML, so a force=False
     # call with all embeddings already cached stayed read-only. Without this
     # short-circuit, S2a's wrap would acquire the writer lock unconditionally.
-    turns_need_work = force or any(t["id"] not in existing_turn_ids for t in turns)
-    sessions_need_work = force or any(s["id"] not in existing_session_ids for s in sessions)
+    # The text check mirrors the loop body's `if not text: continue` gate
+    # exactly — a row with no embedding but blank text still produces no DML.
+    turns_need_work = any(
+        (force or t["id"] not in existing_turn_ids)
+        and f"{t['user_message'] or ''} {t['assistant_summary'] or ''}".strip()
+        for t in turns
+    )
+    sessions_need_work = any(
+        (force or s["id"] not in existing_session_ids)
+        and f"{s['session_title'] or ''} {s['session_summary'] or ''}".strip()
+        for s in sessions
+    )
     if not (turns_need_work or sessions_need_work):
         return 0
 

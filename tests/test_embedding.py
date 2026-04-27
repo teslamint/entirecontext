@@ -148,6 +148,42 @@ def test_generate_embeddings_null_text(conn):
     mock_model.encode.assert_not_called()
 
 
+def test_generate_embeddings_null_text_does_not_open_writer_transaction(conn, monkeypatch):
+    """Regression for PR #102 #discussion_r3144418476: when an unembedded
+    turn/session has empty text, the loop body skips it (no DML). The
+    needs_work pre-check must include the empty-text condition so
+    BEGIN IMMEDIATE is not issued for these rows. Pre-fix, needs_work
+    only checks missing IDs and lets a blank-text row trigger BEGIN
+    IMMEDIATE for zero DML — same regression shape as the round-1
+    finding, narrower scope."""
+    db, session_id = conn
+    # Turn with NULL user_message + NULL assistant_summary; never embedded.
+    turn_id = str(uuid4())
+    content_hash = hashlib.md5(b"").hexdigest()
+    db.execute(
+        "INSERT INTO turns (id, session_id, turn_number, user_message, assistant_summary, content_hash, timestamp) "
+        "VALUES (?, ?, 1, NULL, NULL, ?, '2025-01-01T00:00:00')",
+        (turn_id, session_id, content_hash),
+    )
+    db.execute(
+        "UPDATE sessions SET session_title = NULL, session_summary = NULL WHERE id = ?",
+        (session_id,),
+    )
+    db.commit()
+
+    def _fail_transaction(conn):
+        raise AssertionError("transaction() must not be called when all eligible rows have empty text")
+
+    monkeypatch.setattr("entirecontext.core.embedding.transaction", _fail_transaction)
+
+    mock_model = _make_mock_model()
+    with _patch_sentence_transformers(mock_model):
+        count = generate_embeddings(db, "/tmp/test-repo")
+
+    assert count == 0
+    mock_model.encode.assert_not_called()
+
+
 def test_generate_embeddings_import_error():
     db = get_memory_db()
     init_schema(db)
