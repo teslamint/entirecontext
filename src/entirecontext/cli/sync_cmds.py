@@ -7,6 +7,7 @@ from rich.console import Console
 
 console = Console()
 
+
 def sync(
     no_filter: bool = typer.Option(False, "--no-filter", help="Skip secret filtering"),
     if_enabled: bool = typer.Option(False, "--if-enabled", help="Only run if auto_sync_on_push is enabled in config"),
@@ -60,6 +61,7 @@ def sync(
         console.print("[green]Sync complete.[/green]")
     finally:
         conn.close()
+
 
 def pull():
     """Fetch shadow branch and import."""

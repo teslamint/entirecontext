@@ -4,7 +4,9 @@
 def _add_superseded_by_id(conn):
     cols = {row[1] for row in conn.execute("PRAGMA table_info(decisions)").fetchall()}
     if "superseded_by_id" not in cols:
-        conn.execute("ALTER TABLE decisions ADD COLUMN superseded_by_id TEXT REFERENCES decisions(id) ON DELETE SET NULL")
+        conn.execute(
+            "ALTER TABLE decisions ADD COLUMN superseded_by_id TEXT REFERENCES decisions(id) ON DELETE SET NULL"
+        )
 
 
 MIGRATION_STEPS = [

@@ -7,6 +7,7 @@ from rich.console import Console
 
 console = Console()
 
+
 def index_cmd(
     semantic: bool = typer.Option(
         False, "--semantic", help="Generate semantic embeddings (requires entirecontext[semantic])"

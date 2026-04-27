@@ -143,17 +143,23 @@ def get_dashboard_stats(
         recent_asmt_params,
     ).fetchall()
 
-    anchored_assessment_count = conn.execute(
-        "SELECT COUNT(*) AS total FROM assessments WHERE checkpoint_id IS NOT NULL"
-        + (" AND created_at >= ?" if since is not None else ""),
-        since_params,
-    ).fetchone()["total"] or 0
+    anchored_assessment_count = (
+        conn.execute(
+            "SELECT COUNT(*) AS total FROM assessments WHERE checkpoint_id IS NOT NULL"
+            + (" AND created_at >= ?" if since is not None else ""),
+            since_params,
+        ).fetchone()["total"]
+        or 0
+    )
     checkpoint_anchored_assessment_rate = anchored_assessment_count / asmt_total if asmt_total > 0 else 0.0
 
-    retrieval_events_total = conn.execute(
-        f"SELECT COUNT(*) AS total FROM retrieval_events{since_clause_ca}",
-        since_params,
-    ).fetchone()["total"] or 0
+    retrieval_events_total = (
+        conn.execute(
+            f"SELECT COUNT(*) AS total FROM retrieval_events{since_clause_ca}",
+            since_params,
+        ).fetchone()["total"]
+        or 0
+    )
     retrieval_sessions_row = conn.execute(
         "SELECT COUNT(DISTINCT session_id) AS total FROM retrieval_events"
         + (" WHERE created_at >= ?" if since is not None else ""),
@@ -161,10 +167,13 @@ def get_dashboard_stats(
     ).fetchone()
     retrieval_sessions_total = retrieval_sessions_row["total"] or 0
 
-    retrieval_selections_total = conn.execute(
-        f"SELECT COUNT(*) AS total FROM retrieval_selections{since_clause_ca}",
-        since_params,
-    ).fetchone()["total"] or 0
+    retrieval_selections_total = (
+        conn.execute(
+            f"SELECT COUNT(*) AS total FROM retrieval_selections{since_clause_ca}",
+            since_params,
+        ).fetchone()["total"]
+        or 0
+    )
 
     applications_row = conn.execute(
         "SELECT COUNT(*) AS total,"
@@ -178,14 +187,17 @@ def get_dashboard_stats(
     lesson_reuse_count = applications_row["lesson_reuse"] or 0
 
     retrieval_assisted_session_rate = retrieval_sessions_total / sessions_total if sessions_total > 0 else 0.0
-    search_to_selection_rate = retrieval_selections_total / retrieval_events_total if retrieval_events_total > 0 else 0.0
+    search_to_selection_rate = (
+        retrieval_selections_total / retrieval_events_total if retrieval_events_total > 0 else 0.0
+    )
     applied_context_rate = (
         context_applications_with_selection / retrieval_selections_total if retrieval_selections_total > 0 else 0.0
     )
     lesson_reuse_rate = lesson_reuse_count / context_applications_total if context_applications_total > 0 else 0.0
 
-    changed_ended_sessions = conn.execute(
-        """
+    changed_ended_sessions = (
+        conn.execute(
+            """
         SELECT COUNT(*) AS total
         FROM sessions s
         WHERE s.ended_at IS NOT NULL
@@ -205,10 +217,13 @@ def get_dashboard_stats(
               )
           )
         """.format(since_filter="AND s.started_at >= ?" if since is not None else ""),
-        since_params,
-    ).fetchone()["total"] or 0
-    changed_ended_sessions_with_checkpoints = conn.execute(
-        """
+            since_params,
+        ).fetchone()["total"]
+        or 0
+    )
+    changed_ended_sessions_with_checkpoints = (
+        conn.execute(
+            """
         SELECT COUNT(DISTINCT s.id) AS total
         FROM sessions s
         JOIN checkpoints c ON c.session_id = s.id
@@ -229,8 +244,10 @@ def get_dashboard_stats(
               )
           )
         """.format(since_filter="AND s.started_at >= ?" if since is not None else ""),
-        since_params,
-    ).fetchone()["total"] or 0
+            since_params,
+        ).fetchone()["total"]
+        or 0
+    )
     checkpoint_coverage_rate = (
         changed_ended_sessions_with_checkpoints / changed_ended_sessions if changed_ended_sessions > 0 else 0.0
     )

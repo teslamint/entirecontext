@@ -62,7 +62,9 @@ def merge_shadow_artifacts(local_root: Path, remote_root: Path, output_root: Pat
             local_transcript_path = local_session_dir / "transcript.jsonl"
             remote_transcript_path = remote_session_dir / "transcript.jsonl"
             if local_transcript_path.exists() or remote_transcript_path.exists():
-                local_transcript = local_transcript_path.read_text(encoding="utf-8") if local_transcript_path.exists() else ""
+                local_transcript = (
+                    local_transcript_path.read_text(encoding="utf-8") if local_transcript_path.exists() else ""
+                )
                 remote_transcript = (
                     remote_transcript_path.read_text(encoding="utf-8") if remote_transcript_path.exists() else ""
                 )

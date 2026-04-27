@@ -9,6 +9,7 @@ from rich.console import Console
 
 console = Console()
 
+
 def rewind(
     checkpoint_id: str = typer.Argument(..., help="Checkpoint ID to rewind to"),
     restore: bool = typer.Option(False, "--restore", help="Restore working tree to checkpoint state"),

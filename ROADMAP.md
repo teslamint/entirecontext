@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-04-25._
+_Updated against codebase on 2026-04-27._
 
 ## Product Thesis
 
@@ -31,7 +31,7 @@ The project already has broad infrastructure in place:
 
 That foundation is useful, but it is broader than the product wedge. The next phase should narrow EntireContext around **decision memory for coding agents**, not expand it horizontally as a generic memory platform.
 
-With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. The next milestone (v0.5.0) hardens the loop by closing 3x-deferred correctness debt before adding new feature surface.
+With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -98,28 +98,28 @@ Plan reference: `~/.claude/plans/v0-4-0-streamed-pond.md`.
 
 Scope note: outcome type enum extension (`refined`/`replaced`) was originally scoped here as F5 but is deferred to the v0.6 breaking track so the enum change + schema v14 + automatic recording paths land together in one release. Held out of v0.5.0 to keep the "Stabilize the Loop" theme free of schema bumps.
 
-## v0.5.0 — Stabilize the Loop
+## v0.5.0 — Stabilize the Loop (Shipped 2026-04-27)
 
 Theme: close the 3x-deferred correctness debt before adding new feature surface — zero new product features, zero schema changes.
 
 Holding hardening separate from the same-day v0.3.0 → v0.4.0 release pattern (no soak window) so unfixed atomicity and transaction-control debt does not compound under more product weight.
 
-- [ ] **S1. `confirm_candidate` atomicity** (D.4)
+- [x] **S1. `confirm_candidate` atomicity** (D.4)
   - `src/entirecontext/core/decision_candidates.py:92-224` currently uses CAS-claim + per-helper internal commits because `create_decision`/`link_decision_to_*` each commit independently. A crash between step 2 and step 3 leaves the candidate in `confirmed` state with `promoted_decision_id IS NULL`.
   - Resolve via single outer transaction (refactor helpers to commit-free) OR add a recovery detector that re-promotes orphaned `confirmed` rows on next access.
   - References: ec decisions `e59c78eb` (original D.4), `4c7893b0` (promotion to v0.5.0 primary).
 
-- [ ] **S2. `LEGACY_TRANSACTION_CONTROL` migration** (D.5)
+- [x] **S2. `LEGACY_TRANSACTION_CONTROL` migration** (D.5)
   - `src/entirecontext/core/context.py:18` and `tests/test_transaction_helper.py:4` rely on Python 3.12's legacy transaction mode. Re-verify under Python 3.13+ autocommit semantics before claiming cross-version support.
   - Decide: migrate to autocommit (preferred) or pin to Python 3.12 with explicit support note.
   - References: ec decision `dcc64267`.
 
-- [ ] **S3. F4 subprocess-path E2E**
+- [x] **S3. F4 subprocess-path E2E**
   - `tests/test_e2e_feed_the_loop.py:213` runs the prompt surfacing worker in-process (direct function call), so F4's security model — `O_EXCL` + `0600` tmp file (`turn_capture.py:90`), detached subprocess isolation (`turn_capture.py:76`), worker-side defense-in-depth re-redaction (`decision_prompt_surfacing.py:184`) — is not exercised end-to-end.
   - Add a new integration test (separate file or named subtest) that launches the actual subprocess, plants a raw secret in the tmp file, and asserts: (a) tmp created with `O_EXCL` + `0600`, (b) worker re-applies redaction even when tmp contains raw secrets, (c) tmp removed in success and failure paths, (d) symlink at tmp path is rejected.
   - References: ec decision `03ab3e25`.
 
-- [ ] **S4. Review-bot noise reduction** (D.6)
+- [x] **S4. Review-bot noise reduction** (D.6)
   - `.github/workflows/claude-code-review.yml` and `.github/workflows/tidy-pilot.yml` produce sticky comments on every `synchronize` event regardless of substance (claude[bot] = 71% of inline comments in v0.2.0 audit; PR #59 stale-commit race + PR #55 test-comment garbage as concrete noise instances).
   - Apply at minimum: `concurrency: cancel-in-progress` on review workflow + remove the explicit "Skip the already reviewed check entirely" directive (`.github/workflows/claude-code-review.yml:40-43`). Tighter `paths` filter and post-push cooldown are stretch.
   - Validation: open a no-op PR after the change and verify only one review run completes.

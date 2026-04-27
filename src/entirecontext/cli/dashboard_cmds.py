@@ -10,6 +10,7 @@ from rich.table import Table
 
 console = Console()
 
+
 def dashboard_cmd(
     since: str | None = typer.Option(
         None, "--since", "-s", help="Only include data on or after this date (YYYY-MM-DD)"
@@ -165,9 +166,7 @@ def _render_dashboard(stats: dict) -> None:
     telemetry_table.add_row("retrieval selections", str(telemetry["retrieval_selections"]["total"]))
     telemetry_table.add_row("context applications", str(telemetry["context_applications"]["total"]))
     telemetry_table.add_row("applications with selection", str(telemetry["context_applications"]["with_selection"]))
-    telemetry_table.add_row(
-        "retrieval-assisted session rate", f"{rates['retrieval_assisted_session_rate'] * 100:.0f}%"
-    )
+    telemetry_table.add_row("retrieval-assisted session rate", f"{rates['retrieval_assisted_session_rate'] * 100:.0f}%")
     telemetry_table.add_row("search-to-selection rate", f"{rates['search_to_selection_rate'] * 100:.0f}%")
     telemetry_table.add_row("applied-context rate", f"{rates['applied_context_rate'] * 100:.0f}%")
     telemetry_table.add_row("lesson reuse rate", f"{rates['lesson_reuse_rate'] * 100:.0f}%")

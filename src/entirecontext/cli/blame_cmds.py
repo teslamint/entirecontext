@@ -10,6 +10,7 @@ from rich.table import Table
 
 console = Console()
 
+
 def blame_cmd(
     file: str = typer.Argument(..., help="File path to show attribution for"),
     summary: bool = typer.Option(False, "--summary", "-s", help="Show aggregated stats only"),
