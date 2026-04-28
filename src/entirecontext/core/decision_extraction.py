@@ -861,7 +861,7 @@ def get_file_outcome_stats(
     zeros so callers can disable the feedback path via config without a
     separate branch.
     """
-    zero: dict[str, int] = {"accepted": 0, "ignored": 0, "contradicted": 0, "total": 0}
+    zero: dict[str, int] = {"accepted": 0, "ignored": 0, "contradicted": 0, "refined": 0, "replaced": 0, "total": 0}
     if not file_paths or lookback_days <= 0:
         return zero
 

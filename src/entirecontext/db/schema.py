@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -275,7 +275,7 @@ CREATE TABLE IF NOT EXISTS decision_outcomes (
     retrieval_selection_id TEXT,
     session_id TEXT,
     turn_id TEXT,
-    outcome_type TEXT NOT NULL CHECK(outcome_type IN ('accepted', 'ignored', 'contradicted')),
+    outcome_type TEXT NOT NULL CHECK(outcome_type IN ('accepted', 'ignored', 'contradicted', 'refined', 'replaced')),
     note TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (decision_id) REFERENCES decisions(id) ON DELETE CASCADE,

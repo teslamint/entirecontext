@@ -39,7 +39,7 @@ class _UnsetType:
 _UNSET = _UnsetType()
 
 VALID_STALENESS = frozenset(("fresh", "stale", "superseded", "contradicted"))
-VALID_DECISION_OUTCOME_TYPES = frozenset(("accepted", "ignored", "contradicted"))
+VALID_DECISION_OUTCOME_TYPES = frozenset(("accepted", "ignored", "contradicted", "refined", "replaced"))
 # relation_type is part of identity so one decision-assessment pair can keep
 # multiple typed links (e.g. informed_by + contradicts) when historically true.
 VALID_DECISION_ASSESSMENT_RELATION_TYPES = frozenset(("supports", "informed_by", "contradicts", "supersedes"))
@@ -155,12 +155,16 @@ def calculate_decision_quality_score(
 
     Legacy formula (1-arg or ``decayed_counts=None``):
         accepted * 1.0 - ignored * 0.5 - contradicted * 2.0, clamped to [-4, +4].
+        refined * 0 — display/audit only, does not affect score.
+        replaced * 0 — paired with staleness superseded factor, no double-penalty.
 
     When ``decayed_counts`` is provided, the same linear combination runs over
     the already time-decayed totals instead. ``counts`` still drives the volume
     smoother so the rank is not swung by a single fresh outcome: if the number
     of real outcomes is below ``min_volume``, the decayed score is linearly
-    attenuated toward zero by ``total / min_volume``.
+    attenuated toward zero by ``total / min_volume``. Volume smoother only counts
+    the three scored types (accepted, ignored, contradicted); refined/replaced
+    are excluded so they cannot dilute the smoother without affecting the score.
     """
     if decayed_counts is None:
         raw_score = (
