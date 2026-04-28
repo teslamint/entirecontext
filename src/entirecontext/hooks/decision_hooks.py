@@ -160,9 +160,9 @@ def _format_decision_entry(d: dict, stale: bool = False) -> str:
         )
     quality = d.get("quality_summary") or {}
     counts = quality.get("counts") or {}
-    if any(counts.get(k, 0) > 0 for k in ("accepted", "ignored", "contradicted")):
+    if any(counts.get(k, 0) > 0 for k in ("accepted", "ignored", "contradicted", "refined", "replaced")):
         outcome_parts = []
-        for k in ("accepted", "ignored", "contradicted"):
+        for k in ("accepted", "ignored", "contradicted", "refined", "replaced"):
             v = counts.get(k, 0)
             if v > 0:
                 outcome_parts.append(f"{v} {k}")

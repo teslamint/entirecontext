@@ -372,7 +372,7 @@ async def ec_decision_outcome(
     session_id: str | None = None,
     turn_id: str | None = None,
 ) -> str:
-    """Record the outcome of a decision (accepted, ignored, or contradicted).
+    """Record the outcome of a decision (accepted, ignored, contradicted, refined, or replaced).
 
     Links the outcome to a retrieval selection when selection_id is provided,
     enabling quality tracking. Falls back to the current session context when

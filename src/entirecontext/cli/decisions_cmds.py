@@ -201,7 +201,7 @@ def decision_stale(
 @decision_app.command("outcome")
 def decision_outcome(
     decision_id: str = typer.Argument(..., help="Decision ID"),
-    outcome: str = typer.Option(..., "--outcome", help="accepted|ignored|contradicted"),
+    outcome: str = typer.Option(..., "--outcome", help="accepted|ignored|contradicted|refined|replaced"),
     selection_id: Optional[str] = typer.Option(None, "--selection-id", help="Decision retrieval selection ID"),
     note: Optional[str] = typer.Option(None, "--note", help="Optional outcome note"),
 ):

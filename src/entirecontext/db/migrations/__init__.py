@@ -7,7 +7,7 @@ from importlib import import_module
 
 def get_migrations() -> dict[int, list]:
     migrations: dict[int, list] = {}
-    for version in range(2, 14):
+    for version in range(2, 15):
         # version is a hardcoded bounded integer from range(), not user input
         module = import_module(
             f".v{version:03d}", __name__

@@ -856,12 +856,12 @@ def get_file_outcome_stats(
     decision linked to multiple files in ``file_paths`` counts once per
     outcome).
 
-    Returns ``{"accepted": N, "ignored": N, "contradicted": N, "total": N}``
+    Returns ``{"accepted": N, "ignored": N, "contradicted": N, "refined": N, "replaced": N, "total": N}``
     (zeros when nothing matches). ``lookback_days <= 0`` short-circuits to
     zeros so callers can disable the feedback path via config without a
     separate branch.
     """
-    zero: dict[str, int] = {"accepted": 0, "ignored": 0, "contradicted": 0, "total": 0}
+    zero: dict[str, int] = {"accepted": 0, "ignored": 0, "contradicted": 0, "refined": 0, "replaced": 0, "total": 0}
     if not file_paths or lookback_days <= 0:
         return zero
 
