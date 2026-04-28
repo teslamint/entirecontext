@@ -103,3 +103,17 @@ Recording-path requirements:
 - Should `replaced` automatically accompany `ec decision supersede`, or should it remain a separate manual outcome?
 - Is the existing accepted quality score sufficient, or does v0.6.0 need a separate capped ranking boost?
 - Which MCP tools need explicit signature or documentation changes for the expanded outcome vocabulary?
+
+## Resolved (2026-04-28)
+
+All four review questions answered before implementation began.
+
+**`refined` quality weight = 0** — display/audit only; weight 0 is explicit (not a dict.get default) to prevent silent drift. Rationale: `refined` doesn't signal acceptance or rejection of the original guidance, so counting it would distort the quality score with no semantic grounding.
+
+**`supersede` auto-records `replaced`** — `supersede_decision` writes a `replaced` outcome row inside the same transaction as the `staleness_status` + `superseded_by_id` update. `replaced` weight is also 0 because `staleness_status='superseded'` already demotes the old decision; double-penalizing via outcome weight would compound without reason.
+
+**Accepted ranking = verify-only** — existing `×1.0` weight in `calculate_decision_quality_score` is sufficient. No new config or ranking boost needed in v0.6.0. Extraction confidence boost (F5b) deferred to v0.7 per ec decision `a2597d87`.
+
+**MCP signature changes** — `ec_decision_outcome` docstring updated to list all 5 values; validation delegates to `VALID_DECISION_OUTCOME_TYPES` so no signature change was needed. `ec_context_apply` and `ec_decision_supersede` unchanged (regression tests added).
+
+Related ec decisions: `743ebcb2` (v0.6.0 lifecycle-only scope), `77b44176` (enum + accepted boost), `a2597d87` (extraction boost deferred), `e8413329` (F5 held out of v0.5.0), `60d10af6` (record_decision_outcome commit-free contract), `3de4f138` (F2 ratio contract).

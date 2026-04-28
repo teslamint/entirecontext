@@ -135,26 +135,27 @@ Theme: strengthen the decision outcome lifecycle — agents can distinguish guid
 
 Plan reference: `docs/brainstorms/v0-6-0-roadmap-plan.md`.
 
-- [ ] **F5. Outcome type enum expansion** (deferred from v0.4.0)
+- [x] **F5. Outcome type enum expansion** (deferred from v0.4.0)
   - Add `refined` and `replaced` outcome types to `decision_outcomes.outcome_type`
   - Schema v14 migration: rebuild constrained table safely, preserve existing rows, recreate indexes, test v13→v14 migration and rollback behavior
   - Define and document the outcome truth table: quality score signal, staleness auto-promotion, successor-chain mutation, extraction confidence effect for all five types (`accepted`, `ignored`, `contradicted`, `refined`, `replaced`)
 
-- [ ] **F5a. Recording paths for expanded outcome vocabulary**
+- [x] **F5a. Recording paths for expanded outcome vocabulary**
   - Manual outcome recording accepts all five outcome values through CLI and MCP
   - Existing `ec_context_apply` accepted recording remains unchanged
   - SessionEnd ignored inference remains limited to `ignored`
-  - `ec decision supersede` explicitly defines whether it records `replaced`, updates successor state, or both — `replaced` must not become a second incompatible supersession mechanism
-  - Candidate confirmation does not infer `refined` or `replaced` without an explicit source event
+  - `ec decision supersede` now writes a `replaced` outcome row in the same transaction as staleness/successor updates
+  - Candidate confirmation does not infer `refined` or `replaced`
 
-- [ ] **F5b. Accepted ranking verification**
-  - Verify whether existing quality-score path already provides accepted ranking boost
-  - If a delta is still needed: define exact weight, cap, config key, score breakdown label, and regression tests proving accepted outcomes are counted once
-  - Accepted boost must stay out of extraction confidence in v0.6.0 (deferred to v0.7.0)
+- [x] **F5b. Accepted ranking verification**
+  - Existing quality-score path (`accepted × 1.0`) provides the accepted ranking boost — no weight delta needed
+  - `refined`/`replaced` carry weight 0 (display/audit only) — verified by regression tests
+  - Accepted boost stays out of extraction confidence in v0.6.0 (extraction boost deferred to v0.7.0)
 
-- [ ] **F5c. Tests and documentation**
-  - Tests proving extraction confidence is unchanged by accepted ranking and by `refined`/`replaced` outcomes
-  - Update README, CHANGELOG, MCP tool documentation with schema v14 breaking note and expanded outcome vocabulary
+- [x] **F5c. Tests and documentation**
+  - Tests proving extraction confidence is unchanged by `refined`/`replaced` outcomes
+  - README outcome vocabulary section updated with all 5 values
+  - CHANGELOG v0.6.0 entry includes schema v14 breaking note and compatibility subsection
 
 ## v0.6.1 — Rejected-Alternative Quality
 
