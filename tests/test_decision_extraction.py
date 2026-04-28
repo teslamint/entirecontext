@@ -1070,7 +1070,7 @@ class TestOutcomeFeedbackPenalty:
         )
 
         stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=0)
-        assert stats == {"accepted": 0, "ignored": 0, "contradicted": 0, "total": 0}
+        assert stats == {"accepted": 0, "ignored": 0, "contradicted": 0, "refined": 0, "replaced": 0, "total": 0}
 
         breakdown = {"final": 0.60, "penalties": {}}
         adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)

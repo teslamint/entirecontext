@@ -345,6 +345,54 @@ class TestDecisionsCore:
                 turn_id=turn_one["id"],
             )
 
+    def test_quality_score_unaffected_by_refined_replaced(self, ec_db):
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        counts_3 = {"accepted": 2, "ignored": 1, "contradicted": 0}
+        counts_5 = {"accepted": 2, "ignored": 1, "contradicted": 0, "refined": 3, "replaced": 2}
+
+        assert calculate_decision_quality_score(counts_3) == calculate_decision_quality_score(counts_5)
+
+        d = create_decision(ec_db, title="Quality regression")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "ignored")
+        score_before = get_decision_quality_summary(ec_db, d["id"])["quality_score"]
+
+        record_decision_outcome(ec_db, d["id"], "refined")
+        record_decision_outcome(ec_db, d["id"], "replaced")
+        score_after = get_decision_quality_summary(ec_db, d["id"])["quality_score"]
+
+        assert score_before == score_after
+
+    def test_quality_summary_includes_all_five_keys(self, ec_db):
+        d = create_decision(ec_db, title="Five keys")
+        record_decision_outcome(ec_db, d["id"], "refined")
+        summary = get_decision_quality_summary(ec_db, d["id"])
+        counts = summary["counts"]
+        for key in ("accepted", "ignored", "contradicted", "refined", "replaced"):
+            assert key in counts, f"missing key: {key}"
+        assert counts["refined"] == 1
+
+    def test_quality_score_accepted_weight_is_one(self):
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        assert calculate_decision_quality_score({"accepted": 1}) == 1.0
+        assert calculate_decision_quality_score({"accepted": 1, "refined": 10, "replaced": 10}) == 1.0
+
+    def test_record_outcome_accepts_all_five_values(self, ec_db):
+        d = create_decision(ec_db, title="All five")
+        for ot in ("accepted", "ignored", "refined", "replaced"):
+            record_decision_outcome(ec_db, d["id"], ot)
+        outcomes = list_decision_outcomes(ec_db, d["id"])
+        outcome_types = {o["outcome_type"] for o in outcomes}
+        assert {"accepted", "ignored", "refined", "replaced"}.issubset(outcome_types)
+
+    def test_record_outcome_rejects_invalid_value(self, ec_db):
+        d = create_decision(ec_db, title="Reject invalid")
+        with pytest.raises(ValueError, match="Invalid outcome_type"):
+            record_decision_outcome(ec_db, d["id"], "unknown")
+
     def test_rank_related_decisions_applies_quality_adjustment(self, ec_db):
         promoted = create_decision(ec_db, title="Promoted")
         demoted = create_decision(ec_db, title="Demoted")
