@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-04-27._
+_Updated against codebase on 2026-04-29._
 
 ## Product Thesis
 
@@ -128,6 +128,29 @@ Holding hardening separate from the same-day v0.3.0 → v0.4.0 release pattern (
 Scope note: F5 (outcome type enum extension `refined`/`replaced` + schema v14 migration) is intentionally held out of v0.5.0 and deferred to v0.6.0's breaking track. Mixing schema bumps into a hardening release would re-introduce the exact "feature on top of correctness debt" risk that v0.5.0 is designed to close (per ec decision `4c7893b0`). v0.5.0 ships zero schema changes — still v13.
 
 E2E coverage note: v0.5.0 does not need a single integrated E2E like v0.4.0's `test_e2e_feed_the_loop.py` because S1–S4 each have their own focused integration test. S3 in particular IS the missing E2E for v0.4.0's F4.
+
+## v0.6.0 — Outcome Semantics (Shipped 2026-04-29)
+
+Theme: strengthen the decision outcome lifecycle with two additional outcome types and automatic supersession recording. Schema v14 breaking release.
+
+- [x] **F5. Outcome enum extension (`refined`/`replaced`) + schema v14**
+  - `decision_outcomes.outcome_type` CHECK widens to 5 values via SQLite table rebuild migration (v014.py)
+  - `VALID_DECISION_OUTCOME_TYPES` updated; all validation delegates to the constant — no scattered hardcoding
+  - Migration is forward-only; `bootstrap_schema` and `v014.py` agree on the widened CHECK (new DB and migrated DB produce identical schema)
+
+- [x] **F5a. `refined`/`replaced` quality weight = 0**
+  - `calculate_decision_quality_score` explicitly documents both types as display/audit only
+  - Volume smoother (`min_volume` attenuation) excludes `refined`/`replaced` so they cannot dilute effective sample size of the three scored types
+  - Regression test: mixed 5-type outcome set produces the same score as the equivalent 3-type set
+
+- [x] **F5b. Accepted ranking weight verified**
+  - Existing `accepted * 1.0` weight in `calculate_decision_quality_score` confirmed as sufficient — no new config or weight
+  - Regression test: `accepted=1` → `quality_score == 1.0` even with large `refined`/`replaced` counts
+
+- [x] **F5c. `supersede` ↔ `replaced` auto-linkage**
+  - `supersede_decision` writes a `replaced` outcome row inside the same `with transaction(conn):` boundary as the `staleness_status='superseded'` + `superseded_by_id` update
+  - Note: `"auto: superseded by <new_id>"` — plain string for parity with `"auto: context_apply"`
+  - Atomicity regression test: cycle error leaves both `staleness_status` and `decision_outcomes` unchanged
 
 ## Hardening Backlog
 
