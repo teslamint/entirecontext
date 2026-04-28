@@ -852,6 +852,23 @@ class TestConfirmRejectFlow:
         assert after["review_status"] == "pending"
         assert after["promoted_decision_id"] is None
 
+    def test_confirm_does_not_auto_generate_refined_or_replaced_outcomes(self, ec_repo, ec_db):
+        """Regression: confirm_candidate must not infer 'refined' or 'replaced' outcome rows.
+        Only the caller (e.g. supersede_decision) is allowed to write 'replaced'; 'refined' is
+        manual-only. confirm_candidate has no source event that would justify either."""
+        cid = self._seed_candidate(ec_db, ec_repo, session_id="no-auto-outcome")
+        result = confirm_candidate(ec_db, cid, reviewer="cli")
+        assert result["promoted"] is True
+        decision_id = result["decision_id"]
+
+        outcome_rows = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (decision_id,),
+        ).fetchall()
+        outcome_types = [r["outcome_type"] for r in outcome_rows]
+        assert "refined" not in outcome_types
+        assert "replaced" not in outcome_types
+
 
 # ---------------------------------------------------------------------------
 # Integration tests — dedup and noisy-input harness (Tier 1)
@@ -1070,7 +1087,7 @@ class TestOutcomeFeedbackPenalty:
         )
 
         stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=0)
-        assert stats == {"accepted": 0, "ignored": 0, "contradicted": 0, "total": 0}
+        assert stats == {"accepted": 0, "ignored": 0, "contradicted": 0, "refined": 0, "replaced": 0, "total": 0}
 
         breakdown = {"final": 0.60, "penalties": {}}
         adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
@@ -1222,6 +1239,35 @@ class TestOutcomeFeedbackPenalty:
         assert breakdown["outcome_feedback"]["applied"] is True
         assert breakdown["outcome_feedback"]["contradicted"] == 3
         assert "final_before_outcome_feedback" in breakdown
+
+    def test_outcome_feedback_refined_replaced_ignored_in_f2_ratio(self, ec_repo, ec_db):
+        """refined/replaced rows must not count toward F2 ratio numerator or denominator."""
+        from entirecontext.core.decision_extraction import (
+            apply_outcome_feedback_to_confidence,
+            get_file_outcome_stats,
+        )
+
+        # 1 contradicted out of 2 total (accepted + contradicted) = 0.5, below threshold.
+        # Adding refined/replaced must not change the ratio or trigger the penalty.
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Mixed outcome decision",
+            file_paths=["src/service/mixed.py"],
+            outcome_types=["contradicted", "accepted", "refined", "replaced"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/mixed.py"], lookback_days=60)
+        assert stats["contradicted"] == 1
+        assert stats["accepted"] == 1
+        assert stats["total"] == 2  # refined/replaced excluded from total
+        assert stats["refined"] == 0  # refined never added to stats dict
+        assert stats["replaced"] == 0
+
+        breakdown = {"final": 0.60, "penalties": {}}
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
+        # ratio = 1/2 = 0.5, not strictly > 0.5 — no penalty.
+        assert adjusted == 0.60
+        assert new_breakdown["outcome_feedback"]["applied"] is False
 
 
 class TestExtractionWeightsConfig:

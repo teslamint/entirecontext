@@ -2029,6 +2029,63 @@ class TestIgnoredInference:
         assert len(rows) == 1
         assert rows[0]["outcome_type"] == "ignored"
 
+    def test_infers_ignored_not_replaced_when_decision_has_replaced_history(self, ec_repo, ec_db, monkeypatch):
+        """Regression: a decision with a pre-existing 'replaced' outcome row must still get 'ignored'
+        inferred — not a second 'replaced' — when it was surfaced but not acted on in a new session."""
+        from entirecontext.core.decisions import record_decision_outcome
+        from entirecontext.core.project import get_project
+        from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="replaced-history")
+        for i in range(5):
+            create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+
+        d = create_decision(ec_db, title="Previously superseded decision")
+        # Simulate a prior supersede event that wrote a 'replaced' outcome.
+        record_decision_outcome(ec_db, d["id"], "replaced", note="auto: superseded by other-decision-id")
+
+        event = record_retrieval_event(
+            ec_db,
+            source="hook",
+            search_type="session_start",
+            target="decision",
+            query="test",
+            result_count=1,
+            latency_ms=0,
+            session_id=session["id"],
+        )
+        record_retrieval_selection(
+            ec_db,
+            event["id"],
+            "decision",
+            d["id"],
+            rank=1,
+            session_id=session["id"],
+            turn_id=ec_db.execute(
+                "SELECT id FROM turns WHERE session_id = ? AND turn_number = 1", (session["id"],)
+            ).fetchone()["id"],
+        )
+
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda _: {"decisions": {"infer_ignored_on_session_end": True, "ignored_inference_min_turn_gap": 2}},
+        )
+        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
+
+        _maybe_infer_ignored_decisions(str(ec_repo), session["id"])
+
+        rows = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ? ORDER BY created_at",
+            (d["id"],),
+        ).fetchall()
+        outcome_types = [r["outcome_type"] for r in rows]
+        # The pre-existing 'replaced' row stays; a new 'ignored' row is added.
+        # No second 'replaced' should appear.
+        assert outcome_types.count("replaced") == 1
+        assert outcome_types.count("ignored") == 1
+        assert "refined" not in outcome_types
+
 
 class TestHandlerIntegration:
     def test_session_start_prints_decisions(self, ec_repo, ec_db, monkeypatch, capsys):

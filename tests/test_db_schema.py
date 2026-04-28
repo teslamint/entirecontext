@@ -308,3 +308,79 @@ class TestMigration:
         assert {"retrieval_events", "retrieval_selections", "context_applications"}.issubset(tables)
         assert get_current_version(conn) == SCHEMA_VERSION
         conn.close()
+
+    def test_migrate_v013_to_v014_widens_outcome_check(self):
+        conn = get_memory_db()
+        conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
+        conn.execute("INSERT INTO schema_version (version, description) VALUES (13, 'v13')")
+        conn.execute(
+            "CREATE TABLE decisions (id TEXT PRIMARY KEY, title TEXT NOT NULL, rationale TEXT, scope TEXT, "
+            "staleness_status TEXT NOT NULL DEFAULT 'fresh', superseded_by_id TEXT, rejected_alternatives TEXT, "
+            "supporting_evidence TEXT, auto_promotion_reset_at TEXT, created_at TEXT, updated_at TEXT)"
+        )
+        conn.execute(
+            "CREATE TABLE retrieval_selections (id TEXT PRIMARY KEY, result_type TEXT, result_id TEXT, session_id TEXT, turn_id TEXT)"
+        )
+        conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE turns (id TEXT PRIMARY KEY)")
+        conn.execute(
+            "CREATE TABLE decision_outcomes ("
+            "id TEXT PRIMARY KEY, decision_id TEXT NOT NULL, retrieval_selection_id TEXT, "
+            "session_id TEXT, turn_id TEXT, "
+            "outcome_type TEXT NOT NULL CHECK(outcome_type IN ('accepted', 'ignored', 'contradicted')), "
+            "note TEXT, created_at TEXT DEFAULT (datetime('now')))"
+        )
+        conn.execute("CREATE INDEX idx_decision_outcomes_decision_id ON decision_outcomes(decision_id)")
+        conn.execute("CREATE INDEX idx_decision_outcomes_selection_id ON decision_outcomes(retrieval_selection_id)")
+        conn.execute("CREATE INDEX idx_decision_outcomes_outcome_type ON decision_outcomes(outcome_type)")
+        conn.execute("CREATE INDEX idx_decision_outcomes_created_at ON decision_outcomes(created_at DESC)")
+        # Pre-populate with existing rows — all must survive the migration unchanged.
+        conn.execute("INSERT INTO decisions (id, title) VALUES ('d1', 'Test decision')")
+        conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o1', 'd1', 'accepted')")
+        conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o2', 'd1', 'ignored')")
+        conn.execute(
+            "INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o3', 'd1', 'contradicted')"
+        )
+        conn.commit()
+
+        check_and_migrate(conn)
+
+        assert get_current_version(conn) == SCHEMA_VERSION
+
+        # Existing rows preserved.
+        rows = conn.execute("SELECT id FROM decision_outcomes ORDER BY id").fetchall()
+        assert [r[0] for r in rows] == ["o1", "o2", "o3"]
+
+        # New values are accepted by the widened CHECK.
+        conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o4', 'd1', 'refined')")
+        conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o5', 'd1', 'replaced')")
+        conn.commit()
+
+        # Old constraint rejected unknown values — new one must too.
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o6', 'd1', 'unknown_value')"
+            )
+
+        # All 4 original indexes survive.
+        indexes = {
+            row[1]
+            for row in conn.execute(
+                "SELECT type, name FROM sqlite_master WHERE type='index' AND tbl_name='decision_outcomes'"
+            ).fetchall()
+        }
+        assert {
+            "idx_decision_outcomes_decision_id",
+            "idx_decision_outcomes_selection_id",
+            "idx_decision_outcomes_outcome_type",
+            "idx_decision_outcomes_created_at",
+        }.issubset(indexes)
+
+        # bootstrap_schema and migrated schema agree on SCHEMA_VERSION.
+        from entirecontext.db.migration import bootstrap_schema
+
+        fresh = get_memory_db()
+        bootstrap_schema(fresh)
+        assert get_current_version(fresh) == SCHEMA_VERSION
+        fresh.close()
+        conn.close()
