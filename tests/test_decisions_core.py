@@ -515,6 +515,41 @@ class TestSupersedeDecision:
         assert row["staleness_status"] == "fresh"
         assert row["superseded_by_id"] is None
 
+    def test_supersede_writes_replaced_outcome_atomically(self, ec_db):
+        old = create_decision(ec_db, title="Old approach")
+        new = create_decision(ec_db, title="New approach")
+
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type, note FROM decision_outcomes WHERE decision_id = ? ORDER BY created_at DESC",
+            (old["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert outcomes[0]["outcome_type"] == "replaced"
+        assert new["id"] in outcomes[0]["note"]
+
+        row = ec_db.execute(
+            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+            (old["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "superseded"
+        assert row["superseded_by_id"] == new["id"]
+
+    def test_supersede_replaced_outcome_rolled_back_on_cycle(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, b["id"], a["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (b["id"],),
+        ).fetchall()
+        assert len(outcomes) == 0
+
 
 class TestUnlinkDecision:
     def test_unlink_file(self, ec_db):

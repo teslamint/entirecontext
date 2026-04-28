@@ -1213,6 +1213,15 @@ class TestMCPDecisionTools:
         assert result["retrieval_selection_id"] == selection["id"]
         assert result["outcome_type"] == "accepted"
 
+    @pytest.mark.parametrize("outcome_value", ["accepted", "ignored", "contradicted", "refined", "replaced"])
+    def test_decision_outcome_accepts_all_five_values(self, mock_repo_db, outcome_value):
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.mcp.server import ec_decision_outcome
+
+        decision = create_decision(mock_repo_db, title=f"MCP outcome {outcome_value}")
+        result = json.loads(asyncio.run(ec_decision_outcome(decision["id"][:12], outcome_value)))
+        assert result["outcome_type"] == outcome_value
+
     def test_decision_outcome_rejects_non_decision_selection(self, mock_repo_db):
         from entirecontext.core.decisions import create_decision
         from entirecontext.core.telemetry import record_retrieval_event, record_retrieval_selection
