@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-29
+
+v0.6.0 strengthens the decision outcome lifecycle. Agents can now distinguish guidance that was accepted, ignored, contradicted, refined, or replaced. Schema v14 (breaking — forward-only migration).
+
+### Breaking Changes
+
+- **Schema v14** — `decision_outcomes.outcome_type` CHECK constraint widens from 3 to 5 values (`accepted`, `ignored`, `contradicted`, `refined`, `replaced`). The migration is forward-only; downgrading to v13 with `refined` or `replaced` rows present is unsupported. Existing databases migrate automatically on first startup. External consumers that assume `outcome_type IN ('accepted','ignored','contradicted')` must be updated.
+
+### Added
+
+- **`refined` and `replaced` outcome types** — `record_decision_outcome` and all callers (CLI `ec decision outcome --outcome`, MCP `ec_decision_outcome`) now accept all 5 values. `refined` signals that a decision was partially applied or updated in place (weight 0 — display/audit only). `replaced` is written automatically by `supersede_decision` as an audit trail linking the old decision to its successor.
+- **`supersede` ↔ `replaced` auto-linkage** — `supersede_decision` now writes a `replaced` outcome row inside the same transaction as the `staleness_status='superseded'` + `superseded_by_id` update. The note field carries `"auto: superseded by <new_id>"` for traceability. No manual outcome recording is required.
+
+### Changed
+
+- **`refined`/`replaced` quality weight = 0** — `calculate_decision_quality_score` explicitly documents that `refined` and `replaced` contribute nothing to the quality score. The volume smoother (`min_volume` attenuation) also excludes them so they cannot dilute the effective sample size of the three scored types.
+- `get_file_outcome_stats` zero-fill dict widens to 5 keys.
+- `_format_decision_entry` in `decision_hooks.py` now displays `refined` and `replaced` counts alongside the existing three types.
+
 ## [0.5.0] - 2026-04-27
 
 v0.5.0 closes 3x-deferred correctness debt before adding new feature surface — zero new product features, zero schema changes. Still schema v13.
