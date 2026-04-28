@@ -6,6 +6,8 @@ import argparse
 import json
 import os
 import sys
+import time
+import urllib.error
 from pathlib import Path
 from urllib.request import Request, urlopen
 
@@ -27,9 +29,10 @@ COMMENT_MARKER = "<!-- tidy-pilot:sticky-comment -->"
 # Character budgets — chosen to stay under typical API payload limits.
 MAX_CONTEXT_CHARS = 4_000   # per context section (roadmap, lessons, claude_md)
 MAX_CHUNK_DIFF_CHARS = 8_000  # per diff chunk sent to LLM
+MAX_CHUNKS = 5              # cap on total API calls; chunk size grows proportionally if exceeded
 
 
-def call_llm(system: str, user: str) -> dict:
+def call_llm(system: str, user: str, *, max_retries: int = 3) -> dict:
     backend = os.environ.get("TIDY_PILOT_BACKEND", "github")
     if backend == "github":
         api_key = os.environ.get("GITHUB_TOKEN", "")
@@ -51,16 +54,28 @@ def call_llm(system: str, user: str) -> dict:
             "temperature": 0.3,
         }
     ).encode()
-    req = Request(
-        base_url,
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-    )
-    with urlopen(req) as resp:
-        data = json.loads(resp.read())
+
+    for attempt in range(max_retries + 1):
+        req = Request(
+            base_url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+        )
+        try:
+            with urlopen(req) as resp:
+                data = json.loads(resp.read())
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < max_retries:
+                wait = 15 * (2 ** attempt)  # 15s, 30s, 60s
+                print(f"  429 rate limit — retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(wait)
+            else:
+                raise
+
     content = data["choices"][0]["message"]["content"]
     # Strip markdown fences if present
     if content.startswith("```"):
@@ -85,29 +100,30 @@ def split_diff_by_file(diff: str) -> list[str]:
     return sections
 
 
-def chunk_diff(diff: str, max_chars: int) -> list[str]:
-    """Group per-file diff sections into chunks that each fit within max_chars.
+def chunk_diff(diff: str, max_chars: int, *, max_chunks: int = MAX_CHUNKS) -> list[str]:
+    """Group per-file diff sections into at most max_chunks chunks.
 
-    If a single file's diff exceeds max_chars it is hard-truncated so that no
-    individual chunk blows the API limit.
+    Files are distributed evenly across chunks (ceiling division). Each
+    individual file diff is hard-truncated to max_chars so no single chunk
+    blows the API payload limit.
     """
     file_sections = split_diff_by_file(diff)
+    if not file_sections:
+        return [""]
+
+    n = len(file_sections)
+    # Ceiling division: how many files per chunk to stay within max_chunks.
+    files_per_chunk = max(1, -(-n // max_chunks))
+
     chunks: list[str] = []
-    current_parts: list[str] = []
-    current_len = 0
-    for section in file_sections:
-        if len(section) > max_chars:
-            section = section[:max_chars] + "\n... (file diff truncated)\n"
-        if current_len + len(section) > max_chars and current_parts:
-            chunks.append("".join(current_parts))
-            current_parts = [section]
-            current_len = len(section)
-        else:
-            current_parts.append(section)
-            current_len += len(section)
-    if current_parts:
-        chunks.append("".join(current_parts))
-    return chunks or [""]
+    for i in range(0, n, files_per_chunk):
+        parts = []
+        for section in file_sections[i : i + files_per_chunk]:
+            if len(section) > max_chars:
+                section = section[:max_chars] + "\n... (file diff truncated)\n"
+            parts.append(section)
+        chunks.append("".join(parts))
+    return chunks
 
 
 def merge_results(results: list[dict]) -> dict:
