@@ -24,6 +24,10 @@ Respond with a JSON object (no markdown fences) with these fields:
 
 COMMENT_MARKER = "<!-- tidy-pilot:sticky-comment -->"
 
+# Character budgets — chosen to stay under typical API payload limits.
+MAX_CONTEXT_CHARS = 4_000   # per context section (roadmap, lessons, claude_md)
+MAX_CHUNK_DIFF_CHARS = 8_000  # per diff chunk sent to LLM
+
 
 def call_llm(system: str, user: str) -> dict:
     backend = os.environ.get("TIDY_PILOT_BACKEND", "github")
@@ -65,6 +69,89 @@ def call_llm(system: str, user: str) -> dict:
             content = content[:-3]
         content = content.strip()
     return json.loads(content)
+
+
+def split_diff_by_file(diff: str) -> list[str]:
+    """Split a unified diff into per-file sections on 'diff --git' boundaries."""
+    sections: list[str] = []
+    current: list[str] = []
+    for line in diff.splitlines(keepends=True):
+        if line.startswith("diff --git") and current:
+            sections.append("".join(current))
+            current = []
+        current.append(line)
+    if current:
+        sections.append("".join(current))
+    return sections
+
+
+def chunk_diff(diff: str, max_chars: int) -> list[str]:
+    """Group per-file diff sections into chunks that each fit within max_chars.
+
+    If a single file's diff exceeds max_chars it is hard-truncated so that no
+    individual chunk blows the API limit.
+    """
+    file_sections = split_diff_by_file(diff)
+    chunks: list[str] = []
+    current_parts: list[str] = []
+    current_len = 0
+    for section in file_sections:
+        if len(section) > max_chars:
+            section = section[:max_chars] + "\n... (file diff truncated)\n"
+        if current_len + len(section) > max_chars and current_parts:
+            chunks.append("".join(current_parts))
+            current_parts = [section]
+            current_len = len(section)
+        else:
+            current_parts.append(section)
+            current_len += len(section)
+    if current_parts:
+        chunks.append("".join(current_parts))
+    return chunks or [""]
+
+
+def merge_results(results: list[dict]) -> dict:
+    """Merge per-chunk LLM results into a single final assessment.
+
+    Verdict escalation: narrow > neutral > expand (conservative — any narrow
+    chunk makes the whole PR narrow).
+    """
+    if len(results) == 1:
+        return results[0]
+    priority = {"narrow": 2, "neutral": 1, "expand": 0}
+    dominant = max(results, key=lambda r: priority.get(r.get("verdict", "neutral"), 1))
+    impact_parts = [r["impact_summary"] for r in results if r.get("impact_summary")]
+    suggestions = [r["tidy_suggestion"] for r in results if r.get("tidy_suggestion")]
+    return {
+        "verdict": dominant.get("verdict", "neutral"),
+        "impact_summary": " | ".join(impact_parts[:2]),
+        "roadmap_alignment": dominant.get("roadmap_alignment", "N/A"),
+        "tidy_suggestion": suggestions[0] if suggestions else "N/A",
+    }
+
+
+def build_user_prompt(
+    pr_number: int,
+    pr_title: str,
+    diff_chunk: str,
+    roadmap: str,
+    lessons: str,
+    claude_md: str,
+    chunk_index: int,
+    total_chunks: int,
+) -> str:
+    header = f"## PR #{pr_number}: {pr_title}\n\n"
+    if total_chunks > 1:
+        header += f"_(Diff chunk {chunk_index + 1} of {total_chunks})_\n\n"
+    prompt = header
+    if roadmap:
+        prompt += f"### ROADMAP\n```markdown\n{roadmap}\n```\n\n"
+    if lessons:
+        prompt += f"### LESSONS LEARNED\n```markdown\n{lessons}\n```\n\n"
+    if claude_md:
+        prompt += f"### PROJECT CONVENTIONS (CLAUDE.md)\n```markdown\n{claude_md}\n```\n\n"
+    prompt += f"### DIFF\n```diff\n{diff_chunk}\n```"
+    return prompt
 
 
 def github_api_request(url: str, token: str, *, method: str = "GET", payload: dict | None = None):
@@ -120,50 +207,48 @@ def main():
     parser.add_argument("--repo", type=str, required=True)
     args = parser.parse_args()
 
-    # Read inputs
     diff = Path("/tmp/pr.diff").read_text(encoding="utf-8", errors="replace")
-    max_diff = 12000
-    if len(diff) > max_diff:
-        diff = diff[:max_diff] + "\n\n... (diff truncated)"
 
-    roadmap = ""
-    if Path("ROADMAP.md").exists():
-        roadmap = Path("ROADMAP.md").read_text(encoding="utf-8")
+    def _read_truncated(path: str) -> str:
+        p = Path(path)
+        if not p.exists():
+            return ""
+        text = p.read_text(encoding="utf-8")
+        if len(text) > MAX_CONTEXT_CHARS:
+            text = text[:MAX_CONTEXT_CHARS] + "\n\n... (truncated)"
+        return text
 
-    lessons = ""
-    if Path("LESSONS.md").exists():
-        lessons = Path("LESSONS.md").read_text(encoding="utf-8")
+    roadmap = _read_truncated("ROADMAP.md")
+    lessons = _read_truncated("LESSONS.md")
+    claude_md = _read_truncated("CLAUDE.md")
 
-    claude_md = ""
-    if Path("CLAUDE.md").exists():
-        claude_md = Path("CLAUDE.md").read_text(encoding="utf-8")
+    chunks = chunk_diff(diff, MAX_CHUNK_DIFF_CHARS)
+    print(f"Analyzing PR #{args.pr_number}: {args.pr_title} ({len(chunks)} diff chunk(s))")
 
-    # Build prompt
-    user_prompt = f"## PR #{args.pr_number}: {args.pr_title}\n\n"
-    if roadmap:
-        user_prompt += f"### ROADMAP\n```markdown\n{roadmap}\n```\n\n"
-    if lessons:
-        user_prompt += f"### LESSONS LEARNED\n```markdown\n{lessons}\n```\n\n"
-    if claude_md:
-        user_prompt += f"### PROJECT CONVENTIONS (CLAUDE.md)\n```markdown\n{claude_md}\n```\n\n"
-    user_prompt += f"### DIFF\n```diff\n{diff}\n```"
+    results: list[dict] = []
+    for i, chunk in enumerate(chunks):
+        user_prompt = build_user_prompt(
+            args.pr_number, args.pr_title, chunk,
+            roadmap, lessons, claude_md,
+            i, len(chunks),
+        )
+        print(f"  chunk {i + 1}/{len(chunks)} ({len(chunk)} chars)")
+        result = call_llm(SYSTEM_PROMPT, user_prompt)
+        results.append(result)
 
-    # Call LLM
-    print(f"Analyzing PR #{args.pr_number}: {args.pr_title}")
-    result = call_llm(SYSTEM_PROMPT, user_prompt)
+    result = merge_results(results)
 
     verdict = result.get("verdict", "neutral")
-    verdict_icons = {"expand": "\U0001f7e2", "narrow": "\U0001f534", "neutral": "\u26aa"}
+    verdict_icons = {"expand": "\U0001f7e2", "narrow": "\U0001f534", "neutral": "⚪"}
     icon = verdict_icons.get(verdict, "")
 
-    # Skip comment on neutral (configurable)
     if verdict == "neutral" and os.environ.get("COMMENT_ON_NEUTRAL", "false") != "true":
         print("Verdict: neutral — skipping comment.")
         return
 
-    # Build comment
+    chunk_note = f" _(assessed across {len(chunks)} diff chunks)_" if len(chunks) > 1 else ""
     comment = f"""{COMMENT_MARKER}
-## \U0001f9f9 Tidy Pilot — Futures Assessment
+## \U0001f9f9 Tidy Pilot — Futures Assessment{chunk_note}
 
 **{icon} {verdict.upper()}**
 
