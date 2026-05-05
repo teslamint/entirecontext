@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-28
+
+v0.6.0 strengthens the decision outcome lifecycle with two new semantic values and automatic supersession linkage. **Breaking: schema v13 → v14** (forward-only; databases auto-migrate on first connection via `check_and_migrate`).
+
+### Added
+
+- **`refined` and `replaced` outcome types (F5a/F5b)** — `decision_outcomes.outcome_type` now accepts 5 values: `accepted`, `ignored`, `contradicted`, `refined`, `replaced`. Both new values carry **weight 0** in `calculate_decision_quality_score` (display and audit only; no effect on ranking or extraction confidence). `VALID_DECISION_OUTCOME_TYPES` widens accordingly, so CLI (`ec decision outcome --outcome refined`) and MCP (`ec_decision_outcome`) accept all 5 values immediately. Validates the F5b claim that "existing `accepted` × 1.0 weight is sufficient" without adding config. `get_decision_quality_summary` returns all 5 keys in `counts` (zeros when absent). `get_file_outcome_stats` (F2 extraction ratio) continues to count only `accepted`/`ignored`/`contradicted` in the F2 ratio numerator/denominator — `refined`/`replaced` fall through harmlessly and do not affect the penalty gate.
+
+- **`supersede` ↔ `replaced` auto-linkage** — `supersede_decision` now writes a `replaced` outcome row (note: `"auto: superseded by <successor_id>"`) inside the same transaction as the `staleness_status` update and `superseded_by_id` assignment. Crash during `record_decision_outcome` rolls back both the staleness change and the outcome row atomically. Multi-step chains (A→B→C) produce two `replaced` rows — one on A when superseded by B, one on B when superseded by C — giving an accurate audit trail. Existing historical superseded decisions do **not** receive retroactive `replaced` rows (that would invent rationale; see Karpathy policy).
+
+### Changed
+
+- **Schema v14** — `decision_outcomes` table rebuilt via migration `v014.py` to widen the `CHECK` constraint from 3 to 5 values. The rebuild preserves all existing rows; v14 is a forward-only migration (downgrading to v13 with `refined`/`replaced` rows present would fail the narrower CHECK). Fresh databases bootstrapped via `bootstrap_schema` use the widened CHECK directly. `SCHEMA_VERSION` bumped to 14.
+
+### Compatibility
+
+External integrations that consume `decision_outcomes` rows (e.g., direct SQL or exported JSONL) may observe the new `outcome_type` values `refined` and `replaced` after upgrading. Applications that assert `outcome_type IN ('accepted', 'ignored', 'contradicted')` will need to widen their filters. The quality score formula is unchanged for existing 3-value rows.
+
 ## [0.5.0] - 2026-04-27
 
 v0.5.0 closes 3x-deferred correctness debt before adding new feature surface — zero new product features, zero schema changes. Still schema v13.

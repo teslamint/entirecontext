@@ -322,6 +322,34 @@ class TestDecisionsCLI:
         assert isinstance(result.exception, RuntimeError)
         assert conn.closed is True
 
+    @pytest.mark.parametrize("outcome_type", ["refined", "replaced"])
+    def test_outcome_accepts_new_values(self, outcome_type, ec_repo, monkeypatch):
+        """CLI must accept 'refined' and 'replaced' without error."""
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Test new outcome types")
+        conn.close()
+
+        result = runner.invoke(
+            app,
+            ["decision", "outcome", decision["id"][:12], "--outcome", outcome_type],
+        )
+        assert result.exit_code == 0, result.stdout
+        assert "Recorded decision outcome:" in result.stdout
+
+    def test_outcome_still_rejects_invalid_value(self, ec_repo, monkeypatch):
+        """Invalid outcome values must still be rejected after enum expansion."""
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Test invalid outcome")
+        conn.close()
+
+        result = runner.invoke(
+            app,
+            ["decision", "outcome", decision["id"][:12], "--outcome", "unknown_value"],
+        )
+        assert result.exit_code == 1
+
 
 class TestDecisionsCLIExtended:
     def test_decision_update_success(self, ec_repo, monkeypatch):
