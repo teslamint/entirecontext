@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Schema v14** — `decision_outcomes.outcome_type` CHECK constraint widened to accept `refined` and `replaced` values (previously only `confirmed`, `contradicted`, `partially_confirmed`, `evolved`). Enables `supersede_decision` auto-linkage to record `replaced` outcomes atomically.
+
 ## [0.5.0] - 2026-04-27
 
 v0.5.0 closes 3x-deferred correctness debt before adding new feature surface — zero new product features, zero schema changes. Still schema v13.

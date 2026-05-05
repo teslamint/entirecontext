@@ -891,6 +891,25 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
             "UPDATE decisions SET staleness_status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE id = ?",
             (new_full, now, old_full),
         )
+        existing_outcome = conn.execute(
+            "SELECT id FROM decision_outcomes WHERE decision_id = ? AND outcome_type = 'replaced'",
+            (old_full,),
+        ).fetchone()
+        if existing_outcome:
+            conn.execute(
+                "UPDATE decision_outcomes SET note = ?, created_at = ? WHERE id = ?",
+                (f"auto: superseded by {new_full}", now, existing_outcome["id"]),
+            )
+        else:
+            outcome_id = str(uuid4())
+            conn.execute(
+                """
+                INSERT INTO decision_outcomes (
+                    id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
+                ) VALUES (?, ?, NULL, NULL, NULL, 'replaced', ?, ?)
+                """,
+                (outcome_id, old_full, f"auto: superseded by {new_full}", now),
+            )
     return get_decision(conn, old_full) or {}
 
 
