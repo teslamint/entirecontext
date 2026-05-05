@@ -382,11 +382,11 @@ class TestDecisionsCore:
 
     def test_record_outcome_accepts_all_five_values(self, ec_db):
         d = create_decision(ec_db, title="All five")
-        for ot in ("accepted", "ignored", "refined", "replaced"):
+        for ot in ("accepted", "ignored", "contradicted", "refined", "replaced"):
             record_decision_outcome(ec_db, d["id"], ot)
         outcomes = list_decision_outcomes(ec_db, d["id"])
         outcome_types = {o["outcome_type"] for o in outcomes}
-        assert {"accepted", "ignored", "refined", "replaced"}.issubset(outcome_types)
+        assert {"accepted", "ignored", "contradicted", "refined", "replaced"}.issubset(outcome_types)
 
     def test_record_outcome_rejects_invalid_value(self, ec_db):
         d = create_decision(ec_db, title="Reject invalid")

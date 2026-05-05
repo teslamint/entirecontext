@@ -63,7 +63,7 @@ cli/             business    SQLite     Claude Code   shadow branch
 
 **Per-repo DB**: `.entirecontext/db/local.db`
 **Global DB**: `~/.entirecontext/db/ec.db`
-**Schema version**: 13
+**Schema version**: 14
 
 Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments`, `decision_outcomes`
 
