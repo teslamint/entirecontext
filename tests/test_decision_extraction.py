@@ -846,6 +846,7 @@ class TestConfirmRejectFlow:
         assert ec_db.execute("SELECT COUNT(*) AS c FROM decision_files").fetchone()["c"] == 0
         assert ec_db.execute("SELECT COUNT(*) AS c FROM decision_checkpoints").fetchone()["c"] == 0
         assert ec_db.execute("SELECT COUNT(*) AS c FROM decision_assessments").fetchone()["c"] == 0
+        assert ec_db.execute("SELECT COUNT(*) AS c FROM decision_commits").fetchone()["c"] == 0
         # Outer-except's claim rollback UPDATE ran (call 3 succeeded), so
         # the candidate is retryable.
         after = get_candidate(ec_db, cid)
