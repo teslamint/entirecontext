@@ -536,6 +536,26 @@ class TestSupersedeDecision:
         assert row["staleness_status"] == "superseded"
         assert row["superseded_by_id"] == new["id"]
 
+    def test_re_supersede_updates_outcome_without_duplicates(self, ec_db):
+        old = create_decision(ec_db, title="Old")
+        b = create_decision(ec_db, title="B")
+        c = create_decision(ec_db, title="C")
+
+        supersede_decision(ec_db, old["id"], b["id"])
+        supersede_decision(ec_db, old["id"], c["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type, note FROM decision_outcomes WHERE decision_id = ?",
+            (old["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert c["id"] in outcomes[0]["note"]
+
+        row = ec_db.execute(
+            "SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)
+        ).fetchone()
+        assert row["superseded_by_id"] == c["id"]
+
     def test_supersede_replaced_outcome_rolled_back_on_cycle(self, ec_db):
         a = create_decision(ec_db, title="A")
         b = create_decision(ec_db, title="B")
