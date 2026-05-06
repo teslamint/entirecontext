@@ -556,6 +556,25 @@ class TestSupersedeDecision:
         ).fetchone()
         assert row["superseded_by_id"] == c["id"]
 
+    def test_supersede_preserves_user_authored_replaced_note(self, ec_db):
+        old = create_decision(ec_db, title="Old")
+        new1 = create_decision(ec_db, title="New1")
+        new2 = create_decision(ec_db, title="New2")
+
+        record_decision_outcome(ec_db, old["id"], "replaced", note="manual: deprecated by design")
+        supersede_decision(ec_db, old["id"], new1["id"])
+        supersede_decision(ec_db, old["id"], new2["id"])
+
+        outcomes = list_decision_outcomes(ec_db, old["id"])
+        replaced = [o for o in outcomes if o["outcome_type"] == "replaced"]
+        user_notes = [o for o in replaced if not o["note"].startswith("auto:")]
+        auto_notes = [o for o in replaced if o["note"].startswith("auto:")]
+
+        assert len(user_notes) == 1
+        assert user_notes[0]["note"] == "manual: deprecated by design"
+        assert len(auto_notes) == 1
+        assert new2["id"] in auto_notes[0]["note"]
+
     def test_supersede_replaced_outcome_rolled_back_on_cycle(self, ec_db):
         a = create_decision(ec_db, title="A")
         b = create_decision(ec_db, title="B")

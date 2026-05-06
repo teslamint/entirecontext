@@ -884,7 +884,7 @@ def get_file_outcome_stats(
     for row in rows:
         ot = row["outcome_type"]
         n = int(row["n"] or 0)
-        if ot in ("accepted", "ignored", "contradicted"):
+        if ot in stats and ot != "total":
             stats[ot] = n
             stats["total"] += n
     return stats
