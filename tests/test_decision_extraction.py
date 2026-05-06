@@ -1133,6 +1133,25 @@ class TestOutcomeFeedbackPenalty:
         assert stats["accepted"] == 1
         assert stats["total"] == 3
 
+    def test_outcome_feedback_counts_refined_and_replaced(self, ec_repo, ec_db):
+        """refined and replaced outcomes must appear as non-zero in get_file_outcome_stats."""
+        from entirecontext.core.decision_extraction import get_file_outcome_stats
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Refined decision",
+            file_paths=["src/service/payment.py"],
+            outcome_types=["refined", "refined", "replaced"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=60)
+        assert stats["refined"] == 2
+        assert stats["replaced"] == 1
+        assert stats["total"] == 3
+        assert stats["accepted"] == 0
+        assert stats["ignored"] == 0
+        assert stats["contradicted"] == 0
+
     def test_outcome_feedback_lookback_cutoff(self, ec_repo, ec_db):
         """Outcomes older than the lookback window must be excluded."""
         from entirecontext.core.decision_extraction import get_file_outcome_stats
