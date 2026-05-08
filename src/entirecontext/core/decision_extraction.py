@@ -899,10 +899,12 @@ def apply_outcome_feedback_to_confidence(
 ) -> tuple[float, dict[str, Any]]:
     """Apply a confidence penalty when contradicted outcomes dominate history.
 
-    Penalty logic: if aggregated ``contradicted / total`` strictly exceeds
-    :data:`_OUTCOME_FEEDBACK_RATIO_THRESHOLD` (0.5) across the draft's files,
-    subtract ``penalty`` from ``confidence`` and clamp to ``[0.0, 1.0]``.
-    Otherwise return the input unchanged.
+    Penalty logic: if aggregated ``contradicted / scored_total`` strictly
+    exceeds :data:`_OUTCOME_FEEDBACK_RATIO_THRESHOLD` (0.5) across the draft's
+    files, subtract ``penalty`` from ``confidence`` and clamp to ``[0.0, 1.0]``.
+    ``scored_total`` counts accepted, ignored, and contradicted outcomes only;
+    refined/replaced are neutral and reported without diluting the penalty
+    denominator. Otherwise return the input unchanged.
 
     The returned breakdown always includes an ``outcome_feedback`` section
     (even when no penalty applied) so telemetry and UI can render a
@@ -912,8 +914,11 @@ def apply_outcome_feedback_to_confidence(
     contradicted = int(stats.get("contradicted", 0))
     accepted = int(stats.get("accepted", 0))
     ignored = int(stats.get("ignored", 0))
+    refined = int(stats.get("refined", 0))
+    replaced = int(stats.get("replaced", 0))
+    scored_total = accepted + ignored + contradicted
 
-    ratio = (contradicted / total) if total > 0 else 0.0
+    ratio = (contradicted / scored_total) if scored_total > 0 else 0.0
     applied = ratio > _OUTCOME_FEEDBACK_RATIO_THRESHOLD
     penalty_amount = penalty if applied else 0.0
     final = max(0.0, min(1.0, confidence - penalty_amount))
@@ -923,7 +928,10 @@ def apply_outcome_feedback_to_confidence(
         "contradicted": contradicted,
         "accepted": accepted,
         "ignored": ignored,
+        "refined": refined,
+        "replaced": replaced,
         "total": total,
+        "scored_total": scored_total,
         "ratio": round(ratio, 4),
         "ratio_threshold": _OUTCOME_FEEDBACK_RATIO_THRESHOLD,
         "penalty": round(penalty_amount, 4),
