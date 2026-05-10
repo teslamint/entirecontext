@@ -39,7 +39,7 @@ class _UnsetType:
 _UNSET = _UnsetType()
 
 VALID_STALENESS = frozenset(("fresh", "stale", "superseded", "contradicted"))
-VALID_DECISION_OUTCOME_TYPES = frozenset(("accepted", "ignored", "contradicted"))
+VALID_DECISION_OUTCOME_TYPES = frozenset(("accepted", "ignored", "contradicted", "refined", "replaced"))
 # relation_type is part of identity so one decision-assessment pair can keep
 # multiple typed links (e.g. informed_by + contradicts) when historically true.
 VALID_DECISION_ASSESSMENT_RELATION_TYPES = frozenset(("supports", "informed_by", "contradicts", "supersedes"))
@@ -155,12 +155,16 @@ def calculate_decision_quality_score(
 
     Legacy formula (1-arg or ``decayed_counts=None``):
         accepted * 1.0 - ignored * 0.5 - contradicted * 2.0, clamped to [-4, +4].
+        refined * 0 — display/audit only, does not affect score.
+        replaced * 0 — paired with staleness superseded factor, no double-penalty.
 
     When ``decayed_counts`` is provided, the same linear combination runs over
     the already time-decayed totals instead. ``counts`` still drives the volume
     smoother so the rank is not swung by a single fresh outcome: if the number
     of real outcomes is below ``min_volume``, the decayed score is linearly
-    attenuated toward zero by ``total / min_volume``.
+    attenuated toward zero by ``total / min_volume``. Volume smoother only counts
+    the three scored types (accepted, ignored, contradicted); refined/replaced
+    are excluded so they cannot dilute the smoother without affecting the score.
     """
     if decayed_counts is None:
         raw_score = (
@@ -887,6 +891,25 @@ def supersede_decision(conn, old_decision_id: str, new_decision_id: str) -> dict
             "UPDATE decisions SET staleness_status = 'superseded', superseded_by_id = ?, updated_at = ? WHERE id = ?",
             (new_full, now, old_full),
         )
+        existing_auto_outcome = conn.execute(
+            "SELECT id FROM decision_outcomes WHERE decision_id = ? AND outcome_type = 'replaced' AND note LIKE 'auto:%'",
+            (old_full,),
+        ).fetchone()
+        if existing_auto_outcome:
+            conn.execute(
+                "UPDATE decision_outcomes SET note = ?, created_at = ? WHERE id = ?",
+                (f"auto: superseded by {new_full}", now, existing_auto_outcome["id"]),
+            )
+        else:
+            outcome_id = str(uuid4())
+            conn.execute(
+                """
+                INSERT INTO decision_outcomes (
+                    id, decision_id, retrieval_selection_id, session_id, turn_id, outcome_type, note, created_at
+                ) VALUES (?, ?, NULL, NULL, NULL, 'replaced', ?, ?)
+                """,
+                (outcome_id, old_full, f"auto: superseded by {new_full}", now),
+            )
     return get_decision(conn, old_full) or {}
 
 

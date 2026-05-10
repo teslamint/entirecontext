@@ -345,6 +345,54 @@ class TestDecisionsCore:
                 turn_id=turn_one["id"],
             )
 
+    def test_quality_score_unaffected_by_refined_replaced(self, ec_db):
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        counts_3 = {"accepted": 2, "ignored": 1, "contradicted": 0}
+        counts_5 = {"accepted": 2, "ignored": 1, "contradicted": 0, "refined": 3, "replaced": 2}
+
+        assert calculate_decision_quality_score(counts_3) == calculate_decision_quality_score(counts_5)
+
+        d = create_decision(ec_db, title="Quality regression")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "ignored")
+        score_before = get_decision_quality_summary(ec_db, d["id"])["quality_score"]
+
+        record_decision_outcome(ec_db, d["id"], "refined")
+        record_decision_outcome(ec_db, d["id"], "replaced")
+        score_after = get_decision_quality_summary(ec_db, d["id"])["quality_score"]
+
+        assert score_before == score_after
+
+    def test_quality_summary_includes_all_five_keys(self, ec_db):
+        d = create_decision(ec_db, title="Five keys")
+        record_decision_outcome(ec_db, d["id"], "refined")
+        summary = get_decision_quality_summary(ec_db, d["id"])
+        counts = summary["counts"]
+        for key in ("accepted", "ignored", "contradicted", "refined", "replaced"):
+            assert key in counts, f"missing key: {key}"
+        assert counts["refined"] == 1
+
+    def test_quality_score_accepted_weight_is_one(self):
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        assert calculate_decision_quality_score({"accepted": 1}) == 1.0
+        assert calculate_decision_quality_score({"accepted": 1, "refined": 10, "replaced": 10}) == 1.0
+
+    def test_record_outcome_accepts_all_five_values(self, ec_db):
+        d = create_decision(ec_db, title="All five")
+        for ot in ("accepted", "ignored", "contradicted", "refined", "replaced"):
+            record_decision_outcome(ec_db, d["id"], ot)
+        outcomes = list_decision_outcomes(ec_db, d["id"])
+        outcome_types = {o["outcome_type"] for o in outcomes}
+        assert {"accepted", "ignored", "contradicted", "refined", "replaced"}.issubset(outcome_types)
+
+    def test_record_outcome_rejects_invalid_value(self, ec_db):
+        d = create_decision(ec_db, title="Reject invalid")
+        with pytest.raises(ValueError, match="Invalid outcome_type"):
+            record_decision_outcome(ec_db, d["id"], "unknown")
+
     def test_rank_related_decisions_applies_quality_adjustment(self, ec_db):
         promoted = create_decision(ec_db, title="Promoted")
         demoted = create_decision(ec_db, title="Demoted")
@@ -466,6 +514,80 @@ class TestSupersedeDecision:
         ).fetchone()
         assert row["staleness_status"] == "fresh"
         assert row["superseded_by_id"] is None
+
+    def test_supersede_writes_replaced_outcome_atomically(self, ec_db):
+        old = create_decision(ec_db, title="Old approach")
+        new = create_decision(ec_db, title="New approach")
+
+        supersede_decision(ec_db, old["id"], new["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type, note FROM decision_outcomes WHERE decision_id = ? ORDER BY created_at DESC",
+            (old["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert outcomes[0]["outcome_type"] == "replaced"
+        assert new["id"] in outcomes[0]["note"]
+
+        row = ec_db.execute(
+            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+            (old["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "superseded"
+        assert row["superseded_by_id"] == new["id"]
+
+    def test_re_supersede_updates_outcome_without_duplicates(self, ec_db):
+        old = create_decision(ec_db, title="Old")
+        b = create_decision(ec_db, title="B")
+        c = create_decision(ec_db, title="C")
+
+        supersede_decision(ec_db, old["id"], b["id"])
+        supersede_decision(ec_db, old["id"], c["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type, note FROM decision_outcomes WHERE decision_id = ?",
+            (old["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert c["id"] in outcomes[0]["note"]
+
+        row = ec_db.execute(
+            "SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)
+        ).fetchone()
+        assert row["superseded_by_id"] == c["id"]
+
+    def test_supersede_preserves_user_authored_replaced_note(self, ec_db):
+        old = create_decision(ec_db, title="Old")
+        new1 = create_decision(ec_db, title="New1")
+        new2 = create_decision(ec_db, title="New2")
+
+        record_decision_outcome(ec_db, old["id"], "replaced", note="manual: deprecated by design")
+        supersede_decision(ec_db, old["id"], new1["id"])
+        supersede_decision(ec_db, old["id"], new2["id"])
+
+        outcomes = list_decision_outcomes(ec_db, old["id"])
+        replaced = [o for o in outcomes if o["outcome_type"] == "replaced"]
+        user_notes = [o for o in replaced if not o["note"].startswith("auto:")]
+        auto_notes = [o for o in replaced if o["note"].startswith("auto:")]
+
+        assert len(user_notes) == 1
+        assert user_notes[0]["note"] == "manual: deprecated by design"
+        assert len(auto_notes) == 1
+        assert new2["id"] in auto_notes[0]["note"]
+
+    def test_supersede_replaced_outcome_rolled_back_on_cycle(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, b["id"], a["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (b["id"],),
+        ).fetchall()
+        assert len(outcomes) == 0
 
 
 class TestUnlinkDecision:

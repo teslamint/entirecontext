@@ -100,6 +100,8 @@ def decision_show(decision_id: str = typer.Argument(..., help="Decision ID")):
         f" accepted={counts.get('accepted', 0)}"
         f" ignored={counts.get('ignored', 0)}"
         f" contradicted={counts.get('contradicted', 0)}"
+        f" refined={counts.get('refined', 0)}"
+        f" replaced={counts.get('replaced', 0)}"
         f" total={quality.get('total_outcomes', 0)}"
         f" score={quality.get('quality_score', 0.0)}"
     )
@@ -201,7 +203,7 @@ def decision_stale(
 @decision_app.command("outcome")
 def decision_outcome(
     decision_id: str = typer.Argument(..., help="Decision ID"),
-    outcome: str = typer.Option(..., "--outcome", help="accepted|ignored|contradicted"),
+    outcome: str = typer.Option(..., "--outcome", help="accepted|ignored|contradicted|refined|replaced"),
     selection_id: Optional[str] = typer.Option(None, "--selection-id", help="Decision retrieval selection ID"),
     note: Optional[str] = typer.Option(None, "--note", help="Optional outcome note"),
 ):

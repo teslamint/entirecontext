@@ -1070,7 +1070,7 @@ class TestOutcomeFeedbackPenalty:
         )
 
         stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=0)
-        assert stats == {"accepted": 0, "ignored": 0, "contradicted": 0, "total": 0}
+        assert stats == {"accepted": 0, "ignored": 0, "contradicted": 0, "refined": 0, "replaced": 0, "total": 0}
 
         breakdown = {"final": 0.60, "penalties": {}}
         adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
@@ -1106,6 +1106,35 @@ class TestOutcomeFeedbackPenalty:
         assert new_breakdown["outcome_feedback"]["applied"] is False
         assert new_breakdown["outcome_feedback"]["ratio"] == pytest.approx(0.5)
 
+    def test_outcome_feedback_penalty_excludes_neutral_outcomes_from_ratio(self, ec_repo, ec_db):
+        """Refined/replaced outcomes are reported but do not dilute the penalty ratio."""
+        from entirecontext.core.decision_extraction import (
+            apply_outcome_feedback_to_confidence,
+            get_file_outcome_stats,
+        )
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Risky decision with neutral follow-up",
+            file_paths=["src/service/payment.py"],
+            outcome_types=["contradicted", "contradicted", "accepted", "refined", "replaced", "replaced"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=60)
+        assert stats["contradicted"] == 2
+        assert stats["accepted"] == 1
+        assert stats["refined"] == 1
+        assert stats["replaced"] == 2
+        assert stats["total"] == 6
+
+        breakdown = {"final": 0.60, "penalties": {}}
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
+        assert adjusted == pytest.approx(0.45)
+        assert new_breakdown["outcome_feedback"]["applied"] is True
+        assert new_breakdown["outcome_feedback"]["total"] == 6
+        assert new_breakdown["outcome_feedback"]["scored_total"] == 3
+        assert new_breakdown["outcome_feedback"]["ratio"] == pytest.approx(2 / 3, abs=1e-4)
+
     def test_outcome_feedback_sql_path_normalization(self, ec_repo, ec_db):
         """Stored ``./src/...`` and backslash paths must match normalized inputs."""
         from entirecontext.core.decision_extraction import get_file_outcome_stats
@@ -1132,6 +1161,25 @@ class TestOutcomeFeedbackPenalty:
         assert stats["contradicted"] == 2
         assert stats["accepted"] == 1
         assert stats["total"] == 3
+
+    def test_outcome_feedback_counts_refined_and_replaced(self, ec_repo, ec_db):
+        """refined and replaced outcomes must appear as non-zero in get_file_outcome_stats."""
+        from entirecontext.core.decision_extraction import get_file_outcome_stats
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Refined decision",
+            file_paths=["src/service/payment.py"],
+            outcome_types=["refined", "refined", "replaced"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=60)
+        assert stats["refined"] == 2
+        assert stats["replaced"] == 1
+        assert stats["total"] == 3
+        assert stats["accepted"] == 0
+        assert stats["ignored"] == 0
+        assert stats["contradicted"] == 0
 
     def test_outcome_feedback_lookback_cutoff(self, ec_repo, ec_db):
         """Outcomes older than the lookback window must be excluded."""

@@ -323,6 +323,34 @@ class TestDecisionsCLI:
         assert conn.closed is True
 
 
+class TestDecisionOutcomeValues:
+    @pytest.mark.parametrize("outcome_value", ["accepted", "ignored", "contradicted", "refined", "replaced"])
+    def test_outcome_accepts_all_five_values(self, ec_repo, monkeypatch, outcome_value):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title=f"Test {outcome_value}")
+        conn.close()
+
+        result = runner.invoke(
+            app,
+            ["decision", "outcome", decision["id"][:12], "--outcome", outcome_value],
+        )
+        assert result.exit_code == 0
+        assert "Recorded decision outcome:" in result.stdout
+
+    def test_outcome_rejects_unknown_value(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(conn, title="Test reject")
+        conn.close()
+
+        result = runner.invoke(
+            app,
+            ["decision", "outcome", decision["id"][:12], "--outcome", "unknown_type"],
+        )
+        assert result.exit_code == 1
+
+
 class TestDecisionsCLIExtended:
     def test_decision_update_success(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
