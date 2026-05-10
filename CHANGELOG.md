@@ -7,9 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-10
+
+v0.6.0 advances the outcome lifecycle core for decision memory. Database schema v14 widens decision outcome vocabulary, supersession now records replacement feedback, and candidate confirmation records the commit that introduced the promoted decision.
+
+### Added
+
+- **Schema v14 outcome lifecycle** — `decision_outcomes.outcome_type` now accepts `refined` and `replaced` in addition to `accepted`, `ignored`, and `contradicted`. CLI and MCP outcome recording accept all five values, and `decision show`/hook output display the full breakdown so audit output matches stored data.
+- **Supersede → replaced auto-linkage** — `supersede_decision` records an atomic `replaced` outcome on the old decision when it is superseded. Re-superseding updates only the auto-generated replacement row, preserving user-authored `replaced` notes and preventing duplicate auto rows.
+- **Candidate confirmation commit linkage** — confirmed decision candidates now link the promoted decision to the current commit SHA, preserving the git anchor for decisions created from the candidate pipeline.
+
 ### Changed
 
-- **Schema v14** — `decision_outcomes.outcome_type` CHECK constraint widened to accept `refined` and `replaced` values (previously only `confirmed`, `contradicted`, `partially_confirmed`, `evolved`). Enables `supersede_decision` auto-linkage to record `replaced` outcomes atomically.
+- **Outcome feedback reporting** — `get_file_outcome_stats` reports non-zero `refined` and `replaced` counts so file-level outcome summaries reflect the expanded schema. Extraction confidence penalties still compute their trigger from scored outcomes only (`accepted`, `ignored`, `contradicted`), so neutral `refined`/`replaced` feedback remains visible without diluting contradicted-history demotion.
+- **Dependency lock refresh** — refreshed the lockfile for the current development toolchain, including the Typer dependency update and Hypothesis-based confirmation tests.
 
 ## [0.5.0] - 2026-04-27
 

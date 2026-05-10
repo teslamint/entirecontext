@@ -14,9 +14,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-import pytest
-
-from entirecontext.core.decision_candidates import confirm_candidate, get_candidate
+from entirecontext.core.decision_candidates import confirm_candidate
 from entirecontext.core.decision_extraction import (
     CandidateDraft,
     DedupResult,
@@ -24,7 +22,6 @@ from entirecontext.core.decision_extraction import (
     persist_candidate,
     score_confidence,
 )
-from entirecontext.core.futures import create_assessment
 from entirecontext.core.project import get_project
 from entirecontext.core.session import create_session
 from entirecontext.core.turn import create_turn
