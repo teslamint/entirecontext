@@ -1,0 +1,12 @@
+{
+  "id": "9b08e73e-77b2-42a0-a4f8-ad7a3af22323",
+  "session_id": "8ecb586a-c8ae-4873-acf1-ce6bacdff5b7",
+  "git_commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                                  |   13 +-\n README.md                                     |    2 +-\n pyproject.toml                                |    3 +-\n src/entirecontext/__init__.py                 |    2 +-\n src/entirecontext/core/decision_candidates.py |   11 +\n src/entirecontext/core/decision_extraction.py |   18 +-\n tests/conftest.py                             |    2 +\n tests/conftest_hypothesis.py                  |    7 +\n tests/test_confirm_commit_link.py             |  176 +++\n tests/test_decision_extraction.py             |   49 +\n uv.lock                                       | 1822 ++++++++++++-------------\n 11 files changed, 1183 insertions(+), 922 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-05-11 00:41:19",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

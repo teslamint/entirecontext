@@ -1,0 +1,10 @@
+{
+  "id": "27b66ca0-8bed-4058-b1d1-9b85cd186070",
+  "project_id": "df50aa1f-994c-4261-a8e4-0a7b6dee3498",
+  "session_type": "claude",
+  "started_at": "2026-05-05T07:22:38.724896+00:00",
+  "ended_at": "2026-05-05T08:15:14.179751+00:00",
+  "session_title": "I want a test-first autonomous refactoring workflow. For my next refactor (e.g., the S3 atomic-promo",
+  "session_summary": null,
+  "total_turns": 1
+}

@@ -1,0 +1,12 @@
+{
+  "id": "9307c577-cf4c-4745-abd0-ed492312fc60",
+  "session_id": "25e85ed4-8ae6-4119-ac26-0e810f1d9790",
+  "git_commit_hash": "462fe9ddba479af69e6b7019b2477b247fb03f93",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                                       |  18 ---\n CLAUDE.md                                          |   2 +-\n LESSONS.md                                         |  84 +-------------\n README.md                                          |  16 +--\n ROADMAP.md                                         |  62 +----------\n docs/brainstorms/agent-learning-report.md          |  90 ---------------\n docs/brainstorms/alive-session-memory.md           | 122 ---------------------\n docs/brainstorms/decision-conflict-flagging.md     | 107 ------------------\n docs/brainstorms/ec-blame-decision-annotated.md    |  98 -----------------\n docs/brainstorms/proactive-decision-injection.md   |  82 --------------\n docs/brainstorms/retroactive-git-archaeology.md    | 117 --------------------\n docs/brainstorms/temporal-query-language.md        | 103 -----------------\n docs/brainstorms/v0-6-0-roadmap-plan.md            | 119 --------------------\n .../2026-04-27-product-roadmap-ideation.md         | 112 -------------------\n src/entirecontext/cli/decisions_cmds.py            |   2 +-\n src/entirecontext/core/decision_extraction.py      |   4 +-\n src/entirecontext/core/decisions.py                |  10 +-\n src/entirecontext/db/migrations/__init__.py        |   2 +-\n src/entirecontext/db/migrations/v014.py            |  45 --------\n src/entirecontext/db/schema.py                     |   4 +-\n src/entirecontext/hooks/decision_hooks.py          |   4 +-\n src/entirecontext/mcp/tools/decisions.py           |   2 +-\n tests/test_db_schema.py                            |  76 -------------\n tests/test_decision_extraction.py                  |  48 +-------\n tests/test_decision_hooks.py                       |  57 ----------\n tests/test_decisions_cli.py                        |  28 -----\n tests/test_decisions_core.py                       | 110 -------------------\n tests/test_mcp.py                                  |  19 ----\n 28 files changed, 19 insertions(+), 1524 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-28 15:21:52",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

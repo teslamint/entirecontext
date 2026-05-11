@@ -1,0 +1,12 @@
+{
+  "id": "5131b90e-8d04-4147-aecc-4b0fad1d3899",
+  "session_id": "8ecb586a-c8ae-4873-acf1-ce6bacdff5b7",
+  "git_commit_hash": "bea1c54eb16288a3779dbe2ac85d6f0bf796a584",
+  "git_branch": "feat/v0.6.0-pr1-schema",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                                  | 17 +----------\n CLAUDE.md                                     |  2 +-\n README.md                                     | 16 +---------\n ROADMAP.md                                    | 25 +---------------\n src/entirecontext/cli/decisions_cmds.py       |  2 ++\n src/entirecontext/core/decision_extraction.py |  4 +--\n src/entirecontext/core/decisions.py           | 28 +++++++++++------\n tests/test_decisions_core.py                  | 43 +++++++++++++++++++++++++--\n 8 files changed, 68 insertions(+), 69 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-05-07 06:21:10",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

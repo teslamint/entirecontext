@@ -1,0 +1,12 @@
+{
+  "id": "9c817111-a4a3-41bd-9872-85dc590d045e",
+  "session_id": "7ebdb57c-f0d4-40ee-85b9-778369d9e3cd",
+  "git_commit_hash": "e3ed40d2d12a4673f775fc353a90a2c9c7be6dab",
+  "git_branch": "feat/v0.6.0-pr3-docs",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                                  | 19 ++++++\n README.md                                     | 16 ++++-\n ROADMAP.md                                    | 25 +++++++-\n src/entirecontext/cli/decisions_cmds.py       |  2 +-\n src/entirecontext/core/decision_extraction.py |  2 +-\n src/entirecontext/core/decisions.py           | 17 +++++-\n src/entirecontext/db/migrations/__init__.py   |  2 +-\n src/entirecontext/db/migrations/v014.py       | 57 ++++++++++++++++++\n src/entirecontext/db/schema.py                |  4 +-\n src/entirecontext/hooks/decision_hooks.py     |  4 +-\n src/entirecontext/mcp/tools/decisions.py      |  2 +-\n tests/test_db_schema.py                       | 84 +++++++++++++++++++++++++++\n tests/test_decision_extraction.py             |  2 +-\n tests/test_decisions_cli.py                   | 28 +++++++++\n tests/test_decisions_core.py                  | 83 ++++++++++++++++++++++++++\n tests/test_mcp.py                             |  9 +++\n 16 files changed, 343 insertions(+), 13 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-29 09:03:19",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

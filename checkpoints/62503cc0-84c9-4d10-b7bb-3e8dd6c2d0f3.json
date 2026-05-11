@@ -1,0 +1,12 @@
+{
+  "id": "62503cc0-84c9-4d10-b7bb-3e8dd6c2d0f3",
+  "session_id": "0d451b05-3342-493d-806c-ba6ee9561ed2",
+  "git_commit_hash": "e7a06ac774aff90880e4c2416e2bcaf65382e978",
+  "git_branch": "docs/roadmap-v0.6.0-ideation",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "ROADMAP.md                                       |  14 +--\n docs/brainstorms/agent-learning-report.md        |  90 +++++++++++++++++\n docs/brainstorms/alive-session-memory.md         | 122 +++++++++++++++++++++++\n docs/brainstorms/decision-conflict-flagging.md   | 107 ++++++++++++++++++++\n docs/brainstorms/ec-blame-decision-annotated.md  |  98 ++++++++++++++++++\n docs/brainstorms/proactive-decision-injection.md |  82 +++++++++++++++\n docs/brainstorms/retroactive-git-archaeology.md  | 117 ++++++++++++++++++++++\n docs/brainstorms/temporal-query-language.md      | 103 +++++++++++++++++++\n 8 files changed, 726 insertions(+), 7 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-04-28 01:59:14",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}
