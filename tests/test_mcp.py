@@ -601,7 +601,7 @@ class TestMCPRepoResolver:
         finally:
             db.close()
 
-    def test_repo_path_cached_after_cwd_resolution(self, db, monkeypatch):
+    def test_repo_path_cache_used_after_cwd_unavailable(self, db, monkeypatch):
         from entirecontext.core.context import RepoContext
         from entirecontext.mcp import runtime
 
@@ -620,23 +620,39 @@ class TestMCPRepoResolver:
         monkeypatch.setattr(
             RepoContext,
             "from_cwd",
-            classmethod(
-                lambda cls, cwd="/tmp/cached-repo", require_project=False: FakeRepoContext(db, "/tmp/cached-repo")
-            ),
+            classmethod(lambda cls, cwd=".", require_project=False: None if cwd == "." else FakeRepoContext(db, cwd)),
         )
         runtime.get_repo_db()
-        assert call_count[0] == 1  # second call uses cache, not cwd resolution
+        assert call_count[0] == 1
 
-    def test_path_exists_timeout_returns_false_when_blocked(self, monkeypatch):
-        import time
+    def test_current_cwd_resolution_overrides_cached_repo_path(self, db, monkeypatch):
+        from entirecontext.core.context import RepoContext
         from entirecontext.mcp import runtime
 
-        class SlowPath:
-            def exists(self_inner):
-                time.sleep(10)
-                return True
+        monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
+        runtime._cached_repo_path = "/tmp/old-repo"
 
-        monkeypatch.setattr(runtime, "Path", lambda p: SlowPath())
+        def from_cwd(cls, cwd=".", require_project=False):
+            if cwd == ".":
+                return FakeRepoContext(db, "/tmp/current-repo")
+            return FakeRepoContext(db, cwd)
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        conn, resolved = runtime.get_repo_db()
+
+        assert conn is db
+        assert resolved == "/tmp/current-repo"
+        assert runtime._cached_repo_path == "/tmp/current-repo"
+
+    def test_path_exists_timeout_returns_false_when_blocked(self, monkeypatch):
+        import subprocess
+        from entirecontext.mcp import runtime
+
+        def blocked_run(*args, **kwargs):
+            raise subprocess.TimeoutExpired(cmd=args[0], timeout=kwargs["timeout"])
+
+        monkeypatch.setattr(runtime.subprocess, "run", blocked_run)
         result = runtime._path_exists_timeout("/Volumes/network/repo", timeout=0.1)
         assert result is False
 

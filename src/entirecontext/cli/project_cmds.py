@@ -133,7 +133,12 @@ def _enable_codex_notify(repo_path: str) -> None:
         if not _is_ec_codex_notify_command(user_notify):
             upstream = user_notify
             discovered_upstream = True
-    elif isinstance(local_notify, list) and local_notify and all(isinstance(x, str) for x in local_notify):
+    if (
+        not discovered_upstream
+        and isinstance(local_notify, list)
+        and local_notify
+        and all(isinstance(x, str) for x in local_notify)
+    ):
         if not _is_ec_codex_notify_command(local_notify):
             upstream = local_notify
             discovered_upstream = True

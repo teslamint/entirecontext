@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-import threading
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,18 +32,22 @@ def _path_exists_timeout(path: str, timeout: float = 1.0) -> bool:
 
     Prevents hang on unmounted network filesystems (e.g. /Volumes/ on macOS).
     """
-    result: list[bool] = [False]
-
-    def _check() -> None:
-        try:
-            result[0] = Path(path).exists()
-        except Exception:
-            pass
-
-    t = threading.Thread(target=_check, daemon=True)
-    t.start()
-    t.join(timeout)
-    return result[0]
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; import sys; sys.exit(0 if Path(sys.argv[1]).exists() else 1)",
+                path,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite3.Connection, str]:
@@ -118,16 +123,16 @@ def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
     if env_repo_path:
         return _resolve_explicit_repo(env_repo_path, source_label="ENTIRECONTEXT_REPO_PATH")
 
+    cwd_context = _resolve_from_cwd()
+    if cwd_context is not None:
+        _cached_repo_path = cwd_context[1]
+        return cwd_context
+
     if _cached_repo_path is not None:
         try:
             return _resolve_explicit_repo(_cached_repo_path, source_label="cached_repo_path")
         except RepoResolutionError:
             _cached_repo_path = None
-
-    cwd_context = _resolve_from_cwd()
-    if cwd_context is not None:
-        _cached_repo_path = cwd_context[1]
-        return cwd_context
 
     valid_repos = _list_valid_registered_repos()
     result = _open_single_registered_repo(valid_repos)

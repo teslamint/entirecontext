@@ -463,6 +463,29 @@ class TestCodexIntegration:
         assert "old-hook.py" in content
 
     @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_preserves_legacy_local_notify_when_user_notify_is_ec(
+        self, mock_git_root, tmp_path, monkeypatch
+    ):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".codex").mkdir()
+        (repo / ".codex" / "config.toml").write_text('notify = ["python", "old-hook.py"]\n', encoding="utf-8")
+        fake_home = tmp_path / "fakehome"
+        (fake_home / ".codex").mkdir(parents=True)
+        (fake_home / ".codex" / "config.toml").write_text('notify = ["ec", "hook", "codex-notify"]\n', encoding="utf-8")
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        enable = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        disable = runner.invoke(app, ["disable", "--agent", "codex"])
+
+        assert enable.exit_code == 0
+        assert disable.exit_code == 0
+        content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "old-hook.py" in content
+
+    @patch("entirecontext.core.project.find_git_root")
     def test_disable_from_different_repo_restores_global_upstream_notify(self, mock_git_root, tmp_path, monkeypatch):
         first_repo = tmp_path / "repo-a"
         second_repo = tmp_path / "repo-b"
