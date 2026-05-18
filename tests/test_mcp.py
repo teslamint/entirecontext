@@ -601,6 +601,88 @@ class TestMCPRepoResolver:
         finally:
             db.close()
 
+    def test_repo_path_cached_after_cwd_resolution(self, db, monkeypatch):
+        from entirecontext.core.context import RepoContext
+        from entirecontext.mcp import runtime
+
+        monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
+        call_count = [0]
+
+        def from_cwd(cls, cwd=".", require_project=False):
+            call_count[0] += 1
+            return FakeRepoContext(db, "/tmp/cached-repo")
+
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(from_cwd))
+
+        runtime.get_repo_db()
+        assert runtime._cached_repo_path == "/tmp/cached-repo"
+
+        monkeypatch.setattr(
+            RepoContext,
+            "from_cwd",
+            classmethod(
+                lambda cls, cwd="/tmp/cached-repo", require_project=False: FakeRepoContext(db, "/tmp/cached-repo")
+            ),
+        )
+        runtime.get_repo_db()
+        assert call_count[0] == 1  # second call uses cache, not cwd resolution
+
+    def test_path_exists_timeout_returns_false_when_blocked(self, monkeypatch):
+        import time
+        from entirecontext.mcp import runtime
+
+        class SlowPath:
+            def exists(self_inner):
+                time.sleep(10)
+                return True
+
+        monkeypatch.setattr(runtime, "Path", lambda p: SlowPath())
+        result = runtime._path_exists_timeout("/Volumes/network/repo", timeout=0.1)
+        assert result is False
+
+    def test_list_valid_repos_skips_slow_paths(self, db, monkeypatch, tmp_path):
+        from entirecontext.core.context import GlobalContext, RepoContext
+        from entirecontext.mcp import runtime
+
+        fast_repo = tmp_path / "fast-repo"
+        fast_repo.mkdir()
+        monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
+        monkeypatch.setattr(RepoContext, "from_cwd", classmethod(lambda cls, cwd=".", require_project=False: None))
+        monkeypatch.setattr(
+            GlobalContext,
+            "create",
+            classmethod(
+                lambda cls: FakeGlobalContext(
+                    [
+                        {"repo_name": "slow-repo", "repo_path": "/Volumes/network/slow-repo"},
+                        {"repo_name": "fast-repo", "repo_path": str(fast_repo)},
+                    ]
+                )
+            ),
+        )
+
+        real_path_exists_timeout = runtime._path_exists_timeout
+
+        def patched_exists(path, timeout=1.0):
+            if "slow" in path:
+                return False  # simulate timeout
+            return real_path_exists_timeout(path, timeout)
+
+        monkeypatch.setattr(runtime, "_path_exists_timeout", patched_exists)
+        monkeypatch.setattr(
+            RepoContext,
+            "from_repo_path",
+            classmethod(
+                lambda cls, repo_path_arg, require_project=False: (
+                    FakeRepoContext(db, str(fast_repo)) if str(repo_path_arg) == str(fast_repo) else None
+                )
+            ),
+        )
+
+        conn, resolved = runtime.get_repo_db()
+        assert conn is db
+        assert resolved == str(fast_repo)
+
     def test_resolve_repo_success(self, db, monkeypatch):
         from entirecontext.mcp import runtime
 

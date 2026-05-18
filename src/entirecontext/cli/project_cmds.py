@@ -54,7 +54,23 @@ def _write_toml_file(path: Path, data: dict) -> None:
 
 
 def _codex_state_path(repo_path: str) -> Path:
+    return _codex_global_state_path()
+
+
+def _codex_legacy_state_path(repo_path: str) -> Path:
     return Path(repo_path) / ".entirecontext" / "state" / "codex_notify.json"
+
+
+def _codex_global_state_path() -> Path:
+    return Path.home() / ".entirecontext" / "state" / "codex_notify.json"
+
+
+def _codex_user_config_path() -> Path:
+    return Path.home() / ".codex" / "config.toml"
+
+
+def _codex_project_config_path(repo_path: str) -> Path:
+    return Path(repo_path) / ".codex" / "config.toml"
 
 
 def _save_codex_upstream(repo_path: str, command: list[str] | None) -> None:
@@ -78,7 +94,15 @@ def _save_codex_upstream(repo_path: str, command: list[str] | None) -> None:
 
 
 def _load_codex_upstream(repo_path: str) -> list[str] | None:
-    state_path = _codex_state_path(repo_path)
+    state_paths = [_codex_state_path(repo_path), _codex_legacy_state_path(repo_path)]
+    for state_path in state_paths:
+        upstream = _load_codex_upstream_from_path(state_path)
+        if upstream:
+            return upstream
+    return None
+
+
+def _load_codex_upstream_from_path(state_path: Path) -> list[str] | None:
     if not state_path.exists():
         return None
     try:
@@ -96,45 +120,69 @@ def _load_codex_upstream(repo_path: str) -> list[str] | None:
 
 
 def _enable_codex_notify(repo_path: str) -> None:
-    codex_config_path = Path(repo_path) / ".codex" / "config.toml"
-    local_cfg = _read_toml_file(codex_config_path)
-    user_cfg = _read_toml_file(Path.home() / ".codex" / "config.toml")
+    local_config_path = _codex_project_config_path(repo_path)
+    user_config_path = _codex_user_config_path()
+    local_cfg = _read_toml_file(local_config_path)
+    user_cfg = _read_toml_file(user_config_path)
     local_notify = local_cfg.get("notify")
     user_notify = user_cfg.get("notify")
 
     upstream: list[str] | None = None
-    if isinstance(local_notify, list) and local_notify and all(isinstance(x, str) for x in local_notify):
-        if not _is_ec_codex_notify_command(local_notify):
-            upstream = local_notify
-    elif isinstance(user_notify, list) and user_notify and all(isinstance(x, str) for x in user_notify):
+    discovered_upstream = False
+    if isinstance(user_notify, list) and user_notify and all(isinstance(x, str) for x in user_notify):
         if not _is_ec_codex_notify_command(user_notify):
             upstream = user_notify
+            discovered_upstream = True
+    elif isinstance(local_notify, list) and local_notify and all(isinstance(x, str) for x in local_notify):
+        if not _is_ec_codex_notify_command(local_notify):
+            upstream = local_notify
+            discovered_upstream = True
 
-    local_cfg["notify"] = _resolve_ec_codex_notify_command()
-    _write_toml_file(codex_config_path, local_cfg)
+    if not discovered_upstream and isinstance(user_notify, list) and _is_ec_codex_notify_command(user_notify):
+        upstream = _load_codex_upstream(repo_path)
+
+    if "notify" in local_cfg:
+        local_cfg.pop("notify", None)
+        _write_toml_file(local_config_path, local_cfg)
+
+    user_cfg["notify"] = _resolve_ec_codex_notify_command()
+    _write_toml_file(user_config_path, user_cfg)
     _save_codex_upstream(repo_path, upstream)
 
 
 def _disable_codex_notify(repo_path: str) -> bool:
-    codex_config_path = Path(repo_path) / ".codex" / "config.toml"
-    if not codex_config_path.exists():
-        return False
-
-    local_cfg = _read_toml_file(codex_config_path)
+    local_config_path = _codex_project_config_path(repo_path)
+    user_config_path = _codex_user_config_path()
+    local_cfg = _read_toml_file(local_config_path)
+    user_cfg = _read_toml_file(user_config_path)
     local_notify = local_cfg.get("notify")
-    if not (isinstance(local_notify, list) and all(isinstance(x, str) for x in local_notify)):
-        return False
-    if not _is_ec_codex_notify_command(local_notify):
-        return False
+    user_notify = user_cfg.get("notify")
 
+    found = False
+    if isinstance(local_notify, list) and all(isinstance(x, str) for x in local_notify):
+        if _is_ec_codex_notify_command(local_notify):
+            found = True
+            local_cfg.pop("notify", None)
+            _write_toml_file(local_config_path, local_cfg)
+
+    if not (isinstance(user_notify, list) and all(isinstance(x, str) for x in user_notify)):
+        if found:
+            _save_codex_upstream(repo_path, None)
+        return found
+    if not _is_ec_codex_notify_command(user_notify):
+        if found:
+            _save_codex_upstream(repo_path, None)
+        return found
+
+    found = True
     upstream = _load_codex_upstream(repo_path)
     if upstream:
-        local_cfg["notify"] = upstream
+        user_cfg["notify"] = upstream
     else:
-        local_cfg.pop("notify", None)
-    _write_toml_file(codex_config_path, local_cfg)
+        user_cfg.pop("notify", None)
+    _write_toml_file(user_config_path, user_cfg)
     _save_codex_upstream(repo_path, None)
-    return True
+    return found
 
 
 def _resolve_ec_command(hook_type: str | None = None) -> str:
@@ -276,7 +324,7 @@ def enable(
 
     if agent in {"codex", "both"}:
         _enable_codex_notify(repo_path)
-        console.print("[green]Codex notify installed[/green] in .codex/config.toml")
+        console.print("[green]Codex notify installed[/green] in ~/.codex/config.toml")
 
     user_settings_path = Path.home() / ".claude" / "settings.json"
     user_settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -342,7 +390,7 @@ def disable(
 
     if agent in {"codex", "both"}:
         if _disable_codex_notify(repo_path):
-            console.print("[yellow]Codex notify removed[/yellow] from .codex/config.toml")
+            console.print("[yellow]Codex notify removed[/yellow] from ~/.codex/config.toml")
         else:
             console.print("No Codex notify integration found.")
 
@@ -487,9 +535,9 @@ def doctor(
                 warnings.append("EntireContext hooks not installed. Run 'ec enable'.")
 
     if agent in {"codex", "both"}:
-        codex_cfg_path = Path(repo_path) / ".codex" / "config.toml"
+        codex_cfg_path = _codex_user_config_path()
         if not codex_cfg_path.exists():
-            warnings.append("No .codex/config.toml found. Run 'ec enable --agent codex'.")
+            warnings.append("No ~/.codex/config.toml found. Run 'ec enable --agent codex'.")
         else:
             cfg = _read_toml_file(codex_cfg_path)
             notify = cfg.get("notify")

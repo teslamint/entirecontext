@@ -409,7 +409,9 @@ class TestDecisionsCore:
 
         assert [item["id"] for item in ranked[:2]] == [promoted["id"], demoted["id"]]
         assert ranked[0]["quality_score"] > ranked[1]["quality_score"]
-        assert ranked[0]["base_score"] == ranked[1]["base_score"] == 3.0
+        assert ranked[0]["score_breakdown"]["file_exact"] == ranked[1]["score_breakdown"]["file_exact"] == 3.0
+        assert ranked[0]["score_breakdown"]["accepted_boost"] == 2.0
+        assert ranked[1]["score_breakdown"]["accepted_boost"] == 0.0
 
 
 class TestUpdateDecision:
@@ -551,9 +553,7 @@ class TestSupersedeDecision:
         assert len(outcomes) == 1
         assert c["id"] in outcomes[0]["note"]
 
-        row = ec_db.execute(
-            "SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)
-        ).fetchone()
+        row = ec_db.execute("SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)).fetchone()
         assert row["superseded_by_id"] == c["id"]
 
     def test_supersede_preserves_user_authored_replaced_note(self, ec_db):
@@ -967,6 +967,25 @@ class TestRankingSignals:
         item = next(r for r in ranked if r["id"] == d["id"])
         assert item["score_breakdown"]["git_commit"] == 3.0
 
+    def test_accepted_outcome_boost_signal(self, ec_db):
+        d = create_decision(ec_db, title="Accepted decision")
+        link_decision_to_file(ec_db, d["id"], "src/accepted.py")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/accepted.py"])
+        assert len(ranked) >= 1
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["accepted_boost"] == 2.0
+        assert item["base_score"] >= 5.0  # 3.0 for file + 2.0 for boost
+
+    def test_accepted_outcome_boost_does_not_create_relevance(self, ec_db):
+        d = create_decision(ec_db, title="Accepted but unrelated")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/unrelated.py"])
+
+        assert all(item["id"] != d["id"] for item in ranked)
+
     # --- Staleness penalty ---
 
     def test_stale_penalty(self, ec_db):
@@ -1054,6 +1073,7 @@ class TestRankingSignals:
     def test_score_breakdown_keys_present(self, ec_db):
         d = create_decision(ec_db, title="Breakdown test")
         link_decision_to_file(ec_db, d["id"], "src/test.py")
+        record_decision_outcome(ec_db, d["id"], "accepted")
 
         ranked = rank_related_decisions(ec_db, file_paths=["src/test.py"])
         item = next(r for r in ranked if r["id"] == d["id"])
@@ -1063,6 +1083,7 @@ class TestRankingSignals:
             "assessment",
             "diff_relevance",
             "git_commit",
+            "accepted_boost",
             "quality",
             "staleness_factor",
         }
@@ -1077,7 +1098,12 @@ class TestRankingSignals:
         item = next(r for r in ranked if r["id"] == d["id"])
         bd = item["score_breakdown"]
         expected_base = (
-            bd["file_exact"] + bd["file_proximity"] + bd["assessment"] + bd["diff_relevance"] + bd["git_commit"]
+            bd["file_exact"]
+            + bd["file_proximity"]
+            + bd["assessment"]
+            + bd["diff_relevance"]
+            + bd["git_commit"]
+            + bd["accepted_boost"]
         )
         assert abs(item["base_score"] - round(expected_base, 3)) < 0.01
         expected_score = expected_base * bd["staleness_factor"] + bd["quality"]
@@ -1112,6 +1138,7 @@ class TestRankingWeightsConfig:
             "git_commit",
             "quality",
             "staleness_factor",
+            "accepted_boost",
         }
     )
 
@@ -1119,6 +1146,7 @@ class TestRankingWeightsConfig:
         """score_breakdown keys are a stable additive-only contract (#85)."""
         d = create_decision(ec_db, title="Key stability decision")
         link_decision_to_file(ec_db, d["id"], "src/contract.py")
+        record_decision_outcome(ec_db, d["id"], "accepted")
 
         ranked = rank_related_decisions(ec_db, file_paths=["src/contract.py"])
         item = next(r for r in ranked if r["id"] == d["id"])
@@ -1126,6 +1154,24 @@ class TestRankingWeightsConfig:
             "score_breakdown keys changed — MCP ec_decision_related callers rely on these exact names; "
             "rename is forbidden, add-only is allowed."
         )
+
+    def test_rank_uses_config_accepted_boost(self, ec_db):
+        """An accepted_outcome_boost override in [decisions.ranking] is applied."""
+        d = create_decision(ec_db, title="Accepted decision")
+        link_decision_to_file(ec_db, d["id"], "src/override.py")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+
+        # Default
+        default_ranked = rank_related_decisions(ec_db, file_paths=["src/override.py"])
+        default_item = next(r for r in default_ranked if r["id"] == d["id"])
+        assert default_item["score_breakdown"]["accepted_boost"] == 2.0
+
+        # Override
+        boosted = RankingWeights(accepted_outcome_boost=5.0)
+        override_ranked = rank_related_decisions(ec_db, file_paths=["src/override.py"], ranking=boosted)
+        override_item = next(r for r in override_ranked if r["id"] == d["id"])
+        assert override_item["score_breakdown"]["accepted_boost"] == 5.0
+        assert override_item["base_score"] > default_item["base_score"]
 
     def test_rank_default_matches_legacy(self, ec_db):
         """ranking=None preserves legacy hardcoded constants (pre-F3 numbers)."""
@@ -1562,6 +1608,39 @@ class TestDecisionQualityDecay:
         assert item["quality_score"] == 0.0, (
             f"future-stamped rows leaked into legacy path: quality={item['quality_score']}"
         )
+        assert item["score_breakdown"]["accepted_boost"] == 0.0
+
+    def test_rank_accepted_boost_skips_future_stamped_rows(self, ec_db):
+        """Accepted boost follows the same future-stamp guard as quality scoring."""
+        import uuid
+        from datetime import datetime, timedelta, timezone
+
+        from entirecontext.core.decisions import (
+            QualityWeights,
+            create_decision,
+            link_decision_to_file,
+            rank_related_decisions,
+        )
+
+        d = create_decision(ec_db, title="Future accepted decision")
+        link_decision_to_file(ec_db, d["id"], "src/future_accepted.py")
+
+        now = datetime.now(timezone.utc)
+        ec_db.execute(
+            "INSERT INTO decision_outcomes (id, decision_id, outcome_type, created_at) VALUES (?, ?, ?, ?)",
+            (str(uuid.uuid4()), d["id"], "accepted", (now + timedelta(days=1)).isoformat()),
+        )
+        ec_db.commit()
+
+        ranked = rank_related_decisions(
+            ec_db,
+            file_paths=["src/future_accepted.py"],
+            quality=QualityWeights(recency_half_life_days=30, min_volume=2),
+        )
+
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["quality_score"] == 0.0
+        assert item["score_breakdown"]["accepted_boost"] == 0.0
 
 
 # ---------------------------------------------------------------------------

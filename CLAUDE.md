@@ -12,6 +12,9 @@ uv sync --extra mcp              # + MCP server support
 uv run ec --help                 # CLI entry point
 ```
 
+> **MCP ops**: After `uv sync` that touches `mcp/` or `core/decisions.py`, restart Claude Code — the stdio MCP server does not auto-reload.
+
+
 ## Test
 
 ```bash

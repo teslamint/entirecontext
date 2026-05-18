@@ -80,6 +80,21 @@ class TestDecisionsCLI:
         assert result.exit_code == 0
         assert "Use idempotency keys" in result.stdout
 
+    def test_rejected_alternatives(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        decision = create_decision(
+            conn,
+            title="Auth choice",
+            rejected_alternatives=["HTTP Basic Auth", "API Keys"],
+        )
+        conn.close()
+
+        result = runner.invoke(app, ["decision", "rejected-alternatives", decision["id"][:12]])
+        assert result.exit_code == 0
+        assert "HTTP Basic Auth" in result.stdout
+        assert "API Keys" in result.stdout
+
     def test_link_assessment_and_file_and_checkpoint(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
         conn = get_db(str(ec_repo))

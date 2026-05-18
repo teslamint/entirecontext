@@ -11,6 +11,7 @@
 - `uv sync` : Install runtime dependencies.
 - `uv sync --extra dev` : Install developer tools (`pytest`, `pytest-cov`, `ruff`).
 - `uv run ec --help` : Verify CLI entrypoint and available commands.
+- **MCP ops**: After `uv sync` that touches `mcp/` or `core/decisions.py`, restart Claude Code — the stdio MCP server does not auto-reload.
 - `uv run pytest` : Run full test suite.
 - `uv run pytest --cov=entirecontext` : Run tests with coverage.
 - `uv run ruff format .` : Format code (line length 120).

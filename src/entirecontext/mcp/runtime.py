@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +17,32 @@ class ServiceRegistry:
 
 class RepoResolutionError(RuntimeError):
     """Raised when the MCP runtime cannot resolve a target repo."""
+
+
+# Repo path resolved on first successful lookup within this process.
+# Avoids repeating git/filesystem discovery on every tool call in a
+# long-running MCP server — especially important when the fallback path
+# (`_list_valid_registered_repos`) would block on unmounted network volumes.
+_cached_repo_path: str | None = None
+
+
+def _path_exists_timeout(path: str, timeout: float = 1.0) -> bool:
+    """Return Path(path).exists() or False if the check blocks longer than `timeout` s.
+
+    Prevents hang on unmounted network filesystems (e.g. /Volumes/ on macOS).
+    """
+    result: list[bool] = [False]
+
+    def _check() -> None:
+        try:
+            result[0] = Path(path).exists()
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_check, daemon=True)
+    t.start()
+    t.join(timeout)
+    return result[0]
 
 
 def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite3.Connection, str]:
@@ -55,7 +82,7 @@ def _list_valid_registered_repos() -> list[dict]:
     valid_repos: list[dict] = []
     for repo in repos:
         repo_path = repo.get("repo_path")
-        if not repo_path or not Path(repo_path).exists():
+        if not repo_path or not _path_exists_timeout(repo_path):
             continue
         context = RepoContext.from_repo_path(repo_path, require_project=True)
         if context is None:
@@ -82,6 +109,8 @@ def _open_single_registered_repo(valid_repos: list[dict]) -> tuple[sqlite3.Conne
 
 
 def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
+    global _cached_repo_path
+
     if repo_hint:
         return _resolve_explicit_repo(repo_hint, source_label="repo_hint")
 
@@ -89,12 +118,21 @@ def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
     if env_repo_path:
         return _resolve_explicit_repo(env_repo_path, source_label="ENTIRECONTEXT_REPO_PATH")
 
+    if _cached_repo_path is not None:
+        try:
+            return _resolve_explicit_repo(_cached_repo_path, source_label="cached_repo_path")
+        except RepoResolutionError:
+            _cached_repo_path = None
+
     cwd_context = _resolve_from_cwd()
     if cwd_context is not None:
+        _cached_repo_path = cwd_context[1]
         return cwd_context
 
     valid_repos = _list_valid_registered_repos()
-    return _open_single_registered_repo(valid_repos)
+    result = _open_single_registered_repo(valid_repos)
+    _cached_repo_path = result[1]
+    return result
 
 
 def resolve_repo():
