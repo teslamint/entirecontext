@@ -7,6 +7,8 @@ import subprocess
 
 import pytest
 
+import tests.conftest_hypothesis  # noqa: F401
+
 
 @pytest.fixture
 def git_repo(tmp_path):

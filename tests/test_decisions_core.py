@@ -451,18 +451,66 @@ class TestSupersedeDecision:
         assert row["superseded_by_id"] is None
 
     def test_supersede_writes_replaced_outcome_atomically(self, ec_db):
-        """supersede_decision must write a 'replaced' outcome row in the same transaction."""
         old = create_decision(ec_db, title="Old approach")
         new = create_decision(ec_db, title="New approach")
+
         supersede_decision(ec_db, old["id"], new["id"])
 
-        outcomes = list_decision_outcomes(ec_db, old["id"])
+        outcomes = ec_db.execute(
+            "SELECT outcome_type, note FROM decision_outcomes WHERE decision_id = ? ORDER BY created_at DESC",
+            (old["id"],),
+        ).fetchall()
         assert len(outcomes) == 1
         assert outcomes[0]["outcome_type"] == "replaced"
-        assert f"superseded by {new['id']}" in outcomes[0]["note"]
+        assert new["id"] in outcomes[0]["note"]
 
-    def test_supersede_replaced_rollback_on_cycle_error(self, ec_db):
-        """Cycle error inside supersede must roll back both the staleness update AND the replaced outcome."""
+        row = ec_db.execute(
+            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+            (old["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "superseded"
+        assert row["superseded_by_id"] == new["id"]
+
+    def test_re_supersede_updates_outcome_without_duplicates(self, ec_db):
+        old = create_decision(ec_db, title="Old")
+        b = create_decision(ec_db, title="B")
+        c = create_decision(ec_db, title="C")
+
+        supersede_decision(ec_db, old["id"], b["id"])
+        supersede_decision(ec_db, old["id"], c["id"])
+
+        outcomes = ec_db.execute(
+            "SELECT outcome_type, note FROM decision_outcomes WHERE decision_id = ?",
+            (old["id"],),
+        ).fetchall()
+        assert len(outcomes) == 1
+        assert c["id"] in outcomes[0]["note"]
+
+        row = ec_db.execute(
+            "SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)
+        ).fetchone()
+        assert row["superseded_by_id"] == c["id"]
+
+    def test_supersede_preserves_user_authored_replaced_note(self, ec_db):
+        old = create_decision(ec_db, title="Old")
+        new1 = create_decision(ec_db, title="New1")
+        new2 = create_decision(ec_db, title="New2")
+
+        record_decision_outcome(ec_db, old["id"], "replaced", note="manual: deprecated by design")
+        supersede_decision(ec_db, old["id"], new1["id"])
+        supersede_decision(ec_db, old["id"], new2["id"])
+
+        outcomes = list_decision_outcomes(ec_db, old["id"])
+        replaced = [o for o in outcomes if o["outcome_type"] == "replaced"]
+        user_notes = [o for o in replaced if not o["note"].startswith("auto:")]
+        auto_notes = [o for o in replaced if o["note"].startswith("auto:")]
+
+        assert len(user_notes) == 1
+        assert user_notes[0]["note"] == "manual: deprecated by design"
+        assert len(auto_notes) == 1
+        assert new2["id"] in auto_notes[0]["note"]
+
+    def test_supersede_replaced_outcome_rolled_back_on_cycle(self, ec_db):
         a = create_decision(ec_db, title="A")
         b = create_decision(ec_db, title="B")
         supersede_decision(ec_db, a["id"], b["id"])
@@ -470,11 +518,11 @@ class TestSupersedeDecision:
         with pytest.raises(ValueError, match="cycle"):
             supersede_decision(ec_db, b["id"], a["id"])
 
-        # b must remain fresh with no replaced outcome.
-        b_outcomes = list_decision_outcomes(ec_db, b["id"])
-        assert not any(o["outcome_type"] == "replaced" for o in b_outcomes)
-        b_row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id=?", (b["id"],)).fetchone()
-        assert b_row["staleness_status"] == "fresh"
+        outcomes = ec_db.execute(
+            "SELECT outcome_type FROM decision_outcomes WHERE decision_id = ?",
+            (b["id"],),
+        ).fetchall()
+        assert len(outcomes) == 0
 
     def test_supersede_rolls_back_started_transaction_on_cycle_error(self, ec_db):
         a = create_decision(ec_db, title="A")

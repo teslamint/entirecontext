@@ -155,6 +155,7 @@ def confirm_candidate(
         create_decision,
         link_decision_to_assessment,
         link_decision_to_checkpoint,
+        link_decision_to_commit,
         link_decision_to_file,
     )
 
@@ -185,6 +186,16 @@ def confirm_candidate(
             if candidate.get("checkpoint_id"):
                 try:
                     link_decision_to_checkpoint(conn, decision_id, candidate["checkpoint_id"])
+                except Exception:
+                    pass
+
+                try:
+                    cp_row = conn.execute(
+                        "SELECT git_commit_hash FROM checkpoints WHERE id = ?",
+                        (candidate["checkpoint_id"],),
+                    ).fetchone()
+                    if cp_row and cp_row["git_commit_hash"]:
+                        link_decision_to_commit(conn, decision_id, cp_row["git_commit_hash"])
                 except Exception:
                     pass
 
