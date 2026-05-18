@@ -43,6 +43,7 @@ jobs:
 
       - name: Assess futures impact
         if: steps.diff.outputs.diff_size != '0'
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
