@@ -238,6 +238,6 @@ def _toml_value(v: Any) -> str:
     if isinstance(v, float):
         return str(v)
     if isinstance(v, str):
-        v = v.replace("\\", "\\\\").replace('"', '\\"')
+        v = v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
         return f'"{v}"'
     return str(v)

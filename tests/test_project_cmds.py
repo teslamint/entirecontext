@@ -436,10 +436,8 @@ class TestCodexIntegration:
         runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
         result = runner.invoke(app, ["disable", "--agent", "codex"])
         assert result.exit_code == 0
-        content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
-        assert "old-hook.py" in content
         local_content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
-        assert "notify" not in local_content
+        assert "old-hook.py" in local_content
 
     @patch("entirecontext.core.project.find_git_root")
     def test_repeated_enable_preserves_upstream_notify_for_disable(self, mock_git_root, tmp_path, monkeypatch):
@@ -459,8 +457,8 @@ class TestCodexIntegration:
         assert first_enable.exit_code == 0
         assert second_enable.exit_code == 0
         assert disable.exit_code == 0
-        content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
-        assert "old-hook.py" in content
+        local_content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "old-hook.py" in local_content
 
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_codex_preserves_legacy_local_notify_when_user_notify_is_ec(
@@ -482,8 +480,8 @@ class TestCodexIntegration:
 
         assert enable.exit_code == 0
         assert disable.exit_code == 0
-        content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
-        assert "old-hook.py" in content
+        local_content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "old-hook.py" in local_content
 
     @patch("entirecontext.core.project.find_git_root")
     def test_disable_from_different_repo_does_not_restore_other_repos_upstream(self, mock_git_root, tmp_path, monkeypatch):

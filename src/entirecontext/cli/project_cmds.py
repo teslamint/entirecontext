@@ -90,11 +90,14 @@ def _write_global_state(state: dict) -> None:
     state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
+_UNSET = object()
+
+
 def _save_codex_upstream(
     repo_path: str,
     command: list[str] | None,
     *,
-    global_upstream: list[str] | None = None,
+    global_upstream: list[str] | None | object = _UNSET,
 ) -> None:
     state = _read_global_state()
     repos = state.setdefault("repos", {})
@@ -102,8 +105,11 @@ def _save_codex_upstream(
         repos[repo_path] = {"upstream_notify": command}
     else:
         repos.pop(repo_path, None)
-    if global_upstream:
-        state["global_upstream"] = global_upstream
+    if global_upstream is not _UNSET:
+        if global_upstream:
+            state["global_upstream"] = global_upstream
+        else:
+            state.pop("global_upstream", None)
     _write_global_state(state)
 
 
@@ -191,7 +197,7 @@ def _enable_codex_notify(repo_path: str) -> None:
 
     user_cfg["notify"] = _resolve_ec_codex_notify_command()
     _write_toml_file(user_config_path, user_cfg)
-    _save_codex_upstream(repo_path, repo_upstream, global_upstream=user_upstream)
+    _save_codex_upstream(repo_path, repo_upstream, global_upstream=user_upstream or None)
 
 
 def _disable_codex_notify(repo_path: str) -> bool:
@@ -221,12 +227,18 @@ def _disable_codex_notify(repo_path: str) -> bool:
     repo_upstream = _load_codex_upstream(repo_path)
     global_upstream = _load_global_upstream()
     state = _remove_codex_repo_entry(repo_path)
+
+    if repo_upstream:
+        local_cfg["notify"] = repo_upstream
+        _write_toml_file(local_config_path, local_cfg)
+
     if _has_other_active_repos(state, repo_path):
         return found
 
-    upstream = global_upstream or repo_upstream
-    if upstream:
-        user_cfg["notify"] = upstream
+    if global_upstream:
+        user_cfg["notify"] = global_upstream
+    elif repo_upstream:
+        user_cfg.pop("notify", None)
     else:
         user_cfg.pop("notify", None)
     _write_toml_file(user_config_path, user_cfg)
