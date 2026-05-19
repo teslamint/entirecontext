@@ -1270,6 +1270,15 @@ class TestMCPDecisionTools:
         assert result["session_id"] == "s1"
         assert result["turn_id"] == "t1"
 
+    def test_decision_outcome_rejects_invalid_value_via_mcp(self, mock_repo_db):
+        """ec_decision_outcome must reject unknown outcome types."""
+        from entirecontext.core.decisions import create_decision
+        from entirecontext.mcp.server import ec_decision_outcome
+
+        decision = create_decision(mock_repo_db, title="Invalid outcome test")
+        result = json.loads(asyncio.run(ec_decision_outcome(decision["id"], "unknown_value")))
+        assert "error" in result or "Invalid" in str(result), result
+
 
 class TestMCPActivate:
     """Tests for ec_activate MCP tool."""

@@ -498,23 +498,6 @@ class TestSupersedeDecision:
         assert row["staleness_status"] == "fresh"
         assert row["superseded_by_id"] is None
 
-    def test_supersede_rolls_back_started_transaction_on_cycle_error(self, ec_db):
-        a = create_decision(ec_db, title="A")
-        b = create_decision(ec_db, title="B")
-        supersede_decision(ec_db, a["id"], b["id"])
-
-        with pytest.raises(ValueError, match="cycle"):
-            supersede_decision(ec_db, b["id"], a["id"])
-
-        # Helper rolled back its owned boundary cleanly; depth back to 0.
-        assert getattr(ec_db, "_ec_tx_depth", 0) == 0
-        row = ec_db.execute(
-            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
-            (b["id"],),
-        ).fetchone()
-        assert row["staleness_status"] == "fresh"
-        assert row["superseded_by_id"] is None
-
     def test_supersede_writes_replaced_outcome_atomically(self, ec_db):
         old = create_decision(ec_db, title="Old approach")
         new = create_decision(ec_db, title="New approach")
@@ -551,9 +534,7 @@ class TestSupersedeDecision:
         assert len(outcomes) == 1
         assert c["id"] in outcomes[0]["note"]
 
-        row = ec_db.execute(
-            "SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)
-        ).fetchone()
+        row = ec_db.execute("SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)).fetchone()
         assert row["superseded_by_id"] == c["id"]
 
     def test_supersede_preserves_user_authored_replaced_note(self, ec_db):
@@ -588,6 +569,23 @@ class TestSupersedeDecision:
             (b["id"],),
         ).fetchall()
         assert len(outcomes) == 0
+
+    def test_supersede_rolls_back_started_transaction_on_cycle_error(self, ec_db):
+        a = create_decision(ec_db, title="A")
+        b = create_decision(ec_db, title="B")
+        supersede_decision(ec_db, a["id"], b["id"])
+
+        with pytest.raises(ValueError, match="cycle"):
+            supersede_decision(ec_db, b["id"], a["id"])
+
+        # Helper rolled back its owned boundary cleanly; depth back to 0.
+        assert getattr(ec_db, "_ec_tx_depth", 0) == 0
+        row = ec_db.execute(
+            "SELECT staleness_status, superseded_by_id FROM decisions WHERE id = ?",
+            (b["id"],),
+        ).fetchone()
+        assert row["staleness_status"] == "fresh"
+        assert row["superseded_by_id"] is None
 
 
 class TestUnlinkDecision:
@@ -1562,6 +1560,90 @@ class TestDecisionQualityDecay:
         assert item["quality_score"] == 0.0, (
             f"future-stamped rows leaked into legacy path: quality={item['quality_score']}"
         )
+
+    def test_quality_score_refined_replaced_carry_zero_weight(self):
+        """refined/replaced rows do not affect the quality score (weight = 0)."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        base = calculate_decision_quality_score({"accepted": 2, "ignored": 1, "contradicted": 1})
+        with_new = calculate_decision_quality_score(
+            {"accepted": 2, "ignored": 1, "contradicted": 1, "refined": 5, "replaced": 3}
+        )
+        assert base == with_new
+
+    def test_volume_smoother_ignores_refined_replaced(self):
+        """Regression: refined/replaced must NOT count toward the volume smoother total.
+
+        If they did, a single 'accepted' + many 'replaced' rows could push total
+        above min_volume and suppress the smoother, yielding a higher score than a
+        decision with 1 accepted alone. Score must be identical whether or not
+        refined/replaced rows are present.
+        """
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        # 1 accepted, min_volume=2 → smoother applies: raw_score=1.0 * (1/2) = 0.5
+        score_without = calculate_decision_quality_score(
+            {"accepted": 1},
+            decayed_counts={"accepted": 1.0},
+            min_volume=2,
+        )
+        # 1 accepted + 1 replaced → if replaced counted in total, smoother is skipped → 1.0 (wrong)
+        score_with_replaced = calculate_decision_quality_score(
+            {"accepted": 1, "replaced": 1},
+            decayed_counts={"accepted": 1.0, "replaced": 1.0},
+            min_volume=2,
+        )
+        # 1 accepted + 3 refined → same expectation
+        score_with_refined = calculate_decision_quality_score(
+            {"accepted": 1, "refined": 3},
+            decayed_counts={"accepted": 1.0, "refined": 3.0},
+            min_volume=2,
+        )
+        assert score_without == score_with_replaced == score_with_refined
+
+    def test_quality_score_accepted_weight_is_one(self):
+        """Verifies the F5b 'existing weight is sufficient' claim: accepted × 1.0."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        assert calculate_decision_quality_score({"accepted": 1}) == 1.0
+        assert calculate_decision_quality_score({"accepted": 3}) == 3.0
+
+    def test_quality_score_decayed_refined_replaced_zero_weight(self):
+        """Both legacy and decayed branches must ignore refined/replaced rows."""
+        from entirecontext.core.decisions import calculate_decision_quality_score
+
+        counts = {"accepted": 2, "ignored": 0, "contradicted": 0, "refined": 4, "replaced": 2}
+        decayed = {"accepted": 2.0, "ignored": 0.0, "contradicted": 0.0, "refined": 4.0, "replaced": 2.0}
+
+        score_legacy = calculate_decision_quality_score(counts)
+        score_decayed = calculate_decision_quality_score(counts, decayed_counts=decayed, min_volume=2)
+
+        assert score_legacy == 2.0
+        assert score_decayed == 2.0
+
+    def test_get_decision_quality_summary_includes_refined_replaced_keys(self, ec_db):
+        """quality_summary.counts always has all 5 keys; refined/replaced start at 0."""
+        import uuid
+
+        d = create_decision(ec_db, title="Summary key test")
+        ec_db.execute(
+            "INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES (?, ?, 'accepted')",
+            (str(uuid.uuid4()), d["id"]),
+        )
+        ec_db.execute(
+            "INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES (?, ?, 'refined')",
+            (str(uuid.uuid4()), d["id"]),
+        )
+        ec_db.commit()
+
+        summary = get_decision_quality_summary(ec_db, d["id"])
+        counts = summary["counts"]
+        assert "refined" in counts
+        assert "replaced" in counts
+        assert counts["refined"] == 1
+        assert counts["replaced"] == 0
+        assert counts["accepted"] == 1
+        assert summary["quality_score"] == 1.0  # refined has no effect
 
 
 # ---------------------------------------------------------------------------

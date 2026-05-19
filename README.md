@@ -66,6 +66,20 @@ When a decision is superseded, retrieval follows `superseded_by_id` to the termi
 - **Cycle protection** — `supersede_decision` rejects inputs that would create a cycle; walks are also bounded by a depth cap (10 hops).
 - **Debugging** — `ec decision chain <id>` prints the full walk (id, title, status) from origin to terminal.
 
+### Outcome vocabulary
+
+`decision_outcomes.outcome_type` accepts five values:
+
+| Value | Quality weight | Effect |
+|---|---|---|
+| `accepted` | +1.0 | Decision was applied; improves ranking signal |
+| `ignored` | −0.5 | Decision was surfaced but not applied |
+| `contradicted` | −2.0 | Decision turned out to be wrong; can trigger staleness auto-promotion |
+| `refined` | 0 | Decision was partially applied but adapted; display/audit only |
+| `replaced` | 0 | Decision was superseded; written automatically by `ec decision supersede` |
+
+`ec decision supersede OLD NEW` writes a `replaced` outcome row on the old decision inside the same transaction as the staleness update, creating an audit trail. Multi-step chains (A→B→C) produce a `replaced` row on each superseded decision.
+
 ### Auto-promotion from outcome tracking
 
 `record_decision_outcome` recognizes usage feedback. When a decision accumulates ≥2 `contradicted` outcomes **and** contradicted > accepted, its `staleness_status` is automatically promoted to `contradicted`. This is a **one-way ratchet** — later accepted outcomes never auto-revert the status; a manual `ec decision stale --status fresh` is required to recover, and that manual reset also restarts the auto-promotion window so only post-reset outcomes count toward the next promotion.
@@ -419,7 +433,7 @@ ec mcp serve
 | `ec_decision_create` | Create a decision record (title, rationale, rejected alternatives, scope) |
 | `ec_decision_get` | Resolve decision by full or prefix ID |
 | `ec_decision_list` | List decisions with optional filters (status, tags, files) |
-| `ec_decision_outcome` | Record the outcome of a decision (accepted, ignored, or contradicted) |
+| `ec_decision_outcome` | Record the outcome of a decision (accepted, ignored, contradicted, refined, or replaced) |
 | `ec_decision_related` | Rank linked decisions by file overlap, assessment relations, and diff text match |
 | `ec_decision_search` | Keyword search over decisions via FTS5, with optional hybrid ranking and staleness filters |
 | `ec_decision_stale` | Check if a decision's linked files have changed recently (read-only staleness probe) |
