@@ -418,7 +418,7 @@ class TestCodexIntegration:
         result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
         assert result.exit_code == 0
         state = json.loads((fake_home / ".entirecontext" / "state" / "codex_notify.json").read_text(encoding="utf-8"))
-        assert state["upstream_notify"] == ["python", "hook.py"]
+        assert state["repos"][str(repo)]["upstream_notify"] == ["python", "hook.py"]
         local_content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
         assert "notify" not in local_content
 
@@ -486,7 +486,7 @@ class TestCodexIntegration:
         assert "old-hook.py" in content
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_disable_from_different_repo_restores_global_upstream_notify(self, mock_git_root, tmp_path, monkeypatch):
+    def test_disable_from_different_repo_does_not_restore_other_repos_upstream(self, mock_git_root, tmp_path, monkeypatch):
         first_repo = tmp_path / "repo-a"
         second_repo = tmp_path / "repo-b"
         first_repo.mkdir()
@@ -506,7 +506,9 @@ class TestCodexIntegration:
         assert enable.exit_code == 0
         assert disable.exit_code == 0
         content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
-        assert "old-hook.py" in content
+        assert "old-hook.py" not in content
+        state = json.loads((fake_home / ".entirecontext" / "state" / "codex_notify.json").read_text(encoding="utf-8"))
+        assert state["repos"][str(first_repo)]["upstream_notify"] == ["python", "old-hook.py"]
 
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_codex_ingest_reads_upstream_from_global_path(self, mock_git_root, tmp_path, monkeypatch):

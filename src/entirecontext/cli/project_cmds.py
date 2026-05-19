@@ -73,50 +73,62 @@ def _codex_project_config_path(repo_path: str) -> Path:
     return Path(repo_path) / ".codex" / "config.toml"
 
 
-def _save_codex_upstream(repo_path: str, command: list[str] | None) -> None:
-    state_path = _codex_state_path(repo_path)
+def _read_global_state() -> dict:
+    state_path = _codex_global_state_path()
+    if not state_path.exists():
+        return {}
+    try:
+        data = json.loads(state_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_global_state(state: dict) -> None:
+    state_path = _codex_global_state_path()
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    state = {}
-    if state_path.exists():
-        try:
-            state = json.loads(state_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            state = {}
-    if not isinstance(state, dict):
-        state = {}
-
-    if command:
-        state["upstream_notify"] = command
-    else:
-        state.pop("upstream_notify", None)
-
     state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
-def _load_codex_upstream(repo_path: str) -> list[str] | None:
-    state_paths = [_codex_state_path(repo_path), _codex_legacy_state_path(repo_path)]
-    for state_path in state_paths:
-        upstream = _load_codex_upstream_from_path(state_path)
-        if upstream:
-            return upstream
-    return None
+def _save_codex_upstream(repo_path: str, command: list[str] | None) -> None:
+    state = _read_global_state()
+    repos = state.setdefault("repos", {})
+    if command:
+        repos[repo_path] = {"upstream_notify": command}
+    else:
+        repos.pop(repo_path, None)
+    _write_global_state(state)
 
 
-def _load_codex_upstream_from_path(state_path: Path) -> list[str] | None:
-    if not state_path.exists():
-        return None
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(state, dict):
-        return None
-    upstream = state.get("upstream_notify")
+def _validate_upstream(upstream: object) -> list[str] | None:
     if not isinstance(upstream, list) or not upstream:
         return None
     if not all(isinstance(item, str) for item in upstream):
         return None
     return upstream
+
+
+def _load_codex_upstream(repo_path: str) -> list[str] | None:
+    state = _read_global_state()
+    repo_entry = state.get("repos", {}).get(repo_path)
+    if isinstance(repo_entry, dict):
+        result = _validate_upstream(repo_entry.get("upstream_notify"))
+        if result:
+            return result
+
+    result = _validate_upstream(state.get("upstream_notify"))
+    if result:
+        return result
+
+    legacy_path = _codex_legacy_state_path(repo_path)
+    if legacy_path.exists():
+        try:
+            legacy = json.loads(legacy_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+        if isinstance(legacy, dict):
+            return _validate_upstream(legacy.get("upstream_notify"))
+    return None
 
 
 def _enable_codex_notify(repo_path: str) -> None:
@@ -129,18 +141,18 @@ def _enable_codex_notify(repo_path: str) -> None:
 
     upstream: list[str] | None = None
     discovered_upstream = False
-    if isinstance(user_notify, list) and user_notify and all(isinstance(x, str) for x in user_notify):
-        if not _is_ec_codex_notify_command(user_notify):
-            upstream = user_notify
+    if isinstance(local_notify, list) and local_notify and all(isinstance(x, str) for x in local_notify):
+        if not _is_ec_codex_notify_command(local_notify):
+            upstream = local_notify
             discovered_upstream = True
     if (
         not discovered_upstream
-        and isinstance(local_notify, list)
-        and local_notify
-        and all(isinstance(x, str) for x in local_notify)
+        and isinstance(user_notify, list)
+        and user_notify
+        and all(isinstance(x, str) for x in user_notify)
     ):
-        if not _is_ec_codex_notify_command(local_notify):
-            upstream = local_notify
+        if not _is_ec_codex_notify_command(user_notify):
+            upstream = user_notify
             discovered_upstream = True
 
     if not discovered_upstream and isinstance(user_notify, list) and _is_ec_codex_notify_command(user_notify):

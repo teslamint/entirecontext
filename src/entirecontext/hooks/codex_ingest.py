@@ -188,13 +188,25 @@ def _state_path(repo_path: str) -> Path:
 
 
 def _load_state(repo_path: str) -> dict[str, Any]:
-    for path in [_global_state_path(), _state_path(repo_path)]:
-        if not path.exists():
-            continue
+    global_path = _global_state_path()
+    if global_path.exists():
         try:
-            data = json.loads(path.read_text(encoding="utf-8"))
+            data = json.loads(global_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            continue
+            data = None
+        if isinstance(data, dict):
+            repo_entry = data.get("repos", {}).get(repo_path)
+            if isinstance(repo_entry, dict) and repo_entry:
+                return repo_entry
+            if data.get("upstream_notify"):
+                return data
+
+    local_path = _state_path(repo_path)
+    if local_path.exists():
+        try:
+            data = json.loads(local_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
         if isinstance(data, dict) and data:
             return data
     return {}
