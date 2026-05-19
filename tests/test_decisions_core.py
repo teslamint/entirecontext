@@ -534,9 +534,7 @@ class TestSupersedeDecision:
         assert len(outcomes) == 1
         assert c["id"] in outcomes[0]["note"]
 
-        row = ec_db.execute(
-            "SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)
-        ).fetchone()
+        row = ec_db.execute("SELECT superseded_by_id FROM decisions WHERE id = ?", (old["id"],)).fetchone()
         assert row["superseded_by_id"] == c["id"]
 
     def test_supersede_preserves_user_authored_replaced_note(self, ec_db):
@@ -588,7 +586,6 @@ class TestSupersedeDecision:
         ).fetchone()
         assert row["staleness_status"] == "fresh"
         assert row["superseded_by_id"] is None
-
 
 
 class TestUnlinkDecision:
