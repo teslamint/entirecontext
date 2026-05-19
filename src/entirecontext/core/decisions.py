@@ -991,6 +991,7 @@ class RankingWeights:
     assessment_relation_weights: dict[str, float] = field(default_factory=lambda: dict(_ASSESSMENT_RELATION_WEIGHTS))
     file_exact_weight: float = 3.0
     git_commit_weight: float = 3.0
+    accepted_outcome_boost: float = 2.0
     directory_proximity_cap_levels: int = 3
 
 
@@ -1067,6 +1068,9 @@ def _load_ranking_weights(config: dict | None) -> RankingWeights:
         ),
         git_commit_weight=_coerce_ranking_float(
             section, "git_commit_weight", _DEFAULT_RANKING_WEIGHTS.git_commit_weight
+        ),
+        accepted_outcome_boost=_coerce_ranking_float(
+            section, "accepted_outcome_boost", _DEFAULT_RANKING_WEIGHTS.accepted_outcome_boost
         ),
         directory_proximity_cap_levels=_coerce_ranking_int(
             section, "directory_proximity_cap_levels", _DEFAULT_RANKING_WEIGHTS.directory_proximity_cap_levels
@@ -1586,9 +1590,20 @@ def rank_related_decisions(
             linked_commits = commit_links_by_decision.get(did, set())
             git_commit = weights.git_commit_weight * len(linked_commits & commit_set)
 
-        base_score = file_exact + file_proximity + assessment_score + diff_relevance + git_commit
-        if base_score <= 0:
+        relevance_base = file_exact + file_proximity + assessment_score + diff_relevance + git_commit
+        if relevance_base <= 0:
             continue
+
+        if did in decayed_outcome_counts_by_decision:
+            boost_outcome_counts = decayed_outcome_counts_by_decision[did]
+        else:
+            boost_outcome_counts = outcome_counts_by_decision.get(did, {})
+
+        accepted_boost = 0.0
+        if boost_outcome_counts.get("accepted", 0) > 0:
+            accepted_boost = weights.accepted_outcome_boost
+
+        base_score = relevance_base + accepted_boost
 
         # ``.get(did)`` (no ``or None`` fallback): the empty bucket ``{}`` must
         # stay on the decay path, not silently switch back to legacy counts.
@@ -1621,6 +1636,7 @@ def rank_related_decisions(
                     "assessment": round(assessment_score, 3),
                     "diff_relevance": round(diff_relevance, 3),
                     "git_commit": round(git_commit, 3),
+                    "accepted_boost": round(accepted_boost, 3),
                     "quality": round(quality_score, 3),
                     "staleness_factor": round(staleness_factor, 3),
                 },

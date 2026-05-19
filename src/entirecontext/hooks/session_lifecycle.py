@@ -248,12 +248,12 @@ def on_session_end(data: dict[str, Any]) -> None:
     try:
         now = _now_iso()
 
-        _populate_session_summary(conn, session_id)
-
         conn.execute(
             "UPDATE sessions SET ended_at = ?, updated_at = ? WHERE id = ?",
             (now, now, session_id),
         )
+
+        _populate_session_summary(conn, session_id)
 
         session_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         turn_count = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]

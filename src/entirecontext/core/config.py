@@ -215,19 +215,34 @@ def _write_toml(path: Path, data: dict) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def _needs_quoting(key: str) -> bool:
+    return not key.isidentifier() or not all(c.isalnum() or c in "-_" for c in key)
+
+
+def _quote_toml_key(key: str) -> str:
+    if _needs_quoting(key):
+        escaped = key.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return key
+
+
 def _write_toml_section(lines: list[str], data: dict, prefix: list[str]) -> None:
+    tables: list[tuple[str, dict]] = []
     for key, value in data.items():
+        qk = _quote_toml_key(key)
         if isinstance(value, dict):
-            section = ".".join(prefix + [key])
-            lines.append(f"\n[{section}]")
-            _write_toml_section(lines, value, prefix + [key])
+            tables.append((key, value))
         elif isinstance(value, list):
-            lines.append(f"{key} = [")
+            lines.append(f"{qk} = [")
             for item in value:
                 lines.append(f"    {_toml_value(item)},")
             lines.append("]")
         else:
-            lines.append(f"{key} = {_toml_value(value)}")
+            lines.append(f"{qk} = {_toml_value(value)}")
+    for key, value in tables:
+        section = ".".join(_quote_toml_key(k) for k in prefix + [key])
+        lines.append(f"\n[{section}]")
+        _write_toml_section(lines, value, prefix + [key])
 
 
 def _toml_value(v: Any) -> str:
@@ -238,5 +253,9 @@ def _toml_value(v: Any) -> str:
     if isinstance(v, float):
         return str(v)
     if isinstance(v, str):
+        v = v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
         return f'"{v}"'
+    if isinstance(v, dict):
+        pairs = ", ".join(f"{_quote_toml_key(k)} = {_toml_value(val)}" for k, val in v.items())
+        return f"{{{pairs}}}"
     return str(v)

@@ -390,48 +390,142 @@ class TestEnableDisableRoundTrip:
 
 class TestCodexIntegration:
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_codex_writes_project_notify(self, mock_git_root, tmp_path, monkeypatch):
+    def test_enable_codex_writes_user_notify(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git").mkdir()
         mock_git_root.return_value = str(repo)
-        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
 
         result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
         assert result.exit_code == 0
-        content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
         assert "codex-notify" in content
+        assert not (repo / ".codex" / "config.toml").exists()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_codex_preserves_upstream_notify(self, mock_git_root, tmp_path, monkeypatch):
+    def test_enable_codex_migrates_project_notify_to_upstream(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git").mkdir()
         (repo / ".codex").mkdir()
         (repo / ".codex" / "config.toml").write_text('notify = ["python", "hook.py"]\n', encoding="utf-8")
         mock_git_root.return_value = str(repo)
-        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
 
         result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
         assert result.exit_code == 0
-        state = json.loads((repo / ".entirecontext" / "state" / "codex_notify.json").read_text(encoding="utf-8"))
-        assert state["upstream_notify"] == ["python", "hook.py"]
+        state = json.loads((fake_home / ".entirecontext" / "state" / "codex_notify.json").read_text(encoding="utf-8"))
+        assert state["repos"][str(repo)]["upstream_notify"] == ["python", "hook.py"]
+        local_content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "notify" not in local_content
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_disable_codex_restores_upstream_notify(self, mock_git_root, tmp_path, monkeypatch):
+    def test_disable_codex_restores_upstream_notify_to_user_config(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
         (repo / ".git").mkdir()
         (repo / ".codex").mkdir()
         (repo / ".codex" / "config.toml").write_text('notify = ["python", "old-hook.py"]\n', encoding="utf-8")
         mock_git_root.return_value = str(repo)
-        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
 
         runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
         result = runner.invoke(app, ["disable", "--agent", "codex"])
         assert result.exit_code == 0
-        content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
-        assert "old-hook.py" in content
+        local_content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "old-hook.py" in local_content
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_repeated_enable_preserves_upstream_notify_for_disable(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".codex").mkdir()
+        (repo / ".codex" / "config.toml").write_text('notify = ["python", "old-hook.py"]\n', encoding="utf-8")
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        first_enable = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        second_enable = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        disable = runner.invoke(app, ["disable", "--agent", "codex"])
+
+        assert first_enable.exit_code == 0
+        assert second_enable.exit_code == 0
+        assert disable.exit_code == 0
+        local_content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "old-hook.py" in local_content
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_preserves_legacy_local_notify_when_user_notify_is_ec(
+        self, mock_git_root, tmp_path, monkeypatch
+    ):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".codex").mkdir()
+        (repo / ".codex" / "config.toml").write_text('notify = ["python", "old-hook.py"]\n', encoding="utf-8")
+        fake_home = tmp_path / "fakehome"
+        (fake_home / ".codex").mkdir(parents=True)
+        (fake_home / ".codex" / "config.toml").write_text('notify = ["ec", "hook", "codex-notify"]\n', encoding="utf-8")
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        enable = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        disable = runner.invoke(app, ["disable", "--agent", "codex"])
+
+        assert enable.exit_code == 0
+        assert disable.exit_code == 0
+        local_content = (repo / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "old-hook.py" in local_content
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_from_different_repo_does_not_restore_other_repos_upstream(self, mock_git_root, tmp_path, monkeypatch):
+        first_repo = tmp_path / "repo-a"
+        second_repo = tmp_path / "repo-b"
+        first_repo.mkdir()
+        second_repo.mkdir()
+        (first_repo / ".git").mkdir()
+        (second_repo / ".git").mkdir()
+        (first_repo / ".codex").mkdir()
+        (first_repo / ".codex" / "config.toml").write_text('notify = ["python", "old-hook.py"]\n', encoding="utf-8")
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        mock_git_root.return_value = str(first_repo)
+        enable = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        mock_git_root.return_value = str(second_repo)
+        disable = runner.invoke(app, ["disable", "--agent", "codex"])
+
+        assert enable.exit_code == 0
+        assert disable.exit_code == 0
+        content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "old-hook.py" not in content
+        state = json.loads((fake_home / ".entirecontext" / "state" / "codex_notify.json").read_text(encoding="utf-8"))
+        assert state["repos"][str(first_repo)]["upstream_notify"] == ["python", "old-hook.py"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_ingest_reads_upstream_from_global_path(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".codex").mkdir()
+        (repo / ".codex" / "config.toml").write_text('notify = ["python", "hook.py"]\n', encoding="utf-8")
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        assert result.exit_code == 0
+
+        from entirecontext.hooks.codex_ingest import _load_state
+
+        state = _load_state(str(repo))
+        assert state.get("upstream_notify") == ["python", "hook.py"]
 
     @patch("entirecontext.core.project.find_git_root")
     def test_doctor_codex_warns_when_missing(self, mock_git_root, ec_repo, monkeypatch):

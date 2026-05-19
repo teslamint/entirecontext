@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,6 +18,36 @@ class ServiceRegistry:
 
 class RepoResolutionError(RuntimeError):
     """Raised when the MCP runtime cannot resolve a target repo."""
+
+
+# Repo path resolved on first successful lookup within this process.
+# Avoids repeating git/filesystem discovery on every tool call in a
+# long-running MCP server — especially important when the fallback path
+# (`_list_valid_registered_repos`) would block on unmounted network volumes.
+_cached_repo_path: str | None = None
+
+
+def _path_exists_timeout(path: str, timeout: float = 1.0) -> bool:
+    """Return Path(path).exists() or False if the check blocks longer than `timeout` s.
+
+    Prevents hang on unmounted network filesystems (e.g. /Volumes/ on macOS).
+    """
+    try:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from pathlib import Path; import sys; sys.exit(0 if Path(sys.argv[1]).exists() else 1)",
+                path,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
 
 
 def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite3.Connection, str]:
@@ -34,15 +66,25 @@ def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite
     return context.conn, context.repo_path
 
 
-def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | None:
+_CWD_NO_GIT = "no_git"
+_CWD_UNINIT = "uninit"
+
+
+def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | str:
+    """Try to open the repo under cwd.
+
+    Returns the (conn, repo_path) tuple on success, or a string sentinel:
+    ``_CWD_NO_GIT`` when cwd is not inside any git repo, ``_CWD_UNINIT``
+    when cwd is a git repo that has not been initialized with EntireContext.
+    """
     from ..core.context import RepoContext
 
     context = RepoContext.from_cwd(require_project=False)
     if context is None:
-        return None
+        return _CWD_NO_GIT
     if context.project is None:
         context.close()
-        return None
+        return _CWD_UNINIT
     return context.conn, context.repo_path
 
 
@@ -55,7 +97,7 @@ def _list_valid_registered_repos() -> list[dict]:
     valid_repos: list[dict] = []
     for repo in repos:
         repo_path = repo.get("repo_path")
-        if not repo_path or not Path(repo_path).exists():
+        if not repo_path or not _path_exists_timeout(repo_path):
             continue
         context = RepoContext.from_repo_path(repo_path, require_project=True)
         if context is None:
@@ -82,6 +124,8 @@ def _open_single_registered_repo(valid_repos: list[dict]) -> tuple[sqlite3.Conne
 
 
 def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
+    global _cached_repo_path
+
     if repo_hint:
         return _resolve_explicit_repo(repo_hint, source_label="repo_hint")
 
@@ -89,12 +133,24 @@ def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
     if env_repo_path:
         return _resolve_explicit_repo(env_repo_path, source_label="ENTIRECONTEXT_REPO_PATH")
 
-    cwd_context = _resolve_from_cwd()
-    if cwd_context is not None:
-        return cwd_context
+    cwd_result = _resolve_from_cwd()
+    if isinstance(cwd_result, tuple):
+        _cached_repo_path = cwd_result[1]
+        return cwd_result
+
+    if cwd_result == _CWD_UNINIT:
+        raise RepoResolutionError("Current directory is a git repo that is not initialized. Run 'ec init'.")
+
+    if _cached_repo_path is not None:
+        try:
+            return _resolve_explicit_repo(_cached_repo_path, source_label="cached_repo_path")
+        except RepoResolutionError:
+            _cached_repo_path = None
 
     valid_repos = _list_valid_registered_repos()
-    return _open_single_registered_repo(valid_repos)
+    result = _open_single_registered_repo(valid_repos)
+    _cached_repo_path = result[1]
+    return result
 
 
 def resolve_repo():

@@ -10,6 +10,14 @@ import pytest
 import tests.conftest_hypothesis  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def reset_mcp_runtime_cache(monkeypatch):
+    """Reset the module-level repo-path cache in mcp.runtime between tests."""
+    from entirecontext.mcp import runtime
+
+    monkeypatch.setattr(runtime, "_cached_repo_path", None)
+
+
 @pytest.fixture
 def git_repo(tmp_path):
     """Create a real git repo in a temp directory."""

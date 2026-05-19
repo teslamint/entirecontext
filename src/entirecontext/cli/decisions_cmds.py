@@ -119,6 +119,31 @@ def decision_show(decision_id: str = typer.Argument(..., help="Decision ID")):
             console.print(f"    - {item['outcome_type']} @ {item['created_at']}")
 
 
+@decision_app.command("rejected-alternatives")
+def decision_rejected_alternatives(decision_id: str = typer.Argument(..., help="Decision ID")):
+    """Show rejected alternatives for a decision."""
+    from ..core.decisions import get_decision
+
+    conn, _ = get_repo_connection()
+    try:
+        decision = get_decision(conn, decision_id)
+    finally:
+        conn.close()
+
+    if not decision:
+        console.print(f"[red]Decision not found:[/red] {decision_id}")
+        raise typer.Exit(1)
+
+    alternatives = decision.get("rejected_alternatives", [])
+    if not alternatives:
+        console.print("[dim]No rejected alternatives found for this decision.[/dim]")
+        return
+
+    console.print(f"[bold]Rejected alternatives for decision {decision['id'][:12]}:[/bold]")
+    for alt in alternatives:
+        console.print(f"  - {alt}")
+
+
 @decision_app.command("link")
 def decision_link(
     decision_id: str = typer.Argument(..., help="Decision ID"),

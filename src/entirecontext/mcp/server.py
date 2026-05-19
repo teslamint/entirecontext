@@ -127,6 +127,10 @@ def run_server():
     if mcp is None:
         print("MCP not available. Install with: pip install 'entirecontext[mcp]'")
         return
+    import sys
+    from entirecontext import __version__
+
+    print(f"[ec-mcp] starting v{__version__}", file=sys.stderr, flush=True)
     mcp.run()
 
 
