@@ -172,6 +172,10 @@ def _disable_codex_notify(repo_path: str) -> bool:
 
     if not (isinstance(user_notify, list) and all(isinstance(x, str) for x in user_notify)):
         if found:
+            upstream = _load_codex_upstream(repo_path)
+            if upstream:
+                user_cfg["notify"] = upstream
+                _write_toml_file(user_config_path, user_cfg)
             _save_codex_upstream(repo_path, None)
         return found
     if not _is_ec_codex_notify_command(user_notify):

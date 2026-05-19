@@ -27,9 +27,9 @@ Respond with a JSON object (no markdown fences) with these fields:
 COMMENT_MARKER = "<!-- tidy-pilot:sticky-comment -->"
 
 # Character budgets — chosen to stay under typical API payload limits.
-MAX_CONTEXT_CHARS = 4_000   # per context section (roadmap, lessons, claude_md)
+MAX_CONTEXT_CHARS = 4_000  # per context section (roadmap, lessons, claude_md)
 MAX_CHUNK_DIFF_CHARS = 8_000  # per diff chunk sent to LLM
-MAX_CHUNKS = 5              # cap on total API calls; chunk size grows proportionally if exceeded
+MAX_CHUNKS = 5  # cap on total API calls; chunk size grows proportionally if exceeded
 
 
 def call_llm(system: str, user: str, *, max_retries: int = 3) -> dict:
@@ -70,7 +70,7 @@ def call_llm(system: str, user: str, *, max_retries: int = 3) -> dict:
             break
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < max_retries:
-                wait = 15 * (2 ** attempt)  # 15s, 30s, 60s
+                wait = 15 * (2**attempt)  # 15s, 30s, 60s
                 print(f"  429 rate limit — retrying in {wait}s (attempt {attempt + 1}/{max_retries})")
                 time.sleep(wait)
             else:
@@ -101,28 +101,49 @@ def split_diff_by_file(diff: str) -> list[str]:
 
 
 def chunk_diff(diff: str, max_chars: int, *, max_chunks: int = MAX_CHUNKS) -> list[str]:
-    """Group per-file diff sections into at most max_chunks chunks.
+    """Group per-file diff sections into chunks respecting a per-chunk character budget.
 
-    Files are distributed evenly across chunks (ceiling division). Each
-    individual file diff is hard-truncated to max_chars so no single chunk
-    blows the API payload limit.
+    Each individual file diff is hard-truncated to max_chars so no single
+    file exceeds the limit.  Chunks are filled greedily until adding the
+    next file would exceed max_chars, then a new chunk starts.  If the
+    resulting number of chunks would exceed max_chunks, files are
+    distributed evenly (ceiling division) and each chunk is hard-truncated
+    to max_chars as a whole.
     """
     file_sections = split_diff_by_file(diff)
     if not file_sections:
         return [""]
 
-    n = len(file_sections)
-    # Ceiling division: how many files per chunk to stay within max_chunks.
-    files_per_chunk = max(1, -(-n // max_chunks))
+    truncated = []
+    for section in file_sections:
+        if len(section) > max_chars:
+            section = section[:max_chars] + "\n... (file diff truncated)\n"
+        truncated.append(section)
 
     chunks: list[str] = []
+    current_parts: list[str] = []
+    current_len = 0
+    for section in truncated:
+        if current_parts and current_len + len(section) > max_chars:
+            chunks.append("".join(current_parts))
+            current_parts = []
+            current_len = 0
+        current_parts.append(section)
+        current_len += len(section)
+    if current_parts:
+        chunks.append("".join(current_parts))
+
+    if len(chunks) <= max_chunks:
+        return chunks
+
+    n = len(truncated)
+    files_per_chunk = max(1, -(-n // max_chunks))
+    chunks = []
     for i in range(0, n, files_per_chunk):
-        parts = []
-        for section in file_sections[i : i + files_per_chunk]:
-            if len(section) > max_chars:
-                section = section[:max_chars] + "\n... (file diff truncated)\n"
-            parts.append(section)
-        chunks.append("".join(parts))
+        combined = "".join(truncated[i : i + files_per_chunk])
+        if len(combined) > max_chars:
+            combined = combined[:max_chars] + "\n... (chunk truncated)\n"
+        chunks.append(combined)
     return chunks
 
 
@@ -244,9 +265,14 @@ def main():
     results: list[dict] = []
     for i, chunk in enumerate(chunks):
         user_prompt = build_user_prompt(
-            args.pr_number, args.pr_title, chunk,
-            roadmap, lessons, claude_md,
-            i, len(chunks),
+            args.pr_number,
+            args.pr_title,
+            chunk,
+            roadmap,
+            lessons,
+            claude_md,
+            i,
+            len(chunks),
         )
         print(f"  chunk {i + 1}/{len(chunks)} ({len(chunk)} chars)")
         result = call_llm(SYSTEM_PROMPT, user_prompt)

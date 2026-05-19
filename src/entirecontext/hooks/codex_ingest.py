@@ -183,15 +183,21 @@ def _state_path(repo_path: str) -> Path:
     return Path(repo_path) / ".entirecontext" / "state" / "codex_notify.json"
 
 
+def _global_state_path() -> Path:
+    return Path.home() / ".entirecontext" / "state" / "codex_notify.json"
+
+
 def _load_state(repo_path: str) -> dict[str, Any]:
-    path = _state_path(repo_path)
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+    for path in [_global_state_path(), _state_path(repo_path)]:
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(data, dict) and data:
+            return data
+    return {}
 
 
 def _save_state(repo_path: str, state: dict[str, Any]) -> None:

@@ -66,15 +66,25 @@ def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite
     return context.conn, context.repo_path
 
 
-def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | None:
+_CWD_NO_GIT = "no_git"
+_CWD_UNINIT = "uninit"
+
+
+def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | str:
+    """Try to open the repo under cwd.
+
+    Returns the (conn, repo_path) tuple on success, or a string sentinel:
+    ``_CWD_NO_GIT`` when cwd is not inside any git repo, ``_CWD_UNINIT``
+    when cwd is a git repo that has not been initialized with EntireContext.
+    """
     from ..core.context import RepoContext
 
     context = RepoContext.from_cwd(require_project=False)
     if context is None:
-        return None
+        return _CWD_NO_GIT
     if context.project is None:
         context.close()
-        return None
+        return _CWD_UNINIT
     return context.conn, context.repo_path
 
 
@@ -123,10 +133,13 @@ def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
     if env_repo_path:
         return _resolve_explicit_repo(env_repo_path, source_label="ENTIRECONTEXT_REPO_PATH")
 
-    cwd_context = _resolve_from_cwd()
-    if cwd_context is not None:
-        _cached_repo_path = cwd_context[1]
-        return cwd_context
+    cwd_result = _resolve_from_cwd()
+    if isinstance(cwd_result, tuple):
+        _cached_repo_path = cwd_result[1]
+        return cwd_result
+
+    if cwd_result == _CWD_UNINIT:
+        raise RepoResolutionError("Current directory is a git repo that is not initialized. Run 'ec init'.")
 
     if _cached_repo_path is not None:
         try:
