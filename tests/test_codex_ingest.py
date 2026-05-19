@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from entirecontext.db import get_db
-from entirecontext.hooks.codex_ingest import ingest_codex_notify_event
+from entirecontext.hooks.codex_ingest import _save_state, ingest_codex_notify_event
 
 
 def _write_codex_session_file(codex_home: Path, *, session_id: str, cwd: str) -> Path:
@@ -42,10 +42,19 @@ def _write_codex_session_file(codex_home: Path, *, session_id: str, cwd: str) ->
     return path
 
 
+def _enable_codex_notify(repo: Path) -> None:
+    # Presence of the repo-local codex_notify.json marks the repo as
+    # Codex-notify-enabled (see codex_ingest._is_repo_enabled, which gates
+    # ingestion). The gate checks file existence only, so an empty state
+    # dict is sufficient.
+    _save_state(str(repo), {})
+
+
 def test_ingest_codex_notify_event_creates_session_and_turn(ec_repo):
     codex_home = ec_repo.parent / "codex-home"
     session_id = "s-codex-1"
     _write_codex_session_file(codex_home, session_id=session_id, cwd=str(ec_repo))
+    _enable_codex_notify(ec_repo)
 
     ingest_codex_notify_event(
         {"thread_id": session_id, "cwd": str(ec_repo), "codex_home": str(codex_home)},
@@ -70,6 +79,7 @@ def test_ingest_codex_notify_event_is_idempotent(ec_repo):
     codex_home = ec_repo.parent / "codex-home"
     session_id = "s-codex-2"
     _write_codex_session_file(codex_home, session_id=session_id, cwd=str(ec_repo))
+    _enable_codex_notify(ec_repo)
 
     payload = {"thread_id": session_id, "cwd": str(ec_repo), "codex_home": str(codex_home)}
     ingest_codex_notify_event(payload, payload_text="{}")
