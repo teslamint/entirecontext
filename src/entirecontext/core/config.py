@@ -216,11 +216,10 @@ def _write_toml(path: Path, data: dict) -> None:
 
 
 def _write_toml_section(lines: list[str], data: dict, prefix: list[str]) -> None:
+    tables: list[tuple[str, dict]] = []
     for key, value in data.items():
         if isinstance(value, dict):
-            section = ".".join(prefix + [key])
-            lines.append(f"\n[{section}]")
-            _write_toml_section(lines, value, prefix + [key])
+            tables.append((key, value))
         elif isinstance(value, list):
             lines.append(f"{key} = [")
             for item in value:
@@ -228,6 +227,10 @@ def _write_toml_section(lines: list[str], data: dict, prefix: list[str]) -> None
             lines.append("]")
         else:
             lines.append(f"{key} = {_toml_value(value)}")
+    for key, value in tables:
+        section = ".".join(prefix + [key])
+        lines.append(f"\n[{section}]")
+        _write_toml_section(lines, value, prefix + [key])
 
 
 def _toml_value(v: Any) -> str:

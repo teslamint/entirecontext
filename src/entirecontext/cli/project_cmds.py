@@ -160,6 +160,14 @@ def _load_codex_upstream(repo_path: str) -> list[str] | None:
     return None
 
 
+def _load_repo_only_upstream(repo_path: str) -> list[str] | None:
+    state = _read_global_state()
+    repo_entry = state.get("repos", {}).get(repo_path)
+    if isinstance(repo_entry, dict):
+        return _validate_upstream(repo_entry.get("upstream_notify"))
+    return None
+
+
 def _load_global_upstream() -> list[str] | None:
     state = _read_global_state()
     result = _validate_upstream(state.get("global_upstream"))
@@ -216,20 +224,20 @@ def _disable_codex_notify(repo_path: str) -> bool:
 
     if not (_is_valid_notify(user_notify) and _is_ec_codex_notify_command(user_notify)):
         if found:
-            upstream = _load_codex_upstream(repo_path)
-            if upstream:
-                local_cfg["notify"] = upstream
+            local_only = _load_repo_only_upstream(repo_path)
+            if local_only:
+                local_cfg["notify"] = local_only
                 _write_toml_file(local_config_path, local_cfg)
             _remove_codex_repo_entry(repo_path)
         return found
 
     found = True
-    repo_upstream = _load_codex_upstream(repo_path)
+    local_only = _load_repo_only_upstream(repo_path)
     global_upstream = _load_global_upstream()
     state = _remove_codex_repo_entry(repo_path)
 
-    if repo_upstream:
-        local_cfg["notify"] = repo_upstream
+    if local_only:
+        local_cfg["notify"] = local_only
         _write_toml_file(local_config_path, local_cfg)
 
     if _has_other_active_repos(state, repo_path):
@@ -237,8 +245,6 @@ def _disable_codex_notify(repo_path: str) -> bool:
 
     if global_upstream:
         user_cfg["notify"] = global_upstream
-    elif repo_upstream:
-        user_cfg.pop("notify", None)
     else:
         user_cfg.pop("notify", None)
     _write_toml_file(user_config_path, user_cfg)
