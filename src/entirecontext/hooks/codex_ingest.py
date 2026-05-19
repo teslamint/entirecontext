@@ -197,6 +197,10 @@ def _load_state(repo_path: str) -> dict[str, Any]:
         if isinstance(data, dict):
             repo_entry = data.get("repos", {}).get(repo_path)
             if isinstance(repo_entry, dict) and repo_entry:
+                if "upstream_notify" not in repo_entry:
+                    global_upstream = data.get("global_upstream")
+                    if isinstance(global_upstream, list) and global_upstream:
+                        return {**repo_entry, "upstream_notify": global_upstream}
                 return repo_entry
             global_upstream = data.get("global_upstream")
             if isinstance(global_upstream, list) and global_upstream:
@@ -241,15 +245,14 @@ def _run_upstream_notify(repo_path: str, payload_text: str) -> None:
 
 def _is_repo_enabled(repo_path: str) -> bool:
     global_path = _global_state_path()
-    if not global_path.exists():
-        return False
-    try:
-        data = json.loads(global_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return False
-    if not isinstance(data, dict):
-        return False
-    return repo_path in data.get("repos", {})
+    if global_path.exists():
+        try:
+            data = json.loads(global_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict) and repo_path in data.get("repos", {}):
+            return True
+    return _state_path(repo_path).exists()
 
 
 def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = "") -> None:

@@ -255,4 +255,7 @@ def _toml_value(v: Any) -> str:
     if isinstance(v, str):
         v = v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
         return f'"{v}"'
+    if isinstance(v, dict):
+        pairs = ", ".join(f"{_quote_toml_key(k)} = {_toml_value(val)}" for k, val in v.items())
+        return f"{{{pairs}}}"
     return str(v)

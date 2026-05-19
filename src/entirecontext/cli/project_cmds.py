@@ -205,7 +205,9 @@ def _enable_codex_notify(repo_path: str) -> None:
 
     user_cfg["notify"] = _resolve_ec_codex_notify_command()
     _write_toml_file(user_config_path, user_cfg)
-    _save_codex_upstream(repo_path, repo_upstream, global_upstream=user_upstream or None)
+    _save_codex_upstream(
+        repo_path, repo_upstream, global_upstream=user_upstream if user_upstream is not None else _UNSET
+    )
 
 
 def _disable_codex_notify(repo_path: str) -> bool:
@@ -611,6 +613,14 @@ def doctor(
                 warnings.append("Codex notify not configured. Run 'ec enable --agent codex'.")
             elif not _is_ec_codex_notify_command(notify):
                 warnings.append("Codex notify does not point to EntireContext hook.")
+            else:
+                state = _read_global_state()
+                repo_enrolled = repo_path in state.get("repos", {})
+                legacy_state = Path(repo_path) / ".entirecontext" / "state" / "codex_notify.json"
+                if not repo_enrolled and not legacy_state.exists():
+                    warnings.append(
+                        "This repo is not enrolled for Codex capture. Run 'ec enable --agent codex' in this repo."
+                    )
 
     if agent in {"claude", "both"}:
         user_settings_path = Path.home() / ".claude" / "settings.json"
