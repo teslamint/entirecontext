@@ -179,12 +179,12 @@ def _find_session_file(codex_home: Path, *, thread_id: str, cwd: str) -> Path | 
     return files[0] if files else None
 
 
-def _state_path(repo_path: str) -> Path:
-    return Path(repo_path) / ".entirecontext" / "state" / "codex_notify.json"
-
-
 def _global_state_path() -> Path:
     return Path.home() / ".entirecontext" / "state" / "codex_notify.json"
+
+
+def _state_path(repo_path: str) -> Path:
+    return Path(repo_path) / ".entirecontext" / "state" / "codex_notify.json"
 
 
 def _load_state(repo_path: str) -> dict[str, Any]:

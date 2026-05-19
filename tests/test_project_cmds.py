@@ -509,6 +509,25 @@ class TestCodexIntegration:
         assert "old-hook.py" in content
 
     @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_ingest_reads_upstream_from_global_path(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git").mkdir()
+        (repo / ".codex").mkdir()
+        (repo / ".codex" / "config.toml").write_text('notify = ["python", "hook.py"]\n', encoding="utf-8")
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+        assert result.exit_code == 0
+
+        from entirecontext.hooks.codex_ingest import _load_state
+
+        state = _load_state(str(repo))
+        assert state.get("upstream_notify") == ["python", "hook.py"]
+
+    @patch("entirecontext.core.project.find_git_root")
     def test_doctor_codex_warns_when_missing(self, mock_git_root, ec_repo, monkeypatch):
         mock_git_root.return_value = str(ec_repo)
         fake_home = ec_repo.parent / "fakehome_codex"
