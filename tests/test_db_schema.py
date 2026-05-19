@@ -287,6 +287,90 @@ class TestMigration:
         with pytest.raises(sqlite3.IntegrityError):
             db.execute("INSERT INTO sync_metadata (id, sync_status) VALUES (2, 'idle')")
 
+    def test_migrate_v13_to_v14_widens_outcome_check(self):
+        conn = get_memory_db()
+        conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
+        conn.execute("INSERT INTO schema_version (version, description) VALUES (13, 'v13')")
+        conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE turns (id TEXT PRIMARY KEY)")
+        conn.execute(
+            "CREATE TABLE retrieval_selections (id TEXT PRIMARY KEY, result_type TEXT, result_id TEXT, session_id TEXT, turn_id TEXT)"
+        )
+        conn.execute(
+            """
+            CREATE TABLE decisions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                rationale TEXT,
+                scope TEXT,
+                staleness_status TEXT NOT NULL DEFAULT 'fresh',
+                superseded_by_id TEXT,
+                rejected_alternatives TEXT,
+                supporting_evidence TEXT,
+                auto_promotion_reset_at TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                updated_at TEXT DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE decision_outcomes (
+                id TEXT PRIMARY KEY,
+                decision_id TEXT NOT NULL,
+                retrieval_selection_id TEXT,
+                session_id TEXT,
+                turn_id TEXT,
+                outcome_type TEXT NOT NULL CHECK(outcome_type IN ('accepted', 'ignored', 'contradicted')),
+                note TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (decision_id) REFERENCES decisions(id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute("INSERT INTO decisions (id, title) VALUES ('d1', 'Test decision')")
+        conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o1', 'd1', 'accepted')")
+        conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o2', 'd1', 'ignored')")
+        conn.commit()
+
+        check_and_migrate(conn)
+
+        assert get_current_version(conn) == SCHEMA_VERSION
+
+        schema = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='decision_outcomes'"
+        ).fetchone()
+        assert schema is not None
+        assert "refined" in schema[0]
+        assert "replaced" in schema[0]
+
+        indexes = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='decision_outcomes'"
+            ).fetchall()
+        }
+        assert "idx_decision_outcomes_decision_id" in indexes
+        assert "idx_decision_outcomes_selection_id" in indexes
+        assert "idx_decision_outcomes_outcome_type" in indexes
+        assert "idx_decision_outcomes_created_at" in indexes
+
+        preserved = conn.execute("SELECT id, outcome_type FROM decision_outcomes ORDER BY id").fetchall()
+        assert len(preserved) == 2
+        assert preserved[0]["id"] == "o1"
+        assert preserved[0]["outcome_type"] == "accepted"
+        assert preserved[1]["id"] == "o2"
+        assert preserved[1]["outcome_type"] == "ignored"
+
+        conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o3', 'd1', 'refined')")
+        conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o4', 'd1', 'replaced')")
+        conn.commit()
+
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("INSERT INTO decision_outcomes (id, decision_id, outcome_type) VALUES ('o5', 'd1', 'invalid')")
+
+        conn.close()
+
     def test_migration_v6_to_v7_recreates_telemetry_tables(self):
         conn = get_memory_db()
         init_schema(conn)
