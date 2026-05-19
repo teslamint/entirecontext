@@ -305,6 +305,43 @@ class _FakeResponse:
         return False
 
 
+class TestTidyPilotDiffChunking:
+    def test_each_chunk_respects_max_chars_when_grouping_files(self):
+        module = _load_assess_pr_module()
+        diff = "".join(
+            f"diff --git a/file{i}.py b/file{i}.py\n--- a/file{i}.py\n+++ b/file{i}.py\n@@ -1 +1 @@\n+{'x' * 40}\n"
+            for i in range(4)
+        )
+
+        chunks = module.chunk_diff(diff, 120, max_chunks=5)
+
+        assert len(chunks) > 1
+        assert all(len(chunk) <= 120 for chunk in chunks)
+
+    def test_oversized_file_section_is_truncated_within_chunk_cap(self):
+        module = _load_assess_pr_module()
+        diff = "diff --git a/large.py b/large.py\n--- a/large.py\n+++ b/large.py\n" + ("+x\n" * 200)
+
+        chunks = module.chunk_diff(diff, 100, max_chunks=5)
+
+        assert len(chunks) == 1
+        assert len(chunks[0]) <= 100
+        assert module.FILE_TRUNCATION_MARKER.strip() in chunks[0]
+
+    def test_excess_chunks_are_omitted_without_exceeding_chunk_cap(self):
+        module = _load_assess_pr_module()
+        diff = "".join(
+            f"diff --git a/file{i}.py b/file{i}.py\n--- a/file{i}.py\n+++ b/file{i}.py\n@@ -1 +1 @@\n+{'x' * 40}\n"
+            for i in range(6)
+        )
+
+        chunks = module.chunk_diff(diff, 120, max_chunks=2)
+
+        assert len(chunks) == 2
+        assert all(len(chunk) <= 120 for chunk in chunks)
+        assert module.DIFF_OMISSION_MARKER.strip() in chunks[-1]
+
+
 class TestTidyPilotStickyComment:
     def test_posts_comment_when_no_existing_sticky_comment(self, monkeypatch):
         module = _load_assess_pr_module()

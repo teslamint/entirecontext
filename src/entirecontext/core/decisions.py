@@ -171,6 +171,8 @@ def calculate_decision_quality_score(
             float(counts.get("accepted", 0))
             - (0.5 * float(counts.get("ignored", 0)))
             - (2.0 * float(counts.get("contradicted", 0)))
+            + (0.0 * float(counts.get("refined", 0)))
+            + (0.0 * float(counts.get("replaced", 0)))
         )
         return max(-4.0, min(4.0, raw_score))
 
@@ -178,6 +180,8 @@ def calculate_decision_quality_score(
         float(decayed_counts.get("accepted", 0.0))
         - 0.5 * float(decayed_counts.get("ignored", 0.0))
         - 2.0 * float(decayed_counts.get("contradicted", 0.0))
+        + 0.0 * float(decayed_counts.get("refined", 0.0))
+        + 0.0 * float(decayed_counts.get("replaced", 0.0))
     )
     if min_volume > 1:
         total = sum(int(counts.get(k, 0)) for k in ("accepted", "ignored", "contradicted"))
@@ -1327,7 +1331,7 @@ def rank_related_decisions(
     - assessment: +3.0 to +5.0 per assessment match (max weight per assessment_id)
     - diff_relevance: 0.0-4.0 from FTS5 match of diff text against title/rationale
     - git_commit: +3.0 per matching commit SHA
-    - quality: from outcome tracking (accepted/ignored/contradicted), capped [-4, +4]
+    - quality: from outcome tracking (accepted/ignored/contradicted/refined/replaced), capped [-4, +4]; refined and replaced carry weight 0
     - staleness_factor: multiplicative on base_score only (fresh=1.0, stale=0.85, etc.)
 
     Score formula: score = base_score * staleness_factor + quality_score

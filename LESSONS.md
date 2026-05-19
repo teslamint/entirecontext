@@ -12,8 +12,7 @@ _Generated from 10 assessed changes._
 
 **Feedback:** agree — MCP input normalization reduces agent-facing failure modes; rejected_alternatives dict-passthrough issue correctly flagged for v0.6.1 normalization
 
-_Assessment: c3efff0c | 2026-04-27T05:09:41.038581+00:00_
-
+_Assessment: c3efff0c | 2026-04-27T05:09:41.038581+00:00_ 
 
 ### ✅ 세션 고정 MCP 검색, PostToolUse 기반 결정 surfacing, 선택 telemetry 보강으로 과거 결정이 실제 편집 순간에 재등장할 가능성을 높여 향후 agent 판단 옵션을 넓힌다.
 
@@ -23,8 +22,7 @@ _Assessment: c3efff0c | 2026-04-27T05:09:41.038581+00:00_
 
 **Feedback:** agree — Decision hooks + MCP surfacing directly strengthens retrieve/intervene; session_id isolation and telemetry selection_id are key to loop closure
 
-_Assessment: 69228644 | 2026-04-27T05:09:40.291239+00:00_
-
+_Assessment: 69228644 | 2026-04-27T05:09:40.291239+00:00_ 
 
 ### ✅ 연결 수명 관리와 릴리스 검증을 정리해 ResourceWarning/누수 위험을 줄이고, 이후 결정 메모리 기능을 더 안전하게 확장할 수 있는 기반 옵션을 넓힌다.
 
@@ -34,8 +32,7 @@ _Assessment: 69228644 | 2026-04-27T05:09:40.291239+00:00_
 
 **Feedback:** agree — v0.2.0 release prep: connection lifetime management and release gates reduce ResourceWarning risk and stabilize the deployment foundation
 
-_Assessment: 4fbe6465 | 2026-04-27T05:09:26.385266+00:00_
-
+_Assessment: 4fbe6465 | 2026-04-27T05:09:26.385266+00:00_ 
 
 ### ✅ 현재 변경 파일, diff, assessment, commit 신호로 관련 결정을 랭킹해 과거 판단이 다음 코드 변경 시점에 재등장할 가능성을 높이므로 미래 선택지를 넓힌다.
 
@@ -45,8 +42,7 @@ _Assessment: 4fbe6465 | 2026-04-27T05:09:26.385266+00:00_
 
 **Feedback:** agree — Ranking weight config + multi-signal scoring in decisions.py is the foundation for Proactive Decision Injection; hardcoded weights extracted correctly
 
-_Assessment: fea07b4e | 2026-04-27T05:09:13.716317+00:00_
-
+_Assessment: fea07b4e | 2026-04-27T05:09:13.716317+00:00_ 
 
 ### ✅ 결정 검색, stale/contradicted 필터링, outcome 기록, hook 기반 proactive surfacing, MCP/CLI 표면과 테스트를 추가해 coding-agent decision memory의 재사용 경로를 크게 넓힌다.
 
@@ -56,8 +52,7 @@ _Assessment: fea07b4e | 2026-04-27T05:09:13.716317+00:00_
 
 **Feedback:** agree — Proactive retrieval with multi-signal ranking is core to the retrieve/intervene loop; aligns with v0.3 E4 and Proactive Decision Injection roadmap item
 
-_Assessment: 49c852ae | 2026-04-27T05:09:09.089900+00:00_
-
+_Assessment: 49c852ae | 2026-04-27T05:09:09.089900+00:00_ 
 
 ### ✅ 변경은 decision/rejected-alternative 처리와 CLI/MCP 노출, 회귀 테스트를 보강해 향후 decision memory 품질 개선 옵션을 넓힌다.
 
@@ -67,8 +62,7 @@ _Assessment: 49c852ae | 2026-04-27T05:09:09.089900+00:00_
 
 **Feedback:** agree — Lesson guidance + decision search tightens the distill step; rejected-alternative quality direction matches v0.6.1 scope
 
-_Assessment: bd7df7b7 | 2026-04-27T05:08:50.632894+00:00_
-
+_Assessment: bd7df7b7 | 2026-04-27T05:08:50.632894+00:00_ 
 
 ### ✅ decision 후보 추출, 검토, MCP/CLI 노출, schema v13 기반 후보 테이블을 추가해 raw history에서 검토 가능한 decision memory로 넘어가는 선택지를 크게 넓힌다.
 
@@ -78,8 +72,7 @@ _Assessment: bd7df7b7 | 2026-04-27T05:08:50.632894+00:00_
 
 **Feedback:** agree — Decision extraction + schema v13 — valid EXPAND; FTS triggers and schema migration are foundational for decision memory depth
 
-_Assessment: 134621fa | 2026-04-27T05:07:55.149737+00:00_
-
+_Assessment: 134621fa | 2026-04-27T05:07:55.149737+00:00_ 
 
 ### ✅ This change expands future options by adding both manual and hook-based checkpoint creation with shared git helpers while keeping heavier snapshot capture optional and reversible.
 
@@ -87,8 +80,7 @@ _Assessment: 134621fa | 2026-04-27T05:07:55.149737+00:00_
 
 **Suggestion:** Keep the new `core/git_utils.py` extraction, but tidy next by unifying CLI and session-end checkpoint logic behind one shared checkpoint service (including diff-base selection and metadata merge behavior) so future trigger types can be added without duplicating policy or silently diverging.
 
-_Assessment: 84288d4f | 2026-02-20T10:48:16.009213+00:00_
-
+_Assessment: 84288d4f | 2026-02-20T10:48:16.009213+00:00_ 
 
 ### ✅ Introducing a pluggable LLM backend with a CLI `--backend` option increases reversibility and execution options for futures assessment, though IDE-specific files add minor portability drag.
 
@@ -96,8 +88,7 @@ _Assessment: 84288d4f | 2026-02-20T10:48:16.009213+00:00_
 
 **Suggestion:** Keep the `core.llm` abstraction and `--backend` wiring, but tidy by isolating/removing committed `.idea` project-specific files and adding backend capability checks plus a small contract test for `get_backend(...).complete(...)` to prevent silent runtime divergence across providers.
 
-_Assessment: dd6184a2 | 2026-02-20T08:51:22.221135+00:00_
-
+_Assessment: dd6184a2 | 2026-02-20T08:51:22.221135+00:00_ 
 
 ## 🟡 Neutral
 
@@ -109,4 +100,5 @@ _Assessment: dd6184a2 | 2026-02-20T08:51:22.221135+00:00_
 
 **Feedback:** agree — Release scripts + CI harden the deployment pipeline; enabling trust and auditability for the git-grounded memory model
 
-_Assessment: e5d01a13 | 2026-04-27T05:09:05.329211+00:00_
+_Assessment: e5d01a13 | 2026-04-27T05:09:05.329211+00:00_ 
+

@@ -29,7 +29,9 @@ COMMENT_MARKER = "<!-- tidy-pilot:sticky-comment -->"
 # Character budgets — chosen to stay under typical API payload limits.
 MAX_CONTEXT_CHARS = 4_000  # per context section (roadmap, lessons, claude_md)
 MAX_CHUNK_DIFF_CHARS = 8_000  # per diff chunk sent to LLM
-MAX_CHUNKS = 5  # cap on total API calls; chunk size grows proportionally if exceeded
+MAX_CHUNKS = 5  # cap on total API calls; excess diff is marked omitted
+FILE_TRUNCATION_MARKER = "\n... (file diff truncated)\n"
+DIFF_OMISSION_MARKER = "\n... (remaining diff omitted to keep chunk and API-call caps)\n"
 
 
 def call_llm(system: str, user: str, *, max_retries: int = 3) -> dict:
@@ -100,50 +102,45 @@ def split_diff_by_file(diff: str) -> list[str]:
     return sections
 
 
-def chunk_diff(diff: str, max_chars: int, *, max_chunks: int = MAX_CHUNKS) -> list[str]:
-    """Group per-file diff sections into chunks respecting a per-chunk character budget.
+def truncate_with_marker(text: str, max_chars: int, marker: str) -> str:
+    """Return text capped at max_chars, preserving room for a marker when truncated."""
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= len(marker):
+        return marker[-max_chars:]
+    return text[: max_chars - len(marker)] + marker
 
-    Each individual file diff is hard-truncated to max_chars so no single
-    file exceeds the limit.  Chunks are filled greedily until adding the
-    next file would exceed max_chars, then a new chunk starts.  If the
-    resulting number of chunks would exceed max_chunks, files are
-    distributed evenly (ceiling division) and each chunk is hard-truncated
-    to max_chars as a whole.
+
+def chunk_diff(diff: str, max_chars: int, *, max_chunks: int = MAX_CHUNKS) -> list[str]:
+    """Group per-file diff sections without exceeding max_chars per chunk.
+
+    Individual file diffs are truncated to max_chars, then packed greedily.
+    If the full diff still needs more than max_chunks API calls, remaining
+    diff content is explicitly omitted in the final capped chunk.
     """
+    if max_chars <= 0:
+        raise ValueError("max_chars must be positive")
+    if max_chunks <= 0:
+        raise ValueError("max_chunks must be positive")
+
     file_sections = split_diff_by_file(diff)
     if not file_sections:
         return [""]
 
-    truncated = []
-    for section in file_sections:
-        if len(section) > max_chars:
-            section = section[:max_chars] + "\n... (file diff truncated)\n"
-        truncated.append(section)
-
     chunks: list[str] = []
-    current_parts: list[str] = []
-    current_len = 0
-    for section in truncated:
-        if current_parts and current_len + len(section) > max_chars:
-            chunks.append("".join(current_parts))
-            current_parts = []
-            current_len = 0
-        current_parts.append(section)
-        current_len += len(section)
-    if current_parts:
-        chunks.append("".join(current_parts))
+    current = ""
+    for section in file_sections:
+        section = truncate_with_marker(section, max_chars, FILE_TRUNCATION_MARKER)
+        if current and len(current) + len(section) > max_chars:
+            chunks.append(current)
+            current = ""
+        current += section
+    if current:
+        chunks.append(current)
 
-    if len(chunks) <= max_chunks:
-        return chunks
-
-    n = len(truncated)
-    files_per_chunk = max(1, -(-n // max_chunks))
-    chunks = []
-    for i in range(0, n, files_per_chunk):
-        combined = "".join(truncated[i : i + files_per_chunk])
-        if len(combined) > max_chars:
-            combined = combined[:max_chars] + "\n... (chunk truncated)\n"
-        chunks.append(combined)
+    if len(chunks) > max_chunks:
+        chunks = chunks[:max_chunks]
+        chunks[-1] = truncate_with_marker(chunks[-1] + DIFF_OMISSION_MARKER, max_chars, DIFF_OMISSION_MARKER)
     return chunks
 
 
