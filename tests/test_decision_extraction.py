@@ -1308,15 +1308,17 @@ class TestOutcomeFeedbackPenalty:
         stats = get_file_outcome_stats(ec_db, ["src/service/mixed.py"], lookback_days=60)
         assert stats["contradicted"] == 1
         assert stats["accepted"] == 1
-        assert stats["total"] == 2  # refined/replaced excluded from total
-        assert stats["refined"] == 0  # refined never added to stats dict
-        assert stats["replaced"] == 0
+        assert stats["total"] == 4
+        assert stats["refined"] == 1
+        assert stats["replaced"] == 1
 
         breakdown = {"final": 0.60, "penalties": {}}
         adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
         # ratio = 1/2 = 0.5, not strictly > 0.5 — no penalty.
         assert adjusted == 0.60
         assert new_breakdown["outcome_feedback"]["applied"] is False
+        assert new_breakdown["outcome_feedback"]["total"] == 4
+        assert new_breakdown["outcome_feedback"]["scored_total"] == 2
 
 
 class TestExtractionWeightsConfig:
