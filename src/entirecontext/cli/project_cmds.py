@@ -90,14 +90,33 @@ def _write_global_state(state: dict) -> None:
     state_path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
 
 
-def _save_codex_upstream(repo_path: str, command: list[str] | None) -> None:
+def _save_codex_upstream(
+    repo_path: str,
+    command: list[str] | None,
+    *,
+    global_upstream: list[str] | None = None,
+) -> None:
     state = _read_global_state()
     repos = state.setdefault("repos", {})
     if command:
         repos[repo_path] = {"upstream_notify": command}
     else:
         repos.pop(repo_path, None)
+    if global_upstream:
+        state["global_upstream"] = global_upstream
     _write_global_state(state)
+
+
+def _remove_codex_repo_entry(repo_path: str) -> dict:
+    state = _read_global_state()
+    state.get("repos", {}).pop(repo_path, None)
+    _write_global_state(state)
+    return state
+
+
+def _has_other_active_repos(state: dict, exclude: str) -> bool:
+    repos = state.get("repos", {})
+    return any(k != exclude for k in repos)
 
 
 def _validate_upstream(upstream: object) -> list[str] | None:
@@ -116,6 +135,10 @@ def _load_codex_upstream(repo_path: str) -> list[str] | None:
         if result:
             return result
 
+    result = _validate_upstream(state.get("global_upstream"))
+    if result:
+        return result
+
     result = _validate_upstream(state.get("upstream_notify"))
     if result:
         return result
@@ -131,6 +154,18 @@ def _load_codex_upstream(repo_path: str) -> list[str] | None:
     return None
 
 
+def _load_global_upstream() -> list[str] | None:
+    state = _read_global_state()
+    result = _validate_upstream(state.get("global_upstream"))
+    if result:
+        return result
+    return _validate_upstream(state.get("upstream_notify"))
+
+
+def _is_valid_notify(notify: object) -> bool:
+    return isinstance(notify, list) and bool(notify) and all(isinstance(x, str) for x in notify)
+
+
 def _enable_codex_notify(repo_path: str) -> None:
     local_config_path = _codex_project_config_path(repo_path)
     user_config_path = _codex_user_config_path()
@@ -139,24 +174,16 @@ def _enable_codex_notify(repo_path: str) -> None:
     local_notify = local_cfg.get("notify")
     user_notify = user_cfg.get("notify")
 
-    upstream: list[str] | None = None
-    discovered_upstream = False
-    if isinstance(local_notify, list) and local_notify and all(isinstance(x, str) for x in local_notify):
-        if not _is_ec_codex_notify_command(local_notify):
-            upstream = local_notify
-            discovered_upstream = True
-    if (
-        not discovered_upstream
-        and isinstance(user_notify, list)
-        and user_notify
-        and all(isinstance(x, str) for x in user_notify)
-    ):
-        if not _is_ec_codex_notify_command(user_notify):
-            upstream = user_notify
-            discovered_upstream = True
+    local_upstream: list[str] | None = None
+    user_upstream: list[str] | None = None
+    if _is_valid_notify(local_notify) and not _is_ec_codex_notify_command(local_notify):
+        local_upstream = local_notify
+    if _is_valid_notify(user_notify) and not _is_ec_codex_notify_command(user_notify):
+        user_upstream = user_notify
 
-    if not discovered_upstream and isinstance(user_notify, list) and _is_ec_codex_notify_command(user_notify):
-        upstream = _load_codex_upstream(repo_path)
+    repo_upstream = local_upstream or user_upstream
+    if not repo_upstream and _is_valid_notify(user_notify) and _is_ec_codex_notify_command(user_notify):
+        repo_upstream = _load_codex_upstream(repo_path)
 
     if "notify" in local_cfg:
         local_cfg.pop("notify", None)
@@ -164,7 +191,7 @@ def _enable_codex_notify(repo_path: str) -> None:
 
     user_cfg["notify"] = _resolve_ec_codex_notify_command()
     _write_toml_file(user_config_path, user_cfg)
-    _save_codex_upstream(repo_path, upstream)
+    _save_codex_upstream(repo_path, repo_upstream, global_upstream=user_upstream)
 
 
 def _disable_codex_notify(repo_path: str) -> bool:
@@ -176,33 +203,33 @@ def _disable_codex_notify(repo_path: str) -> bool:
     user_notify = user_cfg.get("notify")
 
     found = False
-    if isinstance(local_notify, list) and all(isinstance(x, str) for x in local_notify):
-        if _is_ec_codex_notify_command(local_notify):
-            found = True
-            local_cfg.pop("notify", None)
-            _write_toml_file(local_config_path, local_cfg)
+    if _is_valid_notify(local_notify) and _is_ec_codex_notify_command(local_notify):
+        found = True
+        local_cfg.pop("notify", None)
+        _write_toml_file(local_config_path, local_cfg)
 
-    if not (isinstance(user_notify, list) and all(isinstance(x, str) for x in user_notify)):
+    if not (_is_valid_notify(user_notify) and _is_ec_codex_notify_command(user_notify)):
         if found:
             upstream = _load_codex_upstream(repo_path)
             if upstream:
-                user_cfg["notify"] = upstream
-                _write_toml_file(user_config_path, user_cfg)
-            _save_codex_upstream(repo_path, None)
-        return found
-    if not _is_ec_codex_notify_command(user_notify):
-        if found:
-            _save_codex_upstream(repo_path, None)
+                local_cfg["notify"] = upstream
+                _write_toml_file(local_config_path, local_cfg)
+            _remove_codex_repo_entry(repo_path)
         return found
 
     found = True
-    upstream = _load_codex_upstream(repo_path)
+    repo_upstream = _load_codex_upstream(repo_path)
+    global_upstream = _load_global_upstream()
+    state = _remove_codex_repo_entry(repo_path)
+    if _has_other_active_repos(state, repo_path):
+        return found
+
+    upstream = global_upstream or repo_upstream
     if upstream:
         user_cfg["notify"] = upstream
     else:
         user_cfg.pop("notify", None)
     _write_toml_file(user_config_path, user_cfg)
-    _save_codex_upstream(repo_path, None)
     return found
 
 

@@ -198,6 +198,9 @@ def _load_state(repo_path: str) -> dict[str, Any]:
             repo_entry = data.get("repos", {}).get(repo_path)
             if isinstance(repo_entry, dict) and repo_entry:
                 return repo_entry
+            global_upstream = data.get("global_upstream")
+            if isinstance(global_upstream, list) and global_upstream:
+                return {"upstream_notify": global_upstream}
             if data.get("upstream_notify"):
                 return data
 
