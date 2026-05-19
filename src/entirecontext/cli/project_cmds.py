@@ -101,10 +101,10 @@ def _save_codex_upstream(
 ) -> None:
     state = _read_global_state()
     repos = state.setdefault("repos", {})
+    entry: dict = {"enabled": True}
     if command:
-        repos[repo_path] = {"upstream_notify": command}
-    else:
-        repos.pop(repo_path, None)
+        entry["upstream_notify"] = command
+    repos[repo_path] = entry
     if global_upstream is not _UNSET:
         if global_upstream:
             state["global_upstream"] = global_upstream

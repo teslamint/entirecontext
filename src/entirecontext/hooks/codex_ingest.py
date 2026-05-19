@@ -239,6 +239,19 @@ def _run_upstream_notify(repo_path: str, payload_text: str) -> None:
         pass
 
 
+def _is_repo_enabled(repo_path: str) -> bool:
+    global_path = _global_state_path()
+    if not global_path.exists():
+        return False
+    try:
+        data = json.loads(global_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+    return repo_path in data.get("repos", {})
+
+
 def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = "") -> None:
     """Ingest a Codex notify event into EntireContext DB."""
     thread_id = _extract_thread_id(payload)
@@ -248,6 +261,9 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
         return
 
     _run_upstream_notify(repo_path, payload_text)
+
+    if not _is_repo_enabled(repo_path):
+        return
 
     codex_home = (
         Path(payload.get("codex_home")) if isinstance(payload.get("codex_home"), str) else Path.home() / ".codex"
