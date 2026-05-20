@@ -185,7 +185,7 @@ Theme: make retrieval default behavior, close three deferred debt items.
 Theme: close correctness gaps in PDI and establish measurement baseline.
 
 - [ ] **Per-session `capture_disabled` check in PDI** — current path only gates on global `auto_capture=false`; per-session disable flag is silently ignored
-- [ ] **tiktoken accurate token counting** — replace heuristic (`len(text) // 4`) with tiktoken for reliable context-budget cut decisions in `optimize_for_context_budget()`
+- [ ] **tiktoken accurate token counting** — replace heuristic (`len(text.encode("utf-8")) // 3`) with tiktoken for reliable context-budget cut decisions in `optimize_for_context_budget()`
 - [ ] **PDI effect measurement** — track `retrieval_assisted_session_rate` across the v0.7.1 window; establish n≥30 session baseline before interpreting the 0.049→0.125 lift as confirmed
 
 ## v0.8.0 — Closed Loop (Distill Automation)
