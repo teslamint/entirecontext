@@ -1786,3 +1786,79 @@ def hybrid_search_decisions(
             doc["hybrid_score"] = round(scores[rid], 6)
             results.append(doc)
     return results
+
+
+# ---------------------------------------------------------------------------
+# Rejected-alternative normalization helpers (v0.6.1)
+# ---------------------------------------------------------------------------
+
+UNKNOWN_REASON = "Unknown from recorded context"
+
+
+def normalize_alternative(item: Any) -> dict[str, str]:
+    """Coerce a single rejected-alternative entry to ``{"alternative": str, "reason": str}``.
+
+    Accepts:
+    - already-structured dict with at least an ``"alternative"`` key
+    - plain string (legacy format)
+    - anything else → raises ``ValueError``
+    """
+    if isinstance(item, dict):
+        alt = item.get("alternative")
+        if not isinstance(alt, str) or not alt.strip():
+            raise ValueError(f"Structured alternative missing non-empty 'alternative' key: {item!r}")
+        reason = item.get("reason")
+        return {
+            "alternative": alt.strip(),
+            "reason": reason.strip() if isinstance(reason, str) and reason.strip() else UNKNOWN_REASON,
+        }
+    if isinstance(item, str):
+        if not item.strip():
+            raise ValueError(f"Alternative string must not be empty: {item!r}")
+        return {"alternative": item.strip(), "reason": UNKNOWN_REASON}
+    raise ValueError(f"Cannot normalize rejected alternative of type {type(item).__name__}: {item!r}")
+
+
+def normalize_rejected_alternatives(items: list[Any]) -> list[dict[str, str]]:
+    """Normalize a full ``rejected_alternatives`` list.  Idempotent on already-structured input."""
+    if not isinstance(items, list):
+        raise TypeError(f"rejected_alternatives must be a list, got {type(items).__name__}")
+    return [normalize_alternative(item) for item in items]
+
+
+def audit_rejected_alternatives(items: list[Any]) -> dict[str, Any]:
+    """Inspect a ``rejected_alternatives`` list and report issues without modifying data.
+
+    Returns a dict with:
+    - ``"total"``: int — total number of entries
+    - ``"legacy_strings"``: int — entries that are plain strings (need normalization)
+    - ``"missing_reason"``: int — structured entries whose reason is missing/blank/UNKNOWN_REASON
+    - ``"malformed"``: list[int] — 0-based indices of entries that cannot be normalized at all
+    - ``"needs_normalization"``: bool — True if any issue was found
+    """
+    total = len(items)
+    legacy_strings = 0
+    missing_reason = 0
+    malformed: list[int] = []
+
+    for idx, item in enumerate(items):
+        try:
+            normalize_alternative(item)
+        except (ValueError, TypeError):
+            malformed.append(idx)
+            continue
+
+        if isinstance(item, str):
+            legacy_strings += 1
+        elif isinstance(item, dict):
+            reason = item.get("reason")
+            if not isinstance(reason, str) or not reason.strip() or reason.strip() == UNKNOWN_REASON:
+                missing_reason += 1
+
+    return {
+        "total": total,
+        "legacy_strings": legacy_strings,
+        "missing_reason": missing_reason,
+        "malformed": malformed,
+        "needs_normalization": bool(legacy_strings or malformed),
+    }

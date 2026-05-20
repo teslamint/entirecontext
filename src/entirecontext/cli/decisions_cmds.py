@@ -813,5 +813,152 @@ def candidates_reject(
 decision_app.add_typer(candidates_app, name="candidates")
 
 
+# ---------------------------------------------------------------------------
+# ec decision alternatives <audit|normalize|set>
+# ---------------------------------------------------------------------------
+
+alternatives_app = typer.Typer(help="Rejected-alternative quality commands")
+
+
+@alternatives_app.command("audit")
+def alternatives_audit(
+    decision_id: str = typer.Argument(..., help="Decision ID (prefix ok)"),
+):
+    """Report quality issues in a decision's rejected alternatives (read-only)."""
+    import json
+
+    from ..core.decisions import audit_rejected_alternatives, get_decision
+
+    conn, _ = get_repo_connection()
+    try:
+        decision = get_decision(conn, decision_id)
+    finally:
+        conn.close()
+
+    if not decision:
+        console.print(f"[red]Decision not found:[/red] {decision_id}")
+        raise typer.Exit(1)
+
+    raw = decision.get("rejected_alternatives") or []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except Exception:
+            raw = []
+
+    report = audit_rejected_alternatives(raw)
+    did_short = decision["id"][:12]
+    console.print(f"[bold]Audit: decision {did_short}[/bold]  ({report['total']} alternative(s))")
+
+    if not report["needs_normalization"] and not report["missing_reason"] and not report["malformed"]:
+        console.print("[green]All alternatives are structured and complete.[/green]")
+        return
+
+    if report["legacy_strings"]:
+        console.print(f"  [yellow]Legacy strings (need normalization):[/yellow] {report['legacy_strings']}")
+    if report["missing_reason"]:
+        console.print(f"  [dim]Missing/unknown reason:[/dim] {report['missing_reason']}")
+    if report["malformed"]:
+        console.print(f"  [red]Malformed (cannot normalize) at indices:[/red] {report['malformed']}")
+
+
+@alternatives_app.command("normalize")
+def alternatives_normalize(
+    decision_id: str = typer.Argument(..., help="Decision ID (prefix ok)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without writing"),
+):
+    """Convert legacy string alternatives to structured form (idempotent)."""
+    import json
+
+    from ..core.decisions import (
+        audit_rejected_alternatives,
+        get_decision,
+        normalize_rejected_alternatives,
+        update_decision,
+    )
+
+    conn, _ = get_repo_connection()
+    try:
+        decision = get_decision(conn, decision_id)
+        if not decision:
+            console.print(f"[red]Decision not found:[/red] {decision_id}")
+            raise typer.Exit(1)
+
+        raw = decision.get("rejected_alternatives") or []
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except Exception:
+                raw = []
+
+        try:
+            normalized = normalize_rejected_alternatives(raw)
+        except (ValueError, TypeError):
+            report = audit_rejected_alternatives(raw)
+            console.print(f"[red]Cannot normalize: malformed entries at indices {report['malformed']}[/red]")
+            console.print("Fix or remove those entries first using [bold]ec decision alternatives set[/bold].")
+            raise typer.Exit(1)
+
+        if normalized == raw:
+            console.print("[green]Already normalized — nothing to do.[/green]")
+            return
+
+        if dry_run:
+            console.print("[dim](dry-run)[/dim] Would write:")
+            for item in normalized:
+                console.print(f"  alternative: {item['alternative']}")
+                console.print(f"  reason:      {item['reason']}")
+                console.print()
+            return
+
+        update_decision(conn, decision["id"], rejected_alternatives=normalized)
+    finally:
+        conn.close()
+
+    console.print(f"[green]Normalized {len(normalized)} alternative(s) for decision {decision['id'][:12]}.[/green]")
+
+
+@alternatives_app.command("set")
+def alternatives_set(
+    decision_id: str = typer.Argument(..., help="Decision ID (prefix ok)"),
+    alternatives_json: str = typer.Argument(..., help='JSON array, e.g. \'[{"alternative":"A","reason":"too slow"}]\''),
+):
+    """Replace rejected alternatives with a validated structured list."""
+    import json
+
+    from ..core.decisions import get_decision, normalize_rejected_alternatives, update_decision
+
+    try:
+        raw = json.loads(alternatives_json)
+    except json.JSONDecodeError as exc:
+        console.print(f"[red]Invalid JSON:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if not isinstance(raw, list):
+        console.print("[red]Input must be a JSON array.[/red]")
+        raise typer.Exit(1)
+
+    try:
+        normalized = normalize_rejected_alternatives(raw)
+    except (ValueError, TypeError) as exc:
+        console.print(f"[red]Validation error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    conn, _ = get_repo_connection()
+    try:
+        decision = get_decision(conn, decision_id)
+        if not decision:
+            console.print(f"[red]Decision not found:[/red] {decision_id}")
+            raise typer.Exit(1)
+        update_decision(conn, decision["id"], rejected_alternatives=normalized)
+    finally:
+        conn.close()
+
+    console.print(f"[green]Set {len(normalized)} alternative(s) for decision {decision['id'][:12]}.[/green]")
+
+
+decision_app.add_typer(alternatives_app, name="alternatives")
+
+
 def register(app: typer.Typer) -> None:
     app.add_typer(decision_app, name="decision")

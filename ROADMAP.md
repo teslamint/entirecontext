@@ -161,12 +161,12 @@ Plan reference: `docs/brainstorms/v0-6-0-roadmap-plan.md`.
 
 Theme: clean up the rejected-alternatives data shape without mutating existing records or inventing rationale.
 
-- [ ] Rejected alternative normalization helpers in `core/decisions.py` accepting legacy strings and structured objects
-- [ ] `ec decision alternatives audit` — list reasonless, malformed, mixed, or legacy alternatives without mutating data
-- [ ] `ec decision alternatives normalize` — convert legacy strings to structured objects; use `"Unknown from recorded context"` for missing reasons
-- [ ] `ec decision alternatives set` or equivalent manual update command for explicit structured replacements
-- [ ] Tighten extraction prompts to request rejected-alternative reasons only when source text contains enough evidence; parser and candidate-confirmation paths share the same normalizer
-- [ ] Tests: legacy string compatibility, malformed JSON detection, mixed arrays, empty alternatives, empty reasons, audit categories, normalization idempotency, manual set behavior
+- [x] Rejected alternative normalization helpers in `core/decisions.py` accepting legacy strings and structured objects
+- [x] `ec decision alternatives audit` — list reasonless, malformed, mixed, or legacy alternatives without mutating data
+- [x] `ec decision alternatives normalize` — convert legacy strings to structured objects; use `"Unknown from recorded context"` for missing reasons
+- [x] `ec decision alternatives set` or equivalent manual update command for explicit structured replacements
+- [x] Tighten extraction prompts to request rejected-alternative reasons only when source text contains enough evidence; parser and candidate-confirmation paths share the same normalizer
+- [x] Tests: legacy string compatibility, malformed JSON detection, mixed arrays, empty alternatives, empty reasons, audit categories, normalization idempotency, manual set behavior
 
 ## Hardening Backlog
 

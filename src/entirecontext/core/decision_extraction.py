@@ -480,28 +480,40 @@ def collect_signals(conn, session_id: str, repo_path: str) -> list[SignalBundle]
 _SYSTEM_PROMPT_BY_SOURCE: dict[str, str] = {
     "session": (
         "You are reviewing a coding session for architectural or technical decisions. "
-        'Return a JSON array: [{"title": str, "rationale": str, "scope": str, '
-        '"rejected_alternatives": [str]}] '
+        "Return a JSON array: "
+        '[{"title": str, "rationale": str, "scope": str, '
+        '"rejected_alternatives": [{"alternative": str, "reason": str}]}] '
         "Only include actual decisions (choosing one approach over another), "
-        "not tasks, plans, or status updates. Return [] if no decisions were made."
+        "not tasks, plans, or status updates. Return [] if no decisions were made. "
+        "For each rejected alternative, provide the reason it was not chosen — "
+        "only if the reason is explicit in the source text. "
+        'If no reason is stated, omit the "reason" key entirely (do not invent one).'
     ),
     "checkpoint": (
         "You are reviewing a checkpoint's code change summary and the surrounding "
         "turn summaries. Extract architectural or technical decisions that the "
         "change embodies (e.g. choosing one library over another, switching a "
         "data model, picking an error handling strategy). "
-        'Return a JSON array: [{"title": str, "rationale": str, "scope": str, '
-        '"rejected_alternatives": [str]}]. '
-        "Return [] if the change is a routine refactor, bug fix, or cleanup."
+        "Return a JSON array: "
+        '[{"title": str, "rationale": str, "scope": str, '
+        '"rejected_alternatives": [{"alternative": str, "reason": str}]}]. '
+        "Return [] if the change is a routine refactor, bug fix, or cleanup. "
+        "For each rejected alternative, provide the reason it was not chosen — "
+        "only if the reason is explicit in the source text. "
+        'If no reason is stated, omit the "reason" key entirely (do not invent one).'
     ),
     "assessment": (
         "You are reviewing an assessment of a code change (verdict, impact summary, "
         "roadmap alignment, tidy suggestion). Extract decisions this assessment "
         "records — typically an expansion or narrowing of project scope with a "
         "specific rationale. "
-        'Return a JSON array: [{"title": str, "rationale": str, "scope": str, '
-        '"rejected_alternatives": [str]}]. '
-        "Return [] if the assessment is a neutral observation."
+        "Return a JSON array: "
+        '[{"title": str, "rationale": str, "scope": str, '
+        '"rejected_alternatives": [{"alternative": str, "reason": str}]}]. '
+        "Return [] if the assessment is a neutral observation. "
+        "For each rejected alternative, provide the reason it was not chosen — "
+        "only if the reason is explicit in the source text. "
+        'If no reason is stated, omit the "reason" key entirely (do not invent one).'
     ),
 }
 
@@ -579,9 +591,17 @@ def parse_llm_response(raw: str, bundle: SignalBundle) -> list[CandidateDraft]:
             continue
         rationale = item.get("rationale")
         scope = item.get("scope")
-        rejected = item.get("rejected_alternatives") or []
-        if not isinstance(rejected, list):
-            rejected = []
+        raw_rejected = item.get("rejected_alternatives") or []
+        if not isinstance(raw_rejected, list):
+            raw_rejected = []
+        from .decisions import normalize_alternative
+
+        rejected: list[dict[str, str]] = []
+        for alt_item in raw_rejected:
+            try:
+                rejected.append(normalize_alternative(alt_item))
+            except (ValueError, TypeError):
+                pass
         drafts.append(
             CandidateDraft(
                 title=title.strip(),
