@@ -445,7 +445,9 @@ class TestParseLLMResponse:
         drafts = parse_llm_response(raw, self._bundle())
         assert len(drafts) == 1
         assert drafts[0].title == "Use Redis"
-        assert drafts[0].rejected_alternatives == ["memcached"]
+        assert drafts[0].rejected_alternatives == [
+            {"alternative": "memcached", "reason": "Unknown from recorded context"}
+        ]
 
     def test_caps_at_five(self):
         raw = json.dumps([{"title": f"D{i}"} for i in range(10)])
@@ -1319,6 +1321,31 @@ class TestOutcomeFeedbackPenalty:
         assert new_breakdown["outcome_feedback"]["applied"] is False
         assert new_breakdown["outcome_feedback"]["total"] == 4
         assert new_breakdown["outcome_feedback"]["scored_total"] == 2
+
+    def test_accepted_outcomes_alone_do_not_boost_confidence(self, ec_repo, ec_db):
+        """Stats with only accepted outcomes must leave extraction confidence unchanged (no boost path)."""
+        from entirecontext.core.decision_extraction import (
+            apply_outcome_feedback_to_confidence,
+            get_file_outcome_stats,
+        )
+
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Only accepted outcomes",
+            file_paths=["src/service/accepted_only.py"],
+            outcome_types=["accepted", "accepted", "accepted"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/accepted_only.py"], lookback_days=60)
+        assert stats["accepted"] == 3
+        assert stats["contradicted"] == 0
+        assert stats["total"] == 3
+
+        original = 0.72
+        breakdown = {"final": original, "penalties": {}}
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(original, breakdown, stats, penalty=0.15)
+        assert adjusted == original
+        assert new_breakdown["outcome_feedback"]["applied"] is False
 
 
 class TestExtractionWeightsConfig:

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-20
+
+v0.6.1 hardens the rejected-alternatives data shape for decision memory. Legacy string entries are normalized to structured objects; a new `ec decision alternatives` sub-command group provides audit, normalize, and set operations. Extraction prompts now request structured reasons without inventing them.
+
+### Added
+
+- **Rejected-alternative normalization helpers** — `normalize_alternative`, `normalize_rejected_alternatives`, and `audit_rejected_alternatives` in `core/decisions.py`. Accepts legacy plain strings and already-structured `{"alternative", "reason"}` dicts; idempotent on structured input. Uses `"Unknown from recorded context"` as the canonical placeholder when no reason is present.
+- **`ec decision alternatives audit`** — read-only command listing quality issues (legacy strings, missing reasons, malformed entries) per decision without mutating data.
+- **`ec decision alternatives normalize`** — converts legacy string entries to structured form; `--dry-run` previews without writing; exits non-zero if malformed entries block normalization.
+- **`ec decision alternatives set`** — replaces a decision's `rejected_alternatives` list with a validated structured JSON array; accepts both string and structured items via the shared normalizer.
+
+### Changed
+
+- **Extraction prompts** — all three source-type prompts (`session`, `checkpoint`, `assessment`) now request `{"alternative": str, "reason": str}` objects and explicitly instruct the model not to invent reasons when the source text provides none.
+- **`parse_llm_response`** — normalizes each rejected-alternative entry through the shared `normalize_alternative` helper; malformed entries are dropped silently (not a parse failure).
+
 ## [0.6.0] - 2026-05-10
 
 v0.6.0 advances the outcome lifecycle core for decision memory. Database schema v14 widens decision outcome vocabulary, supersession now records replacement feedback, and candidate confirmation records the commit that introduced the promoted decision.

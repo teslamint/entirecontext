@@ -484,7 +484,9 @@ class TestCodexIntegration:
         assert "old-hook.py" in local_content
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_disable_from_different_repo_does_not_restore_other_repos_upstream(self, mock_git_root, tmp_path, monkeypatch):
+    def test_disable_from_different_repo_does_not_restore_other_repos_upstream(
+        self, mock_git_root, tmp_path, monkeypatch
+    ):
         first_repo = tmp_path / "repo-a"
         second_repo = tmp_path / "repo-b"
         first_repo.mkdir()
