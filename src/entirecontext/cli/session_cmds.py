@@ -457,7 +457,10 @@ def session_activate(
 def session_backfill_ended_at(
     dry_run: bool = typer.Option(True, "--dry-run/--apply", help="Preview without changes (default) or apply."),
     max_age_hours: int = typer.Option(
-        1, "--max-age-hours", help="Minimum age in hours before a NULL ended_at row is eligible."
+        1,
+        "--max-age-hours",
+        help="Minimum age in hours before a NULL ended_at row is eligible.",
+        min=1,
     ),
 ):
     """Backfill ended_at for sessions where SessionEnd hook was never fired.
@@ -466,12 +469,17 @@ def session_backfill_ended_at(
     --max-age-hours. Sets ended_at = last_activity_at for each eligible row.
     Safe default is --dry-run; pass --apply to commit changes.
     """
-    from ..core.project import find_git_root
+    from ..core.project import find_git_root, get_project
     from ..db import get_db
 
     repo_path = find_git_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    project = get_project(repo_path)
+    if not project:
+        console.print("[yellow]Not initialized. Run 'ec init'.[/yellow]")
         raise typer.Exit(1)
 
     conn = get_db(repo_path)
@@ -505,13 +513,26 @@ def session_backfill_ended_at(
             console.print("[dim]Dry-run mode — no changes made. Use --apply to commit.[/dim]")
             return
 
+        # Optimistic concurrency: re-check ended_at IS NULL and last_activity_at unchanged
+        # to avoid clobbering sessions closed or resumed between SELECT and UPDATE.
+        updated = 0
         for row in rows:
-            conn.execute(
-                "UPDATE sessions SET ended_at = last_activity_at WHERE id = ?",
-                (row["id"],),
+            cursor = conn.execute(
+                "UPDATE sessions SET ended_at = last_activity_at"
+                " WHERE id = ? AND ended_at IS NULL AND last_activity_at = ?",
+                (row["id"], row["last_activity_at"]),
             )
+            updated += cursor.rowcount
         conn.commit()
-        console.print(f"[green]Updated {len(rows)} session(s).[/green]")
+
+        skipped = len(rows) - updated
+        if skipped > 0:
+            console.print(
+                f"[green]Updated {updated} session(s).[/green]"
+                f" [dim]({skipped} skipped due to concurrent activity)[/dim]"
+            )
+        else:
+            console.print(f"[green]Updated {updated} session(s).[/green]")
     finally:
         conn.close()
 
