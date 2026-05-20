@@ -119,6 +119,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "outcome_feedback_lookback_days": 60,
             "contradicted_penalty": 0.15,
         },
+        "injection": {
+            "inject_on_user_prompt": True,
+            "top_k": 5,
+            "max_tokens": 800,
+            "min_confidence": 0.4,
+            "inject_timeout_ms": 250,
+        },
     },
 }
 

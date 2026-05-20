@@ -91,6 +91,84 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
     from .turn_capture import on_user_prompt
 
     on_user_prompt(data)
+
+    cwd = data.get("cwd", ".")
+    prompt_text = data.get("prompt", "")
+    session_id = data.get("session_id")
+    if not session_id:
+        return 0
+
+    try:
+        from ..core.project import find_git_root
+
+        repo_path = find_git_root(cwd)
+        if not repo_path:
+            return 0
+
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+
+        if not config.get("capture", {}).get("auto_capture", True):
+            return 0
+
+        inject_cfg = config.get("decisions", {}).get("injection", {})
+        if not inject_cfg.get("inject_on_user_prompt", True):
+            return 0
+
+        from ..core.decision_prompt_surfacing import (
+            _format_decision_entry,
+            optimize_for_context_budget,
+            rank_decisions_for_prompt,
+        )
+        from ..db import get_db
+
+        timeout_s = int(inject_cfg.get("inject_timeout_ms", 250)) / 1000
+
+        def _rank_in_thread() -> tuple[list[Any], list[str]]:
+            conn = get_db(repo_path)
+            try:
+                return rank_decisions_for_prompt(conn, repo_path=repo_path, prompt_text=prompt_text, config=config)
+            finally:
+                conn.close()
+
+        import concurrent.futures
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_rank_in_thread)
+        timed_out = False
+        try:
+            surfaced, _ = future.result(timeout=timeout_s)
+        except concurrent.futures.TimeoutError:
+            timed_out = True
+        finally:
+            executor.shutdown(wait=False)
+        if timed_out:
+            return 0
+
+        trimmed = optimize_for_context_budget(
+            surfaced,
+            top_k=int(inject_cfg.get("top_k", 5)),
+            max_tokens=int(inject_cfg.get("max_tokens", 800)),
+            min_confidence=float(inject_cfg.get("min_confidence", 0.4)),
+        )
+
+        if trimmed:
+            entries = [_format_decision_entry(d, i + 1) for i, d in enumerate(trimmed)]
+            md = "## Related Decisions\n\n" + "\n\n".join(entries)
+            print(
+                json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "UserPromptSubmit",
+                            "additionalContext": md,
+                        }
+                    }
+                )
+            )
+    except Exception as e:
+        print(f"EntireContext PDI error: {e}", file=sys.stderr)
+
     return 0
 
 

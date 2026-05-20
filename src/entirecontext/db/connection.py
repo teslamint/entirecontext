@@ -46,6 +46,6 @@ def get_global_db() -> sqlite3.Connection:
 
 def get_memory_db() -> sqlite3.Connection:
     """Get an in-memory database (for testing)."""
-    conn = sqlite3.connect(":memory:", factory=_ECConnection)
+    conn = sqlite3.connect(":memory:", factory=_ECConnection, check_same_thread=False)
     _configure_connection(conn)
     return conn

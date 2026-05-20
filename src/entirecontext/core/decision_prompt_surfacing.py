@@ -131,6 +131,11 @@ def _atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
     os.replace(str(tmp), str(path))
 
 
+def _estimate_tokens(text: str) -> int:
+    """Heuristic token estimate: UTF-8 byte length ÷ 3 (Korean 3B/char, ASCII ~1B/tok)."""
+    return max(1, len(text.encode("utf-8")) // 3)
+
+
 def _format_decision_entry(decision: dict[str, Any], rank: int) -> str:
     parts = [f"### {rank}. {decision.get('title', '(untitled)')}"]
     if decision.get("id"):
@@ -147,6 +152,106 @@ def _format_decision_entry(decision: dict[str, Any], rank: int) -> str:
     if decision.get("selection_id"):
         parts.append(f"  Selection: {decision['selection_id']}")
     return "\n".join(parts)
+
+
+def rank_decisions_for_prompt(
+    conn,
+    *,
+    repo_path: str,
+    prompt_text: str,
+    config: dict[str, Any],
+    limit: int | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Rank decisions relevant to a user prompt. No side effects.
+
+    Returns (surfaced, warnings). ``surfaced`` is a list of full decision
+    dicts with ``score`` and ``rank`` injected.  Telemetry is intentionally
+    omitted here; the async worker path handles telemetry separately.
+    """
+    warnings: list[str] = []
+
+    from .content_filter import redact_for_query
+    from .security import filter_secrets
+
+    redacted = filter_secrets(prompt_text)
+    redacted = redact_for_query(redacted, config)
+
+    diff_text = _get_uncommitted_diff(repo_path)
+    commit_shas = _get_recent_commit_shas(repo_path, limit=5)
+
+    combined_diff = redacted
+    if diff_text:
+        combined_diff = f"{redacted}\n\n{diff_text}"
+
+    from .decisions import (
+        _load_quality_weights,
+        _load_ranking_weights,
+        get_decision,
+        rank_related_decisions,
+    )
+
+    if limit is None:
+        inject_cfg = config.get("decisions", {}).get("injection", {})
+        limit = int(inject_cfg.get("top_k", 5))
+    ranking_weights = _load_ranking_weights(config)
+    quality_weights = _load_quality_weights(config)
+
+    ranked = rank_related_decisions(
+        conn,
+        file_paths=[],
+        diff_text=combined_diff,
+        commit_shas=commit_shas,
+        assessment_ids=[],
+        limit=limit,
+        include_contradicted=False,
+        ranking=ranking_weights,
+        quality=quality_weights,
+    )
+
+    surfaced: list[dict[str, Any]] = []
+    for idx, d in enumerate(ranked, start=1):
+        full = get_decision(conn, d["id"])
+        if not full:
+            continue
+        full["score"] = d.get("score")
+        full["rank"] = idx
+        surfaced.append(full)
+
+    return surfaced, warnings
+
+
+def optimize_for_context_budget(
+    ranked: list[dict[str, Any]],
+    *,
+    top_k: int,
+    max_tokens: int,
+    min_confidence: float,
+) -> list[dict[str, Any]]:
+    """Trim a ranked decision list to fit within a token budget.
+
+    Pass order: min_confidence cut → top_k slice → cumulative token trim
+    (remove lowest-score entries first) → single-entry rationale truncation
+    if still over budget.
+    """
+    cut = [d for d in ranked if (d.get("score") or 0.0) >= min_confidence]
+    trimmed = cut[:top_k]
+
+    if not trimmed:
+        return []
+
+    def _tokens_for(entries: list[dict[str, Any]]) -> int:
+        return sum(_estimate_tokens(_format_decision_entry(d, d.get("rank", i + 1))) for i, d in enumerate(entries))
+
+    while len(trimmed) > 1 and _tokens_for(trimmed) > max_tokens:
+        trimmed = trimmed[:-1]
+
+    if trimmed and _tokens_for(trimmed) > max_tokens:
+        d = {**trimmed[0]}
+        if d.get("rationale") and len(d["rationale"]) > 100:
+            d["rationale"] = d["rationale"][:100] + "…"
+        trimmed = [d]
+
+    return trimmed
 
 
 def run_prompt_surface_worker(
@@ -181,12 +286,7 @@ def run_prompt_surface_worker(
             result["warnings"].append(f"read_prompt_file:{exc}")
             return result
 
-        # Defense-in-depth redaction. The hook writes an already-redacted
-        # payload; run the filters again so a tampered or externally-written
-        # tmp file still cannot leak raw secrets through the Markdown.
         from .config import load_config
-        from .content_filter import redact_for_query
-        from .security import filter_secrets
 
         try:
             config = load_config(repo_path)
@@ -194,60 +294,19 @@ def run_prompt_surface_worker(
             result["warnings"].append(f"load_config:{exc}")
             config = {}
 
-        redacted = filter_secrets(prompt_text)
-        redacted = redact_for_query(redacted, config)
-
-        # Signal assembly — uses module-local git helpers (see
-        # ``_get_uncommitted_diff`` / ``_get_recent_commit_shas`` above)
-        # so ``core.decision_prompt_surfacing`` has no reverse edge on
-        # ``hooks.decision_hooks``. The helpers mirror SessionStart's
-        # shape exactly so the ranker sees consistent signals across
-        # all three surfacing channels.
-        diff_text = _get_uncommitted_diff(repo_path)
-        commit_shas = _get_recent_commit_shas(repo_path, limit=5)
-
-        # Combined signal for FTS: prompt text + diff. _tokenize_diff_for_fts
-        # already handles plain-text input (no +/- lines) alongside real diff
-        # hunks, so concatenation is a clean no-refactor integration.
-        combined_diff = redacted
-        if diff_text:
-            combined_diff = f"{redacted}\n\n{diff_text}"
-
         from ..db import get_db
 
         conn = get_db(repo_path)
         try:
-            from .decisions import (
-                _load_quality_weights,
-                _load_ranking_weights,
-                get_decision,
-                rank_related_decisions,
-            )
-
-            limit = int(config.get("decisions", {}).get("surface_on_user_prompt_limit", 3))
-            ranking_weights = _load_ranking_weights(config)
-            quality_weights = _load_quality_weights(config)
-
-            ranked = rank_related_decisions(
+            worker_limit = int(config.get("decisions", {}).get("surface_on_user_prompt_limit", 3))
+            surfaced, rank_warnings = rank_decisions_for_prompt(
                 conn,
-                file_paths=[],
-                diff_text=combined_diff,
-                commit_shas=commit_shas,
-                assessment_ids=[],
-                limit=limit,
-                include_contradicted=False,
-                ranking=ranking_weights,
-                quality=quality_weights,
+                repo_path=repo_path,
+                prompt_text=prompt_text,
+                config=config,
+                limit=worker_limit,
             )
-
-            surfaced: list[dict] = []
-            for idx, d in enumerate(ranked, start=1):
-                full = get_decision(conn, d["id"])
-                if not full:
-                    continue
-                full["score"] = d.get("score")
-                full["rank"] = idx
-                surfaced.append(full)
+            result["warnings"].extend(rank_warnings)
 
             # Retrieval telemetry — keep the same event/selection shape that
             # SessionStart and PostToolUse use so aggregation downstream sees
