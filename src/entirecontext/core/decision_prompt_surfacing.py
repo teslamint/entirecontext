@@ -249,6 +249,9 @@ def optimize_for_context_budget(
         d = {**trimmed[0]}
         if d.get("rationale") and len(d["rationale"]) > 100:
             d["rationale"] = d["rationale"][:100] + "…"
+        # Second-pass: if still over budget because of a long title, truncate it too.
+        if _tokens_for([d]) > max_tokens and d.get("title") and len(d["title"]) > 80:
+            d["title"] = d["title"][:80] + "…"
         trimmed = [d]
 
     return trimmed

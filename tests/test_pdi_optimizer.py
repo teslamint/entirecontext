@@ -52,6 +52,13 @@ class TestOptimizeForContextBudget:
         assert len(result) == 1
         assert len(result[0].get("rationale", "")) <= 105
 
+    def test_single_entry_long_title_truncated_when_over_budget(self):
+        long_title = "T" * 200
+        ranked = [_d(long_title, 0.9, rank=1, rationale="Short rationale.")]
+        result = optimize_for_context_budget(ranked, top_k=5, max_tokens=10, min_confidence=0.0)
+        assert len(result) == 1
+        assert len(result[0].get("title", "")) <= 84  # 80 chars + "…"
+
     def test_empty_input_returns_empty(self):
         assert optimize_for_context_budget([], top_k=5, max_tokens=800, min_confidence=0.4) == []
 

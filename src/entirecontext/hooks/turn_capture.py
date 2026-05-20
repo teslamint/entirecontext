@@ -11,6 +11,8 @@ from uuid import uuid4
 
 from .session_lifecycle import _find_git_root
 
+_GIT_ROOT_UNSET = object()  # sentinel: caller did not pre-resolve the git root
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -129,8 +131,12 @@ def _maybe_launch_prompt_surfacing_worker(
                 pass
 
 
-def on_user_prompt(data: dict[str, Any]) -> None:
-    """Handle UserPromptSubmit — record turn start with user message."""
+def on_user_prompt(data: dict[str, Any], *, _resolved_repo_path: object = _GIT_ROOT_UNSET) -> None:
+    """Handle UserPromptSubmit — record turn start with user message.
+
+    Pass ``_resolved_repo_path`` to skip the git-root subprocess probe when the
+    caller has already done the lookup (avoids a double probe in handler.py).
+    """
     session_id = data.get("session_id")
     cwd = data.get("cwd", ".")
     prompt = data.get("prompt", "")
@@ -138,7 +144,10 @@ def on_user_prompt(data: dict[str, Any]) -> None:
     if not session_id:
         return
 
-    repo_path = _find_git_root(cwd)
+    if _resolved_repo_path is _GIT_ROOT_UNSET:
+        repo_path: str | None = _find_git_root(cwd)
+    else:
+        repo_path = _resolved_repo_path  # type: ignore[assignment]
     if not repo_path:
         return
 
