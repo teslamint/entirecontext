@@ -5,8 +5,8 @@ Verifies that `UserPromptSubmit` hook stdout is captured as `additionalContext` 
 
 ## Status
 
+- [x] **CONFIRMED** (2026-05-20) — proceed to PR-D / PR-E
 - [ ] PENDING (not yet tested)
-- [ ] CONFIRMED — proceed to PR-D / PR-E
 - [ ] REJECTED — scope PDI to v0.7.1; v0.7.0 = PR-A/B/C only
 
 ---
@@ -65,11 +65,12 @@ The existing `ec hook handle` entry stays — add the probe alongside it:
 
 ## Results
 
-### If CONFIRMED
+### If CONFIRMED ✓
 
-- Exact JSON key path that Claude Code reads: `hookSpecificOutput.additionalContext`
-- How injected context is presented (system-reminder? prepended to prompt? separate section?): TBD
-- Is the entire `additionalContext` string included verbatim, or truncated?
+- Exact JSON key path: `hookSpecificOutput.additionalContext`
+- How injected: appears as `<system-reminder>` tag prefixed with `UserPromptSubmit hook additional context:`
+- Full string verbatim — no truncation observed
+- Verified 2026-05-20: spike probe text appeared in Claude Code system context on next prompt
 
 ### If REJECTED
 
