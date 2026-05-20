@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -779,6 +780,8 @@ class ExtractionWeights:
     outcome_feedback_enabled: bool = True
     outcome_feedback_lookback_days: int = 60
     contradicted_penalty: float = 0.15
+    accepted_boost_amount: float = 0.10
+    accepted_boost_threshold: float = 0.6
 
 
 _DEFAULT_EXTRACTION_WEIGHTS = ExtractionWeights()
@@ -824,16 +827,19 @@ def _coerce_extraction_float(section: dict, key: str, default: float) -> float:
 
 
 def _coerce_extraction_nonneg_float(section: dict, key: str, default: float) -> float:
-    """Variant of :func:`_coerce_extraction_float` that rejects negatives.
+    """Variant of :func:`_coerce_extraction_float` that rejects negatives and non-finite values.
 
     ``contradicted_penalty`` must be >= 0 because ``apply_outcome_feedback_to_confidence``
     subtracts it directly: a negative value would convert the penalty into a
     boost when contradicted outcomes dominate, inverting the 'penalty-only'
     contract of this feature.
+
+    Non-finite values (``inf``, ``nan``) are also rejected: ``inf`` would flatten
+    boosted rankings by clamping to 1.0, while ``nan`` silently disables boosting.
     """
     value = _coerce_extraction_float(section, key, default)
-    if value < 0.0:
-        raise ValueError(f"decisions.extraction.{key} must be >= 0, got {value!r}")
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError(f"decisions.extraction.{key} must be a finite non-negative number, got {value!r}")
     return value
 
 
@@ -859,6 +865,12 @@ def _load_extraction_weights(config: dict | None) -> ExtractionWeights:
         ),
         contradicted_penalty=_coerce_extraction_nonneg_float(
             section, "contradicted_penalty", _DEFAULT_EXTRACTION_WEIGHTS.contradicted_penalty
+        ),
+        accepted_boost_amount=_coerce_extraction_nonneg_float(
+            section, "accepted_boost_amount", _DEFAULT_EXTRACTION_WEIGHTS.accepted_boost_amount
+        ),
+        accepted_boost_threshold=_coerce_extraction_nonneg_float(
+            section, "accepted_boost_threshold", _DEFAULT_EXTRACTION_WEIGHTS.accepted_boost_threshold
         ),
     )
 
@@ -916,19 +928,21 @@ def apply_outcome_feedback_to_confidence(
     stats: dict[str, int],
     *,
     penalty: float = 0.15,
+    boost: float = 0.10,
+    boost_threshold: float = 0.6,
 ) -> tuple[float, dict[str, Any]]:
-    """Apply a confidence penalty when contradicted outcomes dominate history.
+    """Apply outcome-history feedback (penalty or boost) to extraction confidence.
 
-    Penalty logic: if aggregated ``contradicted / scored_total`` strictly
-    exceeds :data:`_OUTCOME_FEEDBACK_RATIO_THRESHOLD` (0.5) across the draft's
-    files, subtract ``penalty`` from ``confidence`` and clamp to ``[0.0, 1.0]``.
-    ``scored_total`` counts accepted, ignored, and contradicted outcomes only;
-    refined/replaced are neutral and reported without diluting the penalty
-    denominator. Otherwise return the input unchanged.
+    Penalty path: if ``contradicted / scored_total > 0.5``, subtract ``penalty``.
+    Boost path (symmetric, mutually exclusive with penalty): if penalty was NOT
+    applied, ``scored_total >= 2``, and ``accepted / scored_total > boost_threshold``,
+    add ``boost`` to confidence. Both paths clamp the final to ``[0.0, 1.0]``.
 
-    The returned breakdown always includes an ``outcome_feedback`` section
-    (even when no penalty applied) so telemetry and UI can render a
-    consistent shape without branching on presence.
+    ``scored_total`` counts accepted, ignored, and contradicted only; refined/replaced
+    are neutral and do not affect either ratio.
+
+    The returned breakdown always includes an ``outcome_feedback`` section so
+    callers can render a consistent shape without branching on presence.
     """
     total = int(stats.get("total", 0))
     contradicted = int(stats.get("contradicted", 0))
@@ -941,7 +955,12 @@ def apply_outcome_feedback_to_confidence(
     ratio = (contradicted / scored_total) if scored_total > 0 else 0.0
     applied = ratio > _OUTCOME_FEEDBACK_RATIO_THRESHOLD
     penalty_amount = penalty if applied else 0.0
-    final = max(0.0, min(1.0, confidence - penalty_amount))
+
+    accept_ratio = (accepted / scored_total) if scored_total > 0 else 0.0
+    boost_applied = not applied and scored_total >= 2 and boost > 0.0 and accept_ratio > boost_threshold
+    boost_amount = boost if boost_applied else 0.0
+
+    final = max(0.0, min(1.0, confidence - penalty_amount + boost_amount))
 
     feedback = {
         "applied": applied,
@@ -955,12 +974,12 @@ def apply_outcome_feedback_to_confidence(
         "ratio": round(ratio, 4),
         "ratio_threshold": _OUTCOME_FEEDBACK_RATIO_THRESHOLD,
         "penalty": round(penalty_amount, 4),
+        "boost_applied": boost_applied,
+        "boost": round(boost_amount, 4),
     }
     new_breakdown = dict(breakdown)
     new_breakdown["outcome_feedback"] = feedback
-    if applied:
-        # Keep the original score next to the adjusted final so downstream
-        # review can see what was deducted without re-running the calc.
+    if applied or boost_applied:
         new_breakdown["final_before_outcome_feedback"] = round(confidence, 4)
         new_breakdown["final"] = round(final, 4)
     return final, new_breakdown
@@ -1104,6 +1123,8 @@ def run_extraction(
                     breakdown,
                     stats,
                     penalty=extraction_weights.contradicted_penalty,
+                    boost=extraction_weights.accepted_boost_amount,
+                    boost_threshold=extraction_weights.accepted_boost_threshold,
                 )
             if score < min_confidence:
                 outcome.low_confidence_skipped += 1
