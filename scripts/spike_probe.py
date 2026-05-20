@@ -10,6 +10,7 @@ Registration (add as second hook in .claude/settings.local.json):
     "timeout": 5
   }
 """
+
 from __future__ import annotations
 
 import json

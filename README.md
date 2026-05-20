@@ -97,6 +97,34 @@ auto_promotion_contradicted_threshold = 2
 
 Decision retrieval does not have to be query-only. EntireContext can surface relevant past decisions automatically when you start a task, when you edit decision-linked files mid-session, and through a single MCP convenience call.
 
+### Proactive Decision Injection (UserPromptSubmit hook)
+
+Starting with v0.7.0, the `UserPromptSubmit` hook ranks top-k decisions against every user prompt and injects them directly into Claude Code's context as `additionalContext` — no agent query needed:
+
+```
+## Related Decisions
+
+### 1. Use SQLite WAL mode for agent memory
+  ID: `aaaabbbb-cccc`
+  Status: fresh
+  Score: 0.87
+
+  WAL mode allows concurrent readers without blocking writes, critical for hook throughput.
+```
+
+The injection is synchronous with a hard wall-clock timeout (default 250 ms). If ranking exceeds the deadline, the hook returns without output and the async fallback path takes over.
+
+**Configuration** (`.entirecontext/config.toml`):
+
+```toml
+[decisions.injection]
+inject_on_user_prompt = true   # default ON; set false to disable
+top_k = 5                      # max decisions to surface
+max_tokens = 800               # context budget (heuristic UTF-8 ÷ 3)
+min_confidence = 0.4           # minimum relevance score
+inject_timeout_ms = 250        # hard wall-clock cap for the sync path
+```
+
 ### Mid-session surfacing (PostToolUse hook)
 
 Enable the hook so that decisions linked to just-edited files appear inline after every file edit:

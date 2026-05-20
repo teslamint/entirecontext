@@ -168,6 +168,18 @@ Theme: clean up the rejected-alternatives data shape without mutating existing r
 - [x] Tighten extraction prompts to request rejected-alternative reasons only when source text contains enough evidence; parser and candidate-confirmation paths share the same normalizer
 - [x] Tests: legacy string compatibility, malformed JSON detection, mixed arrays, empty alternatives, empty reasons, audit categories, normalization idempotency, manual set behavior
 
+## v0.7.0 — Proactive Decision Injection + Debt Clearance
+
+Theme: make retrieval default behavior, close three deferred debt items.
+
+- [x] **PDI: `rank_decisions_for_prompt()`** — pure ranking function extracted from async worker, reusable by both sync and async paths
+- [x] **PDI: `optimize_for_context_budget()`** — min_confidence cut → top_k slice → token trim → rationale truncation
+- [x] **PDI: `UserPromptSubmit` hook stdout JSON** — `additionalContext` injection with `inject_timeout_ms` hard cap (default 250ms, `shutdown(wait=False)`)
+- [x] **PDI: `[decisions.injection]` config section** — `inject_on_user_prompt=true` default (p95@1000=61.8ms < 250ms gate)
+- [x] **B1: `ec session backfill-ended-at`** — recover `ended_at IS NULL` rows with optimistic concurrency and 1h safety gate
+- [x] **B2: `accepted_boost`** — `accepted_boost_amount`/`accepted_boost_threshold` in `ExtractionWeights`; finishes ec decision `3a1ccb19`
+- [x] **B3: Remove `unverified_changes.patch`** — duplicate of already-committed docs files
+
 ## Hardening Backlog
 
 Structural debt outside the "decision memory depth" wedge. The three items previously listed here (`confirm_candidate` atomicity, `LEGACY_TRANSACTION_CONTROL`, review-bot noise) have been absorbed into v0.5.0 — see S1, S2, S4 above. New items go here as they are surfaced.
@@ -194,8 +206,6 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 ## Exploration
 
 Items below have been evaluated in the 2026-04-27 ideation session ([docs/ideation/2026-04-27-product-roadmap-ideation.md](docs/ideation/2026-04-27-product-roadmap-ideation.md)) and promoted to concrete candidates. Items marked "moved from v0.6.0" were initially proposed for the breaking track but fall outside the outcome-lifecycle scope defined in `docs/brainstorms/v0-6-0-roadmap-plan.md`.
-
-- **Proactive Decision Injection** — `UserPromptSubmit` hook auto-pushes top-k relevant decisions into `additionalContext` without agent query; Context Budget Optimizer (token cap + confidence threshold) gates noise. Highest-leverage retrieval improvement — converts AGENTS.md policy from opt-in to default behavior. _(Confidence 92%, Medium complexity)_ Plan reference: `docs/brainstorms/proactive-decision-injection.md`.
 
 - **Temporal Query Language (TQL)** — `--at <ref>`, `since:`, `between:` syntax for all search/retrieval commands; queries evaluate against memory state at a specific git commit or date. Exploits EC's unique moat (git-anchored time-travel) — no competitor offers this. _(Confidence 88%, Medium complexity)_ Plan reference: `docs/brainstorms/temporal-query-language.md`.
 

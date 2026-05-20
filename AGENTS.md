@@ -219,12 +219,22 @@ Stored decisions are inputs to judgment, not blind rules. Follow relevant fresh 
 #### Pattern: Hook-Driven Automation
 The hook system captures development activity automatically:
 - **SessionStart** → creates/resumes session tracking
-- **UserPromptSubmit** → captures each user prompt as a turn
+- **UserPromptSubmit** → captures each user prompt as a turn; **also injects top-k relevant decisions into `additionalContext`** (Proactive Decision Injection, v0.7.0+)
 - **PostToolUse** → tracks tools and files touched
 - **Stop** → captures assistant response summary
 - **SessionEnd** → generates summaries, triggers auto-sync/embed/distill
 - **PostCommit** (git hook) → creates checkpoint on each commit
 - **pre-push** (git hook) → triggers `ec sync --if-enabled`
+
+#### Proactive Memory Reuse (v0.7.0+)
+
+Starting with v0.7.0, the `UserPromptSubmit` hook is the **default delivery channel** for relevant decisions. On every user prompt, EntireContext synchronously ranks top-k decisions and injects them as `additionalContext` so Claude Code receives decision guidance before generating each response.
+
+**What this means for agents working in this repo**: relevant decisions now appear automatically as `<system-reminder>` context tagged "UserPromptSubmit hook additional context:". You do not need to call `ec_decision_related` or `ec search` for routine decision lookup — the hook pre-populates relevant decisions. Use explicit MCP/CLI retrieval only when:
+- you need decisions beyond the injected top-k (more breadth)
+- you need to filter by staleness, file, or outcome
+- PDI was skipped (no session, capture disabled, or timeout exceeded)
+- you want to record usage or outcomes
 
 ### Adding New CLI Commands
 When adding a new CLI command:
