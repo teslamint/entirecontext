@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-20
+
+v0.7.0 makes EntireContext proactive: the `UserPromptSubmit` hook now injects the top-k most relevant decisions directly into Claude Code's context on every prompt turn. Three debt items are also closed: `ended_at NULL` backfill CLI (B1), `unverified_changes.patch` removal (B3), and `accepted_boost` confidence scoring (B2).
+
+**Breaking change (default-on)**: `[decisions.injection] inject_on_user_prompt = true` is the default. Operators who want to disable injection must set it to `false` in `.entirecontext/config.toml`.
+
+### Added
+
+- **Proactive Decision Injection (PDI)** — `UserPromptSubmit` hook synchronously ranks top-k decisions, trims to token budget, and outputs `{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "<md>"}}` to stdout. Claude Code injects the markdown into the next turn as a `<system-reminder>` so relevant decisions surface without any agent query.
+- **`[decisions.injection]` config section** — `inject_on_user_prompt` (bool, default true), `top_k` (int, default 5), `max_tokens` (int, default 800), `min_confidence` (float, default 0.4), `inject_timeout_ms` (int, default 250).
+- **`rank_decisions_for_prompt()`** in `core/decision_prompt_surfacing.py` — pure ranking function (no side effects) reused by both sync PDI path and async fallback worker.
+- **`optimize_for_context_budget()`** — min_confidence cut → top_k slice → cumulative token trim (low-score first) → single-entry rationale truncation.
+- **`ec session backfill-ended-at`** — CLI to recover sessions with `ended_at IS NULL` from hook miss (5s timeout/SIGKILL). Options: `--dry-run`/`--apply`, `--max-age-hours` (min 1). Uses optimistic concurrency (`AND last_activity_at = ?`) to skip sessions with new activity between SELECT and UPDATE.
+- **PDI performance baseline** (`docs/perf/v0-7-0-pdi-baseline.md`) — 100/500/1000-decision p50/p95 gate measurement. p95@1000 = 61.8ms (gate: 250ms). Default ON.
+- **Hook contract research** (`docs/research/v0-7-0-hook-contract-spike.md`) — confirmed `additionalContext` appears verbatim in `<system-reminder>` tagged "UserPromptSubmit hook additional context:".
+
+### Changed
+
+- **`accepted_boost` (B2)** — `apply_outcome_feedback_to_confidence` boosts confidence by `accepted_boost_amount` (default 0.10) when: penalty not applied, `scored_total >= 2`, `accepted / scored_total > accepted_boost_threshold` (default 0.6). Closes ec decision `3a1ccb19`.
+- **`_coerce_extraction_nonneg_float`** — now also rejects non-finite values (`inf`, `nan`). `accepted_boost_threshold` uses `_coerce_extraction_nonneg_float` (was `_coerce_extraction_float`; negative threshold made boost unconditionally true).
+- **`get_memory_db()`** — adds `check_same_thread=False` so in-memory test connections can be passed to worker threads.
+
+### Removed
+
+- **`unverified_changes.patch`** (B3) — duplicate of already-committed docs files (docs/documentation_in_prs_proposal.md, docs/tiered_review_policy_proposal.md).
+
 ## [0.6.1] - 2026-05-20
 
 v0.6.1 hardens the rejected-alternatives data shape for decision memory. Legacy string entries are normalized to structured objects; a new `ec decision alternatives` sub-command group provides audit, normalize, and set operations. Extraction prompts now request structured reasons without inventing them.
