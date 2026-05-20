@@ -129,7 +129,7 @@ Scope note: F5 (outcome type enum extension `refined`/`replaced` + schema v14 mi
 
 E2E coverage note: v0.5.0 does not need a single integrated E2E like v0.4.0's `test_e2e_feed_the_loop.py` because S1–S4 each have their own focused integration test. S3 in particular IS the missing E2E for v0.4.0's F4.
 
-## v0.6.0 — Outcome Semantics (Shipped 2026-05-11)
+## v0.6.0 — Outcome Semantics (Shipped 2026-05-10)
 
 Theme: strengthen the decision outcome lifecycle — agents can distinguish guidance that was accepted, ignored, contradicted, refined, or replaced. Narrow scope: outcome recording and ranking behavior only. No extraction confidence changes, no storage rework beyond the minimum for outcome semantics.
 
