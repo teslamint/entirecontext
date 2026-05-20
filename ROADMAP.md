@@ -194,8 +194,8 @@ Theme: break the three-sprint distill=0 streak through structural automation, no
 
 The `capture→distill→retrieve→intervene` loop has stalled at `distill=0` for v0.6.0, v0.6.1, and v0.7.0. Checkpoint coverage is 100%; assessment coverage is 0% all three sprints. Will-based rules cannot enforce this gap — only automatic triggering can.
 
-- [ ] **Auto-assess on checkpoint create** — `ec checkpoint create` automatically triggers `ec assess` (or inserts a structured assessment record) before the command returns; no session ends with a checkpoint and zero assessments
-- [ ] **SessionEnd lesson pipeline** — `SessionEnd` hook runs `ec assess` summarization if new checkpoints exist in the current session; distill-rate metrics flow into the assessment trends dashboard
+- [ ] **Auto-assess on checkpoint create** — `ec checkpoint create` automatically triggers `ec futures assess` (or inserts a structured assessment record) before the command returns; no session ends with a checkpoint and zero assessments
+- [ ] **SessionEnd lesson pipeline** — `SessionEnd` hook runs `ec futures assess` summarization if new checkpoints exist in the current session; distill-rate metrics flow into the assessment trends dashboard
 - [ ] **AAR (After-Action Report)** — structured session digest: new decisions extracted, prior decisions surfaced, PDI retrieve→intervene delta; feeds assessment trend reporting for closed-loop visibility
 - [ ] **Maturity ≥75 (Closed Loop)** — distill automation brings `distill` off zero; sustained dogfooding target is restored
 
