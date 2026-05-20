@@ -1173,6 +1173,18 @@ class TestRankingWeightsConfig:
         assert override_item["score_breakdown"]["accepted_boost"] == 5.0
         assert override_item["base_score"] > default_item["base_score"]
 
+    def test_multiple_accepted_outcomes_boost_is_binary(self, ec_db):
+        """Multiple accepted outcomes still yield the flat boost once — boost is binary, not additive."""
+        d = create_decision(ec_db, title="Multi-accepted decision")
+        link_decision_to_file(ec_db, d["id"], "src/multi_accepted.py")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+        record_decision_outcome(ec_db, d["id"], "accepted")
+
+        ranked = rank_related_decisions(ec_db, file_paths=["src/multi_accepted.py"])
+        item = next(r for r in ranked if r["id"] == d["id"])
+        assert item["score_breakdown"]["accepted_boost"] == 2.0
+
     def test_rank_default_matches_legacy(self, ec_db):
         """ranking=None preserves legacy hardcoded constants (pre-F3 numbers)."""
         d_a = create_decision(ec_db, title="Fresh file decision")
