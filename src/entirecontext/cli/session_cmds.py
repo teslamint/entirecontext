@@ -453,5 +453,89 @@ def session_activate(
     console.print(table)
 
 
+@session_app.command("backfill-ended-at")
+def session_backfill_ended_at(
+    dry_run: bool = typer.Option(True, "--dry-run/--apply", help="Preview without changes (default) or apply."),
+    max_age_hours: int = typer.Option(
+        1,
+        "--max-age-hours",
+        help="Minimum age in hours before a NULL ended_at row is eligible.",
+        min=1,
+    ),
+):
+    """Backfill ended_at for sessions where SessionEnd hook was never fired.
+
+    Targets rows where ended_at IS NULL and last_activity_at is older than
+    --max-age-hours. Sets ended_at = last_activity_at for each eligible row.
+    Safe default is --dry-run; pass --apply to commit changes.
+    """
+    from ..core.project import find_git_root, get_project
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    project = get_project(repo_path)
+    if not project:
+        console.print("[yellow]Not initialized. Run 'ec init'.[/yellow]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    try:
+        rows = conn.execute(
+            "SELECT id, last_activity_at FROM sessions"
+            " WHERE ended_at IS NULL"
+            " AND last_activity_at IS NOT NULL"
+            " AND datetime(last_activity_at) < datetime('now', ?)",
+            (f"-{int(max_age_hours)} hours",),
+        ).fetchall()
+
+        if not rows:
+            console.print("[dim]No eligible sessions found.[/dim]")
+            return
+
+        table = Table(
+            title=f"Sessions with NULL ended_at (>{max_age_hours}h old) — {'DRY RUN' if dry_run else 'APPLY'}"
+        )
+        table.add_column("ID", style="dim", max_width=12)
+        table.add_column("last_activity_at")
+        table.add_column("Action")
+
+        for row in rows:
+            table.add_row(row["id"][:12], row["last_activity_at"] or "", "set ended_at = last_activity_at")
+
+        console.print(table)
+        console.print(f"\n[bold]{len(rows)} row(s) eligible.[/bold]")
+
+        if dry_run:
+            console.print("[dim]Dry-run mode — no changes made. Use --apply to commit.[/dim]")
+            return
+
+        # Optimistic concurrency: re-check ended_at IS NULL and last_activity_at unchanged
+        # to avoid clobbering sessions closed or resumed between SELECT and UPDATE.
+        updated = 0
+        for row in rows:
+            cursor = conn.execute(
+                "UPDATE sessions SET ended_at = last_activity_at"
+                " WHERE id = ? AND ended_at IS NULL AND last_activity_at = ?",
+                (row["id"], row["last_activity_at"]),
+            )
+            updated += cursor.rowcount
+        conn.commit()
+
+        skipped = len(rows) - updated
+        if skipped > 0:
+            console.print(
+                f"[green]Updated {updated} session(s).[/green]"
+                f" [dim]({skipped} skipped due to concurrent activity)[/dim]"
+            )
+        else:
+            console.print(f"[green]Updated {updated} session(s).[/green]")
+    finally:
+        conn.close()
+
+
 def register(app: typer.Typer) -> None:
     app.add_typer(session_app, name="session")
