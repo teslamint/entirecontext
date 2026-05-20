@@ -1472,7 +1472,7 @@ class TestExtractionWeightsConfig:
         the penalty-only contract of this feature. Config load must refuse."""
         from entirecontext.core.decision_extraction import _load_extraction_weights
 
-        with pytest.raises(ValueError, match=">= 0"):
+        with pytest.raises(ValueError, match="contradicted_penalty"):
             _load_extraction_weights({"decisions": {"extraction": {"contradicted_penalty": -0.15}}})
 
     def test_zero_penalty_accepted(self):
@@ -1482,6 +1482,27 @@ class TestExtractionWeightsConfig:
 
         result = _load_extraction_weights({"decisions": {"extraction": {"contradicted_penalty": 0.0}}})
         assert result.contradicted_penalty == 0.0
+
+    def test_accepted_boost_threshold_negative_rejected(self):
+        """Negative threshold makes the boost guard unconditionally true."""
+        from entirecontext.core.decision_extraction import _load_extraction_weights
+
+        with pytest.raises(ValueError, match="accepted_boost_threshold"):
+            _load_extraction_weights({"decisions": {"extraction": {"accepted_boost_threshold": -0.1}}})
+
+    def test_accepted_boost_amount_inf_rejected(self):
+        """inf accepted_boost_amount flattens boosted rankings to 1.0."""
+        from entirecontext.core.decision_extraction import _load_extraction_weights
+
+        with pytest.raises(ValueError, match="accepted_boost_amount"):
+            _load_extraction_weights({"decisions": {"extraction": {"accepted_boost_amount": float("inf")}}})
+
+    def test_accepted_boost_amount_nan_rejected(self):
+        """nan accepted_boost_amount silently disables boosting."""
+        from entirecontext.core.decision_extraction import _load_extraction_weights
+
+        with pytest.raises(ValueError, match="accepted_boost_amount"):
+            _load_extraction_weights({"decisions": {"extraction": {"accepted_boost_amount": float("nan")}}})
 
 
 class TestRunExtractionConfigGuardrails:

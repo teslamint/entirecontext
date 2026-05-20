@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -826,16 +827,19 @@ def _coerce_extraction_float(section: dict, key: str, default: float) -> float:
 
 
 def _coerce_extraction_nonneg_float(section: dict, key: str, default: float) -> float:
-    """Variant of :func:`_coerce_extraction_float` that rejects negatives.
+    """Variant of :func:`_coerce_extraction_float` that rejects negatives and non-finite values.
 
     ``contradicted_penalty`` must be >= 0 because ``apply_outcome_feedback_to_confidence``
     subtracts it directly: a negative value would convert the penalty into a
     boost when contradicted outcomes dominate, inverting the 'penalty-only'
     contract of this feature.
+
+    Non-finite values (``inf``, ``nan``) are also rejected: ``inf`` would flatten
+    boosted rankings by clamping to 1.0, while ``nan`` silently disables boosting.
     """
     value = _coerce_extraction_float(section, key, default)
-    if value < 0.0:
-        raise ValueError(f"decisions.extraction.{key} must be >= 0, got {value!r}")
+    if not math.isfinite(value) or value < 0.0:
+        raise ValueError(f"decisions.extraction.{key} must be a finite non-negative number, got {value!r}")
     return value
 
 
@@ -865,7 +869,7 @@ def _load_extraction_weights(config: dict | None) -> ExtractionWeights:
         accepted_boost_amount=_coerce_extraction_nonneg_float(
             section, "accepted_boost_amount", _DEFAULT_EXTRACTION_WEIGHTS.accepted_boost_amount
         ),
-        accepted_boost_threshold=_coerce_extraction_float(
+        accepted_boost_threshold=_coerce_extraction_nonneg_float(
             section, "accepted_boost_threshold", _DEFAULT_EXTRACTION_WEIGHTS.accepted_boost_threshold
         ),
     )
