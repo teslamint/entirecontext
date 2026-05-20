@@ -91,6 +91,63 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
     from .turn_capture import on_user_prompt
 
     on_user_prompt(data)
+
+    cwd = data.get("cwd", ".")
+    prompt_text = data.get("prompt", "")
+    session_id = data.get("session_id")
+    if not session_id:
+        return 0
+
+    try:
+        from ..core.project import find_git_root
+
+        repo_path = find_git_root(cwd)
+        if not repo_path:
+            return 0
+
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        inject_cfg = config.get("decisions", {}).get("injection", {})
+        if not inject_cfg.get("inject_on_user_prompt", True):
+            return 0
+
+        from ..core.decision_prompt_surfacing import (
+            _format_decision_entry,
+            optimize_for_context_budget,
+            rank_decisions_for_prompt,
+        )
+        from ..db import get_db
+
+        conn = get_db(repo_path)
+        try:
+            surfaced, _ = rank_decisions_for_prompt(conn, repo_path=repo_path, prompt_text=prompt_text, config=config)
+        finally:
+            conn.close()
+
+        trimmed = optimize_for_context_budget(
+            surfaced,
+            top_k=int(inject_cfg.get("top_k", 5)),
+            max_tokens=int(inject_cfg.get("max_tokens", 800)),
+            min_confidence=float(inject_cfg.get("min_confidence", 0.4)),
+        )
+
+        if trimmed:
+            entries = [_format_decision_entry(d, i + 1) for i, d in enumerate(trimmed)]
+            md = "## Related Decisions\n\n" + "\n\n".join(entries)
+            print(
+                json.dumps(
+                    {
+                        "hookSpecificOutput": {
+                            "hookEventName": "UserPromptSubmit",
+                            "additionalContext": md,
+                        }
+                    }
+                )
+            )
+    except Exception as e:
+        print(f"EntireContext PDI error: {e}", file=sys.stderr)
+
     return 0
 
 
