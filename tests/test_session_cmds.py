@@ -163,6 +163,69 @@ class TestSessionShow:
             assert "not found" in result.output.lower()
 
 
+class TestSessionBackfillEndedAt:
+    def test_not_in_repo(self):
+        with patch("entirecontext.core.project.find_git_root", return_value=None):
+            result = runner.invoke(app, ["session", "backfill-ended-at"])
+            assert result.exit_code == 1
+
+    def test_no_eligible_rows(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = []
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+        ):
+            result = runner.invoke(app, ["session", "backfill-ended-at"])
+            assert result.exit_code == 0
+            assert "No eligible" in result.output
+
+    def test_dry_run_shows_rows_without_update(self):
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = [
+            {"id": "sess-old-001-uuid", "last_activity_at": "2025-01-01T09:00:00"},
+            {"id": "sess-old-002-uuid", "last_activity_at": "2025-01-02T10:00:00"},
+        ]
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+        ):
+            result = runner.invoke(app, ["session", "backfill-ended-at"])
+            assert result.exit_code == 0
+            assert "sess-old-001" in result.output
+            assert "2 row(s) eligible" in result.output
+            assert "Dry-run" in result.output
+            mock_conn.commit.assert_not_called()
+
+    def test_apply_updates_eligible_rows(self):
+        mock_conn = MagicMock()
+        eligible = [
+            {"id": "sess-old-001-uuid", "last_activity_at": "2025-01-01T09:00:00"},
+        ]
+        mock_conn.execute.return_value.fetchall.return_value = eligible
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+        ):
+            result = runner.invoke(app, ["session", "backfill-ended-at", "--apply"])
+            assert result.exit_code == 0
+            assert "Updated 1 session(s)" in result.output
+            mock_conn.commit.assert_called_once()
+
+    def test_recent_rows_not_eligible(self):
+        """Rows younger than max_age_hours must not appear (SQL enforces this; mock verifies query param)."""
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchall.return_value = []
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+        ):
+            result = runner.invoke(app, ["session", "backfill-ended-at", "--max-age-hours", "2"])
+            assert result.exit_code == 0
+            call_args = mock_conn.execute.call_args
+            assert "-2 hours" in call_args[0][1]
+
+
 class TestSessionCurrent:
     def test_not_in_repo(self):
         with patch("entirecontext.core.project.find_git_root", return_value=None):
