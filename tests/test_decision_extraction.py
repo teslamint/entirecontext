@@ -1322,8 +1322,68 @@ class TestOutcomeFeedbackPenalty:
         assert new_breakdown["outcome_feedback"]["total"] == 4
         assert new_breakdown["outcome_feedback"]["scored_total"] == 2
 
-    def test_accepted_outcomes_alone_do_not_boost_confidence(self, ec_repo, ec_db):
-        """Stats with only accepted outcomes must leave extraction confidence unchanged (no boost path)."""
+    def test_accepted_outcomes_boost_below_threshold_no_change(self, ec_repo, ec_db):
+        """accepted/scored_total at or below boost_threshold must not apply a boost."""
+        from entirecontext.core.decision_extraction import (
+            apply_outcome_feedback_to_confidence,
+            get_file_outcome_stats,
+        )
+
+        # 2 accepted + 2 ignored = scored_total 4, ratio = 0.5 (not > 0.6)
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Below threshold accepted",
+            file_paths=["src/service/below_threshold.py"],
+            outcome_types=["accepted", "accepted", "ignored", "ignored"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/below_threshold.py"], lookback_days=60)
+        assert stats["accepted"] == 2
+        assert stats["ignored"] == 2
+
+        original = 0.72
+        breakdown = {"final": original, "penalties": {}}
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(
+            original, breakdown, stats, penalty=0.15, boost=0.10, boost_threshold=0.6
+        )
+        assert adjusted == original
+        assert new_breakdown["outcome_feedback"]["applied"] is False
+        assert new_breakdown["outcome_feedback"]["boost_applied"] is False
+
+    def test_accepted_outcomes_above_threshold_apply_boost(self, ec_repo, ec_db):
+        """accepted/scored_total > boost_threshold with scored_total >= 2 must add the boost."""
+        from entirecontext.core.decision_extraction import (
+            apply_outcome_feedback_to_confidence,
+            get_file_outcome_stats,
+        )
+
+        # 3 accepted out of 3 scored = 1.0 > 0.6 threshold, scored_total >= 2
+        self._seed_decision_with_outcomes(
+            ec_db,
+            title="Above threshold accepted",
+            file_paths=["src/service/above_threshold.py"],
+            outcome_types=["accepted", "accepted", "accepted"],
+        )
+
+        stats = get_file_outcome_stats(ec_db, ["src/service/above_threshold.py"], lookback_days=60)
+        assert stats["accepted"] == 3
+        assert stats["contradicted"] == 0
+
+        original = 0.72
+        boost = 0.10
+        breakdown = {"final": original, "penalties": {}}
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(
+            original, breakdown, stats, penalty=0.15, boost=boost, boost_threshold=0.6
+        )
+        assert abs(adjusted - (original + boost)) < 1e-9
+        assert new_breakdown["outcome_feedback"]["applied"] is False
+        assert new_breakdown["outcome_feedback"]["boost_applied"] is True
+        assert new_breakdown["outcome_feedback"]["boost"] == boost
+        assert new_breakdown["final_before_outcome_feedback"] == original
+        assert new_breakdown["final"] == pytest.approx(original + boost)
+
+    def test_accepted_boost_single_outcome_not_applied(self, ec_repo, ec_db):
+        """scored_total == 1 must not trigger the boost (single-outcome smoothing guard)."""
         from entirecontext.core.decision_extraction import (
             apply_outcome_feedback_to_confidence,
             get_file_outcome_stats,
@@ -1331,21 +1391,26 @@ class TestOutcomeFeedbackPenalty:
 
         self._seed_decision_with_outcomes(
             ec_db,
-            title="Only accepted outcomes",
-            file_paths=["src/service/accepted_only.py"],
-            outcome_types=["accepted", "accepted", "accepted"],
+            title="Single accepted outcome",
+            file_paths=["src/service/single_accepted.py"],
+            outcome_types=["accepted"],
         )
 
-        stats = get_file_outcome_stats(ec_db, ["src/service/accepted_only.py"], lookback_days=60)
-        assert stats["accepted"] == 3
-        assert stats["contradicted"] == 0
-        assert stats["total"] == 3
+        stats = get_file_outcome_stats(ec_db, ["src/service/single_accepted.py"], lookback_days=60)
+        assert stats["accepted"] == 1
+        assert (
+            stats["scored_total"] == 1
+            if "scored_total" in stats
+            else (stats["accepted"] + stats["ignored"] + stats["contradicted"]) == 1
+        )
 
         original = 0.72
         breakdown = {"final": original, "penalties": {}}
-        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(original, breakdown, stats, penalty=0.15)
+        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(
+            original, breakdown, stats, penalty=0.15, boost=0.10, boost_threshold=0.6
+        )
         assert adjusted == original
-        assert new_breakdown["outcome_feedback"]["applied"] is False
+        assert new_breakdown["outcome_feedback"]["boost_applied"] is False
 
 
 class TestExtractionWeightsConfig:
@@ -1361,6 +1426,8 @@ class TestExtractionWeightsConfig:
         assert result.outcome_feedback_enabled is True
         assert result.outcome_feedback_lookback_days == 60
         assert result.contradicted_penalty == 0.15
+        assert result.accepted_boost_amount == 0.10
+        assert result.accepted_boost_threshold == 0.6
         # Must return a fresh instance (singleton contamination guard).
         assert result is not _DEFAULT_EXTRACTION_WEIGHTS
 
@@ -1374,6 +1441,8 @@ class TestExtractionWeightsConfig:
                         "outcome_feedback_enabled": False,
                         "outcome_feedback_lookback_days": 30,
                         "contradicted_penalty": 0.25,
+                        "accepted_boost_amount": 0.05,
+                        "accepted_boost_threshold": 0.75,
                     }
                 }
             }
@@ -1381,6 +1450,15 @@ class TestExtractionWeightsConfig:
         assert result.outcome_feedback_enabled is False
         assert result.outcome_feedback_lookback_days == 30
         assert result.contradicted_penalty == 0.25
+        assert result.accepted_boost_amount == 0.05
+        assert result.accepted_boost_threshold == 0.75
+
+    def test_accepted_boost_amount_negative_rejected(self):
+        """accepted_boost_amount must be >= 0 (nonneg_float guard)."""
+        from entirecontext.core.decision_extraction import _load_extraction_weights
+
+        with pytest.raises(ValueError, match="accepted_boost_amount"):
+            _load_extraction_weights({"decisions": {"extraction": {"accepted_boost_amount": -0.05}}})
 
     def test_invalid_value_raises(self):
         from entirecontext.core.decision_extraction import _load_extraction_weights

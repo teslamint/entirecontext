@@ -779,6 +779,8 @@ class ExtractionWeights:
     outcome_feedback_enabled: bool = True
     outcome_feedback_lookback_days: int = 60
     contradicted_penalty: float = 0.15
+    accepted_boost_amount: float = 0.10
+    accepted_boost_threshold: float = 0.6
 
 
 _DEFAULT_EXTRACTION_WEIGHTS = ExtractionWeights()
@@ -860,6 +862,12 @@ def _load_extraction_weights(config: dict | None) -> ExtractionWeights:
         contradicted_penalty=_coerce_extraction_nonneg_float(
             section, "contradicted_penalty", _DEFAULT_EXTRACTION_WEIGHTS.contradicted_penalty
         ),
+        accepted_boost_amount=_coerce_extraction_nonneg_float(
+            section, "accepted_boost_amount", _DEFAULT_EXTRACTION_WEIGHTS.accepted_boost_amount
+        ),
+        accepted_boost_threshold=_coerce_extraction_float(
+            section, "accepted_boost_threshold", _DEFAULT_EXTRACTION_WEIGHTS.accepted_boost_threshold
+        ),
     )
 
 
@@ -916,19 +924,21 @@ def apply_outcome_feedback_to_confidence(
     stats: dict[str, int],
     *,
     penalty: float = 0.15,
+    boost: float = 0.10,
+    boost_threshold: float = 0.6,
 ) -> tuple[float, dict[str, Any]]:
-    """Apply a confidence penalty when contradicted outcomes dominate history.
+    """Apply outcome-history feedback (penalty or boost) to extraction confidence.
 
-    Penalty logic: if aggregated ``contradicted / scored_total`` strictly
-    exceeds :data:`_OUTCOME_FEEDBACK_RATIO_THRESHOLD` (0.5) across the draft's
-    files, subtract ``penalty`` from ``confidence`` and clamp to ``[0.0, 1.0]``.
-    ``scored_total`` counts accepted, ignored, and contradicted outcomes only;
-    refined/replaced are neutral and reported without diluting the penalty
-    denominator. Otherwise return the input unchanged.
+    Penalty path: if ``contradicted / scored_total > 0.5``, subtract ``penalty``.
+    Boost path (symmetric, mutually exclusive with penalty): if penalty was NOT
+    applied, ``scored_total >= 2``, and ``accepted / scored_total > boost_threshold``,
+    add ``boost`` to confidence. Both paths clamp the final to ``[0.0, 1.0]``.
 
-    The returned breakdown always includes an ``outcome_feedback`` section
-    (even when no penalty applied) so telemetry and UI can render a
-    consistent shape without branching on presence.
+    ``scored_total`` counts accepted, ignored, and contradicted only; refined/replaced
+    are neutral and do not affect either ratio.
+
+    The returned breakdown always includes an ``outcome_feedback`` section so
+    callers can render a consistent shape without branching on presence.
     """
     total = int(stats.get("total", 0))
     contradicted = int(stats.get("contradicted", 0))
@@ -941,7 +951,12 @@ def apply_outcome_feedback_to_confidence(
     ratio = (contradicted / scored_total) if scored_total > 0 else 0.0
     applied = ratio > _OUTCOME_FEEDBACK_RATIO_THRESHOLD
     penalty_amount = penalty if applied else 0.0
-    final = max(0.0, min(1.0, confidence - penalty_amount))
+
+    accept_ratio = (accepted / scored_total) if scored_total > 0 else 0.0
+    boost_applied = not applied and scored_total >= 2 and boost > 0.0 and accept_ratio > boost_threshold
+    boost_amount = boost if boost_applied else 0.0
+
+    final = max(0.0, min(1.0, confidence - penalty_amount + boost_amount))
 
     feedback = {
         "applied": applied,
@@ -955,12 +970,12 @@ def apply_outcome_feedback_to_confidence(
         "ratio": round(ratio, 4),
         "ratio_threshold": _OUTCOME_FEEDBACK_RATIO_THRESHOLD,
         "penalty": round(penalty_amount, 4),
+        "boost_applied": boost_applied,
+        "boost": round(boost_amount, 4),
     }
     new_breakdown = dict(breakdown)
     new_breakdown["outcome_feedback"] = feedback
-    if applied:
-        # Keep the original score next to the adjusted final so downstream
-        # review can see what was deducted without re-running the calc.
+    if applied or boost_applied:
         new_breakdown["final_before_outcome_feedback"] = round(confidence, 4)
         new_breakdown["final"] = round(final, 4)
     return final, new_breakdown
@@ -1104,6 +1119,8 @@ def run_extraction(
                     breakdown,
                     stats,
                     penalty=extraction_weights.contradicted_penalty,
+                    boost=extraction_weights.accepted_boost_amount,
+                    boost_threshold=extraction_weights.accepted_boost_threshold,
                 )
             if score < min_confidence:
                 outcome.low_confidence_skipped += 1
