@@ -142,6 +142,62 @@ class TestPDIHandlerSyncPath:
         assert result == 0
         mock_rank.assert_not_called()
 
+    def test_inject_timeout_skips_pdi(self, capsys):
+        import time
+
+        def _slow_rank(*args, **kwargs):
+            time.sleep(0.5)
+            return ([_FAKE_DECISION], [])
+
+        config = {
+            "decisions": {
+                "injection": {
+                    "inject_on_user_prompt": True,
+                    "top_k": 5,
+                    "max_tokens": 800,
+                    "min_confidence": 0.4,
+                    "inject_timeout_ms": 50,
+                }
+            }
+        }
+        with (
+            patch("entirecontext.hooks.turn_capture.on_user_prompt"),
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
+            patch("entirecontext.core.config.load_config", return_value=config),
+            patch("entirecontext.db.get_db"),
+            patch(
+                "entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt",
+                side_effect=_slow_rank,
+            ),
+        ):
+            result = _handle_user_prompt(_HOOK_DATA)
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert not captured.out.strip(), "Timeout must suppress PDI output"
+
+    def test_capture_disabled_skips_pdi(self, capsys):
+        config_no_capture = {
+            "capture": {"auto_capture": False},
+            "decisions": {
+                "injection": {
+                    "inject_on_user_prompt": True,
+                }
+            },
+        }
+        with (
+            patch("entirecontext.hooks.turn_capture.on_user_prompt"),
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
+            patch("entirecontext.core.config.load_config", return_value=config_no_capture),
+            patch("entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt") as mock_rank,
+        ):
+            result = _handle_user_prompt(_HOOK_DATA)
+
+        assert result == 0
+        mock_rank.assert_not_called()
+        captured = capsys.readouterr()
+        assert not captured.out.strip()
+
     def test_stdout_json_contains_decision_id(self, capsys):
         mock_conn = MagicMock()
         with (

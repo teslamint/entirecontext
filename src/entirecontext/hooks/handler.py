@@ -108,6 +108,10 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         from ..core.config import load_config
 
         config = load_config(repo_path)
+
+        if not config.get("capture", {}).get("auto_capture", True):
+            return 0
+
         inject_cfg = config.get("decisions", {}).get("injection", {})
         if not inject_cfg.get("inject_on_user_prompt", True):
             return 0
@@ -119,11 +123,23 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         )
         from ..db import get_db
 
-        conn = get_db(repo_path)
-        try:
-            surfaced, _ = rank_decisions_for_prompt(conn, repo_path=repo_path, prompt_text=prompt_text, config=config)
-        finally:
-            conn.close()
+        timeout_s = int(inject_cfg.get("inject_timeout_ms", 250)) / 1000
+
+        def _rank_in_thread() -> tuple[list[Any], list[str]]:
+            conn = get_db(repo_path)
+            try:
+                return rank_decisions_for_prompt(conn, repo_path=repo_path, prompt_text=prompt_text, config=config)
+            finally:
+                conn.close()
+
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_rank_in_thread)
+            try:
+                surfaced, _ = future.result(timeout=timeout_s)
+            except concurrent.futures.TimeoutError:
+                return 0
 
         trimmed = optimize_for_context_budget(
             surfaced,
