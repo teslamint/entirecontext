@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated against codebase on 2026-04-27._
+_Updated 2026-05-21._
 
 ## Product Thesis
 
@@ -31,7 +31,7 @@ The project already has broad infrastructure in place:
 
 That foundation is useful, but it is broader than the product wedge. The next phase should narrow EntireContext around **decision memory for coding agents**, not expand it horizontally as a generic memory platform.
 
-With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface.
+With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -129,7 +129,7 @@ Scope note: F5 (outcome type enum extension `refined`/`replaced` + schema v14 mi
 
 E2E coverage note: v0.5.0 does not need a single integrated E2E like v0.4.0's `test_e2e_feed_the_loop.py` because S1–S4 each have their own focused integration test. S3 in particular IS the missing E2E for v0.4.0's F4.
 
-## v0.6.0 — Outcome Semantics (Breaking Track)
+## v0.6.0 — Outcome Semantics (Shipped 2026-05-11)
 
 Theme: strengthen the decision outcome lifecycle — agents can distinguish guidance that was accepted, ignored, contradicted, refined, or replaced. Narrow scope: outcome recording and ranking behavior only. No extraction confidence changes, no storage rework beyond the minimum for outcome semantics.
 
@@ -157,7 +157,7 @@ Plan reference: `docs/brainstorms/v0-6-0-roadmap-plan.md`.
   - README outcome vocabulary section updated with all 5 values
   - CHANGELOG v0.6.0 entry includes schema v14 breaking note and compatibility subsection
 
-## v0.6.1 — Rejected-Alternative Quality
+## v0.6.1 — Rejected-Alternative Quality (Shipped 2026-05-20)
 
 Theme: clean up the rejected-alternatives data shape without mutating existing records or inventing rationale.
 
@@ -168,7 +168,7 @@ Theme: clean up the rejected-alternatives data shape without mutating existing r
 - [x] Tighten extraction prompts to request rejected-alternative reasons only when source text contains enough evidence; parser and candidate-confirmation paths share the same normalizer
 - [x] Tests: legacy string compatibility, malformed JSON detection, mixed arrays, empty alternatives, empty reasons, audit categories, normalization idempotency, manual set behavior
 
-## v0.7.0 — Proactive Decision Injection + Debt Clearance
+## v0.7.0 — Proactive Decision Injection + Debt Clearance (Shipped 2026-05-20)
 
 Theme: make retrieval default behavior, close three deferred debt items.
 
@@ -179,6 +179,25 @@ Theme: make retrieval default behavior, close three deferred debt items.
 - [x] **B1: `ec session backfill-ended-at`** — recover `ended_at IS NULL` rows with optimistic concurrency and 1h safety gate
 - [x] **B2: `accepted_boost`** — `accepted_boost_amount`/`accepted_boost_threshold` in `ExtractionWeights`; finishes ec decision `3a1ccb19`
 - [x] **B3: Remove `unverified_changes.patch`** — duplicate of already-committed docs files
+
+## v0.7.1 — PDI Hardening
+
+Theme: close correctness gaps in PDI and establish measurement baseline.
+
+- [ ] **Per-session `capture_disabled` check in PDI** — current path only gates on global `auto_capture=false`; per-session disable flag is silently ignored
+- [ ] **tiktoken accurate token counting** — replace heuristic (`len(text) // 4`) with tiktoken for reliable context-budget cut decisions in `optimize_for_context_budget()`
+- [ ] **PDI effect measurement** — track `retrieval_assisted_session_rate` across the v0.7.1 window; establish n≥30 session baseline before interpreting the 0.049→0.125 lift as confirmed
+
+## v0.8.0 — Closed Loop (Distill Automation)
+
+Theme: break the three-sprint distill=0 streak through structural automation, not discipline alone.
+
+The `capture→distill→retrieve→intervene` loop has stalled at `distill=0` for v0.6.0, v0.6.1, and v0.7.0. Checkpoint coverage is 100%; assessment coverage is 0% all three sprints. Will-based rules cannot enforce this gap — only automatic triggering can.
+
+- [ ] **Auto-assess on checkpoint create** — `ec checkpoint create` automatically triggers `ec assess` (or inserts a structured assessment record) before the command returns; no session ends with a checkpoint and zero assessments
+- [ ] **SessionEnd lesson pipeline** — `SessionEnd` hook runs `ec assess` summarization if new checkpoints exist in the current session; distill-rate metrics flow into the assessment trends dashboard
+- [ ] **AAR (After-Action Report)** — structured session digest: new decisions extracted, prior decisions surfaced, PDI retrieve→intervene delta; feeds assessment trend reporting for closed-loop visibility
+- [ ] **Maturity ≥75 (Closed Loop)** — distill automation brings `distill` off zero; sustained dogfooding target is restored
 
 ## Hardening Backlog
 
