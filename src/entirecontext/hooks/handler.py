@@ -134,12 +134,17 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
         import concurrent.futures
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_rank_in_thread)
-            try:
-                surfaced, _ = future.result(timeout=timeout_s)
-            except concurrent.futures.TimeoutError:
-                return 0
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_rank_in_thread)
+        timed_out = False
+        try:
+            surfaced, _ = future.result(timeout=timeout_s)
+        except concurrent.futures.TimeoutError:
+            timed_out = True
+        finally:
+            executor.shutdown(wait=False)
+        if timed_out:
+            return 0
 
         trimmed = optimize_for_context_budget(
             surfaced,
