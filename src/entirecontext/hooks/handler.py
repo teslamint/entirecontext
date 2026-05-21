@@ -117,36 +117,29 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         if not inject_cfg.get("inject_on_user_prompt", True):
             return 0
 
-        from ..db import get_db
-
-        # Per-session capture_disabled check — mirrors turn_capture skip semantics so
-        # sessions with capture explicitly disabled also suppress decision injection.
-        session_conn = get_db(repo_path)
-        try:
-            session_row = session_conn.execute(
-                "SELECT metadata FROM sessions WHERE id = ?", (session_id,)
-            ).fetchone()
-            if session_row and session_row[0]:
-                try:
-                    meta = json.loads(session_row[0])
-                    if meta.get("capture_disabled"):
-                        return 0
-                except (ValueError, TypeError):
-                    pass
-        finally:
-            session_conn.close()
-
         from ..core.decision_prompt_surfacing import (
             _format_decision_entry,
             optimize_for_context_budget,
             rank_decisions_for_prompt,
         )
+        from ..db import get_db
 
         timeout_s = int(inject_cfg.get("inject_timeout_ms", 250)) / 1000
 
-        def _rank_in_thread() -> tuple[list[Any], list[str]]:
+        # Per-session capture_disabled check is performed inside the thread on the
+        # same connection used for ranking, so the disabled gate and ranking share
+        # one connection rather than opening two.
+        def _rank_in_thread() -> tuple[list[Any], list[str]] | None:
             conn = get_db(repo_path)
             try:
+                session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+                if session_row and session_row[0]:
+                    try:
+                        meta = json.loads(session_row[0])
+                        if meta.get("capture_disabled"):
+                            return None
+                    except (ValueError, TypeError):
+                        pass
                 return rank_decisions_for_prompt(conn, repo_path=repo_path, prompt_text=prompt_text, config=config)
             finally:
                 conn.close()
@@ -170,7 +163,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         if _exc:
             raise _exc[0]
 
-        if not _result:
+        if not _result or _result[0] is None:
             return 0
 
         surfaced, _ = _result[0]
