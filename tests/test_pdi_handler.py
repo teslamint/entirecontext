@@ -220,3 +220,48 @@ class TestPDIHandlerSyncPath:
         payload = json.loads(captured.out.strip())
         ctx = payload["hookSpecificOutput"]["additionalContext"]
         assert "aabbccdd" in ctx, "Expected decision ID prefix in additionalContext"
+
+    def test_session_capture_disabled_skips_pdi(self, capsys):
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchone.return_value = (
+            '{"capture_disabled": true}',
+        )
+        with (
+            patch("entirecontext.hooks.turn_capture.on_user_prompt"),
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
+            patch("entirecontext.core.config.load_config", return_value=_INJECTION_CONFIG),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt") as mock_rank,
+        ):
+            result = _handle_user_prompt(_HOOK_DATA)
+
+        assert result == 0
+        mock_rank.assert_not_called()
+        captured = capsys.readouterr()
+        assert not captured.out.strip()
+
+    def test_on_user_prompt_receives_pre_resolved_repo_path(self):
+        """handler.py resolves git root once and forwards it to on_user_prompt."""
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchone.return_value = None
+        captured_kwargs: list[dict] = []
+
+        def _capture_call(data, **kwargs):
+            captured_kwargs.append(kwargs)
+
+        with (
+            patch("entirecontext.hooks.turn_capture.on_user_prompt", side_effect=_capture_call),
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo") as mock_find,
+            patch("entirecontext.core.config.load_config", return_value=_INJECTION_CONFIG),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch(
+                "entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt",
+                return_value=([], []),
+            ),
+        ):
+            _handle_user_prompt(_HOOK_DATA)
+
+        # find_git_root called exactly once — not twice
+        assert mock_find.call_count == 1
+        # pre-resolved path forwarded via _resolved_repo_path kwarg
+        assert captured_kwargs[0].get("_resolved_repo_path") == "/tmp/repo"

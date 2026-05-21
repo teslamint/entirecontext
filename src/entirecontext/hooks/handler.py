@@ -88,23 +88,24 @@ def _handle_session_start(data: dict[str, Any]) -> int:
 
 
 def _handle_user_prompt(data: dict[str, Any]) -> int:
+    import threading
+
+    from ..core.project import find_git_root
     from .turn_capture import on_user_prompt
 
-    on_user_prompt(data)
-
     cwd = data.get("cwd", ".")
-    prompt_text = data.get("prompt", "")
+    # Resolve git root once — pass to on_user_prompt to avoid a second probe.
+    repo_path = find_git_root(cwd)
+
+    on_user_prompt(data, _resolved_repo_path=repo_path)
+
     session_id = data.get("session_id")
-    if not session_id:
+    if not session_id or not repo_path:
         return 0
 
+    prompt_text = data.get("prompt", "")
+
     try:
-        from ..core.project import find_git_root
-
-        repo_path = find_git_root(cwd)
-        if not repo_path:
-            return 0
-
         from ..core.config import load_config
 
         config = load_config(repo_path)
@@ -116,12 +117,30 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         if not inject_cfg.get("inject_on_user_prompt", True):
             return 0
 
+        from ..db import get_db
+
+        # Per-session capture_disabled check — mirrors turn_capture skip semantics so
+        # sessions with capture explicitly disabled also suppress decision injection.
+        session_conn = get_db(repo_path)
+        try:
+            session_row = session_conn.execute(
+                "SELECT metadata FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if session_row and session_row[0]:
+                try:
+                    meta = json.loads(session_row[0])
+                    if meta.get("capture_disabled"):
+                        return 0
+                except (ValueError, TypeError):
+                    pass
+        finally:
+            session_conn.close()
+
         from ..core.decision_prompt_surfacing import (
             _format_decision_entry,
             optimize_for_context_budget,
             rank_decisions_for_prompt,
         )
-        from ..db import get_db
 
         timeout_s = int(inject_cfg.get("inject_timeout_ms", 250)) / 1000
 
@@ -132,19 +151,29 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
             finally:
                 conn.close()
 
-        import concurrent.futures
+        _result: list[Any] = []
+        _exc: list[BaseException] = []
 
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(_rank_in_thread)
-        timed_out = False
-        try:
-            surfaced, _ = future.result(timeout=timeout_s)
-        except concurrent.futures.TimeoutError:
-            timed_out = True
-        finally:
-            executor.shutdown(wait=False)
-        if timed_out:
+        def _rank_wrapper() -> None:
+            try:
+                _result.append(_rank_in_thread())
+            except Exception as e:
+                _exc.append(e)
+
+        # daemon=True so a timed-out ranking thread never blocks process exit.
+        t = threading.Thread(target=_rank_wrapper, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+        if t.is_alive():
+            return 0  # hard cap: timed out, daemon thread is abandoned
+
+        if _exc:
+            raise _exc[0]
+
+        if not _result:
             return 0
+
+        surfaced, _ = _result[0]
 
         trimmed = optimize_for_context_budget(
             surfaced,
