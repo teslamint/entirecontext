@@ -21,6 +21,8 @@ from typing import Any
 
 
 _FALLBACK_BASE = "decisions-context-prompt"
+_tiktoken_encoding: Any | None = None
+_tiktoken_checked = False
 
 
 def _sanitize_id_for_path(value: str) -> str:
@@ -132,8 +134,39 @@ def _atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
 
 
 def _estimate_tokens(text: str) -> int:
-    """Heuristic token estimate: UTF-8 byte length ÷ 3 (Korean 3B/char, ASCII ~1B/tok)."""
+    global _tiktoken_checked, _tiktoken_encoding
+
+    if not _tiktoken_checked:
+        _tiktoken_checked = True
+        try:
+            import tiktoken
+
+            _tiktoken_encoding = tiktoken.get_encoding("cl100k_base")
+        except (ImportError, Exception):
+            _tiktoken_encoding = None
+
+    if _tiktoken_encoding is not None:
+        return max(1, len(_tiktoken_encoding.encode(text)))
+
     return max(1, len(text.encode("utf-8")) // 3)
+
+
+def _parse_file_paths_from_diff(diff_text: str | None) -> list[str]:
+    if not diff_text:
+        return []
+
+    file_paths: list[str] = []
+    seen: set[str] = set()
+    for line in diff_text.splitlines():
+        if line.startswith("+++ /dev/null"):
+            continue
+        if not line.startswith("+++ b/"):
+            continue
+        file_path = line[6:]
+        if file_path and file_path not in seen:
+            seen.add(file_path)
+            file_paths.append(file_path)
+    return file_paths
 
 
 def _format_decision_entry(decision: dict[str, Any], rank: int) -> str:
@@ -177,6 +210,7 @@ def rank_decisions_for_prompt(
     redacted = redact_for_query(redacted, config)
 
     diff_text = _get_uncommitted_diff(repo_path)
+    file_paths = _parse_file_paths_from_diff(diff_text)
     commit_shas = _get_recent_commit_shas(repo_path, limit=5)
 
     combined_diff = redacted
@@ -198,7 +232,7 @@ def rank_decisions_for_prompt(
 
     ranked = rank_related_decisions(
         conn,
-        file_paths=[],
+        file_paths=file_paths,
         diff_text=combined_diff,
         commit_shas=commit_shas,
         assessment_ids=[],

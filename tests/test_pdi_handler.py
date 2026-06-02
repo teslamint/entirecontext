@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+from entirecontext.core.decision_prompt_surfacing import _parse_file_paths_from_diff
 from entirecontext.hooks.handler import _handle_user_prompt
 
 
@@ -223,9 +224,7 @@ class TestPDIHandlerSyncPath:
 
     def test_session_capture_disabled_skips_pdi(self, capsys):
         mock_conn = MagicMock()
-        mock_conn.execute.return_value.fetchone.return_value = (
-            '{"capture_disabled": true}',
-        )
+        mock_conn.execute.return_value.fetchone.return_value = ('{"capture_disabled": true}',)
         with (
             patch("entirecontext.hooks.turn_capture.on_user_prompt"),
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
@@ -265,3 +264,52 @@ class TestPDIHandlerSyncPath:
         assert mock_find.call_count == 1
         # pre-resolved path forwarded via _resolved_repo_path kwarg
         assert captured_kwargs[0].get("_resolved_repo_path") == "/tmp/repo"
+
+
+class TestParseFilePathsFromDiff:
+    def test_parses_multiple_paths_from_unified_diff(self):
+        diff_text = """\
+diff --git a/src/entirecontext/core/foo.py b/src/entirecontext/core/foo.py
+index 1111111..2222222 100644
+--- a/src/entirecontext/core/foo.py
++++ b/src/entirecontext/core/foo.py
+@@ -1,1 +1,1 @@
+-old
++new
+diff --git a/tests/test_foo.py b/tests/test_foo.py
+index 3333333..4444444 100644
+--- a/tests/test_foo.py
++++ b/tests/test_foo.py
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+        assert _parse_file_paths_from_diff(diff_text) == [
+            "src/entirecontext/core/foo.py",
+            "tests/test_foo.py",
+        ]
+
+    def test_deleted_files_are_excluded(self):
+        diff_text = """\
+diff --git a/src/entirecontext/core/deleted.py b/src/entirecontext/core/deleted.py
+deleted file mode 100644
+index 1111111..0000000
+--- a/src/entirecontext/core/deleted.py
++++ /dev/null
+@@ -1,1 +0,0 @@
+-old
+diff --git a/src/entirecontext/core/kept.py b/src/entirecontext/core/kept.py
+index 3333333..4444444 100644
+--- a/src/entirecontext/core/kept.py
++++ b/src/entirecontext/core/kept.py
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+        assert _parse_file_paths_from_diff(diff_text) == ["src/entirecontext/core/kept.py"]
+
+    def test_empty_diff_returns_empty_list(self):
+        assert _parse_file_paths_from_diff("") == []
+
+    def test_none_diff_returns_empty_list(self):
+        assert _parse_file_paths_from_diff(None) == []

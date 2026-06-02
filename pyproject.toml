@@ -28,6 +28,9 @@ dependencies = [
 semantic = [
     "sentence-transformers>=3.0.0",
 ]
+tiktoken = [
+    "tiktoken>=0.7.0",
+]
 mcp = [
     "mcp>=1.0.0",
 ]
