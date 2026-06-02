@@ -68,11 +68,10 @@ def _get_uncommitted_file_paths(repo_path: str) -> list[str]:
             ["git", "diff", "--name-status", "-M", "-z", "HEAD"],
             cwd=repo_path,
             capture_output=True,
-            text=True,
             timeout=5,
         )
         if result.returncode == 0 and result.stdout:
-            return _parse_name_status_z(result.stdout)
+            return _parse_name_status_z(result.stdout.decode("utf-8", errors="surrogateescape"))
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return []

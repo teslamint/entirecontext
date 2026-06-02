@@ -117,11 +117,6 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         if not inject_cfg.get("inject_on_user_prompt", True):
             return 0
 
-        from ..core.decision_prompt_surfacing import (
-            _format_decision_entry,
-            optimize_for_context_budget,
-            rank_decisions_for_prompt,
-        )
         from ..db import get_db
 
         timeout_s = int(inject_cfg.get("inject_timeout_ms", 250)) / 1000
@@ -131,6 +126,8 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         min_confidence = float(inject_cfg.get("min_confidence", 0.4))
 
         def _rank_and_trim_in_thread() -> list[dict] | None:
+            from ..core.decision_prompt_surfacing import optimize_for_context_budget, rank_decisions_for_prompt
+
             conn = get_db(repo_path)
             try:
                 session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
@@ -174,6 +171,8 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         trimmed = _result[0]
 
         if trimmed:
+            from ..core.decision_prompt_surfacing import _format_decision_entry
+
             entries = [_format_decision_entry(d, i + 1) for i, d in enumerate(trimmed)]
             md = "## Related Decisions\n\n" + "\n\n".join(entries)
             print(
