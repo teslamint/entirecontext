@@ -45,17 +45,42 @@ def codex_notify(
 ):
     """Handle Codex notify event and ingest session data."""
     import json
+    import os
+    import select
+    import time
 
     from ..hooks.codex_ingest import ingest_codex_notify_event
 
     raw_arg = payload_arg or ""
-    raw_stdin = ""
-    try:
-        raw_stdin = sys.stdin.read()
-    except OSError:
-        raw_stdin = ""
-
-    payload_text = raw_arg if raw_arg.strip() else raw_stdin
+    if raw_arg.strip():
+        payload_text = raw_arg
+    else:
+        chunks: list[bytes] = []
+        try:
+            fd = sys.stdin.fileno()
+            hard_limit = time.monotonic() + 30.0
+            idle_deadline = time.monotonic() + 5.0
+            while True:
+                remaining = min(idle_deadline, hard_limit) - time.monotonic()
+                if remaining <= 0:
+                    break
+                if not select.select([fd], [], [], min(remaining, 1.0))[0]:
+                    if not chunks:
+                        break
+                    continue
+                chunk = os.read(fd, 1048576)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                idle_deadline = time.monotonic() + 5.0
+                try:
+                    json.loads(b"".join(chunks))
+                    break
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+        except (OSError, ValueError):
+            pass
+        payload_text = b"".join(chunks).decode("utf-8", errors="ignore") if chunks else ""
     payload: dict = {}
     if payload_text.strip():
         try:
