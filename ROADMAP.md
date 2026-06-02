@@ -187,7 +187,7 @@ Theme: make retrieval default behavior, close three deferred debt items.
 Theme: close correctness gaps in PDI, establish measurement baseline, and activate the highest-value missing retrieval signal.
 
 - [x] **Per-session `capture_disabled` check in PDI** — implemented in PR #143; per-session disable flag now gates PDI ranking on the same DB connection used for ranking
-- [x] **tiktoken accurate token counting** — `_estimate_tokens()` uses tiktoken `cl100k_base` via lazy module-level singleton with byte-heuristic fallback when tiktoken is not installed (optional dep)
+- [x] **tiktoken accurate token counting** — `_estimate_tokens()` uses tiktoken `cl100k_base` via lazy module-level singleton; tiktoken is a core dependency (PDI is default-ON so token accuracy must ship on default install path); byte-heuristic fallback retained for import-failure edge cases
 - [x] **Signal A: diff file-path extraction** — `_parse_file_paths_from_diff()` extracts file paths from `+++ b/` lines in uncommitted diff and passes them to `rank_related_decisions()`, activating the +3.0 `file_exact` signal. Measure hit-rate change across v0.7.1 window to data-drive Signal B+C prioritization in v0.8.0
 - [x] **PDI effect measurement** — `retrieval_assisted_session_rate` already computed in `dashboard.py`; establish n≥30 session baseline across v0.7.1 window before interpreting the 0.049→0.125 lift as confirmed
 

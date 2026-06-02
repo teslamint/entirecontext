@@ -411,12 +411,13 @@ nvtx = [
 
 [[package]]
 name = "entirecontext"
-version = "0.7.0"
+version = "0.7.1"
 source = { editable = "." }
 dependencies = [
     { name = "pygments" },
     { name = "pyjwt" },
     { name = "rich" },
+    { name = "tiktoken" },
     { name = "typer" },
 ]
 
@@ -432,9 +433,6 @@ mcp = [
 ]
 semantic = [
     { name = "sentence-transformers" },
-]
-tiktoken = [
-    { name = "tiktoken" },
 ]
 
 [package.dev-dependencies]
@@ -453,10 +451,10 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
     { name = "sentence-transformers", marker = "extra == 'semantic'", specifier = ">=3.0.0" },
-    { name = "tiktoken", marker = "extra == 'tiktoken'", specifier = ">=0.7.0" },
+    { name = "tiktoken", specifier = ">=0.7.0" },
     { name = "typer", specifier = ">=0.15.0" },
 ]
-provides-extras = ["semantic", "tiktoken", "mcp", "dev"]
+provides-extras = ["semantic", "mcp", "dev"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "entirecontext", editable = "." }]

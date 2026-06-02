@@ -22,14 +22,12 @@ dependencies = [
     "rich>=13.0.0",
     "pyjwt>=2.12.0",
     "pygments>=2.20.0",
+    "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]
 semantic = [
     "sentence-transformers>=3.0.0",
-]
-tiktoken = [
-    "tiktoken>=0.7.0",
 ]
 mcp = [
     "mcp>=1.0.0",
