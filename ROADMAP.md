@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-05-21._
+_Updated 2026-06-02._
 
 ## Product Thesis
 
@@ -30,6 +30,8 @@ The project already has broad infrastructure in place:
 - sync, filtering, export, and consolidation for operating the memory layer
 
 That foundation is useful, but it is broader than the product wedge. The next phase should narrow EntireContext around **decision memory for coding agents**, not expand it horizontally as a generic memory platform.
+
+**Target users (through v1.0):** individual developers (1) + agent frameworks via MCP (3). Team-scoped features are deferred to v1.x+.
 
 With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125.
 
@@ -180,24 +182,40 @@ Theme: make retrieval default behavior, close three deferred debt items.
 - [x] **B2: `accepted_boost`** — `accepted_boost_amount`/`accepted_boost_threshold` in `ExtractionWeights`; finishes ec decision `3a1ccb19`
 - [x] **B3: Remove `unverified_changes.patch`** — duplicate of already-committed docs files
 
-## v0.7.1 — PDI Hardening
+## v0.7.1 — PDI Hardening + Signal A
 
-Theme: close correctness gaps in PDI and establish measurement baseline.
+Theme: close correctness gaps in PDI, establish measurement baseline, and activate the highest-value missing retrieval signal.
 
 - [ ] **Per-session `capture_disabled` check in PDI** — current path only gates on global `auto_capture=false`; per-session disable flag is silently ignored
 - [ ] **tiktoken accurate token counting** — replace heuristic (`len(text.encode("utf-8")) // 3`) with tiktoken for reliable context-budget cut decisions in `optimize_for_context_budget()`
+- [ ] **Signal A: diff file-path extraction** — `rank_decisions_for_prompt()` currently passes `file_paths=[]`, leaving the +3.0 `file_exact` signal completely unused. Parse file paths from `_get_uncommitted_diff()` output and pass them to `rank_related_decisions()`. Measure hit-rate change to data-drive Signal B+C prioritization in v0.8.0
 - [ ] **PDI effect measurement** — track `retrieval_assisted_session_rate` across the v0.7.1 window; establish n≥30 session baseline before interpreting the 0.049→0.125 lift as confirmed
 
-## v0.8.0 — Closed Loop (Distill Automation)
+## v0.8.0 — Closed Loop (Distill Automation + Signal B/C)
 
-Theme: break the three-sprint distill=0 streak through structural automation, not discipline alone.
+Theme: break the three-sprint distill=0 streak through structural automation, and deepen retrieval signal coverage informed by v0.7.1 hit-rate measurement.
 
 The `capture→distill→retrieve→intervene` loop has stalled at `distill=0` for v0.6.0, v0.6.1, and v0.7.0. Checkpoint coverage is 100%; assessment coverage is 0% all three sprints. Will-based rules cannot enforce this gap — only automatic triggering can.
 
-- [ ] **Auto-assess on checkpoint create** — `ec checkpoint create` automatically triggers `ec futures assess` (or inserts a structured assessment record) before the command returns; no session ends with a checkpoint and zero assessments
-- [ ] **SessionEnd lesson pipeline** — `SessionEnd` hook runs `ec futures assess` summarization if new checkpoints exist in the current session; distill-rate metrics flow into the assessment trends dashboard
-- [ ] **AAR (After-Action Report)** — structured session digest: new decisions extracted, prior decisions surfaced, PDI retrieve→intervene delta; feeds assessment trend reporting for closed-loop visibility
+### Distill Automation
+
+- [ ] **Auto-assess on checkpoint create** (primary trigger) — `ec checkpoint create` automatically triggers `ec futures assess` (or inserts a structured assessment record) before the command returns; no session ends with a checkpoint and zero assessments
+- [ ] **SessionEnd safety net + AAR** — SessionEnd hook backfills un-assessed checkpoints (safety net), then emits a structured AAR (After-Action Report): new decisions extracted, prior decisions surfaced, PDI retrieve→intervene delta. AAR consumers: developer retrospective + metrics dashboard (not for agent consumption — PDI already covers retrieval)
 - [ ] **Maturity ≥75 (Closed Loop)** — distill automation brings `distill` off zero; sustained dogfooding target is restored
+
+### Signal Assembly
+
+- [ ] **Signal B: working-file inference** — infer active file paths from uncommitted diff + recent commit file lists; pass to `rank_related_decisions()` alongside Signal A paths. Compensates for UserPromptSubmit hook not exposing open-file information
+- [ ] **Signal C: semantic similarity** — async 2-pass architecture: 1st pass uses existing FTS + file signals within 250ms PDI timeout; 2nd pass runs semantic ranking in background, results feed into next prompt's PDI. SessionStart pre-warm kicks off semantic ranking from uncommitted diff + recent commits so the first prompt has coverage. Requires `sentence-transformers` (already optional dep) + embedding pre-indexing on decision create/update
+
+## v1.0 — Loop Completes Autonomously
+
+Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.
+
+The last manual bottleneck is **outcome attribution**. Current automation: SessionEnd infers `ignored` for surfaced-but-unacted decisions (config-gated, fully automatic); `ec decision supersede` auto-writes a `replaced` outcome (trigger is manual, recording is automatic); `ec_context_apply` auto-records `accepted` (trigger is manual — the agent or user must call it). Note: `contradicted` staleness auto-promotion exists but is not an outcome path — it changes `staleness_status` after someone manually records a `contradicted` outcome. The gap: no path automatically detects that an agent _followed_ a surfaced decision — `accepted` requires the agent to explicitly call `ec_context_apply`, and `refined` has no automatic path at all.
+
+- [ ] **Git-evidence-based outcome inference** — when PDI injects decision X and the session modifies `decision_files` for X, infer outcome from commit diff evidence. This is outcome _attribution_, not behavior _judgment_ — consistent with the project boundary (see Non-Goals)
+- [ ] **Alpha → stable status** — flip README badge and pyproject classifier once the loop gate is met
 
 ## Hardening Backlog
 
@@ -207,9 +225,10 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 
 - [ ] **Sharpen product messaging around decision memory**
 
-- [ ] **Team policy and review memory**
-  - Capture recurring team preferences, review heuristics, and architectural constraints
-  - Separate repo-local norms from cross-repo lessons
+- [ ] **Team-scoped decisions**
+  - Same decision model as personal, with repo-wide or org-wide visibility
+  - EC handles surfacing only; enforcement is out of scope (CI/linter/review bot territory)
+  - Capture recurring team preferences and architectural constraints as decisions, not policies
 
 - [ ] **Decision file rename tracking**
   - Preserve historical outcome trail when `decision_files` paths are renamed or moved
@@ -230,11 +249,11 @@ Items below have been evaluated in the 2026-04-27 ideation session ([docs/ideati
 
 - **`ec blame` — Decision-Annotated Git Blame** — `ec blame <file> [line]` traverses `decision_commits` → `decision_checkpoints` → decision records to answer "why does this code exist?" with rationale and rejected alternatives. `blame_cmds` module already in CLI architecture. _(Confidence 85%, Medium complexity)_ Plan reference: `docs/brainstorms/ec-blame-decision-annotated.md`.
 
-- **Retroactive Git Archaeology (`ec archaeologize`)** — `git log --patch` + merged PR bodies through the existing extraction pipeline; generates a `source:inferred` bootstrapped decision corpus. Eliminates cold-start — the largest adoption barrier. _(Confidence 80%, Medium-High complexity)_ Plan reference: `docs/brainstorms/retroactive-git-archaeology.md`.
+- **Retroactive Git Archaeology (`ec archaeologize`)** — `git log --patch` + merged PR bodies through the existing extraction pipeline; generates a `source:inferred` bootstrapped decision corpus. Eliminates cold-start — the largest adoption barrier. _(Confidence 80%, Medium-High complexity)_ Plan reference: `docs/brainstorms/retroactive-git-archaeology.md`. **Post-v0.8.0 candidate** — order vs Alive Session Memory TBD; file a measurement issue to evaluate cold-start adoption impact before committing sequence.
 
-- **Alive Session Memory (Rolling WAL Capture)** — `PostToolUse` writes turn content to append-only JSONL shard immediately; `core/async_worker.py` background thread consolidates on a 30-second rolling window. Makes EC crash-safe for long-running CI and agentic tasks. _(Confidence 83%, Medium complexity)_ Plan reference: `docs/brainstorms/alive-session-memory.md`.
+- **Alive Session Memory (Rolling WAL Capture)** — `PostToolUse` writes turn content to append-only JSONL shard immediately; `core/async_worker.py` background thread consolidates on a 30-second rolling window. Makes EC crash-safe for long-running CI and agentic tasks. _(Confidence 83%, Medium complexity)_ Plan reference: `docs/brainstorms/alive-session-memory.md`. **Post-v0.8.0 candidate** — order vs Retroactive Git Archaeology TBD; see measurement issue.
 
-- **Agent Learning Report (After-Action Digest)** — `SessionEnd` hook emits a structured AAR (new decisions extracted, prior decisions surfaced, `ec_context_apply` signal). Full "lessons applied / stale reversed" accounting requires new tracking instrumentation and runs as a detached background worker (5-second SessionEnd budget is a hard constraint). _(Confidence 90%, Low-Medium complexity; moved from v0.6.0 — out of scope for outcome lifecycle track)_ Plan reference: `docs/brainstorms/agent-learning-report.md`.
+- ~~**Agent Learning Report (After-Action Digest)**~~ — absorbed into v0.8.0 as AAR (SessionEnd safety net + structured digest).
 
 - **Decision Conflict Flagging** — on new decision write, `fts_decisions` keyword-overlap check surfaces flagged pairs as `decision_candidates` for human review via `ec review` queue. Does NOT auto-generate `contradicted` outcomes — keyword co-occurrence ≠ semantic contradiction; auto-write would corrupt F2 penalty scoring. _(Confidence 78%, Medium complexity; moved from v0.6.0 — out of scope for outcome lifecycle track)_ Plan reference: `docs/brainstorms/decision-conflict-flagging.md`.
 
@@ -242,12 +261,16 @@ Items below have been evaluated in the 2026-04-27 ideation session ([docs/ideati
 
 - **Human-in-the-loop correction UX** — fast review of extracted decisions and stale lessons via `ec review` interactive HITL queue (original exploration item)
 
-## Non-Goals for This Phase
+## Non-Goals
 
 - Becoming a generic knowledge management system
 - Expanding dashboard or graph breadth before retrieval quality improves
 - Storing more raw transcripts without better distillation
 - Adding platform surface area that does not reinforce the decision-memory loop
+- **Policy enforcement / governance / ACL** — EC surfaces decisions, it does not enforce them. This holds at team and company scale. Enforcement belongs to CI, linters, and review bots
+- **Agent behavior analysis / monitoring platform** — EC records outcomes via git evidence (outcome _attribution_), it does not judge agent behavior
+- **Code generation or change suggestion** — EC surfaces past decisions for context, it does not prescribe what to do
+- **Agent-to-agent communication / coordination layer** — EC is single-agent memory with optional cross-repo visibility, not a message bus
 
 ## References
 
