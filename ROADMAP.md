@@ -186,10 +186,10 @@ Theme: make retrieval default behavior, close three deferred debt items.
 
 Theme: close correctness gaps in PDI, establish measurement baseline, and activate the highest-value missing retrieval signal.
 
-- [ ] **Per-session `capture_disabled` check in PDI** — current path only gates on global `auto_capture=false`; per-session disable flag is silently ignored
-- [ ] **tiktoken accurate token counting** — replace heuristic (`len(text.encode("utf-8")) // 3`) with tiktoken for reliable context-budget cut decisions in `optimize_for_context_budget()`
-- [ ] **Signal A: diff file-path extraction** — `rank_decisions_for_prompt()` currently passes `file_paths=[]`, leaving the +3.0 `file_exact` signal completely unused. Parse file paths from `_get_uncommitted_diff()` output and pass them to `rank_related_decisions()`. Measure hit-rate change to data-drive Signal B+C prioritization in v0.8.0
-- [ ] **PDI effect measurement** — track `retrieval_assisted_session_rate` across the v0.7.1 window; establish n≥30 session baseline before interpreting the 0.049→0.125 lift as confirmed
+- [x] **Per-session `capture_disabled` check in PDI** — implemented in PR #143; per-session disable flag now gates PDI ranking on the same DB connection used for ranking
+- [x] **tiktoken accurate token counting** — `_estimate_tokens()` uses tiktoken `cl100k_base` via lazy module-level singleton with byte-heuristic fallback when tiktoken is not installed (optional dep)
+- [x] **Signal A: diff file-path extraction** — `_parse_file_paths_from_diff()` extracts file paths from `+++ b/` lines in uncommitted diff and passes them to `rank_related_decisions()`, activating the +3.0 `file_exact` signal. Measure hit-rate change across v0.7.1 window to data-drive Signal B+C prioritization in v0.8.0
+- [x] **PDI effect measurement** — `retrieval_assisted_session_rate` already computed in `dashboard.py`; establish n≥30 session baseline across v0.7.1 window before interpreting the 0.049→0.125 lift as confirmed
 
 ## v0.8.0 — Closed Loop (Distill Automation + Signal B/C)
 
