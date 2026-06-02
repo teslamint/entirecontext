@@ -22,6 +22,13 @@ from typing import Any
 
 _FALLBACK_BASE = "decisions-context-prompt"
 
+try:
+    import tiktoken as _tiktoken_mod
+
+    _tiktoken_encoding = _tiktoken_mod.get_encoding("cl100k_base")
+except Exception:
+    _tiktoken_encoding = None
+
 
 def _sanitize_id_for_path(value: str) -> str:
     """Strip filesystem-unsafe characters from an identifier."""
@@ -48,6 +55,59 @@ def _get_uncommitted_diff(repo_path: str) -> str | None:
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return None
+
+
+def _get_uncommitted_file_paths(repo_path: str) -> list[str]:
+    """Return file paths from uncommitted changes via rename-aware ``git diff``.
+
+    Uses ``--name-status -M -z`` so renames report both old and new paths,
+    non-ASCII paths are not quoted, and NUL delimiters avoid ambiguity.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-status", "-M", "-z", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout:
+            return _parse_name_status_z(result.stdout.decode("utf-8", errors="surrogateescape"))
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return []
+
+
+def _parse_name_status_z(raw: str) -> list[str]:
+    """Parse NUL-delimited ``git diff --name-status -M -z`` output.
+
+    Format: status\\0path[\\0path]\\0... where renames (R/C) have two paths.
+    """
+    parts = raw.split("\0")
+    paths: list[str] = []
+    seen: set[str] = set()
+    i = 0
+    while i < len(parts):
+        status = parts[i]
+        if not status:
+            i += 1
+            continue
+        code = status[0]
+        if code in ("R", "C") and i + 2 < len(parts):
+            old_path, new_path = parts[i + 1], parts[i + 2]
+            for p in (old_path, new_path):
+                if p and p not in seen:
+                    seen.add(p)
+                    paths.append(p)
+            i += 3
+        elif i + 1 < len(parts):
+            path = parts[i + 1]
+            if path and path not in seen:
+                seen.add(path)
+                paths.append(path)
+            i += 2
+        else:
+            break
+    return paths
 
 
 def _get_recent_commit_shas(repo_path: str, limit: int = 5) -> list[str]:
@@ -132,8 +192,38 @@ def _atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
 
 
 def _estimate_tokens(text: str) -> int:
-    """Heuristic token estimate: UTF-8 byte length ÷ 3 (Korean 3B/char, ASCII ~1B/tok)."""
+    if _tiktoken_encoding is not None:
+        try:
+            return max(1, len(_tiktoken_encoding.encode(text, disallowed_special=())))
+        except Exception:
+            pass
     return max(1, len(text.encode("utf-8")) // 3)
+
+
+def _parse_file_paths_from_diff(diff_text: str | None) -> list[str]:
+    if not diff_text:
+        return []
+
+    file_paths: list[str] = []
+    seen: set[str] = set()
+    pending_old: str | None = None
+    for line in diff_text.splitlines():
+        if line.startswith("--- a/"):
+            pending_old = line[6:]
+        elif line.startswith("+++ /dev/null"):
+            if pending_old and pending_old not in seen:
+                seen.add(pending_old)
+                file_paths.append(pending_old)
+            pending_old = None
+        elif line.startswith("+++ b/"):
+            pending_old = None
+            file_path = line[6:]
+            if file_path and file_path not in seen:
+                seen.add(file_path)
+                file_paths.append(file_path)
+        else:
+            pending_old = None
+    return file_paths
 
 
 def _format_decision_entry(decision: dict[str, Any], rank: int) -> str:
@@ -177,6 +267,9 @@ def rank_decisions_for_prompt(
     redacted = redact_for_query(redacted, config)
 
     diff_text = _get_uncommitted_diff(repo_path)
+    file_paths = _get_uncommitted_file_paths(repo_path)
+    if not file_paths:
+        file_paths = _parse_file_paths_from_diff(diff_text)
     commit_shas = _get_recent_commit_shas(repo_path, limit=5)
 
     combined_diff = redacted
@@ -198,7 +291,7 @@ def rank_decisions_for_prompt(
 
     ranked = rank_related_decisions(
         conn,
-        file_paths=[],
+        file_paths=file_paths,
         diff_text=combined_diff,
         commit_shas=commit_shas,
         assessment_ids=[],

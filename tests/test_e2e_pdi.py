@@ -74,6 +74,10 @@ class TestE2EPDI:
                 return_value="diff --git a/src/entirecontext/db/connection.py",
             ),
             patch(
+                "entirecontext.core.decision_prompt_surfacing._get_uncommitted_file_paths",
+                return_value=[],
+            ),
+            patch(
                 "entirecontext.core.decision_prompt_surfacing._get_recent_commit_shas",
                 return_value=[],
             ),
@@ -119,6 +123,7 @@ class TestE2EPDI:
             patch("entirecontext.core.config.load_config", return_value=config),
             patch("entirecontext.db.get_db", return_value=conn),
             patch("entirecontext.core.decision_prompt_surfacing._get_uncommitted_diff", return_value=None),
+            patch("entirecontext.core.decision_prompt_surfacing._get_uncommitted_file_paths", return_value=[]),
             patch("entirecontext.core.decision_prompt_surfacing._get_recent_commit_shas", return_value=[]),
         ):
             from entirecontext.hooks.handler import _handle_user_prompt
@@ -128,4 +133,58 @@ class TestE2EPDI:
         assert result == 0
         captured = capsys.readouterr()
         assert not captured.out.strip()
+        conn.close()
+
+    def test_diff_file_path_signal_surfaces_decision(self, capsys, tmp_path):
+        conn = _make_db_with_decision()
+        hook_data = {
+            "hook_type": "UserPromptSubmit",
+            "session_id": "sess-e2e-003",
+            "cwd": str(tmp_path),
+            "prompt": "tell me something unrelated",
+        }
+        config = {
+            "decisions": {
+                "injection": {
+                    "inject_on_user_prompt": True,
+                    "top_k": 5,
+                    "max_tokens": 800,
+                    "min_confidence": 0.1,
+                    "inject_timeout_ms": 250,
+                }
+            }
+        }
+        diff_text = """\
+diff --git a/src/entirecontext/db/connection.py b/src/entirecontext/db/connection.py
+index abc1234..def5678 100644
+--- a/src/entirecontext/db/connection.py
++++ b/src/entirecontext/db/connection.py
+@@ -1,1 +1,1 @@
+-before
++after
+"""
+
+        with (
+            patch("entirecontext.hooks.turn_capture.on_user_prompt"),
+            patch("entirecontext.core.project.find_git_root", return_value=str(tmp_path)),
+            patch("entirecontext.core.config.load_config", return_value=config),
+            patch("entirecontext.db.get_db", return_value=conn),
+            patch("entirecontext.core.decision_prompt_surfacing._get_uncommitted_diff", return_value=diff_text),
+            patch(
+                "entirecontext.core.decision_prompt_surfacing._get_uncommitted_file_paths",
+                return_value=["src/entirecontext/db/connection.py"],
+            ),
+            patch("entirecontext.core.decision_prompt_surfacing._get_recent_commit_shas", return_value=[]),
+        ):
+            from entirecontext.hooks.handler import _handle_user_prompt
+
+            result = _handle_user_prompt(hook_data)
+
+        assert result == 0
+        captured = capsys.readouterr()
+        assert captured.out.strip(), "Expected JSON on stdout from file-path match"
+
+        payload = json.loads(captured.out.strip())
+        ctx = payload["hookSpecificOutput"]["additionalContext"]
+        assert "SQLite WAL" in ctx, f"Expected decision title in context, got: {ctx[:200]}"
         conn.close()

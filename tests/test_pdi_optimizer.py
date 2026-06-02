@@ -5,6 +5,7 @@ Covers: min_confidence cut, top_k slice, max_tokens trim, rationale truncation.
 
 from __future__ import annotations
 
+from entirecontext.core import decision_prompt_surfacing
 from entirecontext.core.decision_prompt_surfacing import optimize_for_context_budget
 
 
@@ -66,3 +67,32 @@ class TestOptimizeForContextBudget:
         ranked = [_d(f"D{i}", 0.8, rank=i + 1) for i in range(3)]
         result = optimize_for_context_budget(ranked, top_k=5, max_tokens=10000, min_confidence=0.0)
         assert len(result) == 3
+
+
+class TestEstimateTokens:
+    def test_returns_positive_int_for_normal_text(self):
+        result = decision_prompt_surfacing._estimate_tokens("normal text")
+        assert isinstance(result, int)
+        assert result > 0
+
+    def test_falls_back_when_tiktoken_unavailable(self, monkeypatch):
+        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", None)
+        result = decision_prompt_surfacing._estimate_tokens("fallback text")
+        assert result == max(1, len("fallback text".encode("utf-8")) // 3)
+
+    def test_uses_tiktoken_when_available(self, monkeypatch):
+        class FakeEncoding:
+            def encode(self, text, **kwargs):
+                return [1, 2, 3, 4]
+
+        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", FakeEncoding())
+        result = decision_prompt_surfacing._estimate_tokens("tokenized text")
+        assert result == 4
+
+    def test_encoding_initialized_at_module_level(self):
+        assert decision_prompt_surfacing._tiktoken_encoding is not None
+
+    def test_special_tokens_do_not_raise(self):
+        result = decision_prompt_surfacing._estimate_tokens("text with <|endoftext|> special token")
+        assert isinstance(result, int)
+        assert result > 0
