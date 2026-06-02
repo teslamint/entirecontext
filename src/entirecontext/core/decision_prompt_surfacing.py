@@ -53,24 +53,57 @@ def _get_uncommitted_diff(repo_path: str) -> str | None:
 
 
 def _get_uncommitted_file_paths(repo_path: str) -> list[str]:
-    """Return file paths from uncommitted changes via ``git diff --name-only``.
+    """Return file paths from uncommitted changes via rename-aware ``git diff``.
 
-    Separate from diff-text parsing so large diffs truncated at 8192 bytes
-    don't silently drop file paths whose headers appear after the cut.
+    Uses ``--name-status -M -z`` so renames report both old and new paths,
+    non-ASCII paths are not quoted, and NUL delimiters avoid ambiguity.
     """
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
+            ["git", "diff", "--name-status", "-M", "-z", "HEAD"],
             cwd=repo_path,
             capture_output=True,
             text=True,
             timeout=5,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            return [p for p in result.stdout.strip().split("\n") if p]
+        if result.returncode == 0 and result.stdout:
+            return _parse_name_status_z(result.stdout)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return []
+
+
+def _parse_name_status_z(raw: str) -> list[str]:
+    """Parse NUL-delimited ``git diff --name-status -M -z`` output.
+
+    Format: status\\0path[\\0path]\\0... where renames (R/C) have two paths.
+    """
+    parts = raw.split("\0")
+    paths: list[str] = []
+    seen: set[str] = set()
+    i = 0
+    while i < len(parts):
+        status = parts[i]
+        if not status:
+            i += 1
+            continue
+        code = status[0]
+        if code in ("R", "C") and i + 2 < len(parts):
+            old_path, new_path = parts[i + 1], parts[i + 2]
+            for p in (old_path, new_path):
+                if p and p not in seen:
+                    seen.add(p)
+                    paths.append(p)
+            i += 3
+        elif i + 1 < len(parts):
+            path = parts[i + 1]
+            if path and path not in seen:
+                seen.add(path)
+                paths.append(path)
+            i += 2
+        else:
+            break
+    return paths
 
 
 def _get_recent_commit_shas(repo_path: str, limit: int = 5) -> list[str]:

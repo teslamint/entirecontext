@@ -126,10 +126,11 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
         timeout_s = int(inject_cfg.get("inject_timeout_ms", 250)) / 1000
 
-        # Per-session capture_disabled check is performed inside the thread on the
-        # same connection used for ranking, so the disabled gate and ranking share
-        # one connection rather than opening two.
-        def _rank_in_thread() -> tuple[list[Any], list[str]] | None:
+        top_k = int(inject_cfg.get("top_k", 5))
+        max_tokens = int(inject_cfg.get("max_tokens", 800))
+        min_confidence = float(inject_cfg.get("min_confidence", 0.4))
+
+        def _rank_and_trim_in_thread() -> list[dict] | None:
             conn = get_db(repo_path)
             try:
                 session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
@@ -140,7 +141,12 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                             return None
                     except (ValueError, TypeError):
                         pass
-                return rank_decisions_for_prompt(conn, repo_path=repo_path, prompt_text=prompt_text, config=config)
+                surfaced, _ = rank_decisions_for_prompt(
+                    conn, repo_path=repo_path, prompt_text=prompt_text, config=config
+                )
+                return optimize_for_context_budget(
+                    surfaced, top_k=top_k, max_tokens=max_tokens, min_confidence=min_confidence
+                )
             finally:
                 conn.close()
 
@@ -149,16 +155,15 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
         def _rank_wrapper() -> None:
             try:
-                _result.append(_rank_in_thread())
+                _result.append(_rank_and_trim_in_thread())
             except Exception as e:
                 _exc.append(e)
 
-        # daemon=True so a timed-out ranking thread never blocks process exit.
         t = threading.Thread(target=_rank_wrapper, daemon=True)
         t.start()
         t.join(timeout=timeout_s)
         if t.is_alive():
-            return 0  # hard cap: timed out, daemon thread is abandoned
+            return 0
 
         if _exc:
             raise _exc[0]
@@ -166,14 +171,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         if not _result or _result[0] is None:
             return 0
 
-        surfaced, _ = _result[0]
-
-        trimmed = optimize_for_context_budget(
-            surfaced,
-            top_k=int(inject_cfg.get("top_k", 5)),
-            max_tokens=int(inject_cfg.get("max_tokens", 800)),
-            min_confidence=float(inject_cfg.get("min_confidence", 0.4)),
-        )
+        trimmed = _result[0]
 
         if trimmed:
             entries = [_format_decision_entry(d, i + 1) for i, d in enumerate(trimmed)]

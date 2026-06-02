@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-from entirecontext.core.decision_prompt_surfacing import _parse_file_paths_from_diff
+from entirecontext.core.decision_prompt_surfacing import _parse_file_paths_from_diff, _parse_name_status_z
 from entirecontext.hooks.handler import _handle_user_prompt
 
 
@@ -315,3 +315,41 @@ index 3333333..4444444 100644
 
     def test_none_diff_returns_empty_list(self):
         assert _parse_file_paths_from_diff(None) == []
+
+
+class TestParseNameStatusZ:
+    def test_modified_files(self):
+        raw = "M\0src/foo.py\0M\0src/bar.py\0"
+        result = _parse_name_status_z(raw)
+        assert result == ["src/foo.py", "src/bar.py"]
+
+    def test_rename_includes_both_paths(self):
+        raw = "R100\0src/old.py\0src/new.py\0M\0src/other.py\0"
+        result = _parse_name_status_z(raw)
+        assert "src/old.py" in result
+        assert "src/new.py" in result
+        assert "src/other.py" in result
+
+    def test_deleted_file(self):
+        raw = "D\0src/removed.py\0"
+        result = _parse_name_status_z(raw)
+        assert result == ["src/removed.py"]
+
+    def test_added_file(self):
+        raw = "A\0src/new.py\0"
+        result = _parse_name_status_z(raw)
+        assert result == ["src/new.py"]
+
+    def test_copy_includes_both_paths(self):
+        raw = "C100\0src/orig.py\0src/copy.py\0"
+        result = _parse_name_status_z(raw)
+        assert "src/orig.py" in result
+        assert "src/copy.py" in result
+
+    def test_empty_input(self):
+        assert _parse_name_status_z("") == []
+
+    def test_deduplicates_paths(self):
+        raw = "M\0src/foo.py\0R100\0src/bar.py\0src/foo.py\0"
+        result = _parse_name_status_z(raw)
+        assert result.count("src/foo.py") == 1
