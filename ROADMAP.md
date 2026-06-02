@@ -182,13 +182,13 @@ Theme: make retrieval default behavior, close three deferred debt items.
 - [x] **B2: `accepted_boost`** — `accepted_boost_amount`/`accepted_boost_threshold` in `ExtractionWeights`; finishes ec decision `3a1ccb19`
 - [x] **B3: Remove `unverified_changes.patch`** — duplicate of already-committed docs files
 
-## v0.7.1 — PDI Hardening + Signal A
+## v0.7.1 — PDI Hardening + Signal A (2026-06-02)
 
 Theme: close correctness gaps in PDI, establish measurement baseline, and activate the highest-value missing retrieval signal.
 
-- [x] **Per-session `capture_disabled` check in PDI** — implemented in PR #143; per-session disable flag now gates PDI ranking on the same DB connection used for ranking
-- [x] **tiktoken accurate token counting** — `_estimate_tokens()` uses tiktoken `cl100k_base` via lazy module-level singleton; tiktoken is a core dependency (PDI is default-ON so token accuracy must ship on default install path); byte-heuristic fallback retained for import-failure edge cases
-- [x] **Signal A: diff file-path extraction** — `_parse_file_paths_from_diff()` extracts file paths from `+++ b/` lines in uncommitted diff and passes them to `rank_related_decisions()`, activating the +3.0 `file_exact` signal. Measure hit-rate change across v0.7.1 window to data-drive Signal B+C prioritization in v0.8.0
+- [x] **Per-session `capture_disabled` check in PDI** — implemented in PR #143; per-session disable flag gates PDI ranking on the same DB connection used for ranking
+- [x] **tiktoken accurate token counting** — eager module-level `cl100k_base` encoding (core dependency); `disallowed_special=()` for safe special-token handling; byte-heuristic fallback retained for import-failure edge cases
+- [x] **Signal A: diff file-path extraction** — `git diff --name-status -M -z HEAD` for rename-aware, NUL-delimited file path collection; deleted files included via `--- a/` path; `surrogateescape` for non-UTF-8 filenames; ranking + optimization inside timeout thread for `inject_timeout_ms` compliance
 - [x] **PDI effect measurement** — `retrieval_assisted_session_rate` already computed in `dashboard.py`; establish n≥30 session baseline across v0.7.1 window before interpreting the 0.049→0.125 lift as confirmed
 
 ## v0.8.0 — Closed Loop (Distill Automation + Signal B/C)
