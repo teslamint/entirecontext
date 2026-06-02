@@ -52,6 +52,27 @@ def _get_uncommitted_diff(repo_path: str) -> str | None:
     return None
 
 
+def _get_uncommitted_file_paths(repo_path: str) -> list[str]:
+    """Return file paths from uncommitted changes via ``git diff --name-only``.
+
+    Separate from diff-text parsing so large diffs truncated at 8192 bytes
+    don't silently drop file paths whose headers appear after the cut.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return [p for p in result.stdout.strip().split("\n") if p]
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return []
+
+
 def _get_recent_commit_shas(repo_path: str, limit: int = 5) -> list[str]:
     """Return recent commit SHAs. Empty list on failure."""
     try:
@@ -146,7 +167,10 @@ def _estimate_tokens(text: str) -> int:
             _tiktoken_encoding = None
 
     if _tiktoken_encoding is not None:
-        return max(1, len(_tiktoken_encoding.encode(text)))
+        try:
+            return max(1, len(_tiktoken_encoding.encode(text, disallowed_special=())))
+        except Exception:
+            pass
 
     return max(1, len(text.encode("utf-8")) // 3)
 
@@ -157,15 +181,23 @@ def _parse_file_paths_from_diff(diff_text: str | None) -> list[str]:
 
     file_paths: list[str] = []
     seen: set[str] = set()
+    pending_old: str | None = None
     for line in diff_text.splitlines():
-        if line.startswith("+++ /dev/null"):
-            continue
-        if not line.startswith("+++ b/"):
-            continue
-        file_path = line[6:]
-        if file_path and file_path not in seen:
-            seen.add(file_path)
-            file_paths.append(file_path)
+        if line.startswith("--- a/"):
+            pending_old = line[6:]
+        elif line.startswith("+++ /dev/null"):
+            if pending_old and pending_old not in seen:
+                seen.add(pending_old)
+                file_paths.append(pending_old)
+            pending_old = None
+        elif line.startswith("+++ b/"):
+            pending_old = None
+            file_path = line[6:]
+            if file_path and file_path not in seen:
+                seen.add(file_path)
+                file_paths.append(file_path)
+        else:
+            pending_old = None
     return file_paths
 
 
@@ -210,7 +242,9 @@ def rank_decisions_for_prompt(
     redacted = redact_for_query(redacted, config)
 
     diff_text = _get_uncommitted_diff(repo_path)
-    file_paths = _parse_file_paths_from_diff(diff_text)
+    file_paths = _get_uncommitted_file_paths(repo_path)
+    if not file_paths:
+        file_paths = _parse_file_paths_from_diff(diff_text)
     commit_shas = _get_recent_commit_shas(repo_path, limit=5)
 
     combined_diff = redacted

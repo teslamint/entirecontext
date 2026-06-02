@@ -289,7 +289,7 @@ index 3333333..4444444 100644
             "tests/test_foo.py",
         ]
 
-    def test_deleted_files_are_excluded(self):
+    def test_deleted_files_included_via_old_path(self):
         diff_text = """\
 diff --git a/src/entirecontext/core/deleted.py b/src/entirecontext/core/deleted.py
 deleted file mode 100644
@@ -306,7 +306,9 @@ index 3333333..4444444 100644
 -old
 +new
 """
-        assert _parse_file_paths_from_diff(diff_text) == ["src/entirecontext/core/kept.py"]
+        result = _parse_file_paths_from_diff(diff_text)
+        assert "src/entirecontext/core/deleted.py" in result
+        assert "src/entirecontext/core/kept.py" in result
 
     def test_empty_diff_returns_empty_list(self):
         assert _parse_file_paths_from_diff("") == []

@@ -165,6 +165,10 @@ index abc1234..def5678 100644
             patch("entirecontext.core.config.load_config", return_value=config),
             patch("entirecontext.db.get_db", return_value=conn),
             patch("entirecontext.core.decision_prompt_surfacing._get_uncommitted_diff", return_value=diff_text),
+            patch(
+                "entirecontext.core.decision_prompt_surfacing._get_uncommitted_file_paths",
+                return_value=["src/entirecontext/db/connection.py"],
+            ),
             patch("entirecontext.core.decision_prompt_surfacing._get_recent_commit_shas", return_value=[]),
         ):
             from entirecontext.hooks.handler import _handle_user_prompt

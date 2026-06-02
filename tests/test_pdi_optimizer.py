@@ -157,3 +157,10 @@ class TestEstimateTokens:
         assert second > 0
         assert calls["imports"] == 1
         assert calls["get_encoding"] == 1
+
+    def test_special_tokens_do_not_raise(self, monkeypatch):
+        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", None)
+        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_checked", False)
+        result = decision_prompt_surfacing._estimate_tokens("text with <|endoftext|> special token")
+        assert isinstance(result, int)
+        assert result > 0
