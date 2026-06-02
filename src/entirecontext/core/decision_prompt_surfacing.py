@@ -21,8 +21,13 @@ from typing import Any
 
 
 _FALLBACK_BASE = "decisions-context-prompt"
-_tiktoken_encoding: Any | None = None
-_tiktoken_checked = False
+
+try:
+    import tiktoken as _tiktoken_mod
+
+    _tiktoken_encoding = _tiktoken_mod.get_encoding("cl100k_base")
+except Exception:
+    _tiktoken_encoding = None
 
 
 def _sanitize_id_for_path(value: str) -> str:
@@ -188,23 +193,11 @@ def _atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
 
 
 def _estimate_tokens(text: str) -> int:
-    global _tiktoken_checked, _tiktoken_encoding
-
-    if not _tiktoken_checked:
-        _tiktoken_checked = True
-        try:
-            import tiktoken
-
-            _tiktoken_encoding = tiktoken.get_encoding("cl100k_base")
-        except (ImportError, Exception):
-            _tiktoken_encoding = None
-
     if _tiktoken_encoding is not None:
         try:
             return max(1, len(_tiktoken_encoding.encode(text, disallowed_special=())))
         except Exception:
             pass
-
     return max(1, len(text.encode("utf-8")) // 3)
 
 

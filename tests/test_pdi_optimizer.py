@@ -5,9 +5,6 @@ Covers: min_confidence cut, top_k slice, max_tokens trim, rationale truncation.
 
 from __future__ import annotations
 
-import builtins
-import types
-
 from entirecontext.core import decision_prompt_surfacing
 from entirecontext.core.decision_prompt_surfacing import optimize_for_context_budget
 
@@ -73,94 +70,29 @@ class TestOptimizeForContextBudget:
 
 
 class TestEstimateTokens:
-    def test_returns_positive_int_for_normal_text(self, monkeypatch):
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", None)
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_checked", False)
+    def test_returns_positive_int_for_normal_text(self):
         result = decision_prompt_surfacing._estimate_tokens("normal text")
         assert isinstance(result, int)
         assert result > 0
 
-    def test_falls_back_when_tiktoken_import_fails(self, monkeypatch):
+    def test_falls_back_when_tiktoken_unavailable(self, monkeypatch):
         monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", None)
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_checked", False)
-        real_import = builtins.__import__
-
-        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "tiktoken":
-                raise ImportError("no tiktoken")
-            return real_import(name, globals, locals, fromlist, level)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
         result = decision_prompt_surfacing._estimate_tokens("fallback text")
-
         assert result == max(1, len("fallback text".encode("utf-8")) // 3)
-        assert decision_prompt_surfacing._tiktoken_encoding is None
-        assert decision_prompt_surfacing._tiktoken_checked is True
 
     def test_uses_tiktoken_when_available(self, monkeypatch):
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", None)
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_checked", False)
-        real_import = builtins.__import__
-        calls = {"get_encoding": 0}
-
         class FakeEncoding:
-            def encode(self, text: str) -> list[int]:
+            def encode(self, text, **kwargs):
                 return [1, 2, 3, 4]
 
-        def fake_get_encoding(name: str):
-            calls["get_encoding"] += 1
-            assert name == "cl100k_base"
-            return FakeEncoding()
-
-        fake_module = types.SimpleNamespace(get_encoding=fake_get_encoding)
-
-        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "tiktoken":
-                return fake_module
-            return real_import(name, globals, locals, fromlist, level)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
+        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", FakeEncoding())
         result = decision_prompt_surfacing._estimate_tokens("tokenized text")
-
         assert result == 4
-        assert calls["get_encoding"] == 1
 
-    def test_lazy_singleton_initializes_once(self, monkeypatch):
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", None)
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_checked", False)
-        real_import = builtins.__import__
-        calls = {"imports": 0, "get_encoding": 0}
+    def test_encoding_initialized_at_module_level(self):
+        assert decision_prompt_surfacing._tiktoken_encoding is not None
 
-        class FakeEncoding:
-            def encode(self, text: str) -> list[int]:
-                return list(range(len(text.split()) + 1))
-
-        def fake_get_encoding(name: str):
-            calls["get_encoding"] += 1
-            assert name == "cl100k_base"
-            return FakeEncoding()
-
-        fake_module = types.SimpleNamespace(get_encoding=fake_get_encoding)
-
-        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
-            if name == "tiktoken":
-                calls["imports"] += 1
-                return fake_module
-            return real_import(name, globals, locals, fromlist, level)
-
-        monkeypatch.setattr(builtins, "__import__", fake_import)
-
-        first = decision_prompt_surfacing._estimate_tokens("first call")
-        second = decision_prompt_surfacing._estimate_tokens("second call")
-
-        assert first > 0
-        assert second > 0
-        assert calls["imports"] == 1
-        assert calls["get_encoding"] == 1
-
-    def test_special_tokens_do_not_raise(self, monkeypatch):
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", None)
-        monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_checked", False)
+    def test_special_tokens_do_not_raise(self):
         result = decision_prompt_surfacing._estimate_tokens("text with <|endoftext|> special token")
         assert isinstance(result, int)
         assert result > 0
