@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-06-02._
+_Updated 2026-06-05._
 
 ## Product Thesis
 
@@ -243,7 +243,7 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 
 ## Exploration
 
-Items below have been evaluated in the 2026-04-27 ideation session ([docs/ideation/2026-04-27-product-roadmap-ideation.md](docs/ideation/2026-04-27-product-roadmap-ideation.md)) and promoted to concrete candidates. Items marked "moved from v0.6.0" were initially proposed for the breaking track but fall outside the outcome-lifecycle scope defined in `docs/brainstorms/v0-6-0-roadmap-plan.md`.
+Most items below were evaluated in the 2026-04-27 ideation session ([docs/ideation/2026-04-27-product-roadmap-ideation.md](docs/ideation/2026-04-27-product-roadmap-ideation.md)) and promoted to concrete candidates. Items marked "moved from v0.6.0" were initially proposed for the breaking track but fall outside the outcome-lifecycle scope defined in `docs/brainstorms/v0-6-0-roadmap-plan.md`. Items added after that session cite their own provenance inline.
 
 - **Temporal Query Language (TQL)** — `--at <ref>`, `since:`, `between:` syntax for all search/retrieval commands; queries evaluate against memory state at a specific git commit or date. Exploits EC's unique moat (git-anchored time-travel) — no competitor offers this. _(Confidence 88%, Medium complexity)_ Plan reference: `docs/brainstorms/temporal-query-language.md`.
 
@@ -253,9 +253,13 @@ Items below have been evaluated in the 2026-04-27 ideation session ([docs/ideati
 
 - **Alive Session Memory (Rolling WAL Capture)** — `PostToolUse` writes turn content to append-only JSONL shard immediately; `core/async_worker.py` background thread consolidates on a 30-second rolling window. Makes EC crash-safe for long-running CI and agentic tasks. _(Confidence 83%, Medium complexity)_ Plan reference: `docs/brainstorms/alive-session-memory.md`. **Post-v0.8.0 candidate** — order vs Retroactive Git Archaeology TBD; see measurement issue.
 
+- **Pre-Compaction Session Snapshot (`PreCompact` hook)** — add a sixth Claude Code hook (`PreCompact`) that captures a compact working-state snapshot (in-flight files from recent turns + uncommitted diff paths + latest checkpoint SHA + open decision intent) just before context compaction, then replays it through the existing SessionStart reactivation path so the post-compaction agent does not lose its place. Unlike a generic transcript dump, the snapshot is anchored to git state and persists as durable memory, not just resume scratch. Pairs with — and may subsume part of — Alive Session Memory: rolling WAL handles crash-safety, `PreCompact` handles the compaction boundary specifically. _(Confidence 80%, Medium complexity)_ Inspired by the [context-mode](https://github.com/mksglu/context-mode) review (2026-06-05). Plan reference: TBD. **Sequence with Alive Session Memory before committing — overlapping capture surface.**
+
 - ~~**Agent Learning Report (After-Action Digest)**~~ — absorbed into v0.8.0 as AAR (SessionEnd safety net + structured digest).
 
 - **Decision Conflict Flagging** — on new decision write, `fts_decisions` keyword-overlap check surfaces flagged pairs as `decision_candidates` for human review via `ec review` queue. Does NOT auto-generate `contradicted` outcomes — keyword co-occurrence ≠ semantic contradiction; auto-write would corrupt F2 penalty scoring. _(Confidence 78%, Medium complexity; moved from v0.6.0 — out of scope for outcome lifecycle track)_ Plan reference: `docs/brainstorms/decision-conflict-flagging.md`.
+
+- **Retrieval Quality Micro-Ranking** — sharpen decision/turn retrieval relevance (not breadth) with three composable techniques layered onto the existing `hybrid_search` path: (a) **fuzzy query correction** — Levenshtein-bounded term repair before re-search so `kuberntes` still finds `kubernetes`; (b) **proximity reranking** — boost results where multi-term query tokens appear adjacent over those where they are scattered; (c) **smart snippets** — extract context around the FTS5 match offset instead of head-truncating. Directly reinforces the stated "retrieval quality before breadth" priority (see Non-Goals). _(Confidence 82%, Medium complexity)_ Inspired by the [context-mode](https://github.com/mksglu/context-mode) review (2026-06-05). Plan reference: TBD.
 
 - **Decision packs by area** — reusable memory bundles for domains like sync, testing, or search (original exploration item; Decision Keystone Detection is a prerequisite for intelligent pack assembly)
 
