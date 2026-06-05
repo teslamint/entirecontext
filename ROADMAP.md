@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-06-02._
+_Updated 2026-06-05._
 
 ## Product Thesis
 
