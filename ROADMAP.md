@@ -243,7 +243,7 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 
 ## Exploration
 
-Items below have been evaluated in the 2026-04-27 ideation session ([docs/ideation/2026-04-27-product-roadmap-ideation.md](docs/ideation/2026-04-27-product-roadmap-ideation.md)) and promoted to concrete candidates. Items marked "moved from v0.6.0" were initially proposed for the breaking track but fall outside the outcome-lifecycle scope defined in `docs/brainstorms/v0-6-0-roadmap-plan.md`.
+Most items below were evaluated in the 2026-04-27 ideation session ([docs/ideation/2026-04-27-product-roadmap-ideation.md](docs/ideation/2026-04-27-product-roadmap-ideation.md)) and promoted to concrete candidates. Items marked "moved from v0.6.0" were initially proposed for the breaking track but fall outside the outcome-lifecycle scope defined in `docs/brainstorms/v0-6-0-roadmap-plan.md`. Items added after that session cite their own provenance inline.
 
 - **Temporal Query Language (TQL)** — `--at <ref>`, `since:`, `between:` syntax for all search/retrieval commands; queries evaluate against memory state at a specific git commit or date. Exploits EC's unique moat (git-anchored time-travel) — no competitor offers this. _(Confidence 88%, Medium complexity)_ Plan reference: `docs/brainstorms/temporal-query-language.md`.
 
