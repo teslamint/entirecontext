@@ -348,6 +348,7 @@ def create_decision(
     staleness_status: str = "fresh",
     rejected_alternatives: list[dict[str, Any]] | list[str] | None = None,
     supporting_evidence: list[dict[str, Any]] | list[str] | None = None,
+    repo_path: str | None = None,
 ) -> dict:
     if staleness_status not in VALID_STALENESS:
         raise ValueError(
@@ -367,6 +368,19 @@ def create_decision(
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (decision_id, title, rationale, scope, staleness_status, rejected_json, evidence_json, now, now),
         )
+
+    if repo_path:
+        try:
+            from .config import load_config
+
+            config = load_config(repo_path)
+            if config.get("decisions", {}).get("auto_embed", False):
+                from .embedding import generate_embeddings
+
+                generate_embeddings(conn, repo_path)
+        except Exception:
+            pass
+
     return get_decision(conn, decision_id) or {}
 
 

@@ -121,6 +121,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "outcome_feedback_lookback_days": 60,
             "contradicted_penalty": 0.15,
         },
+        "auto_embed": False,
         "injection": {
             "inject_on_user_prompt": True,
             "top_k": 5,

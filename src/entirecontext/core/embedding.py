@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 import struct
 from uuid import uuid4
@@ -146,6 +147,54 @@ def semantic_search(
     return results
 
 
+def _build_decision_embed_text(
+    title: str,
+    rationale: str | None,
+    rejected_alternatives_json: str | None,
+) -> str:
+    """Build embedding text from decision fields."""
+    parts = [title]
+    if rationale:
+        parts.append(rationale)
+    if rejected_alternatives_json:
+        try:
+            alts = json.loads(rejected_alternatives_json)
+            for alt in alts:
+                if isinstance(alt, dict):
+                    alt_text = alt.get("alternative", "")
+                    if alt_text:
+                        parts.append(alt_text)
+                elif isinstance(alt, str):
+                    parts.append(alt)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return " ".join(parts).strip()
+
+
+def semantic_search_decisions(
+    conn: sqlite3.Connection,
+    query: str,
+    limit: int = 10,
+    model_name: str = "all-MiniLM-L6-v2",
+) -> list[dict]:
+    """Search decisions by embedding similarity."""
+    query_embedding = embed_text(query, model_name)
+    rows = conn.execute(
+        "SELECT source_id, vector FROM embeddings WHERE source_type = 'decision' AND model_name = ?",
+        (model_name,),
+    ).fetchall()
+    scored = []
+    for row in rows:
+        score = cosine_similarity(query_embedding, row["vector"])
+        scored.append({"decision_id": row["source_id"], "score": round(score, 4)})
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    results = scored[:limit]
+    for item in results:
+        dec_row = conn.execute("SELECT title FROM decisions WHERE id = ?", (item["decision_id"],)).fetchone()
+        item["title"] = dec_row["title"] if dec_row else "(deleted)"
+    return results
+
+
 def generate_embeddings(
     conn: sqlite3.Connection,
     repo_path: str,
@@ -186,6 +235,18 @@ def generate_embeddings(
 
     turns = conn.execute("SELECT id, user_message, assistant_summary FROM turns").fetchall()
     sessions = conn.execute("SELECT id, session_title, session_summary FROM sessions").fetchall()
+    decisions = conn.execute("SELECT id, title, rationale, rejected_alternatives FROM decisions").fetchall()
+
+    if force:
+        existing_decision_hashes: dict[str, tuple[str, int]] = {}
+    else:
+        rows = conn.execute(
+            "SELECT source_id, text_hash, COUNT(*) AS cnt"
+            " FROM embeddings WHERE source_type = 'decision' AND model_name = ?"
+            " GROUP BY source_id",
+            (model_name,),
+        ).fetchall()
+        existing_decision_hashes = {r["source_id"]: (r["text_hash"], r["cnt"]) for r in rows}
 
     # Skip the writer transaction when there is no DML to issue. Pre-S2a's
     # implicit-tx model deferred BEGIN to the first DML, so a force=False
@@ -203,7 +264,22 @@ def generate_embeddings(
         and f"{s['session_title'] or ''} {s['session_summary'] or ''}".strip()
         for s in sessions
     )
-    if not (turns_need_work or sessions_need_work):
+
+    def _decision_needs_work(d: dict) -> bool:
+        if force:
+            return bool(_build_decision_embed_text(d["title"], d["rationale"], d["rejected_alternatives"]).strip())
+        text = _build_decision_embed_text(d["title"], d["rationale"], d["rejected_alternatives"]).strip()
+        if not text:
+            return False
+        if d["id"] not in existing_decision_hashes:
+            return True
+        stored_hash, cnt = existing_decision_hashes[d["id"]]
+        if cnt > 1:
+            return True
+        return hashlib.md5(text.encode()).hexdigest() != stored_hash
+
+    decisions_need_work = any(_decision_needs_work(d) for d in decisions)
+    if not (turns_need_work or sessions_need_work or decisions_need_work):
         return 0
 
     with transaction(conn):
@@ -250,6 +326,36 @@ def generate_embeddings(
                 "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (str(uuid4()), "session", session["id"], model_name, vector_bytes, len(vector), text_hash),
+            )
+            count += 1
+
+        for decision in decisions:
+            text = _build_decision_embed_text(
+                decision["title"], decision["rationale"], decision["rejected_alternatives"]
+            )
+            if not text:
+                continue
+            text_hash = hashlib.md5(text.encode()).hexdigest()
+
+            if not force:
+                stored_rows = conn.execute(
+                    "SELECT text_hash FROM embeddings WHERE source_type = 'decision' AND source_id = ? AND model_name = ?",
+                    (decision["id"], model_name),
+                ).fetchall()
+                if len(stored_rows) == 1 and stored_rows[0]["text_hash"] == text_hash:
+                    continue
+
+            vector = model.encode(text)
+            vector_bytes = vector.tobytes()
+
+            conn.execute(
+                "DELETE FROM embeddings WHERE source_type = 'decision' AND source_id = ? AND model_name = ?",
+                (decision["id"], model_name),
+            )
+            conn.execute(
+                "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (str(uuid4()), "decision", decision["id"], model_name, vector_bytes, len(vector), text_hash),
             )
             count += 1
 

@@ -424,7 +424,7 @@ async def ec_decision_create(
         rejected_alternatives: List of alternatives that were considered and rejected
         supporting_evidence: Evidence supporting the decision
     """
-    (conn, _), error = runtime.resolve_repo()
+    (conn, repo_path), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -440,6 +440,7 @@ async def ec_decision_create(
             scope=scope,
             rejected_alternatives=rejected_alternatives,
             supporting_evidence=supporting_evidence,
+            repo_path=repo_path,
         )
         return json.dumps(d)
     except ValueError as exc:

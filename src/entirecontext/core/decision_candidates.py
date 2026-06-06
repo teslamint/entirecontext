@@ -98,6 +98,7 @@ def confirm_candidate(
     scope_override: str | None = None,
     reviewer: str = "cli",
     note: str | None = None,
+    repo_path: str | None = None,
 ) -> dict[str, Any]:
     """Promote a candidate to a real decision with atomic concurrency safety.
 
@@ -231,6 +232,18 @@ def confirm_candidate(
             (_now_iso(), candidate["id"]),
         )
         raise
+
+    if repo_path:
+        try:
+            from .config import load_config
+
+            config = load_config(repo_path)
+            if config.get("decisions", {}).get("auto_embed", False):
+                from .embedding import generate_embeddings
+
+                generate_embeddings(conn, repo_path)
+        except Exception:
+            pass
 
     _record_event(
         conn,
