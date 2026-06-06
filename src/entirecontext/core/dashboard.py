@@ -153,6 +153,16 @@ def get_dashboard_stats(
     )
     checkpoint_anchored_assessment_rate = anchored_assessment_count / asmt_total if asmt_total > 0 else 0.0
 
+    enriched_count = (
+        conn.execute(
+            "SELECT COUNT(*) AS total FROM assessments WHERE model_name IS NOT NULL AND model_name != 'rule-based'"
+            + (" AND created_at >= ?" if since is not None else ""),
+            since_params,
+        ).fetchone()["total"]
+        or 0
+    )
+    enriched_rate = enriched_count / asmt_total if asmt_total > 0 else 0.0
+
     retrieval_events_total = (
         conn.execute(
             f"SELECT COUNT(*) AS total FROM retrieval_events{since_clause_ca}",
@@ -327,6 +337,8 @@ def get_dashboard_stats(
             "feedback_rate": feedback_rate,
             "with_checkpoint": anchored_assessment_count,
             "checkpoint_anchored_assessment_rate": checkpoint_anchored_assessment_rate,
+            "enriched_count": enriched_count,
+            "enriched_rate": enriched_rate,
             "recent": [dict(r) for r in recent_assessments],
         },
         "telemetry": {

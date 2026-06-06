@@ -213,6 +213,23 @@ class TestGetDashboardStats:
         assert stats["since"] == "2025-01-01"
         assert stats["limit"] == 5
 
+    def test_enriched_rate(self, ec_repo, ec_db):
+        import pytest
+
+        ec_db.execute(
+            "INSERT INTO assessments (id, verdict, model_name, created_at) VALUES ('er-1', 'neutral', 'rule-based', datetime('now'))"
+        )
+        ec_db.execute(
+            "INSERT INTO assessments (id, verdict, model_name, created_at) VALUES ('er-2', 'expand', 'gpt-4o-mini', datetime('now'))"
+        )
+        ec_db.execute(
+            "INSERT INTO assessments (id, verdict, model_name, created_at) VALUES ('er-3', 'neutral', 'claude-cli', datetime('now'))"
+        )
+        ec_db.commit()
+        stats = get_dashboard_stats(ec_db)
+        assert stats["assessments"]["enriched_count"] == 2
+        assert stats["assessments"]["enriched_rate"] == pytest.approx(2 / 3)
+
     def test_by_verdict_always_has_all_three_keys(self, ec_repo, ec_db):
         # Only expand assessments
         from entirecontext.core.project import get_project
