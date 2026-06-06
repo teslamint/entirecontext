@@ -199,14 +199,14 @@ The `capture→distill→retrieve→intervene` loop has stalled at `distill=0` f
 
 ### Distill Automation
 
-- [ ] **Auto-assess on checkpoint create** (primary trigger) — `ec checkpoint create` automatically triggers `ec futures assess` (or inserts a structured assessment record) before the command returns; no session ends with a checkpoint and zero assessments
-- [ ] **SessionEnd safety net + AAR** — SessionEnd hook backfills un-assessed checkpoints (safety net), then emits a structured AAR (After-Action Report): new decisions extracted, prior decisions surfaced, PDI retrieve→intervene delta. AAR consumers: developer retrospective + metrics dashboard (not for agent consumption — PDI already covers retrieval)
-- [ ] **Maturity ≥75 (Closed Loop)** — distill automation brings `distill` off zero; sustained dogfooding target is restored
+- [x] **Auto-assess on checkpoint create** (primary trigger) — `ec checkpoint create` automatically triggers `auto_assess_checkpoint()` (rule-based assessment) before the command returns; no session ends with a checkpoint and zero assessments. PR #157.
+- [x] **SessionEnd safety net + AAR** — SessionEnd hook backfills un-assessed checkpoints (safety net via `_maybe_backfill_assessments`), SessionStart catches up crashed sessions (`_maybe_catchup_assessments`), then emits a structured AAR (After-Action Report): decisions surfaced, PDI retrieve→intervene delta, assessments created. AAR written to `.entirecontext/aar-{session_id}.json` and printed to stdout. Config: `[capture] emit_aar` (default true).
+- [ ] **Maturity ≥75 (Closed Loop)** — distill automation brings `distill` off zero (achieved: distill=25); sustained dogfooding target requires measurement over multiple sessions
 
 ### Signal Assembly
 
-- [ ] **Signal B: working-file inference** — infer active file paths from uncommitted diff + recent commit file lists; pass to `rank_related_decisions()` alongside Signal A paths. Compensates for UserPromptSubmit hook not exposing open-file information
-- [ ] **Signal C: semantic similarity** — async 2-pass architecture: 1st pass uses existing FTS + file signals within 250ms PDI timeout; 2nd pass runs semantic ranking in background, results feed into next prompt's PDI. SessionStart pre-warm kicks off semantic ranking from uncommitted diff + recent commits so the first prompt has coverage. Requires `sentence-transformers` (already optional dep) + embedding pre-indexing on decision create/update
+- [x] **Signal B: working-file inference** — `_get_recent_commit_file_paths()` extracts file paths from recent commits via `git log --name-only`; merged into `rank_decisions_for_prompt()` alongside Signal A (uncommitted diff) paths. Decisions linked to recently-committed files now surface even when the working tree is clean.
+- [~] **Signal C: semantic similarity** — v0.8.0 ships the foundation: `_build_decision_embed_text()`, `semantic_search_decisions()`, and decision embedding in `generate_embeddings()` (source_type='decision'). Auto-embed on `create_decision()` gated by `[decisions] auto_embed` (default false, requires `entirecontext[semantic]`). Full 2-pass async architecture (background ranking feeding next prompt's PDI, SessionStart pre-warm) deferred to v0.9.0.
 
 ## v1.0 — Loop Completes Autonomously
 
