@@ -456,7 +456,7 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
 
             diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
 
-            create_checkpoint(
+            cp = create_checkpoint(
                 conn,
                 session_id=session_id,
                 git_commit_hash=git_commit,
@@ -464,6 +464,12 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
                 diff_summary=diff_summary,
                 metadata={"source": "auto_session_end"},
             )
+            try:
+                from ..core.auto_assess import auto_assess_checkpoint
+
+                auto_assess_checkpoint(conn, cp["id"], repo_path, session_id)
+            except Exception as exc:
+                _record_hook_warning(repo_path, "auto_checkpoint_assess", exc)
         finally:
             conn.close()
     except Exception as exc:
@@ -514,7 +520,7 @@ def on_post_commit(data: dict[str, Any]) -> None:
 
             diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
 
-            create_checkpoint(
+            cp = create_checkpoint(
                 conn,
                 session_id=session_id,
                 git_commit_hash=git_commit,
@@ -522,6 +528,12 @@ def on_post_commit(data: dict[str, Any]) -> None:
                 diff_summary=diff_summary,
                 metadata={"source": "post_commit"},
             )
+            try:
+                from ..core.auto_assess import auto_assess_checkpoint
+
+                auto_assess_checkpoint(conn, cp["id"], repo_path, session_id)
+            except Exception as exc:
+                _record_hook_warning(repo_path, "post_commit_assess", exc)
         finally:
             conn.close()
     except Exception as exc:
