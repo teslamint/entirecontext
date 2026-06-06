@@ -2,38 +2,13 @@
 
 Time-travel searchable agent memory anchored to git state. Python 3.12+, uv, SQLite (WAL mode), Typer CLI (`ec`).
 
-## Build & Run
-
-```bash
-uv sync                          # install deps
-uv sync --extra dev              # + dev tools (pytest, ruff)
-uv sync --extra semantic         # + sentence-transformers
-uv sync --extra mcp              # + MCP server support
-uv run ec --help                 # CLI entry point
-```
-
-> **MCP ops**: After `uv sync` that touches `mcp/` or `core/decisions.py`, restart Claude Code — the stdio MCP server does not auto-reload.
-
+After `uv sync` that touches `mcp/` or `core/decisions.py`, restart Claude Code — the stdio MCP server does not auto-reload.
 
 ## Test
-
-```bash
-uv run pytest                    # all tests
-uv run pytest tests/test_core.py # single file
-uv run pytest -k "test_search"   # by name pattern
-uv run pytest --cov=entirecontext # coverage
-```
 
 Tests use real git repos via fixtures (`git_repo`, `ec_repo`, `ec_db`, `isolated_global_db`). External deps are isolated with `monkeypatch`. See `tests/conftest.py`.
 
 When modifying a source module, always run the existing tests for that module before committing — not just newly written tests. Test verification scope must match the change scope.
-
-## Lint & Format
-
-```bash
-uv run ruff format .             # format (line-length 120)
-uv run ruff check . --fix        # lint + autofix
-```
 
 ## Architecture
 
@@ -87,12 +62,6 @@ Return codes: 0=success, 2=block.
 TOML deep merge: defaults ← `~/.entirecontext/config.toml` (global) ← `.entirecontext/config.toml` (per-repo)
 
 Sections: `capture`, `capture.exclusions`, `search`, `sync`, `display`, `security`, `filtering.query_redaction`, `index`, `futures`, `decisions`, `decisions.ranking`, `decisions.quality`, `decisions.extraction`, `decisions.injection`
-
-## Code Conventions
-
-- ruff formatter, line-length 120, target Python 3.12
-- Type hints throughout (`from __future__ import annotations`)
-- SQLite pragmas: WAL, foreign_keys=ON, busy_timeout=5000
 
 ## Code Review Principles
 
