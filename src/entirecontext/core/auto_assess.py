@@ -25,7 +25,7 @@ def auto_assess_checkpoint(conn, checkpoint_id: str, repo_path: str, session_id:
         from .git_utils import get_commit_messages
 
         row = conn.execute(
-            "SELECT git_commit_hash, diff_summary, created_at FROM checkpoints WHERE id = ?", (checkpoint_id,)
+            "SELECT git_commit_hash, diff_summary FROM checkpoints WHERE id = ?", (checkpoint_id,)
         ).fetchone()
         if not row:
             return None
@@ -34,9 +34,9 @@ def auto_assess_checkpoint(conn, checkpoint_id: str, repo_path: str, session_id:
         from_commit = None
         pred = conn.execute(
             "SELECT git_commit_hash FROM checkpoints"
-            " WHERE session_id = ? AND (created_at < ? OR (created_at = ? AND rowid < (SELECT rowid FROM checkpoints WHERE id = ?)))"
-            " ORDER BY created_at DESC, rowid DESC LIMIT 1",
-            (session_id, row["created_at"], row["created_at"], checkpoint_id),
+            " WHERE session_id = ? AND rowid < (SELECT rowid FROM checkpoints WHERE id = ?)"
+            " ORDER BY rowid DESC LIMIT 1",
+            (session_id, checkpoint_id),
         ).fetchone()
         if pred:
             from_commit = pred["git_commit_hash"]
