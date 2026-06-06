@@ -377,7 +377,7 @@ def create_decision(
             if config.get("decisions", {}).get("auto_embed", False):
                 from .embedding import generate_embeddings
 
-                generate_embeddings(conn, repo_path)
+                generate_embeddings(conn, repo_path, decisions_only=True)
         except Exception:
             pass
 

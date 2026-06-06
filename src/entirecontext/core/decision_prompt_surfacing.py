@@ -296,7 +296,6 @@ def rank_decisions_for_prompt(
         file_paths = _parse_file_paths_from_diff(diff_text)
     commit_shas = _get_recent_commit_shas(repo_path, limit=5)
 
-    # Signal B: merge file paths from recent commits
     commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
     if commit_file_paths:
         seen = set(file_paths)

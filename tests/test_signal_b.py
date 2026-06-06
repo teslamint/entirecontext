@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 
 from entirecontext.core.decision_prompt_surfacing import (
@@ -13,7 +14,7 @@ from entirecontext.core.decisions import create_decision
 from entirecontext.core.config import DEFAULT_CONFIG
 
 
-def _commit_file(repo, name: str, content: str = "x") -> None:
+def _commit_file(repo: Path, name: str, content: str = "x") -> None:
     """Create, add, and commit a file in *repo*."""
     path = repo / name
     path.parent.mkdir(parents=True, exist_ok=True)

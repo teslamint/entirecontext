@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import sqlite3
 import subprocess
 from pathlib import Path
 from uuid import uuid4
@@ -12,12 +13,12 @@ from entirecontext.core.aar import format_aar_summary, generate_aar
 from entirecontext.hooks.session_lifecycle import _maybe_emit_aar
 
 
-def _get_head(repo_path):
+def _get_head(repo_path: str) -> str:
     r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, capture_output=True, text=True)
     return r.stdout.strip()
 
 
-def _create_test_session(conn, repo_path=None):
+def _create_test_session(conn: sqlite3.Connection, repo_path: str | None = None) -> str:
     sid = str(uuid4())
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     project_id = conn.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
@@ -34,7 +35,7 @@ def _create_test_session(conn, repo_path=None):
 
 def test_generate_aar_empty_session(ec_repo, ec_db):
     sid = _create_test_session(ec_db, str(ec_repo))
-    aar = generate_aar(ec_db, sid, str(ec_repo))
+    aar = generate_aar(ec_db, sid)
     assert aar["session_id"] == sid
     assert aar["generated_at"]
     assert aar["decisions_extracted"]["count"] == 0
@@ -60,7 +61,7 @@ def test_generate_aar_with_assessments(ec_repo, ec_db):
         "INSERT INTO assessments (id, checkpoint_id, verdict) VALUES (?, ?, ?)",
         (a_id, cp_id, "expand"),
     )
-    aar = generate_aar(ec_db, sid, str(ec_repo))
+    aar = generate_aar(ec_db, sid)
     assert aar["assessments"]["new_count"] == 1
 
 
@@ -81,7 +82,7 @@ def test_generate_aar_with_retrieval(ec_repo, ec_db):
         "INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, result_type, result_id) VALUES (?, ?, ?, ?, ?)",
         (rs_id, re_id, sid, "decision", dec_id),
     )
-    aar = generate_aar(ec_db, sid, str(ec_repo))
+    aar = generate_aar(ec_db, sid)
     assert aar["decisions_surfaced"]["count"] == 1
     assert "Use SQLite WAL" in aar["decisions_surfaced"]["titles"]
 
@@ -115,7 +116,7 @@ def test_generate_aar_pdi_delta(ec_repo, ec_db):
         "INSERT INTO context_applications (id, session_id, retrieval_selection_id, source_type, source_id, application_type) VALUES (?, ?, ?, ?, ?, ?)",
         (ca_id, sid, rs_ids[0], "decision", dec1, "lesson_applied"),
     )
-    aar = generate_aar(ec_db, sid, str(ec_repo))
+    aar = generate_aar(ec_db, sid)
     assert aar["pdi_delta"]["surfaced"] == 3
     assert aar["pdi_delta"]["applied"] == 1
     assert abs(aar["pdi_delta"]["rate"] - 1 / 3) < 0.01
@@ -141,7 +142,7 @@ def test_generate_aar_pdi_delta_deduplicates_applications(ec_repo, ec_db):
             "INSERT INTO context_applications (id, session_id, retrieval_selection_id, source_type, source_id, application_type) VALUES (?, ?, ?, ?, ?, ?)",
             (str(uuid4()), sid, rs_id, "decision", dec_id, "lesson_applied"),
         )
-    aar = generate_aar(ec_db, sid, str(ec_repo))
+    aar = generate_aar(ec_db, sid)
     assert aar["pdi_delta"]["applied"] == 1
     assert aar["pdi_delta"]["rate"] <= 1.0
 
@@ -163,7 +164,7 @@ def test_generate_aar_pdi_ignores_non_decision_applications(ec_repo, ec_db):
         "INSERT INTO context_applications (id, session_id, retrieval_selection_id, source_type, source_id, application_type) VALUES (?, ?, ?, ?, ?, ?)",
         (str(uuid4()), sid, rs_id, "turn", str(uuid4()), "lesson_applied"),
     )
-    aar = generate_aar(ec_db, sid, str(ec_repo))
+    aar = generate_aar(ec_db, sid)
     assert aar["pdi_delta"]["applied"] == 0
 
 

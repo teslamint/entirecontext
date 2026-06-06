@@ -383,7 +383,7 @@ def _maybe_emit_aar(repo_path: str, session_id: str) -> None:
 
         conn = get_db(repo_path)
         try:
-            aar = generate_aar(conn, session_id, repo_path)
+            aar = generate_aar(conn, session_id)
         finally:
             conn.close()
 

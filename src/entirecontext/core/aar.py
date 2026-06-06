@@ -7,11 +7,10 @@ import sqlite3
 from typing import Any
 
 
-def generate_aar(conn: sqlite3.Connection, session_id: str, repo_path: str) -> dict[str, Any]:
+def generate_aar(conn: sqlite3.Connection, session_id: str) -> dict[str, Any]:
     """Pure query function — returns structured AAR dict, no side effects."""
     generated_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-    # --- decisions extracted (confirmed candidates) ---
     extracted_count = conn.execute(
         "SELECT COUNT(*) FROM decision_candidates WHERE session_id = ? AND review_status = 'confirmed'",
         (session_id,),
@@ -31,7 +30,6 @@ def generate_aar(conn: sqlite3.Connection, session_id: str, repo_path: str) -> d
         ).fetchall()
         extracted_titles = [r["title"] for r in rows]
 
-    # --- decisions surfaced (via retrieval_selections) ---
     surfaced_count = conn.execute(
         "SELECT COUNT(DISTINCT result_id) FROM retrieval_selections WHERE session_id = ? AND result_type = 'decision'",
         (session_id,),
@@ -50,7 +48,6 @@ def generate_aar(conn: sqlite3.Connection, session_id: str, repo_path: str) -> d
         ).fetchall()
         surfaced_titles = [r["title"] for r in rows]
 
-    # --- PDI delta ---
     applied_count = conn.execute(
         """
         SELECT COUNT(DISTINCT rs.result_id) FROM context_applications ca
@@ -62,7 +59,6 @@ def generate_aar(conn: sqlite3.Connection, session_id: str, repo_path: str) -> d
 
     pdi_rate = applied_count / surfaced_count if surfaced_count > 0 else 0.0
 
-    # --- assessments ---
     new_assessments = conn.execute(
         """
         SELECT COUNT(*) FROM assessments a

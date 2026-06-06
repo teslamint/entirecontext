@@ -22,7 +22,7 @@ from entirecontext.core.embedding import (
 # ---------------------------------------------------------------------------
 
 
-def _make_mock_model():
+def _make_mock_model() -> MagicMock:
     mock_model = MagicMock()
     fake_vector = MagicMock()
     fake_vector.tobytes.return_value = b"\x00" * 1536
@@ -31,7 +31,7 @@ def _make_mock_model():
     return mock_model
 
 
-def _patch_sentence_transformers(mock_model):
+def _patch_sentence_transformers(mock_model: MagicMock):
     mock_module = types.ModuleType("sentence_transformers")
     mock_module.SentenceTransformer = MagicMock(return_value=mock_model)
     return patch.dict(sys.modules, {"sentence_transformers": mock_module})

@@ -200,6 +200,7 @@ def generate_embeddings(
     repo_path: str,
     model_name: str = "all-MiniLM-L6-v2",
     force: bool = False,
+    decisions_only: bool = False,
 ) -> int:
     """Generate embeddings for turns/sessions without existing embeddings.
 
@@ -217,9 +218,16 @@ def generate_embeddings(
     model = SentenceTransformer(model_name)
     count = 0
 
-    if force:
+    if decisions_only:
         existing_turn_ids: set[str] = set()
         existing_session_ids: set[str] = set()
+        turns: list = []
+        sessions: list = []
+    elif force:
+        existing_turn_ids = set()
+        existing_session_ids = set()
+        turns = conn.execute("SELECT id, user_message, assistant_summary FROM turns").fetchall()
+        sessions = conn.execute("SELECT id, session_title, session_summary FROM sessions").fetchall()
     else:
         rows = conn.execute(
             "SELECT source_id FROM embeddings WHERE source_type = 'turn' AND model_name = ?",
@@ -233,8 +241,9 @@ def generate_embeddings(
         ).fetchall()
         existing_session_ids = {r[0] for r in rows}
 
-    turns = conn.execute("SELECT id, user_message, assistant_summary FROM turns").fetchall()
-    sessions = conn.execute("SELECT id, session_title, session_summary FROM sessions").fetchall()
+        turns = conn.execute("SELECT id, user_message, assistant_summary FROM turns").fetchall()
+        sessions = conn.execute("SELECT id, session_title, session_summary FROM sessions").fetchall()
+
     decisions = conn.execute("SELECT id, title, rationale, rejected_alternatives FROM decisions").fetchall()
 
     if force:
