@@ -131,7 +131,7 @@ def _get_recent_commit_file_paths(repo_path: str, limit: int = 5) -> list[str]:
     """Return deduplicated file paths touched by recent commits."""
     try:
         result = subprocess.run(
-            ["git", "log", "--name-only", "--format=", f"-{limit}"],
+            ["git", "-c", "core.quotePath=false", "log", "--name-only", "--format=", f"-{limit}"],
             cwd=repo_path,
             capture_output=True,
             text=True,
