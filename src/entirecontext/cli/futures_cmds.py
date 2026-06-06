@@ -283,15 +283,11 @@ def futures_enrich_backlog():
             return
 
         enriched = 0
-        fallback = 0
         for candidate in candidates:
-            ok = enrich_assessment(conn, candidate, repo_path, config)
-            if ok:
+            if enrich_assessment(conn, candidate, repo_path, config):
                 enriched += 1
-            else:
-                apply_git_evidence_feedback(conn, repo_path, window_days=window_days)
-                fallback += 1
 
+        fallback = apply_git_evidence_feedback(conn, repo_path, window_days=window_days)
         console.print(f"[green]Enriched: {enriched}[/green], [yellow]Fallback (git-evidence): {fallback}[/yellow]")
     finally:
         conn.close()
