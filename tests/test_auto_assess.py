@@ -149,6 +149,23 @@ def test_auto_assess_no_prior_returns_neutral(ec_repo, ec_db):
     assert result["verdict"] == "neutral"
 
 
+def test_auto_assess_backfill_uses_correct_predecessor(ec_repo, ec_db):
+    """When backfilling an older checkpoint, from_commit must be the predecessor, not the newest."""
+    session_id = _create_test_session(ec_db, str(ec_repo))
+    # cp1 at initial HEAD
+    cp1 = create_checkpoint(ec_db, session_id, _get_head(ec_repo))
+    # feat commit, then cp2
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "feat: first"], cwd=ec_repo, capture_output=True, check=True)
+    cp2 = create_checkpoint(ec_db, session_id, _get_head(ec_repo))
+    # fix commit, then cp3
+    subprocess.run(["git", "commit", "--allow-empty", "-m", "fix: second"], cwd=ec_repo, capture_output=True, check=True)
+    create_checkpoint(ec_db, session_id, _get_head(ec_repo))
+    # Backfill cp2 (not the newest) — should see "feat: first" between cp1 and cp2
+    result = auto_assess_checkpoint(ec_db, cp2["id"], str(ec_repo), session_id)
+    assert result is not None
+    assert result["verdict"] == "expand"
+
+
 def test_auto_assess_never_raises(ec_repo, ec_db):
     result = auto_assess_checkpoint(ec_db, "nonexistent", "/bad/path", "bad-session")
     assert result is None
