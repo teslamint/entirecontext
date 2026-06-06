@@ -21,25 +21,25 @@ def compute_rule_verdict(commit_messages: list[str]) -> str:
 def auto_assess_checkpoint(conn, checkpoint_id: str, repo_path: str, session_id: str) -> dict | None:
     """Create a rule-based assessment for a checkpoint. Never raises."""
     try:
-        from .checkpoint import list_checkpoints
         from .futures import create_assessment
         from .git_utils import get_commit_messages
 
         row = conn.execute(
-            "SELECT git_commit_hash, diff_summary FROM checkpoints WHERE id = ?", (checkpoint_id,)
+            "SELECT git_commit_hash, diff_summary, created_at FROM checkpoints WHERE id = ?", (checkpoint_id,)
         ).fetchone()
         if not row:
             return None
         to_commit = row["git_commit_hash"]
 
-        # Find previous checkpoint's commit
         from_commit = None
-        prev = list_checkpoints(conn, session_id=session_id, limit=100)
-        for i, cp in enumerate(prev):
-            if cp["id"] == checkpoint_id:
-                if i + 1 < len(prev):
-                    from_commit = prev[i + 1]["git_commit_hash"]
-                break
+        pred = conn.execute(
+            "SELECT git_commit_hash FROM checkpoints"
+            " WHERE session_id = ? AND (created_at < ? OR (created_at = ? AND rowid < (SELECT rowid FROM checkpoints WHERE id = ?)))"
+            " ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (session_id, row["created_at"], row["created_at"], checkpoint_id),
+        ).fetchone()
+        if pred:
+            from_commit = pred["git_commit_hash"]
 
         if not from_commit:
             # Fallback: session metadata start_git_commit
