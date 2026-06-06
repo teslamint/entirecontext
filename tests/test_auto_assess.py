@@ -5,6 +5,7 @@ import subprocess
 from uuid import uuid4
 
 from entirecontext.core.auto_assess import (
+    apply_git_evidence_feedback,
     auto_assess_checkpoint,
     backfill_unassessed_checkpoints,
     compute_rule_verdict,
@@ -169,6 +170,46 @@ def test_backfill_respects_window(ec_repo, ec_db):
     cp = create_checkpoint(ec_db, session_id, head)
     ec_db.execute("UPDATE checkpoints SET created_at = datetime('now', '-30 days') WHERE id = ?", (cp["id"],))
     count = backfill_unassessed_checkpoints(ec_db, str(ec_repo), window_days=7)
+    assert count == 0
+
+
+def test_git_evidence_feedback(ec_repo, ec_db):
+    session_id = _create_test_session(ec_db, str(ec_repo))
+    head = _get_head(ec_repo)
+    cp = create_checkpoint(ec_db, session_id, head)
+    create_assessment(ec_db, checkpoint_id=cp["id"], verdict="neutral", model_name="rule-based")
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "fix: something"],
+        cwd=ec_repo,
+        check=True,
+        capture_output=True,
+    )
+    count = apply_git_evidence_feedback(ec_db, str(ec_repo), session_id=session_id)
+    assert count == 1
+    row = ec_db.execute(
+        "SELECT feedback, feedback_reason FROM assessments WHERE checkpoint_id = ?",
+        (cp["id"],),
+    ).fetchone()
+    assert row["feedback"] == "agree"
+    assert "committed" in row["feedback_reason"]
+
+
+def test_git_evidence_feedback_skips_already_feedbacked(ec_repo, ec_db):
+    session_id = _create_test_session(ec_db, str(ec_repo))
+    head = _get_head(ec_repo)
+    cp = create_checkpoint(ec_db, session_id, head)
+    assessment = create_assessment(ec_db, checkpoint_id=cp["id"], verdict="neutral", model_name="rule-based")
+    ec_db.execute(
+        "UPDATE assessments SET feedback = ?, feedback_reason = ? WHERE id = ?",
+        ("agree", "manual", assessment["id"]),
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "fix: something else"],
+        cwd=ec_repo,
+        check=True,
+        capture_output=True,
+    )
+    count = apply_git_evidence_feedback(ec_db, str(ec_repo), session_id=session_id)
     assert count == 0
 
 

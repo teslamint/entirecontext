@@ -110,3 +110,34 @@ def get_enrichment_candidates(
     params.append(limit)
 
     return [dict(row) for row in conn.execute(query, params).fetchall()]
+
+
+def apply_git_evidence_feedback(conn, repo_path: str, session_id: str | None = None, window_days: int = 7) -> int:
+    try:
+        from .futures import add_feedback
+        from .git_utils import get_commit_messages
+
+        query = """
+            SELECT a.id, a.checkpoint_id, c.git_commit_hash
+            FROM assessments a
+            JOIN checkpoints c ON a.checkpoint_id = c.id
+            WHERE a.feedback IS NULL
+              AND a.model_name = 'rule-based'
+              AND a.created_at >= datetime('now', ?)
+        """
+        params: list = [f"-{window_days} days"]
+        if session_id:
+            query += " AND c.session_id = ?"
+            params.append(session_id)
+        query += " LIMIT 50"
+
+        rows = conn.execute(query, params).fetchall()
+        count = 0
+        for row in rows:
+            messages = get_commit_messages(repo_path, row["git_commit_hash"], "HEAD")
+            if messages:
+                add_feedback(conn, row["id"], "agree", feedback_reason="auto:committed")
+                count += 1
+        return count
+    except Exception:
+        return 0
