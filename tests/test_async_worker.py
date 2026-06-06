@@ -119,6 +119,14 @@ class TestLaunchWorker:
         # start_new_session=True detaches the child from the parent's TTY/group
         assert kwargs.get("start_new_session") is True
 
+    def test_popen_runs_in_repo_directory(self, tmp_path):
+        """Worker must run with cwd=repo_path so find_git_root() works."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 1
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
+            launch_worker(str(tmp_path), ["echo"])
+        assert mock_popen.call_args.kwargs.get("cwd") == str(tmp_path)
+
 
 # ---------------------------------------------------------------------------
 # stop_worker
