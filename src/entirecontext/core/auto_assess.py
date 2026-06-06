@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
 import re
+
+from .futures import ASSESS_SYSTEM_PROMPT, VALID_VERDICTS, add_feedback
+from .llm import get_backend, strip_markdown_fences
 
 _EXPAND_RE = re.compile(r"^feat[\s(:]", re.IGNORECASE)
 _NARROW_RE = re.compile(r"^revert[\s(:]", re.IGNORECASE)
@@ -110,6 +114,55 @@ def get_enrichment_candidates(
     params.append(limit)
 
     return [dict(row) for row in conn.execute(query, params).fetchall()]
+
+
+def enrich_assessment(conn, assessment: dict, repo_path: str, config: dict) -> bool:
+    try:
+        futures_config = config["futures"]
+        backend_key = futures_config["default_backend"]
+        backend = get_backend(backend_key, futures_config.get("default_model"))
+        user_prompt = (
+            f"Repository path: {repo_path}\n"
+            f"Rule-based verdict: {assessment.get('verdict', 'neutral')}\n"
+            f"Rule-based impact summary: {assessment.get('impact_summary') or ''}\n"
+            f"Diff summary:\n{assessment.get('diff_summary') or ''}"
+        )
+        response = backend.complete(ASSESS_SYSTEM_PROMPT, user_prompt)
+        payload = json.loads(strip_markdown_fences(response))
+
+        original_verdict = assessment["verdict"]
+        new_verdict = payload.get("verdict", original_verdict)
+        if new_verdict not in VALID_VERDICTS:
+            new_verdict = original_verdict
+
+        impact_summary = payload.get("impact_summary", assessment.get("impact_summary"))
+        roadmap_alignment = payload.get("roadmap_alignment", assessment.get("roadmap_alignment"))
+        tidy_suggestion = payload.get("tidy_suggestion", assessment.get("tidy_suggestion"))
+        backend_name = f"{backend_key}-cli"
+
+        conn.execute(
+            """
+            UPDATE assessments
+            SET verdict = ?, impact_summary = ?, roadmap_alignment = ?, tidy_suggestion = ?, model_name = ?
+            WHERE id = ?
+            """,
+            (
+                new_verdict,
+                impact_summary,
+                roadmap_alignment,
+                tidy_suggestion,
+                backend_name,
+                assessment["id"],
+            ),
+        )
+
+        if new_verdict == original_verdict:
+            add_feedback(conn, assessment["id"], "agree", "auto:llm-confirmed")
+        else:
+            add_feedback(conn, assessment["id"], "disagree", f"auto:revised:{original_verdict}->{new_verdict}")
+        return True
+    except Exception:
+        return False
 
 
 def apply_git_evidence_feedback(conn, repo_path: str, session_id: str | None = None, window_days: int = 7) -> int:

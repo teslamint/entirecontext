@@ -9,6 +9,7 @@ from entirecontext.core.auto_assess import (
     auto_assess_checkpoint,
     backfill_unassessed_checkpoints,
     compute_rule_verdict,
+    enrich_assessment,
     get_enrichment_candidates,
 )
 from entirecontext.core.checkpoint import create_checkpoint
@@ -222,3 +223,63 @@ def test_get_enrichment_candidates_only_rule_based(ec_repo, ec_db):
     candidates = get_enrichment_candidates(ec_db)
     assert len(candidates) == 1
     assert candidates[0]["model_name"] == "rule-based"
+
+
+def test_enrich_assessment_updates_model_name(ec_repo, ec_db, monkeypatch):
+    session_id = _create_test_session(ec_db)
+    cp = create_checkpoint(ec_db, session_id, _get_head(ec_repo))
+    assessment = create_assessment(ec_db, checkpoint_id=cp["id"], verdict="neutral", model_name="rule-based")
+    mock_response = json.dumps(
+        {
+            "verdict": "expand",
+            "impact_summary": "Added new feature",
+            "roadmap_alignment": "Aligns with v0.8",
+            "tidy_suggestion": "None",
+        }
+    )
+    monkeypatch.setattr(
+        "entirecontext.core.auto_assess.get_backend",
+        lambda *args, **kwargs: type("B", (), {"complete": lambda self, system, user: mock_response})(),
+    )
+    config = {"futures": {"default_backend": "claude", "default_model": ""}}
+
+    ok = enrich_assessment(ec_db, assessment, str(ec_repo), config)
+
+    assert ok is True
+    row = ec_db.execute(
+        "SELECT model_name, verdict, feedback, feedback_reason FROM assessments WHERE id = ?",
+        (assessment["id"],),
+    ).fetchone()
+    assert row["model_name"] != "rule-based"
+    assert row["verdict"] == "expand"
+    assert row["feedback"] == "disagree"
+    assert "revised" in row["feedback_reason"]
+
+
+def test_enrich_assessment_agree_when_same_verdict(ec_repo, ec_db, monkeypatch):
+    session_id = _create_test_session(ec_db)
+    cp = create_checkpoint(ec_db, session_id, _get_head(ec_repo))
+    assessment = create_assessment(ec_db, checkpoint_id=cp["id"], verdict="expand", model_name="rule-based")
+    mock_response = json.dumps(
+        {
+            "verdict": "expand",
+            "impact_summary": "Added new feature",
+            "roadmap_alignment": "Aligns with v0.8",
+            "tidy_suggestion": "None",
+        }
+    )
+    monkeypatch.setattr(
+        "entirecontext.core.auto_assess.get_backend",
+        lambda *args, **kwargs: type("B", (), {"complete": lambda self, system, user: mock_response})(),
+    )
+    config = {"futures": {"default_backend": "claude", "default_model": ""}}
+
+    ok = enrich_assessment(ec_db, assessment, str(ec_repo), config)
+
+    assert ok is True
+    row = ec_db.execute(
+        "SELECT feedback, feedback_reason FROM assessments WHERE id = ?",
+        (assessment["id"],),
+    ).fetchone()
+    assert row["feedback"] == "agree"
+    assert "confirmed" in row["feedback_reason"]
