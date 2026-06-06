@@ -283,3 +283,12 @@ def test_enrich_assessment_agree_when_same_verdict(ec_repo, ec_db, monkeypatch):
     ).fetchone()
     assert row["feedback"] == "agree"
     assert "confirmed" in row["feedback_reason"]
+
+
+def test_config_defaults():
+    from entirecontext.core.config import DEFAULT_CONFIG
+
+    futures = DEFAULT_CONFIG["futures"]
+    assert futures["default_backend"] == "claude"
+    assert futures["assess_enrich"] is True
+    assert futures["assess_backfill_window_days"] == 7

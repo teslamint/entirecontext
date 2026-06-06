@@ -63,8 +63,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "futures": {
         "auto_distill": False,
         "lessons_output": "LESSONS.md",
-        "default_backend": "openai",
-        "default_model": "gpt-4o-mini",
+        "default_backend": "claude",
+        "default_model": "",
+        "assess_enrich": True,
+        "assess_backfill_window_days": 7,
     },
     "decisions": {
         "auto_stale_check": False,
