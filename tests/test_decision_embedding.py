@@ -5,6 +5,7 @@ from __future__ import annotations
 import struct
 import sys
 import types
+from typing import Any
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -31,7 +32,7 @@ def _make_mock_model() -> MagicMock:
     return mock_model
 
 
-def _patch_sentence_transformers(mock_model: MagicMock):
+def _patch_sentence_transformers(mock_model: MagicMock) -> Any:
     mock_module = types.ModuleType("sentence_transformers")
     mock_module.SentenceTransformer = MagicMock(return_value=mock_model)
     return patch.dict(sys.modules, {"sentence_transformers": mock_module})
