@@ -62,6 +62,24 @@ def get_diff_stat(repo_path: str, from_commit: str | None = None) -> str | None:
     return None
 
 
+def get_commit_messages(repo_path: str, from_commit: str | None, to_commit: str = "HEAD") -> list[str]:
+    if not from_commit:
+        return []
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%s", f"{from_commit}..{to_commit}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return [line for line in result.stdout.strip().splitlines() if line.strip()]
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return []
+
+
 def get_tracked_files_snapshot(repo_path: str) -> dict[str, str]:
     """Get snapshot of tracked files as {path: hash} via git ls-files -s."""
     try:
