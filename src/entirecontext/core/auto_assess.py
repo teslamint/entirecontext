@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 
 _EXPAND_RE = re.compile(r"^feat[\s(:]", re.IGNORECASE)
 _NARROW_RE = re.compile(r"^revert[\s(:]", re.IGNORECASE)
@@ -18,7 +19,9 @@ def compute_rule_verdict(commit_messages: list[str]) -> str:
     return "neutral"
 
 
-def auto_assess_checkpoint(conn, checkpoint_id: str, repo_path: str, session_id: str) -> dict | None:
+def auto_assess_checkpoint(
+    conn: sqlite3.Connection, checkpoint_id: str, repo_path: str, session_id: str
+) -> dict | None:
     """Create a rule-based assessment for a checkpoint. Never raises."""
     try:
         from .futures import create_assessment
@@ -74,7 +77,9 @@ def auto_assess_checkpoint(conn, checkpoint_id: str, repo_path: str, session_id:
         return None
 
 
-def backfill_unassessed_checkpoints(conn, repo_path: str, session_id: str | None = None, window_days: int = 7) -> int:
+def backfill_unassessed_checkpoints(
+    conn: sqlite3.Connection, repo_path: str, session_id: str | None = None, window_days: int = 7
+) -> int:
     query = """
         SELECT c.id, c.session_id FROM checkpoints c
         LEFT JOIN assessments a ON a.checkpoint_id = c.id
@@ -95,7 +100,9 @@ def backfill_unassessed_checkpoints(conn, repo_path: str, session_id: str | None
     return count
 
 
-def get_enrichment_candidates(conn, session_id: str | None = None, window_days: int = 7, limit: int = 10) -> list[dict]:
+def get_enrichment_candidates(
+    conn: sqlite3.Connection, session_id: str | None = None, window_days: int = 7, limit: int = 10
+) -> list[dict]:
     query = """
         SELECT a.id, a.checkpoint_id, a.verdict, a.model_name, a.impact_summary,
                c.git_commit_hash, c.diff_summary, c.session_id
@@ -113,7 +120,7 @@ def get_enrichment_candidates(conn, session_id: str | None = None, window_days: 
     return [dict(row) for row in conn.execute(query, params).fetchall()]
 
 
-def enrich_assessment(conn, assessment: dict, repo_path: str, config: dict) -> bool:
+def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str, config: dict) -> bool:
     try:
         import json
 
@@ -167,7 +174,9 @@ def enrich_assessment(conn, assessment: dict, repo_path: str, config: dict) -> b
         return False
 
 
-def apply_git_evidence_feedback(conn, repo_path: str, session_id: str | None = None, window_days: int = 7) -> int:
+def apply_git_evidence_feedback(
+    conn: sqlite3.Connection, repo_path: str, session_id: str | None = None, window_days: int = 7
+) -> int:
     try:
         from .futures import add_feedback
         from .git_utils import get_commit_messages
