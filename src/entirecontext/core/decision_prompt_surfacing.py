@@ -127,6 +127,30 @@ def _get_recent_commit_shas(repo_path: str, limit: int = 5) -> list[str]:
     return []
 
 
+def _get_recent_commit_file_paths(repo_path: str, limit: int = 5) -> list[str]:
+    """Return deduplicated file paths touched by recent commits."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "--name-only", "--format=", f"-{limit}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            seen: set[str] = set()
+            paths: list[str] = []
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line and line not in seen:
+                    seen.add(line)
+                    paths.append(line)
+            return paths
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return []
+
+
 def _fallback_name(session_id: str, turn_id: str) -> str:
     """Turn-scoped filename so concurrent prompts in one session don't race.
 
@@ -271,6 +295,15 @@ def rank_decisions_for_prompt(
     if not file_paths:
         file_paths = _parse_file_paths_from_diff(diff_text)
     commit_shas = _get_recent_commit_shas(repo_path, limit=5)
+
+    # Signal B: merge file paths from recent commits
+    commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
+    if commit_file_paths:
+        seen = set(file_paths)
+        for p in commit_file_paths:
+            if p not in seen:
+                seen.add(p)
+                file_paths.append(p)
 
     combined_diff = redacted
     if diff_text:
