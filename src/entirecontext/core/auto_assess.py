@@ -35,9 +35,10 @@ def auto_assess_checkpoint(conn, checkpoint_id: str, repo_path: str, session_id:
         # Find previous checkpoint's commit
         from_commit = None
         prev = list_checkpoints(conn, session_id=session_id, limit=100)
-        for cp in prev:
-            if cp["id"] != checkpoint_id:
-                from_commit = cp["git_commit_hash"]
+        for i, cp in enumerate(prev):
+            if cp[id] == checkpoint_id:
+                if i + 1 < len(prev):
+                    from_commit = prev[i + 1]["git_commit_hash"]
                 break
 
         if not from_commit:
