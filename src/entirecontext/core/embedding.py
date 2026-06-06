@@ -62,7 +62,7 @@ def semantic_search(
     query_embedding = embed_text(query, model_name)
 
     rows = conn.execute(
-        "SELECT id, source_type, source_id, vector FROM embeddings WHERE model_name = ?",
+        "SELECT id, source_type, source_id, vector FROM embeddings WHERE model_name = ? AND source_type != 'decision'",
         (model_name,),
     ).fetchall()
 

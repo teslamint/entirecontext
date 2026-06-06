@@ -121,6 +121,52 @@ def test_generate_aar_pdi_delta(ec_repo, ec_db):
     assert abs(aar["pdi_delta"]["rate"] - 1 / 3) < 0.01
 
 
+def test_generate_aar_pdi_delta_deduplicates_applications(ec_repo, ec_db):
+    """applied_count uses DISTINCT result_id — multiple applications for the same decision count as 1."""
+    sid = _create_test_session(ec_db, str(ec_repo))
+    dec_id = str(uuid4())
+    ec_db.execute("INSERT INTO decisions (id, title) VALUES (?, ?)", (dec_id, "D1"))
+    re_id = str(uuid4())
+    ec_db.execute(
+        "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, result_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (re_id, sid, "hook", "decision", "decisions", "q", 1),
+    )
+    rs_id = str(uuid4())
+    ec_db.execute(
+        "INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, result_type, result_id) VALUES (?, ?, ?, ?, ?)",
+        (rs_id, re_id, sid, "decision", dec_id),
+    )
+    for _ in range(3):
+        ec_db.execute(
+            "INSERT INTO context_applications (id, session_id, retrieval_selection_id, source_type, source_id, application_type) VALUES (?, ?, ?, ?, ?, ?)",
+            (str(uuid4()), sid, rs_id, "decision", dec_id, "lesson_applied"),
+        )
+    aar = generate_aar(ec_db, sid, str(ec_repo))
+    assert aar["pdi_delta"]["applied"] == 1
+    assert aar["pdi_delta"]["rate"] <= 1.0
+
+
+def test_generate_aar_pdi_ignores_non_decision_applications(ec_repo, ec_db):
+    """Non-decision retrieval selections must not inflate applied_count."""
+    sid = _create_test_session(ec_db, str(ec_repo))
+    re_id = str(uuid4())
+    ec_db.execute(
+        "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, result_count) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (re_id, sid, "hook", "search", "turns", "q", 1),
+    )
+    rs_id = str(uuid4())
+    ec_db.execute(
+        "INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, result_type, result_id) VALUES (?, ?, ?, ?, ?)",
+        (rs_id, re_id, sid, "turn", str(uuid4())),
+    )
+    ec_db.execute(
+        "INSERT INTO context_applications (id, session_id, retrieval_selection_id, source_type, source_id, application_type) VALUES (?, ?, ?, ?, ?, ?)",
+        (str(uuid4()), sid, rs_id, "turn", str(uuid4()), "lesson_applied"),
+    )
+    aar = generate_aar(ec_db, sid, str(ec_repo))
+    assert aar["pdi_delta"]["applied"] == 0
+
+
 def test_format_aar_summary():
     aar = {
         "session_id": "af44f9ee-1234-5678-9abc-def012345678",

@@ -53,10 +53,9 @@ def generate_aar(conn: sqlite3.Connection, session_id: str, repo_path: str) -> d
     # --- PDI delta ---
     applied_count = conn.execute(
         """
-        SELECT COUNT(*) FROM context_applications
-        WHERE retrieval_selection_id IN (
-            SELECT id FROM retrieval_selections WHERE session_id = ?
-        )
+        SELECT COUNT(DISTINCT rs.result_id) FROM context_applications ca
+        JOIN retrieval_selections rs ON rs.id = ca.retrieval_selection_id
+        WHERE rs.session_id = ? AND rs.result_type = 'decision'
         """,
         (session_id,),
     ).fetchone()[0]
