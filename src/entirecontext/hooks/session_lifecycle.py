@@ -130,6 +130,8 @@ def on_session_start(data: dict[str, Any]) -> None:
     finally:
         conn.close()
 
+    _maybe_catchup_assessments(repo_path)
+
 
 def _populate_session_summary(conn, session_id: str) -> None:
     """Generate session title/summary from turns if not already set."""
@@ -278,6 +280,7 @@ def on_session_end(data: dict[str, Any]) -> None:
 
     _maybe_auto_cleanup_no_changes(repo_path, session_id)
     _maybe_create_auto_checkpoint(repo_path, session_id)
+    _maybe_backfill_assessments(repo_path, session_id)
     _maybe_trigger_auto_sync(repo_path)
     _maybe_trigger_auto_distill(repo_path)
     _maybe_trigger_auto_embed(repo_path)
@@ -456,7 +459,7 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
 
             diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
 
-            create_checkpoint(
+            cp = create_checkpoint(
                 conn,
                 session_id=session_id,
                 git_commit_hash=git_commit,
@@ -464,10 +467,64 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
                 diff_summary=diff_summary,
                 metadata={"source": "auto_session_end"},
             )
+            try:
+                from ..core.auto_assess import auto_assess_checkpoint
+
+                auto_assess_checkpoint(conn, cp["id"], repo_path, session_id)
+            except Exception as exc:
+                _record_hook_warning(repo_path, "auto_checkpoint_assess", exc)
         finally:
             conn.close()
     except Exception as exc:
         _record_hook_warning(repo_path, "auto_checkpoint", exc)
+
+
+def _maybe_backfill_assessments(repo_path: str, session_id: str) -> None:
+    """Backfill unassessed checkpoints and apply git-evidence feedback. Never crashes."""
+    try:
+        from ..core.auto_assess import apply_git_evidence_feedback, backfill_unassessed_checkpoints
+        from ..core.config import load_config
+        from ..db import get_db
+
+        config = load_config(repo_path)
+        window_days = config.get("futures", {}).get("assess_backfill_window_days", 7)
+
+        conn = get_db(repo_path)
+        try:
+            backfill_unassessed_checkpoints(conn, repo_path, session_id=session_id, window_days=window_days)
+            apply_git_evidence_feedback(conn, repo_path, session_id=session_id, window_days=window_days)
+        finally:
+            conn.close()
+
+        if config.get("futures", {}).get("assess_enrich", True):
+            import sys
+
+            from ..core.async_worker import launch_worker, worker_status
+
+            if not worker_status(repo_path, pid_name="worker-assess").get("running"):
+                cmd = [sys.executable, "-m", "entirecontext.cli", "futures", "enrich-backlog"]
+                launch_worker(repo_path, cmd, pid_name="worker-assess")
+    except Exception as exc:
+        _record_hook_warning(repo_path, "backfill_assessments", exc)
+
+
+def _maybe_catchup_assessments(repo_path: str) -> None:
+    """Catch up unassessed checkpoints from prior sessions. Never crashes."""
+    try:
+        from ..core.auto_assess import backfill_unassessed_checkpoints
+        from ..core.config import load_config
+        from ..db import get_db
+
+        config = load_config(repo_path)
+        window_days = config.get("futures", {}).get("assess_backfill_window_days", 7)
+
+        conn = get_db(repo_path)
+        try:
+            backfill_unassessed_checkpoints(conn, repo_path, window_days=window_days)
+        finally:
+            conn.close()
+    except Exception as exc:
+        _record_hook_warning(repo_path, "catchup_assessments", exc)
 
 
 def on_post_commit(data: dict[str, Any]) -> None:
@@ -514,7 +571,7 @@ def on_post_commit(data: dict[str, Any]) -> None:
 
             diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
 
-            create_checkpoint(
+            cp = create_checkpoint(
                 conn,
                 session_id=session_id,
                 git_commit_hash=git_commit,
@@ -522,6 +579,12 @@ def on_post_commit(data: dict[str, Any]) -> None:
                 diff_summary=diff_summary,
                 metadata={"source": "post_commit"},
             )
+            try:
+                from ..core.auto_assess import auto_assess_checkpoint
+
+                auto_assess_checkpoint(conn, cp["id"], repo_path, session_id)
+            except Exception as exc:
+                _record_hook_warning(repo_path, "post_commit_assess", exc)
         finally:
             conn.close()
     except Exception as exc:

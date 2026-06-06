@@ -77,6 +77,7 @@ def launch_worker(repo_path: str, cmd: list[str], pid_name: str = "worker") -> i
 
     proc = subprocess.Popen(
         cmd,
+        cwd=repo_path,
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

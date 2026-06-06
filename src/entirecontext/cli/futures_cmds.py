@@ -259,6 +259,59 @@ def futures_lessons(
     console.print(f"[green]Written {len(lessons)} lessons to {output}[/green]")
 
 
+@futures_app.command("enrich-backlog")
+def futures_enrich_backlog():
+    """Enrich rule-based assessments with LLM analysis. Fallback: git-evidence feedback."""
+    from ..core.auto_assess import enrich_assessment, get_enrichment_candidates
+    from ..core.config import load_config
+    from ..core.project import find_git_root
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    config = load_config(repo_path)
+    window_days = config.get("futures", {}).get("assess_backfill_window_days", 7)
+
+    conn = get_db(repo_path)
+    try:
+        candidates = get_enrichment_candidates(conn, window_days=window_days)
+        if not candidates:
+            console.print("[dim]No assessments to enrich.[/dim]")
+            return
+
+        enriched = 0
+        failed_ids = []
+        for candidate in candidates:
+            if enrich_assessment(conn, candidate, repo_path, config):
+                enriched += 1
+            else:
+                failed_ids.append(candidate["id"])
+
+        fallback = 0
+        if failed_ids:
+            from ..core.futures import add_feedback
+            from ..core.git_utils import get_commit_messages
+
+            for aid in failed_ids:
+                row = conn.execute(
+                    "SELECT a.feedback, c.git_commit_hash FROM assessments a"
+                    " JOIN checkpoints c ON a.checkpoint_id = c.id WHERE a.id = ?",
+                    (aid,),
+                ).fetchone()
+                if row and row["feedback"] is None:
+                    msgs = get_commit_messages(repo_path, row["git_commit_hash"], "HEAD")
+                    if msgs:
+                        add_feedback(conn, aid, "agree", feedback_reason="auto:committed")
+                        fallback += 1
+
+        console.print(f"[green]Enriched: {enriched}[/green], [yellow]Fallback (git-evidence): {fallback}[/yellow]")
+    finally:
+        conn.close()
+
+
 @futures_app.command("relate")
 def futures_relate(
     source_id: str = typer.Argument(..., help="Source assessment ID (supports prefix)"),

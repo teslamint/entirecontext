@@ -72,6 +72,14 @@ def checkpoint_create(
             diff_summary=diff_summary,
             parent_checkpoint_id=parent,
         )
+        try:
+            from ..core.auto_assess import auto_assess_checkpoint
+
+            assessment = auto_assess_checkpoint(conn, cp["id"], repo_path, session_id)
+            if assessment:
+                console.print(f"  Verdict: {assessment['verdict']}")
+        except Exception:
+            pass
     finally:
         conn.close()
 

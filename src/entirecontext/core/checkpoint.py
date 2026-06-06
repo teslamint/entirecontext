@@ -87,7 +87,7 @@ def list_checkpoints(
         query += " WHERE session_id = ?"
         params.append(session_id)
 
-    query += " ORDER BY created_at DESC LIMIT ?"
+    query += " ORDER BY created_at DESC, rowid DESC LIMIT ?"
     params.append(limit)
 
     rows = conn.execute(query, params).fetchall()
