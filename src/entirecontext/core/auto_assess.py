@@ -29,7 +29,9 @@ def auto_assess_checkpoint(conn, checkpoint_id: str, repo_path: str, session_id:
         from .futures import create_assessment
         from .git_utils import get_commit_messages
 
-        row = conn.execute("SELECT git_commit_hash, diff_summary FROM checkpoints WHERE id = ?", (checkpoint_id,)).fetchone()
+        row = conn.execute(
+            "SELECT git_commit_hash, diff_summary FROM checkpoints WHERE id = ?", (checkpoint_id,)
+        ).fetchone()
         if not row:
             return None
         to_commit = row["git_commit_hash"]
@@ -96,9 +98,7 @@ def backfill_unassessed_checkpoints(conn, repo_path: str, session_id: str | None
     return count
 
 
-def get_enrichment_candidates(
-    conn, session_id: str | None = None, window_days: int = 7, limit: int = 10
-) -> list[dict]:
+def get_enrichment_candidates(conn, session_id: str | None = None, window_days: int = 7, limit: int = 10) -> list[dict]:
     query = """
         SELECT a.id, a.checkpoint_id, a.verdict, a.model_name, a.impact_summary,
                c.git_commit_hash, c.diff_summary, c.session_id

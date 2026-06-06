@@ -73,7 +73,6 @@ def test_get_commit_messages_same_commit(git_repo):
     assert msgs == []
 
 
-
 def test_verdict_feat():
     assert compute_rule_verdict(["feat: add API"]) == "expand"
 
