@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import json
 import re
-
-from .futures import ASSESS_SYSTEM_PROMPT, VALID_VERDICTS, add_feedback
-from .llm import get_backend, strip_markdown_fences
 
 _EXPAND_RE = re.compile(r"^feat[\s(:]", re.IGNORECASE)
 _NARROW_RE = re.compile(r"^revert[\s(:]", re.IGNORECASE)
@@ -118,6 +114,11 @@ def get_enrichment_candidates(conn, session_id: str | None = None, window_days: 
 
 def enrich_assessment(conn, assessment: dict, repo_path: str, config: dict) -> bool:
     try:
+        import json
+
+        from .futures import ASSESS_SYSTEM_PROMPT, VALID_VERDICTS, add_feedback
+        from .llm import get_backend, strip_markdown_fences
+
         futures_config = config["futures"]
         backend_key = futures_config["default_backend"]
         backend = get_backend(backend_key, futures_config.get("default_model"))

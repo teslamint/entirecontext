@@ -237,7 +237,7 @@ def test_enrich_assessment_updates_model_name(ec_repo, ec_db, monkeypatch):
         }
     )
     monkeypatch.setattr(
-        "entirecontext.core.auto_assess.get_backend",
+        "entirecontext.core.llm.get_backend",
         lambda *args, **kwargs: type("B", (), {"complete": lambda self, system, user: mock_response})(),
     )
     config = {"futures": {"default_backend": "claude", "default_model": ""}}
@@ -268,7 +268,7 @@ def test_enrich_assessment_agree_when_same_verdict(ec_repo, ec_db, monkeypatch):
         }
     )
     monkeypatch.setattr(
-        "entirecontext.core.auto_assess.get_backend",
+        "entirecontext.core.llm.get_backend",
         lambda *args, **kwargs: type("B", (), {"complete": lambda self, system, user: mock_response})(),
     )
     config = {"futures": {"default_backend": "claude", "default_model": ""}}
