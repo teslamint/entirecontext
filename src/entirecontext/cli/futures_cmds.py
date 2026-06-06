@@ -262,7 +262,7 @@ def futures_lessons(
 @futures_app.command("enrich-backlog")
 def futures_enrich_backlog():
     """Enrich rule-based assessments with LLM analysis. Fallback: git-evidence feedback."""
-    from ..core.auto_assess import apply_git_evidence_feedback, enrich_assessment, get_enrichment_candidates
+    from ..core.auto_assess import enrich_assessment, get_enrichment_candidates
     from ..core.config import load_config
     from ..core.project import find_git_root
     from ..db import get_db
@@ -283,11 +283,30 @@ def futures_enrich_backlog():
             return
 
         enriched = 0
+        failed_ids = []
         for candidate in candidates:
             if enrich_assessment(conn, candidate, repo_path, config):
                 enriched += 1
+            else:
+                failed_ids.append(candidate["id"])
 
-        fallback = apply_git_evidence_feedback(conn, repo_path, window_days=window_days)
+        fallback = 0
+        if failed_ids:
+            from ..core.futures import add_feedback
+            from ..core.git_utils import get_commit_messages
+
+            for aid in failed_ids:
+                row = conn.execute(
+                    "SELECT a.feedback, c.git_commit_hash FROM assessments a"
+                    " JOIN checkpoints c ON a.checkpoint_id = c.id WHERE a.id = ?",
+                    (aid,),
+                ).fetchone()
+                if row and row["feedback"] is None:
+                    msgs = get_commit_messages(repo_path, row["git_commit_hash"], "HEAD")
+                    if msgs:
+                        add_feedback(conn, aid, "agree", feedback_reason="auto:committed")
+                        fallback += 1
+
         console.print(f"[green]Enriched: {enriched}[/green], [yellow]Fallback (git-evidence): {fallback}[/yellow]")
     finally:
         conn.close()
