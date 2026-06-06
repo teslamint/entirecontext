@@ -287,6 +287,7 @@ def on_session_end(data: dict[str, Any]) -> None:
     _maybe_check_stale_decisions(repo_path)
     _maybe_extract_decisions(repo_path, session_id)
     _maybe_infer_ignored_decisions(repo_path, session_id)
+    _maybe_emit_aar(repo_path, session_id)
 
 
 def _maybe_infer_ignored_decisions(repo_path: str, session_id: str) -> None:
@@ -363,6 +364,40 @@ def _maybe_infer_ignored_decisions(repo_path: str, session_id: str) -> None:
             conn.close()
     except Exception as exc:
         _record_hook_warning(repo_path, "infer_ignored_decisions", exc)
+
+
+def _maybe_emit_aar(repo_path: str, session_id: str) -> None:
+    """Emit structured AAR if enabled. Never crashes the hook."""
+    try:
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        if not config.get("capture", {}).get("emit_aar", True):
+            return
+
+        import json
+        from pathlib import Path
+
+        from ..core.aar import format_aar_summary, generate_aar
+        from ..db import get_db
+
+        conn = get_db(repo_path)
+        try:
+            aar = generate_aar(conn, session_id, repo_path)
+        finally:
+            conn.close()
+
+        from ..core.decision_prompt_surfacing import _atomic_write_text, _sanitize_id_for_path
+
+        safe_id = _sanitize_id_for_path(session_id)
+        aar_dir = Path(repo_path) / ".entirecontext"
+        aar_dir.mkdir(parents=True, exist_ok=True)
+        aar_path = aar_dir / f"aar-{safe_id}.json"
+        _atomic_write_text(aar_path, json.dumps(aar, indent=2))
+
+        print(format_aar_summary(aar))
+    except Exception as exc:
+        _record_hook_warning(repo_path, "emit_aar", exc)
 
 
 def _session_has_change_signals(conn, session_id: str) -> bool:

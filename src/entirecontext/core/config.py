@@ -15,6 +15,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "checkpoint_on_session_end": False,
         "auto_cleanup_no_changes": False,
         "intent_summary": False,
+        "emit_aar": True,
         "exclusions": {
             "enabled": False,
             "content_patterns": [],
