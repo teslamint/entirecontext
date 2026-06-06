@@ -130,6 +130,8 @@ def on_session_start(data: dict[str, Any]) -> None:
     finally:
         conn.close()
 
+    _maybe_catchup_assessments(repo_path)
+
 
 def _populate_session_summary(conn, session_id: str) -> None:
     """Generate session title/summary from turns if not already set."""
@@ -504,6 +506,25 @@ def _maybe_backfill_assessments(repo_path: str, session_id: str) -> None:
                 launch_worker(repo_path, cmd, pid_name="worker-assess")
     except Exception as exc:
         _record_hook_warning(repo_path, "backfill_assessments", exc)
+
+
+def _maybe_catchup_assessments(repo_path: str) -> None:
+    """Catch up unassessed checkpoints from prior sessions. Never crashes."""
+    try:
+        from ..core.auto_assess import backfill_unassessed_checkpoints
+        from ..core.config import load_config
+        from ..db import get_db
+
+        config = load_config(repo_path)
+        window_days = config.get("futures", {}).get("assess_backfill_window_days", 7)
+
+        conn = get_db(repo_path)
+        try:
+            backfill_unassessed_checkpoints(conn, repo_path, window_days=window_days)
+        finally:
+            conn.close()
+    except Exception as exc:
+        _record_hook_warning(repo_path, "catchup_assessments", exc)
 
 
 def on_post_commit(data: dict[str, Any]) -> None:

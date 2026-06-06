@@ -128,3 +128,34 @@ def test_enrichment_worker_launched_by_default(ec_repo, ec_db):
     assert args[0] == str(ec_repo)
     assert args[1][1:] == ["-m", "entirecontext.cli", "futures", "enrich-backlog"]
     assert kwargs["pid_name"] == "worker-assess"
+
+
+def test_session_start_catches_up(ec_repo, ec_db):
+    """SessionStart backfills unassessed checkpoints from prior sessions."""
+    import datetime
+    import json
+
+    from entirecontext.core.checkpoint import create_checkpoint
+    from entirecontext.hooks.session_lifecycle import on_session_start
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+
+    old_session_id = str(uuid4())
+    head = _get_head(ec_repo)
+    meta = json.dumps({"start_git_commit": head})
+    ec_db.execute(
+        "INSERT INTO sessions (id, project_id, session_type, workspace_path, started_at, last_activity_at, ended_at, metadata) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (old_session_id, project_id, "claude", str(ec_repo), now, now, now, meta),
+    )
+    cp = create_checkpoint(ec_db, old_session_id, head)
+
+    assessment = ec_db.execute("SELECT * FROM assessments WHERE checkpoint_id = ?", (cp["id"],)).fetchone()
+    assert assessment is None
+
+    new_session_id = str(uuid4())
+    on_session_start({"session_id": new_session_id, "cwd": str(ec_repo)})
+
+    assessment = ec_db.execute("SELECT * FROM assessments WHERE checkpoint_id = ?", (cp["id"],)).fetchone()
+    assert assessment is not None
+    assert assessment["model_name"] == "rule-based"
