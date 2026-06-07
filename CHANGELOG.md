@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - Measurement Accuracy
+
+### Fixed
+
+- **Codex session auto-close** — `close_stale_sessions()` sets `ended_at = last_activity_at` for codex sessions idle > 60min. Called automatically during codex notify ingestion. Uses optimistic concurrency to avoid clobbering resumed sessions.
+- **`retrieval_assisted_session_rate` normalization** — both numerator and denominator now filter on `ended_at IS NOT NULL`, consistent with `checkpoint_coverage_rate`. Previously, 383 codex sessions with `ended_at=NULL` inflated the denominator, and retrieval events in active sessions could inflate the numerator.
+
+### Added
+
+- `ec checkpoint assess-accuracy` — verdict accuracy baseline from LLM enrichment feedback (agree/disagree rate per verdict).
+- `close_stale_sessions()` in `core/session.py` — reusable auto-close with optimistic concurrency guard.
+- Config: `[capture] codex_session_idle_minutes` (default 60).
+
 ## [0.8.0] - 2026-06-07
 
 ### Added

@@ -208,15 +208,15 @@ The `capture→distill→retrieve→intervene` loop has stalled at `distill=0` f
 - [x] **Signal B: working-file inference** — `_get_recent_commit_file_paths()` extracts file paths from recent commits via `git log --name-only`; merged into `rank_decisions_for_prompt()` alongside Signal A (uncommitted diff) paths. Decisions linked to recently-committed files now surface even when the working tree is clean.
 - [~] **Signal C: semantic similarity** — v0.8.0 ships the foundation: `_build_decision_embed_text()`, `semantic_search_decisions()`, and decision embedding in `generate_embeddings()` (source_type='decision'). Auto-embed on `create_decision()` gated by `[decisions] auto_embed` (default false, requires `entirecontext[semantic]`). Full 2-pass async architecture (background ranking feeding next prompt's PDI, SessionStart pre-warm) deferred to v0.9.0.
 
-## v0.8.1 — Measurement Accuracy
+## v0.8.1 — Measurement Accuracy (Shipped 2026-06-07)
 
 Theme: fix measurement infrastructure so maturity scores reflect reality. No new features — only corrections that enable trustworthy attribution for subsequent feature releases.
 
-Follows the v0.8.0 retro lesson: "측정 인프라가 측정 대상보다 먼저 정확해야 한다." Codex session lifecycle and maturity calculation must be accurate before adding intervene automation whose effect needs to be measured against a clean baseline.
+Follows the v0.8.0 retro lesson: "측정 인프라가 측정 대상보다 먼저 정확해야 한다."
 
-- [ ] **Codex session auto-close** — `codex_ingest.py` creates sessions (`session_type='codex'`) but has no termination logic; 374 sessions stuck at `ended_at IS NULL`. Add heuristic: last activity + N minutes → auto-set `ended_at`. Related: ec decision `f44d2fdb` (auto-cleanup sessions with no code changes).
-- [ ] **Maturity calculation normalization** — `checkpoint_coverage_rate` (capture dimension) filters on `ended_at IS NOT NULL`, excluding all codex sessions from the denominator. `retrieval_assisted_session_rate` uses `sessions_total` without `ended_at` filter, so codex sessions are already in the denominator but inflate it without contributing ended-session semantics. Both metrics normalize once codex sessions have correct `ended_at`.
-- [ ] **Verdict accuracy baseline** — measure rule-based assessment verdict accuracy before tuning. Establish false-positive rate for `expand`/`narrow`/`neutral` mapping from conventional commit parsing (e.g., dependency bump → `expand` is a known false positive).
+- [x] **Codex session auto-close** — `close_stale_sessions()` sets `ended_at = last_activity_at` for codex sessions idle > N minutes (default 60, config: `[capture] codex_session_idle_minutes`). Called automatically during codex notify ingestion with optimistic concurrency guard.
+- [x] **Maturity calculation normalization** — `retrieval_assisted_session_rate` numerator and denominator both filter on `ended_at IS NOT NULL`, consistent with `checkpoint_coverage_rate`. Previously, 383 codex sessions with `ended_at=NULL` inflated the denominator without contributing ended-session semantics, and retrieval events in active sessions could inflate the numerator.
+- [x] **Verdict accuracy baseline** — `ec checkpoint assess-accuracy` reports agree/disagree rate from LLM enrichment feedback. Current data: 10 enriched (all agree), 8 rule-based pending. v0.9.0 verdict tuning should gate on n≥30.
 
 ## v0.9.0 — Intervene Automation
 
