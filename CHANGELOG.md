@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Auto-assess on checkpoint create** — `auto_assess_checkpoint()` creates a rule-based assessment (expand/narrow/neutral from conventional commit parsing) synchronously on every `ec checkpoint create`. SessionEnd backfills missed checkpoints; SessionStart catches up crashed sessions. 3-tier safety net breaks the three-sprint distill=0 streak.
+- **After-Action Report (AAR)** — SessionEnd hook emits a structured JSON summary (`.entirecontext/aar-{session_id}.json`) and human-readable stdout: decisions surfaced, PDI retrieve→intervene delta, assessments created. Config: `[capture] emit_aar` (default true).
+- **Signal B: working-file inference** — `rank_decisions_for_prompt()` now includes file paths from recent commits (up to 5) alongside uncommitted diff paths, improving decision relevance when the diff is clean but recent commits touch decision-linked files.
+- **Decision embedding foundation (Signal C)** — `_build_decision_embed_text()`, `semantic_search_decisions()`, and decision embedding in `generate_embeddings()` (`source_type='decision'`). Auto-embed on `create_decision()` gated by `[decisions] auto_embed` (default false, requires `entirecontext[semantic]`).
+- **Git-evidence feedback** — `apply_git_evidence_feedback()` auto-marks rule-based assessments as `feedback="agree"` when commits exist after the checkpoint. Scoped fallback in `ec futures enrich-backlog`.
+- **LLM enrichment** — `enrich_assessment()` upgrades rule-based assessments via `CLIBackend` (`claude -p`). Default backend changed from `openai` to `claude`.
+
+### Changed
+
+- **`[futures] default_backend`** — changed from `"openai"` to `"claude"`.
+- **`[futures] assess_enrich`** — new config key (default true) enabling LLM enrichment.
+- **`[futures] assess_backfill_window_days`** — new config key (default 7).
+- **`[decisions] auto_embed`** — new config key (default false).
+- **Dashboard** — `enriched_count` and `enriched_rate` added to assessments section.
+- **`launch_worker`** — now passes `cwd=repo_path` to `Popen` so detached workers find the git root.
+- **`list_checkpoints`** — added `rowid DESC` tiebreaker to ORDER BY for deterministic ordering.
+
 ## [0.7.0] - 2026-05-20
 
 v0.7.0 makes EntireContext proactive: the `UserPromptSubmit` hook now injects the top-k most relevant decisions directly into Claude Code's context on every prompt turn. Three debt items are also closed: `ended_at NULL` backfill CLI (B1), `unverified_changes.patch` removal (B3), and `accepted_boost` confidence scoring (B2).

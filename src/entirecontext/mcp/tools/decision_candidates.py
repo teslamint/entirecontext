@@ -60,7 +60,7 @@ async def ec_decision_candidate_confirm(
     note: str | None = None,
 ) -> str:
     """Confirm a candidate: promote to a real decision with provenance links."""
-    (conn, _), error = runtime.resolve_repo()
+    (conn, repo_path), error = runtime.resolve_repo()
     if error:
         return error
     try:
@@ -72,6 +72,7 @@ async def ec_decision_candidate_confirm(
             scope_override=scope,
             reviewer="mcp",
             note=note,
+            repo_path=repo_path,
         )
         return json.dumps(result)
     except ValueError as exc:

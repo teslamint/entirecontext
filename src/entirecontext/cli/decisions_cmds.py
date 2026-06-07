@@ -22,9 +22,9 @@ def decision_create(
 ):
     from ..core.decisions import create_decision
 
-    conn, _ = get_repo_connection()
+    conn, repo_path = get_repo_connection()
     try:
-        decision = create_decision(conn, title=title, rationale=rationale, scope=scope)
+        decision = create_decision(conn, title=title, rationale=rationale, scope=scope, repo_path=repo_path)
     finally:
         conn.close()
     console.print(f"[green]Created decision:[/green] {decision['id']}")
@@ -773,7 +773,7 @@ def candidates_confirm(
 ):
     from ..core.decision_candidates import confirm_candidate
 
-    conn, _ = get_repo_connection()
+    conn, repo_path = get_repo_connection()
     try:
         result = confirm_candidate(
             conn,
@@ -781,6 +781,7 @@ def candidates_confirm(
             scope_override=scope,
             reviewer="cli",
             note=note,
+            repo_path=repo_path,
         )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
