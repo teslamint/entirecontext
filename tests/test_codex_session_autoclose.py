@@ -181,3 +181,47 @@ def test_codex_ingest_auto_closes_stale_sessions(ec_repo, ec_db):
         assert stale_row["ended_at"] == stale_row["last_activity_at"]
     finally:
         conn.close()
+
+
+def test_codex_ingest_reopens_closed_session_on_new_turns(ec_repo, ec_db):
+    """When a closed codex session receives new turns, ended_at is cleared."""
+    project = get_project(str(ec_repo))
+    stale_time = _two_hours_ago()
+
+    session_id = "reopen-codex-1"
+    create_session(ec_db, project["id"], session_type="codex", session_id=session_id)
+    ec_db.execute(
+        "UPDATE sessions SET last_activity_at = ?, ended_at = ? WHERE id = ?",
+        (stale_time, stale_time, session_id),
+    )
+    ec_db.close()
+
+    _save_state(str(ec_repo), {})
+
+    codex_home = ec_repo.parent / "codex-home-reopen"
+    session_dir = codex_home / "sessions" / "2026" / "06" / "07"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    session_file = session_dir / f"rollout-2026-06-07T00-00-00-{session_id}.jsonl"
+    records = [
+        {"timestamp": "2026-06-07T00:00:00Z", "type": "session_meta",
+         "payload": {"id": session_id, "timestamp": "2026-06-07T00:00:00Z", "cwd": str(ec_repo)}},
+        {"timestamp": "2026-06-07T00:00:01Z", "type": "response_item",
+         "payload": {"type": "message", "role": "user",
+                     "content": [{"type": "input_text", "text": "new prompt"}]}},
+        {"timestamp": "2026-06-07T00:00:02Z", "type": "response_item",
+         "payload": {"type": "message", "role": "assistant",
+                     "content": [{"type": "output_text", "text": "new response"}]}},
+    ]
+    session_file.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
+
+    ingest_codex_notify_event(
+        {"thread_id": session_id, "cwd": str(ec_repo), "codex_home": str(codex_home)},
+        payload_text=json.dumps({"thread_id": session_id}),
+    )
+
+    conn = get_db(str(ec_repo))
+    try:
+        row = conn.execute("SELECT ended_at FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        assert row["ended_at"] is None
+    finally:
+        conn.close()

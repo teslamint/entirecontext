@@ -207,15 +207,23 @@ def apply_git_evidence_feedback(
         return 0
 
 
+def _extract_original_verdict(feedback_reason: str | None) -> str | None:
+    if not feedback_reason or not feedback_reason.startswith("auto:revised:"):
+        return None
+    parts = feedback_reason.removeprefix("auto:revised:").split("->", 1)
+    return parts[0] if parts else None
+
+
 def compute_verdict_accuracy(conn: sqlite3.Connection) -> dict:
     rule_count = conn.execute(
         "SELECT COUNT(*) FROM assessments WHERE model_name = 'rule-based'"
     ).fetchone()[0]
 
     enriched_rows = conn.execute(
-        "SELECT verdict, feedback FROM assessments"
+        "SELECT verdict, feedback, feedback_reason FROM assessments"
         " WHERE model_name IS NOT NULL AND model_name != 'rule-based'"
         " AND feedback IS NOT NULL"
+        " AND feedback_reason IS NOT NULL AND feedback_reason LIKE 'auto:%'"
     ).fetchall()
 
     if not enriched_rows:
@@ -229,8 +237,11 @@ def compute_verdict_accuracy(conn: sqlite3.Connection) -> dict:
     per_verdict: dict[str, dict[str, int]] = {}
     agree_count = 0
     for row in enriched_rows:
-        verdict = row["verdict"]
         feedback = row["feedback"]
+        if feedback == "disagree":
+            verdict = _extract_original_verdict(row["feedback_reason"]) or row["verdict"]
+        else:
+            verdict = row["verdict"]
         if verdict not in per_verdict:
             per_verdict[verdict] = {"agree": 0, "disagree": 0}
         if feedback == "agree":
