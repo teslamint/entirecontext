@@ -332,5 +332,15 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
             "UPDATE sessions SET total_turns = ?, last_activity_at = ?, updated_at = ? WHERE id = ?",
             (existing_turns + len(pending), now, now, session_id),
         )
+
+        try:
+            from ..core.config import load_config
+            config = load_config(repo_path)
+            idle_minutes = config["capture"]["codex_session_idle_minutes"]
+            from ..core.session import close_stale_sessions
+            if close_stale_sessions(conn, idle_minutes=idle_minutes, session_type="codex"):
+                conn.commit()
+        except Exception:
+            pass
     finally:
         conn.close()

@@ -82,3 +82,28 @@ def update_session(conn, session_id: str, **kwargs) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in kwargs)
     values = list(kwargs.values()) + [session_id]
     conn.execute(f"UPDATE sessions SET {set_clause} WHERE id = ?", values)
+
+
+def close_stale_sessions(
+    conn,
+    idle_minutes: int = 60,
+    session_type: str = "codex",
+) -> int:
+    rows = conn.execute(
+        "SELECT id, last_activity_at FROM sessions"
+        " WHERE ended_at IS NULL"
+        " AND session_type = ?"
+        " AND last_activity_at IS NOT NULL"
+        " AND datetime(last_activity_at) < datetime('now', ?)",
+        (session_type, f"-{idle_minutes} minutes"),
+    ).fetchall()
+
+    closed = 0
+    for row in rows:
+        cursor = conn.execute(
+            "UPDATE sessions SET ended_at = last_activity_at"
+            " WHERE id = ? AND ended_at IS NULL AND last_activity_at = ?",
+            (row["id"], row["last_activity_at"]),
+        )
+        closed += cursor.rowcount
+    return closed
