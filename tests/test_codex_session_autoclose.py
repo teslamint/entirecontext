@@ -121,9 +121,7 @@ def test_codex_ingest_auto_closes_stale_sessions(ec_repo, ec_db):
     project = get_project(str(ec_repo))
     stale_time = _two_hours_ago()
 
-    stale_session = create_session(
-        ec_db, project["id"], session_type="codex", session_id="stale-ingest-1"
-    )
+    stale_session = create_session(ec_db, project["id"], session_type="codex", session_id="stale-ingest-1")
     ec_db.execute(
         "UPDATE sessions SET last_activity_at = ? WHERE id = ?",
         (stale_time, stale_session["id"]),
@@ -203,14 +201,25 @@ def test_codex_ingest_reopens_closed_session_on_new_turns(ec_repo, ec_db):
     session_dir.mkdir(parents=True, exist_ok=True)
     session_file = session_dir / f"rollout-2026-06-07T00-00-00-{session_id}.jsonl"
     records = [
-        {"timestamp": "2026-06-07T00:00:00Z", "type": "session_meta",
-         "payload": {"id": session_id, "timestamp": "2026-06-07T00:00:00Z", "cwd": str(ec_repo)}},
-        {"timestamp": "2026-06-07T00:00:01Z", "type": "response_item",
-         "payload": {"type": "message", "role": "user",
-                     "content": [{"type": "input_text", "text": "new prompt"}]}},
-        {"timestamp": "2026-06-07T00:00:02Z", "type": "response_item",
-         "payload": {"type": "message", "role": "assistant",
-                     "content": [{"type": "output_text", "text": "new response"}]}},
+        {
+            "timestamp": "2026-06-07T00:00:00Z",
+            "type": "session_meta",
+            "payload": {"id": session_id, "timestamp": "2026-06-07T00:00:00Z", "cwd": str(ec_repo)},
+        },
+        {
+            "timestamp": "2026-06-07T00:00:01Z",
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "new prompt"}]},
+        },
+        {
+            "timestamp": "2026-06-07T00:00:02Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "new response"}],
+            },
+        },
     ]
     session_file.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
 

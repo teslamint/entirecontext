@@ -221,9 +221,7 @@ def _extract_original_verdict(feedback_reason: str | None) -> str | None:
 
 
 def compute_verdict_accuracy(conn: sqlite3.Connection) -> dict:
-    rule_count = conn.execute(
-        "SELECT COUNT(*) FROM assessments WHERE model_name = 'rule-based'"
-    ).fetchone()[0]
+    rule_count = conn.execute("SELECT COUNT(*) FROM assessments WHERE model_name = 'rule-based'").fetchone()[0]
 
     enriched_rows = conn.execute(
         "SELECT verdict, feedback, feedback_reason FROM assessments"
