@@ -328,9 +328,24 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
             save_turn_content(repo_path, conn, created["id"], session_id, content_blob)
             turn_number += 1
 
+        update_fields = "total_turns = ?, last_activity_at = ?, updated_at = ?"
+        update_params: list = [existing_turns + len(pending), now, now]
+        if pending and existing_session:
+            update_fields += ", ended_at = NULL"
+        update_params.append(session_id)
         conn.execute(
-            "UPDATE sessions SET total_turns = ?, last_activity_at = ?, updated_at = ? WHERE id = ?",
-            (existing_turns + len(pending), now, now, session_id),
+            f"UPDATE sessions SET {update_fields} WHERE id = ?",
+            update_params,
         )
+
+        try:
+            from ..core.config import load_config
+            config = load_config(repo_path)
+            idle_minutes = config["capture"]["codex_session_idle_minutes"]
+            from ..core.session import close_stale_sessions
+            if close_stale_sessions(conn, idle_minutes=idle_minutes, session_type="codex"):
+                conn.commit()
+        except Exception:
+            pass
     finally:
         conn.close()

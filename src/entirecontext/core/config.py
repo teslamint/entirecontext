@@ -16,6 +16,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_cleanup_no_changes": False,
         "intent_summary": False,
         "emit_aar": True,
+        "codex_session_idle_minutes": 60,
         "exclusions": {
             "enabled": False,
             "content_patterns": [],

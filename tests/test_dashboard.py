@@ -272,6 +272,62 @@ class TestGetDashboardStats:
         assert stats["maturity_score"] >= 25
         assert stats["maturity_grade"] == "Partial"
 
+    def test_retrieval_rate_excludes_active_sessions(self, ec_repo, ec_db):
+        from uuid import uuid4
+
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+
+        project = get_project(str(ec_repo))
+
+        s1 = create_session(ec_db, project["id"], session_id="ret-s1")
+        s2 = create_session(ec_db, project["id"], session_id="ret-s2")
+        _s3 = create_session(ec_db, project["id"], session_id="ret-s3")  # noqa: F841
+
+        # End s1 and s2, leave s3 active
+        ec_db.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (s1["id"],))
+        ec_db.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (s2["id"],))
+        ec_db.commit()
+
+        # Retrieval event only in ended session s1
+        ec_db.execute(
+            "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, created_at)"
+            " VALUES (?, ?, 'hook', 'regex', 'turn', 'test', datetime('now'))",
+            (str(uuid4()), s1["id"]),
+        )
+        ec_db.commit()
+
+        stats = get_dashboard_stats(ec_db)
+        # 1 retrieval session / 2 ended sessions = 0.5 (NOT 1/3)
+        assert stats["telemetry"]["rates"]["retrieval_assisted_session_rate"] == 0.5
+
+    def test_retrieval_rate_ignores_active_session_retrieval(self, ec_repo, ec_db):
+        from uuid import uuid4
+
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+
+        project = get_project(str(ec_repo))
+
+        s1 = create_session(ec_db, project["id"], session_id="ret2-s1")
+        s2 = create_session(ec_db, project["id"], session_id="ret2-s2")
+
+        # End s1 (no retrieval), leave s2 active (with retrieval)
+        ec_db.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (s1["id"],))
+        ec_db.commit()
+
+        # Retrieval event in active session s2
+        ec_db.execute(
+            "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, created_at)"
+            " VALUES (?, ?, 'hook', 'regex', 'turn', 'test', datetime('now'))",
+            (str(uuid4()), s2["id"]),
+        )
+        ec_db.commit()
+
+        stats = get_dashboard_stats(ec_db)
+        # Active session's retrieval must NOT count in numerator
+        assert stats["telemetry"]["rates"]["retrieval_assisted_session_rate"] == 0.0
+
 
 # ---------------------------------------------------------------------------
 # TestDashboardCLI
