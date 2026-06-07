@@ -51,5 +51,5 @@ The set is defined in `core/decisions.py` as `VALID_DECISION_OUTCOME_TYPES`.
 
 ## Resolved Questions
 
-- ~~Should `accepted` boost become weighted by outcome count or recency, or stay binary?~~ — Resolved in v0.7.0: configurable binary boost (`accepted_boost_amount=0.10`, `accepted_boost_threshold=0.6`). Binary with threshold, not weighted.
+- ~~Should `accepted` boost become weighted by outcome count or recency, or stay binary?~~ — Resolved: ranking uses `accepted_outcome_boost` (default 2.0, `[decisions.ranking]`), applied after another relevance signal matches. v0.7.0 separately added extraction confidence boost (`accepted_boost_amount=0.10`, `accepted_boost_threshold=0.6`, `[decisions.extraction]`). Both stay binary, not weighted.
 - Supersede chains show only the head decision in list views; `ec decision chain <id>` walks the full chain for debugging.

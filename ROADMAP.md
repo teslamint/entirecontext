@@ -215,7 +215,7 @@ Theme: fix measurement infrastructure so maturity scores reflect reality. No new
 Follows the v0.8.0 retro lesson: "측정 인프라가 측정 대상보다 먼저 정확해야 한다." Codex session lifecycle and maturity calculation must be accurate before adding intervene automation whose effect needs to be measured against a clean baseline.
 
 - [ ] **Codex session auto-close** — `codex_ingest.py` creates sessions (`session_type='codex'`) but has no termination logic; 374 sessions stuck at `ended_at IS NULL`. Add heuristic: last activity + N minutes → auto-set `ended_at`. Related: ec decision `f44d2fdb` (auto-cleanup sessions with no code changes).
-- [ ] **Maturity calculation normalization** — include codex sessions in maturity denominators once `ended_at` is correctly set. Current distortion: 24 codex sessions with `retrieval_selections` are invisible to `retrieval_assisted_session_rate`.
+- [ ] **Maturity calculation normalization** — `checkpoint_coverage_rate` (capture dimension) filters on `ended_at IS NOT NULL`, excluding all codex sessions from the denominator. `retrieval_assisted_session_rate` uses `sessions_total` without `ended_at` filter, so codex sessions are already in the denominator but inflate it without contributing ended-session semantics. Both metrics normalize once codex sessions have correct `ended_at`.
 - [ ] **Verdict accuracy baseline** — measure rule-based assessment verdict accuracy before tuning. Establish false-positive rate for `expand`/`narrow`/`neutral` mapping from conventional commit parsing (e.g., dependency bump → `expand` is a known false positive).
 
 ## v0.9.0 — Intervene Automation
