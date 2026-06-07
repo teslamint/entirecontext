@@ -172,7 +172,7 @@ def merge_results(results: list[dict]) -> dict:
         "verdict": dominant.get("verdict", "neutral"),
         "impact_summary": " | ".join(impact_parts[:2]),
         "roadmap_alignment": dominant.get("roadmap_alignment", "N/A"),
-        "tidy_suggestion": suggestions[0] if suggestions else "N/A",
+        "tidy_suggestion": suggestions[0] if suggestions else "No tidy warranted",
     }
 
 
