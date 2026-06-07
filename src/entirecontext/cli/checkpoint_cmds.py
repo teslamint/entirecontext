@@ -324,5 +324,48 @@ def checkpoint_diff(
         console.print("\n[dim]No differences in files_snapshot.[/dim]")
 
 
+@checkpoint_app.command("assess-accuracy")
+def assess_accuracy():
+    """Show verdict accuracy baseline from enrichment feedback."""
+    from ..core.auto_assess import compute_verdict_accuracy
+    from ..core.project import find_git_root, get_project
+    from ..db import get_db
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    project = get_project(repo_path)
+    if not project:
+        console.print("[yellow]Not initialized. Run 'ec init'.[/yellow]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    try:
+        result = compute_verdict_accuracy(conn)
+    finally:
+        conn.close()
+
+    console.print("\n[bold]Verdict Accuracy Baseline[/bold]")
+    console.print(f"  Rule-based assessments (pending enrichment): {result['total_rule_based']}")
+    console.print(f"  Enriched assessments (with feedback): {result['total_enriched']}")
+
+    if result["agreement_rate"] is not None:
+        rate_pct = result["agreement_rate"] * 100
+        console.print(f"  Agreement rate: {rate_pct:.1f}%")
+    else:
+        console.print("  Agreement rate: [dim]no data[/dim]")
+
+    if result["per_verdict"]:
+        table = Table(title="Per-Verdict Breakdown")
+        table.add_column("Verdict")
+        table.add_column("Agree", justify="right")
+        table.add_column("Disagree", justify="right")
+        for verdict, counts in sorted(result["per_verdict"].items()):
+            table.add_row(verdict, str(counts["agree"]), str(counts["disagree"]))
+        console.print(table)
+
+
 def register(app: typer.Typer) -> None:
     app.add_typer(checkpoint_app, name="checkpoint")

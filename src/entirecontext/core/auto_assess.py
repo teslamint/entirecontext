@@ -205,3 +205,44 @@ def apply_git_evidence_feedback(
         return count
     except Exception:
         return 0
+
+
+def compute_verdict_accuracy(conn: sqlite3.Connection) -> dict:
+    rule_count = conn.execute(
+        "SELECT COUNT(*) FROM assessments WHERE model_name = 'rule-based'"
+    ).fetchone()[0]
+
+    enriched_rows = conn.execute(
+        "SELECT verdict, feedback FROM assessments"
+        " WHERE model_name IS NOT NULL AND model_name != 'rule-based'"
+        " AND feedback IS NOT NULL"
+    ).fetchall()
+
+    if not enriched_rows:
+        return {
+            "total_rule_based": rule_count,
+            "total_enriched": 0,
+            "agreement_rate": None,
+            "per_verdict": {},
+        }
+
+    per_verdict: dict[str, dict[str, int]] = {}
+    agree_count = 0
+    for row in enriched_rows:
+        verdict = row["verdict"]
+        feedback = row["feedback"]
+        if verdict not in per_verdict:
+            per_verdict[verdict] = {"agree": 0, "disagree": 0}
+        if feedback == "agree":
+            per_verdict[verdict]["agree"] += 1
+            agree_count += 1
+        elif feedback == "disagree":
+            per_verdict[verdict]["disagree"] += 1
+
+    total = len(enriched_rows)
+    return {
+        "total_rule_based": rule_count,
+        "total_enriched": total,
+        "agreement_rate": agree_count / total if total > 0 else None,
+        "per_verdict": per_verdict,
+    }
