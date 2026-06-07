@@ -328,15 +328,16 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
             save_turn_content(repo_path, conn, created["id"], session_id, content_blob)
             turn_number += 1
 
-        update_fields = "total_turns = ?, last_activity_at = ?, updated_at = ?"
-        update_params: list = [existing_turns + len(pending), now, now]
-        if pending and existing_session:
-            update_fields += ", ended_at = NULL"
-        update_params.append(session_id)
-        conn.execute(
-            f"UPDATE sessions SET {update_fields} WHERE id = ?",
-            update_params,
-        )
+        if pending:
+            update_fields = "total_turns = ?, last_activity_at = ?, updated_at = ?"
+            update_params: list = [existing_turns + len(pending), now, now]
+            if existing_session:
+                update_fields += ", ended_at = NULL"
+            update_params.append(session_id)
+            conn.execute(
+                f"UPDATE sessions SET {update_fields} WHERE id = ?",
+                update_params,
+            )
 
         try:
             from ..core.config import load_config
