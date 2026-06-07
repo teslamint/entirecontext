@@ -26,6 +26,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`launch_worker`** — now passes `cwd=repo_path` to `Popen` so detached workers find the git root.
 - **`list_checkpoints`** — added `rowid DESC` tiebreaker to ORDER BY for deterministic ordering.
 
+## [0.7.1] - 2026-06-02
+
+v0.7.1 hardens PDI correctness and activates Signal A — the highest-value missing retrieval signal. File paths from the uncommitted diff now feed into decision ranking, activating the +3.0 `file_exact` weight that was previously unused.
+
+### Added
+
+- **Signal A: diff file-path extraction** (#151) — `rank_decisions_for_prompt()` now parses file paths from `git diff --name-status -M -z HEAD` (rename-aware, NUL-delimited). Deleted files included via `--- a/` path; renames contribute both old and new paths. Ranking and optimization run inside the timeout thread for `inject_timeout_ms` compliance.
+- **tiktoken accurate token counting** (#151) — eager module-level `cl100k_base` encoding replaces the byte-count heuristic. Promoted to core dependency since PDI is default-ON. Byte-heuristic fallback retained for import-failure edge cases.
+
+### Changed
+
+- **Per-session `capture_disabled` gate** (#141, #143) — PDI ranking thread now checks per-session `capture_disabled` flag before ranking, mirroring `turn_capture` skip semantics. Gate and ranking share one DB connection (fixes CI double-connection failure and halves production connection count per prompt).
+- **PDI timeout architecture** (#141) — `ThreadPoolExecutor` replaced with `threading.Thread(daemon=True)` so a timed-out ranking thread never blocks process exit. Git root resolved once per `UserPromptSubmit` (eliminates double subprocess probe on slow filesystems).
+- **`optimize_for_context_budget`** (#141) — title truncation (>80 chars) added as second pass after rationale truncation when still over `max_tokens`.
+
+### Fixed
+
+- **codex-notify stdin blocking** — `sys.stdin.read()` ran unconditionally when argv payload existed, blocking forever on the inherited pipe and accumulating ~450 zombie processes per session. Fixed: skip stdin when argv payload present; fallback uses `select()`+`os.read()` loop with 5s idle / 30s hard timeout.
+
 ## [0.7.0] - 2026-05-20
 
 v0.7.0 makes EntireContext proactive: the `UserPromptSubmit` hook now injects the top-k most relevant decisions directly into Claude Code's context on every prompt turn. Three debt items are also closed: `ended_at NULL` backfill CLI (B1), `unverified_changes.patch` removal (B3), and `accepted_boost` confidence scoring (B2).
