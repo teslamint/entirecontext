@@ -163,7 +163,11 @@ def merge_results(results: list[dict]) -> dict:
     priority = {"narrow": 2, "neutral": 1, "expand": 0}
     dominant = max(results, key=lambda r: priority.get(r.get("verdict", "neutral"), 1))
     impact_parts = [r["impact_summary"] for r in results if r.get("impact_summary")]
-    suggestions = [r["tidy_suggestion"] for r in results if r.get("tidy_suggestion")]
+    suggestions = [
+        r["tidy_suggestion"]
+        for r in results
+        if r.get("tidy_suggestion") and r["tidy_suggestion"] != "No tidy warranted"
+    ]
     return {
         "verdict": dominant.get("verdict", "neutral"),
         "impact_summary": " | ".join(impact_parts[:2]),
