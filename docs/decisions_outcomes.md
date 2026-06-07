@@ -49,7 +49,7 @@ The set is defined in `core/decisions.py` as `VALID_DECISION_OUTCOME_TYPES`.
 > upgrade that changes `VALID_DECISION_OUTCOME_TYPES` or outcome logic, restart
 > Claude Code to pick up the new server binary.
 
-## Open Questions (v0.7.0 candidates)
+## Resolved Questions
 
-- Should `accepted` boost become weighted by outcome count or recency, or stay binary?
-- Should supersede chains show only the head decision or the full chain in list views?
+- ~~Should `accepted` boost become weighted by outcome count or recency, or stay binary?~~ — Resolved in v0.7.0: configurable binary boost (`accepted_boost_amount=0.10`, `accepted_boost_threshold=0.6`). Binary with threshold, not weighted.
+- Supersede chains show only the head decision in list views; `ec decision chain <id>` walks the full chain for debugging.

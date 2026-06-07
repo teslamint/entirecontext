@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-06-05._
+_Updated 2026-06-07._
 
 ## Product Thesis
 
@@ -33,7 +33,7 @@ That foundation is useful, but it is broader than the product wedge. The next ph
 
 **Target users (through v1.0):** individual developers (1) + agent frameworks via MCP (3). Team-scoped features are deferred to v1.x+.
 
-With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125.
+With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -182,7 +182,7 @@ Theme: make retrieval default behavior, close three deferred debt items.
 - [x] **B2: `accepted_boost`** — `accepted_boost_amount`/`accepted_boost_threshold` in `ExtractionWeights`; finishes ec decision `3a1ccb19`
 - [x] **B3: Remove `unverified_changes.patch`** — duplicate of already-committed docs files
 
-## v0.7.1 — PDI Hardening + Signal A (2026-06-02)
+## v0.7.1 — PDI Hardening + Signal A (Shipped 2026-06-02)
 
 Theme: close correctness gaps in PDI, establish measurement baseline, and activate the highest-value missing retrieval signal.
 
@@ -191,7 +191,7 @@ Theme: close correctness gaps in PDI, establish measurement baseline, and activa
 - [x] **Signal A: diff file-path extraction** — `git diff --name-status -M -z HEAD` for rename-aware, NUL-delimited file path collection; deleted files included via `--- a/` path; `surrogateescape` for non-UTF-8 filenames; ranking + optimization inside timeout thread for `inject_timeout_ms` compliance
 - [x] **PDI effect measurement** — `retrieval_assisted_session_rate` already computed in `dashboard.py`; establish n≥30 session baseline across v0.7.1 window before interpreting the 0.049→0.125 lift as confirmed
 
-## v0.8.0 — Closed Loop (Distill Automation + Signal B/C)
+## v0.8.0 — Closed Loop (Distill Automation + Signal B/C) (Shipped 2026-06-07)
 
 Theme: break the three-sprint distill=0 streak through structural automation, and deepen retrieval signal coverage informed by v0.7.1 hit-rate measurement.
 
@@ -207,6 +207,24 @@ The `capture→distill→retrieve→intervene` loop has stalled at `distill=0` f
 
 - [x] **Signal B: working-file inference** — `_get_recent_commit_file_paths()` extracts file paths from recent commits via `git log --name-only`; merged into `rank_decisions_for_prompt()` alongside Signal A (uncommitted diff) paths. Decisions linked to recently-committed files now surface even when the working tree is clean.
 - [~] **Signal C: semantic similarity** — v0.8.0 ships the foundation: `_build_decision_embed_text()`, `semantic_search_decisions()`, and decision embedding in `generate_embeddings()` (source_type='decision'). Auto-embed on `create_decision()` gated by `[decisions] auto_embed` (default false, requires `entirecontext[semantic]`). Full 2-pass async architecture (background ranking feeding next prompt's PDI, SessionStart pre-warm) deferred to v0.9.0.
+
+## v0.8.1 — Measurement Accuracy
+
+Theme: fix measurement infrastructure so maturity scores reflect reality. No new features — only corrections that enable trustworthy attribution for subsequent feature releases.
+
+Follows the v0.8.0 retro lesson: "측정 인프라가 측정 대상보다 먼저 정확해야 한다." Codex session lifecycle and maturity calculation must be accurate before adding intervene automation whose effect needs to be measured against a clean baseline.
+
+- [ ] **Codex session auto-close** — `codex_ingest.py` creates sessions (`session_type='codex'`) but has no termination logic; 374 sessions stuck at `ended_at IS NULL`. Add heuristic: last activity + N minutes → auto-set `ended_at`. Related: ec decision `f44d2fdb` (auto-cleanup sessions with no code changes).
+- [ ] **Maturity calculation normalization** — include codex sessions in maturity denominators once `ended_at` is correctly set. Current distortion: 24 codex sessions with `retrieval_selections` are invisible to `retrieval_assisted_session_rate`.
+- [ ] **Verdict accuracy baseline** — measure rule-based assessment verdict accuracy before tuning. Establish false-positive rate for `expand`/`narrow`/`neutral` mapping from conventional commit parsing (e.g., dependency bump → `expand` is a known false positive).
+
+## v0.9.0 — Intervene Automation
+
+Theme: automate the weakest maturity dimension (intervene=5), activate deferred signal depth, and tune assessment quality — all measured against v0.8.1's corrected baseline.
+
+- [ ] **SessionEnd automatic apply inference** — on SessionEnd, check intersection of surfaced decision-linked files and session-modified files; auto-record `context_application` for matches. Inverse of `_maybe_infer_ignored_decisions`.
+- [ ] **Rule-based verdict mapping tuning** — adjust `expand`/`narrow`/`neutral` commit-type mapping based on v0.8.1 accuracy baseline.
+- [ ] **Signal C default ON** — enable `[decisions] auto_embed = true` by default; implement 2-pass async architecture (background ranking → next prompt's PDI, SessionStart pre-warm).
 
 ## v1.0 — Loop Completes Autonomously
 
