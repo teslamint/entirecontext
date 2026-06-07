@@ -97,6 +97,25 @@ def test_compute_verdict_accuracy_excludes_manual_feedback(ec_repo, ec_db):
     assert result["agreement_rate"] is None
 
 
+def test_compute_verdict_accuracy_malformed_reason_falls_back(ec_repo, ec_db):
+    session_id = _create_session(ec_db)
+    ec_db.execute(
+        "INSERT INTO checkpoints (id, session_id, git_commit_hash, git_branch, created_at)"
+        " VALUES ('ckp-va-bad', ?, 'abc', 'main', datetime('now'))",
+        (session_id,),
+    )
+    ec_db.execute(
+        "INSERT INTO assessments (id, checkpoint_id, verdict, model_name, feedback, feedback_reason, created_at)"
+        " VALUES ('asmt-bad-1', 'ckp-va-bad', 'expand', 'claude-cli', 'disagree',"
+        " 'auto:revised:oops->expand', datetime('now'))"
+    )
+
+    result = compute_verdict_accuracy(ec_db)
+    # 'oops' is not a valid verdict, so falls back to current verdict 'expand'
+    assert "oops" not in result["per_verdict"]
+    assert result["per_verdict"]["expand"]["disagree"] == 1
+
+
 def test_assess_accuracy_cli(ec_repo, ec_db, monkeypatch):
     monkeypatch.chdir(ec_repo)
     result = runner.invoke(app, ["checkpoint", "assess-accuracy"])

@@ -174,8 +174,8 @@ def get_dashboard_stats(
         "SELECT COUNT(DISTINCT re.session_id) AS total FROM retrieval_events re"
         " JOIN sessions s ON re.session_id = s.id"
         " WHERE s.ended_at IS NOT NULL"
-        + (" AND re.created_at >= ?" if since is not None else ""),
-        since_params,
+        + (" AND s.started_at >= ? AND re.created_at >= ?" if since is not None else ""),
+        since_params * 2 if since is not None else since_params,
     ).fetchone()
     retrieval_sessions_total = retrieval_sessions_row["total"] or 0
 

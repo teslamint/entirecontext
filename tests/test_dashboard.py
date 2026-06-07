@@ -301,6 +301,45 @@ class TestGetDashboardStats:
         # 1 retrieval session / 2 ended sessions = 0.5 (NOT 1/3)
         assert stats["telemetry"]["rates"]["retrieval_assisted_session_rate"] == 0.5
 
+    def test_retrieval_rate_since_filter_consistent(self, ec_repo, ec_db):
+        """Numerator and denominator must use same session window when since is set."""
+        from datetime import datetime, timedelta, timezone
+        from uuid import uuid4
+
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+
+        project = get_project(str(ec_repo))
+
+        old_time = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        new_time = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+
+        # Old session (outside since window) with recent retrieval event
+        s_old = create_session(ec_db, project["id"], session_id="old-s1")
+        ec_db.execute(
+            "UPDATE sessions SET started_at = ?, ended_at = ? WHERE id = ?",
+            (old_time, old_time, s_old["id"]),
+        )
+        ec_db.execute(
+            "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, created_at)"
+            " VALUES (?, ?, 'hook', 'regex', 'turn', 'test', datetime('now'))",
+            (str(uuid4()), s_old["id"]),
+        )
+
+        # New session (inside since window), no retrieval
+        s_new = create_session(ec_db, project["id"], session_id="new-s1")
+        ec_db.execute(
+            "UPDATE sessions SET started_at = ?, ended_at = ? WHERE id = ?",
+            (new_time, new_time, s_new["id"]),
+        )
+        ec_db.commit()
+
+        since = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        stats = get_dashboard_stats(ec_db, since=since)
+
+        # Old session should NOT appear in numerator despite recent retrieval event
+        assert stats["telemetry"]["rates"]["retrieval_assisted_session_rate"] == 0.0
+
     def test_retrieval_rate_ignores_active_session_retrieval(self, ec_repo, ec_db):
         from uuid import uuid4
 

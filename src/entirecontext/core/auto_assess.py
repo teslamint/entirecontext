@@ -207,11 +207,17 @@ def apply_git_evidence_feedback(
         return 0
 
 
+_KNOWN_VERDICTS = {"expand", "narrow", "neutral"}
+
+
 def _extract_original_verdict(feedback_reason: str | None) -> str | None:
     if not feedback_reason or not feedback_reason.startswith("auto:revised:"):
         return None
     parts = feedback_reason.removeprefix("auto:revised:").split("->", 1)
-    return parts[0] if parts else None
+    candidate = parts[0] if parts else None
+    if candidate and candidate in _KNOWN_VERDICTS:
+        return candidate
+    return None
 
 
 def compute_verdict_accuracy(conn: sqlite3.Connection) -> dict:
