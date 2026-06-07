@@ -22,12 +22,20 @@ Respond with a JSON object (no markdown fences) with these fields:
 - verdict: "expand" | "narrow" | "neutral"
 - impact_summary: one-sentence summary of the change's impact on future options
 - roadmap_alignment: how this change aligns with the roadmap
-- tidy_suggestion: actionable suggestion grounded in specific project files, structures, or patterns observed in the diff. Do not suggest actions referencing structures that are not present in the project context."""
+- tidy_suggestion: actionable suggestion grounded in specific project files, structures, or patterns observed in the diff, OR "No tidy warranted" when the change is already clean
+
+Suggestion guardrails:
+- "No tidy warranted" is a valid and expected suggestion when no actionable improvement exists
+- Do not suggest refactors for incidental code patterns (e.g., repeated parameter passing) unless the repetition creates a concrete maintenance or correctness risk
+- Do not suggest cleanup or refactoring outside the PR's stated scope
+- Do not submit suggestions based on pattern-matching alone without tracing the actual code flow
+- Do not suggest actions referencing structures that are not present in the project context
+- If the project provides review principles (e.g., in CLAUDE.md), respect their severity and scope rules"""
 
 COMMENT_MARKER = "<!-- tidy-pilot:sticky-comment -->"
 
 # Character budgets — chosen to stay under typical API payload limits.
-MAX_CONTEXT_CHARS = 4_000  # per context section (roadmap, lessons, claude_md)
+MAX_CONTEXT_CHARS = 8_000  # per context section (roadmap, lessons, claude_md)
 MAX_CHUNK_DIFF_CHARS = 8_000  # per diff chunk sent to LLM
 MAX_CHUNKS = 5  # cap on total API calls; excess diff is marked omitted
 FILE_TRUNCATION_MARKER = "\n... (file diff truncated)\n"
@@ -155,12 +163,16 @@ def merge_results(results: list[dict]) -> dict:
     priority = {"narrow": 2, "neutral": 1, "expand": 0}
     dominant = max(results, key=lambda r: priority.get(r.get("verdict", "neutral"), 1))
     impact_parts = [r["impact_summary"] for r in results if r.get("impact_summary")]
-    suggestions = [r["tidy_suggestion"] for r in results if r.get("tidy_suggestion")]
+    suggestions = [
+        r["tidy_suggestion"]
+        for r in results
+        if r.get("tidy_suggestion") and r["tidy_suggestion"] != "No tidy warranted"
+    ]
     return {
         "verdict": dominant.get("verdict", "neutral"),
         "impact_summary": " | ".join(impact_parts[:2]),
         "roadmap_alignment": dominant.get("roadmap_alignment", "N/A"),
-        "tidy_suggestion": suggestions[0] if suggestions else "N/A",
+        "tidy_suggestion": suggestions[0] if suggestions else "No tidy warranted",
     }
 
 
