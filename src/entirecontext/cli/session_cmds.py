@@ -559,7 +559,8 @@ def session_backfill_applied(
     conn = get_db(repo_path)
     try:
         session_ids = [
-            r[0] for r in conn.execute(
+            r[0]
+            for r in conn.execute(
                 """
                 SELECT DISTINCT s.id
                 FROM sessions s

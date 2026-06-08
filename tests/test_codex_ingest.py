@@ -106,9 +106,7 @@ def test_duplicate_notify_does_not_refresh_last_activity_at(ec_repo):
     ingest_codex_notify_event(payload, payload_text="{}")
 
     conn = get_db(str(ec_repo))
-    row1 = conn.execute(
-        "SELECT last_activity_at, total_turns FROM sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    row1 = conn.execute("SELECT last_activity_at, total_turns FROM sessions WHERE id = ?", (session_id,)).fetchone()
     conn.close()
     assert row1 is not None
     assert row1["total_turns"] == 1
@@ -120,9 +118,7 @@ def test_duplicate_notify_does_not_refresh_last_activity_at(ec_repo):
     ingest_codex_notify_event(payload, payload_text="{}")
 
     conn = get_db(str(ec_repo))
-    row2 = conn.execute(
-        "SELECT last_activity_at, total_turns FROM sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    row2 = conn.execute("SELECT last_activity_at, total_turns FROM sessions WHERE id = ?", (session_id,)).fetchone()
     conn.close()
     assert row2["total_turns"] == 1, "Turn count should not change on duplicate"
     assert row2["last_activity_at"] == first_activity, "last_activity_at must not change on duplicate"

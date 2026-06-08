@@ -209,9 +209,7 @@ def get_dashboard_stats(
     lesson_reuse_count = applications_row["lesson_reuse"] or 0
 
     retrieval_assisted_session_rate = retrieval_sessions_total / sessions_ended if sessions_ended > 0 else 0.0
-    search_to_selection_rate = (
-        events_with_selection / retrieval_events_total if retrieval_events_total > 0 else 0.0
-    )
+    search_to_selection_rate = events_with_selection / retrieval_events_total if retrieval_events_total > 0 else 0.0
     applied_context_rate = (
         context_applications_with_selection / retrieval_selections_total if retrieval_selections_total > 0 else 0.0
     )
