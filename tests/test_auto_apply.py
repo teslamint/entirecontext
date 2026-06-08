@@ -414,7 +414,7 @@ def test_infer_applied_ignores_edits_before_surfacing(ec_db, ec_repo):
     session_id = session["id"]
 
     # Turn 1: edit src/foo.py (BEFORE decision is surfaced)
-    turn1 = create_turn(
+    create_turn(
         conn,
         session_id,
         turn_number=1,
