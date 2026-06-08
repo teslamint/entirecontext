@@ -116,7 +116,8 @@ def _detect_overlapping_decisions(
             "SELECT file_path FROM decision_files WHERE decision_id = ?",
             (decision_id,),
         ).fetchall()
-        decision_paths = {_normalize_file_path(r["file_path"]) for r in decision_files}
+        repo_root = os.path.realpath(repo_path) if repo_path else None
+        decision_paths = {_normalize_file_path(r["file_path"], repo_root) for r in decision_files}
 
         surfaced_turn = row["turn_number"] or 0
         overlap = {
