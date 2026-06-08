@@ -286,3 +286,36 @@ def test_generate_embeddings_deduplicates_decisions(ec_db):
         (d["id"],),
     ).fetchall()
     assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# auto_embed default and graceful fallback
+# ---------------------------------------------------------------------------
+
+
+def test_auto_embed_default_is_true():
+    from entirecontext.core.config import DEFAULT_CONFIG
+
+    assert DEFAULT_CONFIG["decisions"]["auto_embed"] is True
+
+
+def test_create_decision_auto_embed_graceful_without_transformers(ec_db, ec_repo, monkeypatch):
+    """auto_embed=True must not crash create_decision when sentence-transformers is missing."""
+    import builtins
+
+    original_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "sentence_transformers" or name.startswith("sentence_transformers."):
+            raise ImportError("mocked: no sentence_transformers")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+
+    from entirecontext.core.decisions import create_decision as _create_decision
+
+    result = _create_decision(ec_db, title="Test decision", rationale="Test rationale", repo_path=str(ec_repo))
+    assert result["title"] == "Test decision"
+
+    embed_count = ec_db.execute("SELECT COUNT(*) FROM embeddings WHERE source_type = 'decision'").fetchone()[0]
+    assert embed_count == 0
