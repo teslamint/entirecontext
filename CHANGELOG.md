@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - Intervene Automation
+
+### Added
+
+- **SessionEnd auto-apply inference** — on SessionEnd, detects file overlap between surfaced decisions (`decision_files`) and session-modified files (`turns.files_touched`), auto-records `context_application` (type `decision_change`) and `accepted` outcome. Runs before ignored inference to prevent double-marking. Config: `decisions.infer_applied_on_session_end` (default true).
+- **`ec session backfill-applied`** — retroactive auto-apply inference for historical ended sessions with retrieval events. Options: `--dry-run` (preview), `--apply` (write).
+- **Codex stale cleanup on SessionEnd** — `close_stale_sessions()` now also fires during SessionEnd hook, expanding trigger surface beyond codex notify ingestion.
+- **Dashboard _rate metric guard test** — asserts all `_rate` metrics in `compute_dashboard()` output stay in [0, 1] range.
+- **Duplicate notify regression test** — guards commit 150faab invariant (duplicate codex notify does not refresh `last_activity_at`).
+
+### Fixed
+
+- **`search_to_selection_rate` semantic bug** — formula changed from `total_selections / total_events` (could exceed 1.0 due to 1:N selection relationship) to `DISTINCT events with ≥1 selection / total_events`, a proper [0, 1] fraction. Maturity scoring threshold (≥0.25) and current score unchanged.
+
+### Changed
+
+- **`[decisions] auto_embed`** — default flipped from `false` to `true`. Decisions are now auto-embedded on creation when `entirecontext[semantic]` is installed. Graceful no-op without the optional dependency.
+
 ## [0.8.1] - Measurement Accuracy
 
 ### Fixed
