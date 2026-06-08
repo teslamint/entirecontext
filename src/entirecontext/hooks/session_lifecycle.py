@@ -307,7 +307,7 @@ def _maybe_infer_applied_decisions(repo_path: str, session_id: str) -> None:
 
         conn = get_db(repo_path)
         try:
-            infer_applied_decisions(conn, session_id)
+            infer_applied_decisions(conn, session_id, repo_path=repo_path)
         finally:
             conn.close()
     except Exception as exc:

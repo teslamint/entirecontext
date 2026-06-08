@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from typing import Any
 
@@ -11,14 +12,22 @@ from .decisions import record_decision_outcome
 from .telemetry import record_context_application
 
 
-def _normalize_file_path(p: str) -> str:
-    """Normalize slashes and strip leading './' for consistent path comparison."""
+def _normalize_file_path(p: str, repo_root: str | None = None) -> str:
+    """Normalize to relative path: strip repo root prefix, backslashes, and leading './'."""
     p = p.replace("\\", "/")
-    return p[2:] if p.startswith("./") else p
+    if repo_root:
+        prefix = repo_root.replace("\\", "/").rstrip("/") + "/"
+        if p.startswith(prefix):
+            p = p[len(prefix) :]
+    if p.startswith("./"):
+        p = p[2:]
+    return p
 
 
-def _collect_session_modified_files(conn: sqlite3.Connection, session_id: str) -> set[str]:
-    """Parse turns.files_touched (JSON array) for the session. Return set of file paths."""
+def _collect_session_modified_files(
+    conn: sqlite3.Connection, session_id: str, repo_path: str | None = None
+) -> set[str]:
+    """Parse turns.files_touched (JSON array) for the session. Return set of relative file paths."""
     rows = conn.execute(
         """
         SELECT files_touched FROM turns
@@ -29,6 +38,10 @@ def _collect_session_modified_files(conn: sqlite3.Connection, session_id: str) -
         (session_id,),
     ).fetchall()
 
+    repo_root: str | None = None
+    if repo_path:
+        repo_root = os.path.realpath(repo_path)
+
     result: set[str] = set()
     for row in rows:
         raw = row["files_touched"]
@@ -37,21 +50,23 @@ def _collect_session_modified_files(conn: sqlite3.Connection, session_id: str) -
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
-                result.update(_normalize_file_path(str(f)) for f in parsed if f)
+                result.update(_normalize_file_path(str(f), repo_root) for f in parsed if f)
         except (json.JSONDecodeError, TypeError):
             pass
     return result
 
 
-def _detect_overlapping_decisions(conn: sqlite3.Connection, session_id: str) -> list[dict[str, Any]]:
+def _detect_overlapping_decisions(
+    conn: sqlite3.Connection, session_id: str, repo_path: str | None = None
+) -> list[dict[str, Any]]:
     """Pure detection, no writes.
 
-    Query retrieval_selections where result_type='decision', source='hook',
+    Query retrieval_selections where result_type='decision',
     no existing outcome in this session, and decision_files overlap with
     modified files. Deduplicate by decision_id (first selection wins by
     turn_number then created_at).
     """
-    modified_files = _collect_session_modified_files(conn, session_id)
+    modified_files = _collect_session_modified_files(conn, session_id, repo_path)
     if not modified_files:
         return []
 
@@ -64,7 +79,6 @@ def _detect_overlapping_decisions(conn: sqlite3.Connection, session_id: str) -> 
         LEFT JOIN turns t ON t.id = rs.turn_id
         WHERE rs.session_id = ?
           AND rs.result_type = 'decision'
-          AND re.source = 'hook'
           AND NOT EXISTS (
               SELECT 1 FROM decision_outcomes do
               WHERE do.decision_id = rs.result_id
@@ -105,13 +119,15 @@ def _detect_overlapping_decisions(conn: sqlite3.Connection, session_id: str) -> 
     return matches
 
 
-def infer_applied_decisions(conn: sqlite3.Connection, session_id: str, *, dry_run: bool = False) -> dict[str, Any]:
+def infer_applied_decisions(
+    conn: sqlite3.Connection, session_id: str, *, dry_run: bool = False, repo_path: str | None = None
+) -> dict[str, Any]:
     """Infer 'accepted' outcome for decisions whose files were modified this session.
 
     If dry_run or no matches, return count only. Otherwise atomically write BOTH
     context_application + accepted outcome in ONE transaction per match.
     """
-    matches = _detect_overlapping_decisions(conn, session_id)
+    matches = _detect_overlapping_decisions(conn, session_id, repo_path)
 
     if dry_run or not matches:
         return {"applied_count": len(matches), "applied_decisions": []}

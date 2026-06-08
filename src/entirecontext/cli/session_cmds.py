@@ -580,7 +580,7 @@ def session_backfill_applied(
         sessions_with_applies = 0
 
         for sid in session_ids:
-            result = infer_applied_decisions(conn, sid, dry_run=dry_run)
+            result = infer_applied_decisions(conn, sid, dry_run=dry_run, repo_path=repo_path)
             if result["applied_count"] > 0:
                 sessions_with_applies += 1
                 total_applied += result["applied_count"]
