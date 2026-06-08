@@ -537,5 +537,64 @@ def session_backfill_ended_at(
         conn.close()
 
 
+@session_app.command("backfill-applied")
+def session_backfill_applied(
+    dry_run: bool = typer.Option(True, "--dry-run/--apply", help="Preview without changes (default) or apply."),
+):
+    """Retroactively infer applied decisions for ended sessions with retrieval events."""
+    from ..core.project import find_git_root, get_project
+    from ..db import get_db
+    from ..core.auto_apply import infer_applied_decisions
+
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    project = get_project(repo_path)
+    if not project:
+        console.print("[yellow]Not initialized. Run 'ec init'.[/yellow]")
+        raise typer.Exit(1)
+
+    conn = get_db(repo_path)
+    try:
+        session_ids = [
+            r[0]
+            for r in conn.execute(
+                """
+                SELECT DISTINCT s.id
+                FROM sessions s
+                JOIN retrieval_events re ON re.session_id = s.id
+                JOIN retrieval_selections rs ON rs.retrieval_event_id = re.id
+                                             AND rs.result_type = 'decision'
+                WHERE s.ended_at IS NOT NULL
+                """
+            ).fetchall()
+        ]
+
+        if not session_ids:
+            console.print("[dim]No eligible sessions found.[/dim]")
+            return
+
+        total_applied = 0
+        sessions_with_applies = 0
+
+        for sid in session_ids:
+            result = infer_applied_decisions(conn, sid, dry_run=dry_run, repo_path=repo_path)
+            if result["applied_count"] > 0:
+                sessions_with_applies += 1
+                total_applied += result["applied_count"]
+
+        mode = "Dry run" if dry_run else "Applied"
+        console.print(
+            f"[bold]{mode}: {total_applied} applications across "
+            f"{sessions_with_applies}/{len(session_ids)} sessions[/bold]"
+        )
+        if dry_run:
+            console.print("[dim]Use --apply to commit changes.[/dim]")
+    finally:
+        conn.close()
+
+
 def register(app: typer.Typer) -> None:
     app.add_typer(session_app, name="session")

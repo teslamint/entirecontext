@@ -33,7 +33,7 @@ That foundation is useful, but it is broader than the product wedge. The next ph
 
 **Target users (through v1.0):** individual developers (1) + agent frameworks via MCP (3). Team-scoped features are deferred to v1.x+.
 
-With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61.
+With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61. v0.8.1 corrected measurement infrastructure (codex session auto-close, rate normalization, verdict accuracy baseline). v0.9.0 automates the weakest dimension (intervene=5) with SessionEnd auto-apply inference, backfill tooling, and Signal C activation.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -220,11 +220,15 @@ Follows the v0.8.0 retro lesson: "측정 인프라가 측정 대상보다 먼저
 
 ## v0.9.0 — Intervene Automation
 
-Theme: automate the weakest maturity dimension (intervene=5), activate deferred signal depth, and tune assessment quality — all measured against v0.8.1's corrected baseline.
+Theme: automate the weakest maturity dimension (intervene=5), activate deferred signal depth, and fix measurement gaps — all measured against v0.8.1's corrected baseline.
 
-- [ ] **SessionEnd automatic apply inference** — on SessionEnd, check intersection of surfaced decision-linked files and session-modified files; auto-record `context_application` for matches. Inverse of `_maybe_infer_ignored_decisions`.
-- [ ] **Rule-based verdict mapping tuning** — adjust `expand`/`narrow`/`neutral` commit-type mapping based on v0.8.1 accuracy baseline.
-- [ ] **Signal C default ON** — enable `[decisions] auto_embed = true` by default; implement 2-pass async architecture (background ranking → next prompt's PDI, SessionStart pre-warm).
+- [x] **SessionEnd auto-apply inference** — on SessionEnd, check intersection of surfaced decision-linked files and session-modified files; auto-record `context_application` + `accepted` outcome for matches. Inverse of `_maybe_infer_ignored_decisions`. Config: `decisions.infer_applied_on_session_end` (default true).
+- [x] **Auto-apply backfill** — `ec session backfill-applied` retroactively infers applied decisions for historical sessions. Options: `--dry-run` / `--apply`.
+- [x] **search_to_selection_rate DISTINCT fix** — formula changed from `total_selections / total_events` to `DISTINCT events with ≥1 selection / total_events`. Now a proper [0,1] fraction.
+- [x] **Signal C default ON** — `[decisions] auto_embed` flipped to `true` by default. Graceful no-op without `entirecontext[semantic]`.
+- [x] **Codex stale cleanup trigger expansion** — `close_stale_sessions()` now also triggered on SessionEnd, not just codex notify ingestion.
+- [x] **Duplicate notify regression test** — guards 150faab auto-close accuracy invariant.
+- [ ] **Rule-based verdict mapping tuning** — deferred to n≥30 enriched assessments (current: n=10).
 
 ## v1.0 — Loop Completes Autonomously
 

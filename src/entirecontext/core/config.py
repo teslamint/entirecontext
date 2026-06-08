@@ -92,6 +92,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         ],
         "extract_sources": ["session", "checkpoint", "assessment"],
         "infer_ignored_on_session_end": False,
+        "infer_applied_on_session_end": True,
         "ignored_inference_min_turn_gap": 2,
         "candidate_min_confidence": 0.35,
         "noise_gate_min_turns_with_files": 3,
@@ -123,7 +124,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "outcome_feedback_lookback_days": 60,
             "contradicted_penalty": 0.15,
         },
-        "auto_embed": False,
+        "auto_embed": True,
         "injection": {
             "inject_on_user_prompt": True,
             "top_k": 5,

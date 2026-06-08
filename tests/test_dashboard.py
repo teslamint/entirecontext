@@ -340,6 +340,72 @@ class TestGetDashboardStats:
         # Old session should NOT appear in numerator despite recent retrieval event
         assert stats["telemetry"]["rates"]["retrieval_assisted_session_rate"] == 0.0
 
+    def test_search_to_selection_rate_uses_distinct_events(self, ec_repo, ec_db):
+        """Rate = DISTINCT events with >=1 selection / total events, so max 1.0."""
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+
+        project = get_project(str(ec_repo))
+        s1 = create_session(ec_db, project["id"], session_id="dist-s1")
+        ec_db.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (s1["id"],))
+        ec_db.commit()
+
+        # Event 1: 3 selections
+        ec_db.execute(
+            "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, created_at)"
+            " VALUES ('dist-re1', ?, 'hook', 'regex', 'turn', 'q1', datetime('now'))",
+            (s1["id"],),
+        )
+        for i in range(3):
+            ec_db.execute(
+                "INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, result_type, result_id, rank, created_at)"
+                f" VALUES ('dist-rs{i}', 'dist-re1', ?, 'turn', 'turn-{i}', {i + 1}, datetime('now'))",
+                (s1["id"],),
+            )
+
+        # Event 2: 0 selections
+        ec_db.execute(
+            "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, created_at)"
+            " VALUES ('dist-re2', ?, 'hook', 'regex', 'turn', 'q2', datetime('now'))",
+            (s1["id"],),
+        )
+        ec_db.commit()
+
+        stats = get_dashboard_stats(ec_db)
+        rate = stats["telemetry"]["rates"]["search_to_selection_rate"]
+        # 1 DISTINCT event with selection / 2 total events = 0.5, NOT 3/2 = 1.5
+        assert rate == 0.5
+
+    def test_all_rate_metrics_in_valid_range(self, ec_repo, ec_db):
+        """All _rate metrics must stay in [0, 1]."""
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+
+        project = get_project(str(ec_repo))
+        s1 = create_session(ec_db, project["id"], session_id="guard-s1")
+        ec_db.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (s1["id"],))
+        ec_db.commit()
+
+        # 1 event with 10 selections
+        ec_db.execute(
+            "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, created_at)"
+            " VALUES ('guard-re1', ?, 'hook', 'regex', 'turn', 'q', datetime('now'))",
+            (s1["id"],),
+        )
+        for i in range(10):
+            ec_db.execute(
+                "INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, result_type, result_id, rank, created_at)"
+                f" VALUES ('guard-rs{i}', 'guard-re1', ?, 'turn', 'turn-{i}', {i + 1}, datetime('now'))",
+                (s1["id"],),
+            )
+        ec_db.commit()
+
+        stats = get_dashboard_stats(ec_db)
+        rates = stats["telemetry"]["rates"]
+        for key, value in rates.items():
+            if key.endswith("_rate"):
+                assert 0.0 <= value <= 1.0, f"{key} = {value} is outside [0, 1]"
+
     def test_retrieval_rate_ignores_active_session_retrieval(self, ec_repo, ec_db):
         from uuid import uuid4
 
