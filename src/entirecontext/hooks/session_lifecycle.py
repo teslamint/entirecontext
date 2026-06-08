@@ -286,8 +286,50 @@ def on_session_end(data: dict[str, Any]) -> None:
     _maybe_trigger_auto_embed(repo_path)
     _maybe_check_stale_decisions(repo_path)
     _maybe_extract_decisions(repo_path, session_id)
+    _maybe_infer_applied_decisions(repo_path, session_id)
     _maybe_infer_ignored_decisions(repo_path, session_id)
+    _maybe_close_stale_codex_sessions(repo_path)
     _maybe_emit_aar(repo_path, session_id)
+
+
+def _maybe_infer_applied_decisions(repo_path: str, session_id: str) -> None:
+    """Infer 'accepted' outcome for decisions whose files were modified. Config-gated."""
+    try:
+        from ..core.config import load_config
+
+        config = load_config(repo_path)
+        decisions_config = config.get("decisions", {})
+        if not decisions_config.get("infer_applied_on_session_end", True):
+            return
+
+        from ..core.auto_apply import infer_applied_decisions
+        from ..db import get_db
+
+        conn = get_db(repo_path)
+        try:
+            infer_applied_decisions(conn, session_id)
+        finally:
+            conn.close()
+    except Exception as exc:
+        _record_hook_warning(repo_path, "infer_applied_decisions", exc)
+
+
+def _maybe_close_stale_codex_sessions(repo_path: str) -> None:
+    """Close stale codex sessions on SessionEnd. Never crashes the hook."""
+    try:
+        from ..core.config import load_config
+        from ..core.session import close_stale_sessions
+        from ..db import get_db
+
+        config = load_config(repo_path)
+        idle_minutes = config["capture"]["codex_session_idle_minutes"]
+        conn = get_db(repo_path)
+        try:
+            close_stale_sessions(conn, idle_minutes=idle_minutes, session_type="codex")
+        finally:
+            conn.close()
+    except Exception as exc:
+        _record_hook_warning(repo_path, "close_stale_codex_sessions", exc)
 
 
 def _maybe_infer_ignored_decisions(repo_path: str, session_id: str) -> None:
