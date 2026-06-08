@@ -11,6 +11,12 @@ from .decisions import record_decision_outcome
 from .telemetry import record_context_application
 
 
+def _normalize_file_path(p: str) -> str:
+    """Normalize slashes and strip leading './' for consistent path comparison."""
+    p = p.replace("\\", "/")
+    return p[2:] if p.startswith("./") else p
+
+
 def _collect_session_modified_files(conn: sqlite3.Connection, session_id: str) -> set[str]:
     """Parse turns.files_touched (JSON array) for the session. Return set of file paths."""
     rows = conn.execute(
@@ -31,7 +37,7 @@ def _collect_session_modified_files(conn: sqlite3.Connection, session_id: str) -
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
-                result.update(str(f) for f in parsed if f)
+                result.update(_normalize_file_path(str(f)) for f in parsed if f)
         except (json.JSONDecodeError, TypeError):
             pass
     return result
@@ -82,7 +88,7 @@ def _detect_overlapping_decisions(conn: sqlite3.Connection, session_id: str) -> 
             (decision_id,),
         ).fetchall()
 
-        overlap = {r["file_path"] for r in decision_files} & modified_files
+        overlap = {_normalize_file_path(r["file_path"]) for r in decision_files} & modified_files
         if not overlap:
             continue
 
@@ -113,13 +119,17 @@ def infer_applied_decisions(conn: sqlite3.Connection, session_id: str, *, dry_ru
     applied: list[dict[str, Any]] = []
     for match in matches:
         note = f"auto: session_end file_overlap ({', '.join(match['overlap_files'][:3])})"
+        infer_session = session_id
+        infer_turn = match["turn_id"]
+        if infer_session and not infer_turn:
+            infer_session = None
         with transaction(conn):
             record_context_application(
                 conn,
                 application_type="decision_change",
                 selection_id=match["selection_id"],
-                session_id=session_id,
-                turn_id=match["turn_id"],
+                session_id=infer_session,
+                turn_id=infer_turn,
                 note=note,
             )
             record_decision_outcome(
@@ -127,8 +137,8 @@ def infer_applied_decisions(conn: sqlite3.Connection, session_id: str, *, dry_ru
                 match["decision_id"],
                 outcome_type="accepted",
                 retrieval_selection_id=match["selection_id"],
-                session_id=session_id,
-                turn_id=match["turn_id"],
+                session_id=infer_session,
+                turn_id=infer_turn,
                 note=note,
             )
         applied.append(match)

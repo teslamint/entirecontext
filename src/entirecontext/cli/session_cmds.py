@@ -568,11 +568,6 @@ def session_backfill_applied(
                 JOIN retrieval_selections rs ON rs.retrieval_event_id = re.id
                                              AND rs.result_type = 'decision'
                 WHERE s.ended_at IS NOT NULL
-                  AND NOT EXISTS (
-                      SELECT 1 FROM context_applications ca
-                      WHERE ca.session_id = s.id
-                        AND ca.note LIKE 'auto: session_end file_overlap%'
-                  )
                 """
             ).fetchall()
         ]

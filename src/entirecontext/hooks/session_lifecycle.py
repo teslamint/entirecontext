@@ -322,7 +322,7 @@ def _maybe_close_stale_codex_sessions(repo_path: str) -> None:
         from ..db import get_db
 
         config = load_config(repo_path)
-        idle_minutes = config["capture"]["codex_session_idle_minutes"]
+        idle_minutes = config.get("capture", {}).get("codex_session_idle_minutes", 60)
         conn = get_db(repo_path)
         try:
             close_stale_sessions(conn, idle_minutes=idle_minutes, session_type="codex")
