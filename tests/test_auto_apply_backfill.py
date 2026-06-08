@@ -28,6 +28,7 @@ def _seed_eligible_session(conn):
         turn_number=1,
         user_message="implement feature X",
         files_touched=json.dumps(["src/foo.py"]),
+        tools_used=json.dumps(["Edit"]),
     )
 
     conn.execute(

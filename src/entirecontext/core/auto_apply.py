@@ -11,6 +11,8 @@ from .context import transaction
 from .decisions import record_decision_outcome
 from .telemetry import record_context_application
 
+_MUTATING_TOOLS = frozenset({"Edit", "Write", "NotebookEdit", "MultiEdit"})
+
 
 def _normalize_file_path(p: str, repo_root: str | None = None) -> str:
     """Normalize to relative path: strip repo root prefix, backslashes, and leading './'."""
@@ -26,11 +28,15 @@ def _normalize_file_path(p: str, repo_root: str | None = None) -> str:
 
 def _collect_session_modified_files(
     conn: sqlite3.Connection, session_id: str, repo_path: str | None = None
-) -> set[str]:
-    """Parse turns.files_touched (JSON array) for the session. Return set of relative file paths."""
+) -> dict[str, set[int]]:
+    """Return {relative_file_path: set_of_mutating_turn_numbers}.
+
+    Only includes files from turns where a mutating tool (Edit/Write/NotebookEdit)
+    was used, filtering out pure-read turns.
+    """
     rows = conn.execute(
         """
-        SELECT files_touched FROM turns
+        SELECT files_touched, tools_used, turn_number FROM turns
         WHERE session_id = ?
           AND files_touched IS NOT NULL
           AND TRIM(files_touched) NOT IN ('', '[]')
@@ -42,15 +48,24 @@ def _collect_session_modified_files(
     if repo_path:
         repo_root = os.path.realpath(repo_path)
 
-    result: set[str] = set()
+    result: dict[str, set[int]] = {}
     for row in rows:
+        tools_raw = row["tools_used"]
+        tools = set(json.loads(tools_raw)) if tools_raw else set()
+        if not (tools & _MUTATING_TOOLS):
+            continue
+
+        turn_num = row["turn_number"] or 0
         raw = row["files_touched"]
         if not raw:
             continue
         try:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
-                result.update(_normalize_file_path(str(f), repo_root) for f in parsed if f)
+                for f in parsed:
+                    if f:
+                        path = _normalize_file_path(str(f), repo_root)
+                        result.setdefault(path, set()).add(turn_num)
         except (json.JSONDecodeError, TypeError):
             pass
     return result
@@ -63,8 +78,8 @@ def _detect_overlapping_decisions(
 
     Query retrieval_selections where result_type='decision',
     no existing outcome in this session, and decision_files overlap with
-    modified files. Deduplicate by decision_id (first selection wins by
-    turn_number then created_at).
+    files modified AT OR AFTER the decision was surfaced.
+    Deduplicate by decision_id (first selection wins by turn_number then created_at).
     """
     modified_files = _collect_session_modified_files(conn, session_id, repo_path)
     if not modified_files:
@@ -101,8 +116,14 @@ def _detect_overlapping_decisions(
             "SELECT file_path FROM decision_files WHERE decision_id = ?",
             (decision_id,),
         ).fetchall()
+        decision_paths = {_normalize_file_path(r["file_path"]) for r in decision_files}
 
-        overlap = {_normalize_file_path(r["file_path"]) for r in decision_files} & modified_files
+        surfaced_turn = row["turn_number"] or 0
+        overlap = {
+            path
+            for path in decision_paths
+            if path in modified_files and any(t >= surfaced_turn for t in modified_files[path])
+        }
         if not overlap:
             continue
 
