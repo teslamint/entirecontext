@@ -1,0 +1,12 @@
+{
+  "id": "94080527-2455-4f6a-8564-164c5cf83e4c",
+  "session_id": "384541db-4805-4320-8edb-113f6590d595",
+  "git_commit_hash": "ffb3d092895aff16fa0df1a910b954f14743bdc6",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/cli/hook_cmds.py |  39 ++++++++++++++++++++++++++++++++-------\n tests/test_hook_cmds.py            | 138 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++-\n 2 files changed, 169 insertions(+), 8 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-02 03:20:32",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

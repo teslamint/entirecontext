@@ -1,0 +1,12 @@
+{
+  "id": "1d4ee854-21b3-401c-bac9-17e42ea19149",
+  "session_id": "5562923b-ad16-417e-95ad-920c3097e95e",
+  "git_commit_hash": "cdeb1cce855ee251c95475676e52aa4a1eb2ef76",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".../core/decision_prompt_surfacing.py              |  3 +\n src/entirecontext/hooks/handler.py                 | 68 ++++++++++++++--------\n src/entirecontext/hooks/turn_capture.py            | 15 ++++-\n tests/test_pdi_handler.py                          | 45 ++++++++++++++\n tests/test_pdi_optimizer.py                        |  7 +++\n 5 files changed, 112 insertions(+), 26 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-05-22 03:03:05",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

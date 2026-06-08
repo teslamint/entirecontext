@@ -1,0 +1,12 @@
+{
+  "id": "ec311e60-00f0-431e-9405-7adbc45be2b1",
+  "session_id": "52799f39-cec0-4ac8-a989-bff8e6e8b380",
+  "git_commit_hash": "090fb8cfa4de20fe65533d36ea315ff13cfd79f5",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": null,
+  "agent_state": null,
+  "created_at": "2026-05-20 09:18:22",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

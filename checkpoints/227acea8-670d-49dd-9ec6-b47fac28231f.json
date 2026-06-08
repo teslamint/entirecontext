@@ -1,0 +1,12 @@
+{
+  "id": "227acea8-670d-49dd-9ec6-b47fac28231f",
+  "session_id": "7e532f69-62e6-48f4-a17d-abf2dffb7b80",
+  "git_commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".github/tidy-pilot/assess_pr.py                    |  189 +-\n CHANGELOG.md                                       |   15 +\n CLAUDE.md                                          |    2 +-\n LESSONS.md                                         |   84 +-\n README.md                                          |    2 +-\n ROADMAP.md                                         |   61 +-\n docs/brainstorms/v0-6-0-roadmap-plan.md            |  105 --\n .../2026-04-27-product-roadmap-ideation.md         |  112 --\n pyproject.toml                                     |    3 +-\n src/entirecontext/__init__.py                      |    2 +-\n src/entirecontext/cli/decisions_cmds.py            |    4 +-\n src/entirecontext/core/decision_candidates.py      |   11 +\n src/entirecontext/core/decision_extraction.py      |   24 +-\n src/entirecontext/core/decisions.py                |   27 +-\n src/entirecontext/db/migrations/__init__.py        |    2 +-\n src/entirecontext/db/migrations/v014.py            |   57 +\n src/entirecontext/db/schema.py                     |    4 +-\n src/entirecontext/hooks/decision_hooks.py          |    4 +-\n src/entirecontext/mcp/tools/decisions.py           |    2 +-\n tests/conftest.py                                  |    2 +\n tests/conftest_hypothesis.py                       |    7 +\n tests/test_confirm_commit_link.py                  |  176 ++\n tests/test_db_schema.py                            |   84 +\n tests/test_decision_extraction.py                  |   51 +-\n tests/test_decisions_cli.py                        |   28 +\n tests/test_decisions_core.py                       |  122 ++\n tests/test_mcp.py                                  |    9 +\n uv.lock                                            | 1822 ++++++++++----------\n 28 files changed, 1675 insertions(+), 1336 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-05-18 16:21:56",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

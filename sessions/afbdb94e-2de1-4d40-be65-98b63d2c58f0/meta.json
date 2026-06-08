@@ -1,0 +1,10 @@
+{
+  "id": "afbdb94e-2de1-4d40-be65-98b63d2c58f0",
+  "project_id": "df50aa1f-994c-4261-a8e4-0a7b6dee3498",
+  "session_type": "claude",
+  "started_at": "2026-06-08T00:12:27.482407+00:00",
+  "ended_at": "2026-06-08T00:12:50.596046+00:00",
+  "session_title": "You are a futures analyst grounded in Kent Beck's \"Tidy First?\" philosophy.\nYou evaluate code change",
+  "session_summary": null,
+  "total_turns": 1
+}

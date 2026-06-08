@@ -1,0 +1,12 @@
+{
+  "id": "35b03842-76f4-4cb1-8cef-e050fb1fe7a2",
+  "session_id": "25e85ed4-8ae6-4119-ac26-0e810f1d9790",
+  "git_commit_hash": "6d6ad94deb7987655c89d4459df20e4c47a07cf9",
+  "git_branch": "fix/review-current-worktree",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".github/workflows/tidy-pilot.yml             |   1 +\n .serena/project.yml                          |  95 +++++++++----------\n AGENTS.md                                    |   1 +\n CLAUDE.md                                    |   3 +\n LESSONS.md                                   |  96 ++++++++++++++++++-\n docs/decisions_outcomes.md                   |  55 +++++++++++\n docs/documentation_in_prs_proposal.md        |  30 ++++++\n docs/plans/review-fixes-current-worktree.md  | 137 +++++++++++++++++++++++++++\n docs/tiered_review_policy_proposal.md        |  32 +++++++\n src/entirecontext/cli/decisions_cmds.py      |  25 +++++\n src/entirecontext/cli/project_cmds.py        | 107 +++++++++++++++------\n src/entirecontext/core/decisions.py          |  20 +++-\n src/entirecontext/hooks/session_lifecycle.py |   4 +-\n src/entirecontext/mcp/runtime.py             |  47 ++++++++-\n src/entirecontext/mcp/server.py              |   4 +\n tests/conftest.py                            |   8 ++\n tests/test_decisions_cli.py                  |  15 +++\n tests/test_decisions_core.py                 |  89 ++++++++++++++++-\n tests/test_mcp.py                            |  98 +++++++++++++++++++\n tests/test_project_cmds.py                   |  93 ++++++++++++++++--\n tests/test_session_lifecycle_ordering.py     |  39 ++++++++\n 21 files changed, 897 insertions(+), 102 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-05-19 00:18:21",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "453ed58c-00f3-4066-bd37-6b1d52758634",
+  "session_id": "af44f9ee-7ec9-44e6-9e82-23a096e6f3fc",
+  "git_commit_hash": "4de7a137c27ef79a5f96cf0c955c89cddd5481b0",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "docs/superpowers/plans/2026-06-06-distill-automation.md | 673 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n src/entirecontext/cli/checkpoint_cmds.py                |   8 +++\n src/entirecontext/cli/futures_cmds.py                   |  53 ++++++++++++++\n src/entirecontext/core/async_worker.py                  |   1 +\n src/entirecontext/core/auto_assess.py                   | 207 ++++++++++++++++++++++++++++++++++++++++++++++++++++++\n src/entirecontext/core/checkpoint.py                    |   2 +-\n src/entirecontext/core/config.py                        |   6 +-\n src/entirecontext/core/dashboard.py                     |  12 ++++\n src/entirecontext/core/git_utils.py                     |  18 +++++\n src/entirecontext/hooks/session_lifecycle.py            |  67 +++++++++++++++++-\n tests/test_async_worker.py                              |   8 +++\n tests/test_auto_assess.py                               | 314 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n tests/test_dashboard.py                                 |  17 +++++\n tests/test_distill_automation.py                        | 161 ++++++++++++++++++++++++++++++++++++++++++\n 14 files changed, 1542 insertions(+), 5 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-06 14:34:00",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

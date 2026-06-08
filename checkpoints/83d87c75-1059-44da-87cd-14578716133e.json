@@ -1,0 +1,12 @@
+{
+  "id": "83d87c75-1059-44da-87cd-14578716133e",
+  "session_id": "3e62929f-119d-4985-abe1-73e0d9ca785b",
+  "git_commit_hash": "49fc1ce18c8111ec8e5d4c517a1f95744c7a4ec3",
+  "git_branch": "feat/v0.8.0-distill-automation",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": null,
+  "agent_state": null,
+  "created_at": "2026-06-06 14:10:41",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

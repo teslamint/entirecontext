@@ -1,0 +1,12 @@
+{
+  "id": "a864ae13-0afb-4115-825b-3e5d211e1502",
+  "session_id": "31384984-3d70-4ac1-bfd8-108167548e58",
+  "git_commit_hash": "6d6ad94deb7987655c89d4459df20e4c47a07cf9",
+  "git_branch": "fix/review-current-worktree",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": null,
+  "agent_state": null,
+  "created_at": "2026-05-19 00:10:10",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

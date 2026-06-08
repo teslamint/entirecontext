@@ -1,0 +1,12 @@
+{
+  "id": "899b8c99-7309-4530-9da5-395b35c32a08",
+  "session_id": "37fc63e7-f400-477a-9e64-55a2ae3324e8",
+  "git_commit_hash": "e8c5859f2971c4372588406e42970562c01f624a",
+  "git_branch": "fix/review-current-worktree",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".github/tidy-pilot/assess_pr.py         | 66 +++++++++++++++++++++++----------\n src/entirecontext/cli/project_cmds.py   |  4 ++\n src/entirecontext/hooks/codex_ingest.py | 22 +++++++----\n src/entirecontext/mcp/runtime.py        | 27 ++++++++++----\n tests/test_project_cmds.py              | 19 ++++++++++\n 5 files changed, 103 insertions(+), 35 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-05-19 14:47:10",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

@@ -295,6 +295,261 @@
       "session_id": "8ecb586a-c8ae-4873-acf1-ce6bacdff5b7",
       "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
       "created_at": "2026-05-11 00:41:19"
+    },
+    "374e0f57-19f0-4020-bd52-400178feb222": {
+      "session_id": "5e2f9e1d-14cd-4925-8a3a-c48deabf7757",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-11 02:02:57"
+    },
+    "852dde00-73a2-4c10-9806-bbf05387ebe6": {
+      "session_id": "5e2f9e1d-14cd-4925-8a3a-c48deabf7757",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-11 02:28:55"
+    },
+    "66ca924e-15e0-4c65-a7f2-ac7e9ceb0de0": {
+      "session_id": "58ce3694-2290-41ad-a0cc-1217ec947769",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-11 08:43:38"
+    },
+    "1e0bc28a-0f87-40cf-adf3-4719b893012a": {
+      "session_id": "c11ad550-4fcf-4690-9b9d-3e9263a8483b",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:05:00"
+    },
+    "908efa8a-2584-44a3-b931-c2e647ea703b": {
+      "session_id": "58ce3694-2290-41ad-a0cc-1217ec947769",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:18:49"
+    },
+    "b24e8d7f-9fe8-42c4-8d29-6bae790d696b": {
+      "session_id": "25e85ed4-8ae6-4119-ac26-0e810f1d9790",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:19:11"
+    },
+    "c256dd64-e729-43bb-b39a-7e25435b2c01": {
+      "session_id": "27b66ca0-8bed-4058-b1d1-9b85cd186070",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:19:22"
+    },
+    "149d7587-3147-430c-a0af-be85393bae56": {
+      "session_id": "2c949d5e-61c1-4599-bef6-6048311545cd",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:19:26"
+    },
+    "b32d8408-62cb-4cfb-bedd-10123a0452a2": {
+      "session_id": "0d451b05-3342-493d-806c-ba6ee9561ed2",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:19:37"
+    },
+    "9c47f165-54ec-4bae-b87c-ad1066598d60": {
+      "session_id": "7ebdb57c-f0d4-40ee-85b9-778369d9e3cd",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:20:00"
+    },
+    "08861f59-d6ae-442f-b268-cee22446e5d4": {
+      "session_id": "25e85ed4-8ae6-4119-ac26-0e810f1d9790",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:20:25"
+    },
+    "bcd649b4-9ce6-46fa-9616-2ab63e4b61c3": {
+      "session_id": "56c9c233-4139-46ae-aa8f-93021ccc10c7",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:20:31"
+    },
+    "227acea8-670d-49dd-9ec6-b47fac28231f": {
+      "session_id": "7e532f69-62e6-48f4-a17d-abf2dffb7b80",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:21:56"
+    },
+    "4aeeabc3-2a6f-40cc-93c1-e69f997f1d6a": {
+      "session_id": "7f344d43-d7f3-4c59-86dd-c15aa04500d6",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:22:00"
+    },
+    "4e857063-1ffa-4d0e-bafa-199e6d81a7a8": {
+      "session_id": "abb3f176-0482-42e7-8635-b29bef44e0cd",
+      "commit_hash": "aeaca5838fd5cb56c1eeded6d68a2044f98fd81f",
+      "created_at": "2026-05-18 16:34:41"
+    },
+    "a864ae13-0afb-4115-825b-3e5d211e1502": {
+      "session_id": "31384984-3d70-4ac1-bfd8-108167548e58",
+      "commit_hash": "6d6ad94deb7987655c89d4459df20e4c47a07cf9",
+      "created_at": "2026-05-19 00:10:10"
+    },
+    "0e397be6-7bac-4d3a-b364-e6904225932a": {
+      "session_id": "b4e7068f-8446-438b-a19f-8d8a5b90aa8b",
+      "commit_hash": "6d6ad94deb7987655c89d4459df20e4c47a07cf9",
+      "created_at": "2026-05-19 00:12:39"
+    },
+    "35b03842-76f4-4cb1-8cef-e050fb1fe7a2": {
+      "session_id": "25e85ed4-8ae6-4119-ac26-0e810f1d9790",
+      "commit_hash": "6d6ad94deb7987655c89d4459df20e4c47a07cf9",
+      "created_at": "2026-05-19 00:18:21"
+    },
+    "899b8c99-7309-4530-9da5-395b35c32a08": {
+      "session_id": "37fc63e7-f400-477a-9e64-55a2ae3324e8",
+      "commit_hash": "e8c5859f2971c4372588406e42970562c01f624a",
+      "created_at": "2026-05-19 14:47:10"
+    },
+    "ec311e60-00f0-431e-9405-7adbc45be2b1": {
+      "session_id": "52799f39-cec0-4ac8-a989-bff8e6e8b380",
+      "commit_hash": "090fb8cfa4de20fe65533d36ea315ff13cfd79f5",
+      "created_at": "2026-05-20 09:18:22"
+    },
+    "5c356f89-6930-4d7f-bc81-e67e71ef8ba7": {
+      "session_id": "019e44ad-ee3b-7e32-867b-39af5314e5c1",
+      "commit_hash": "714ba77bdf33bcbb0b0ce70f43718c7471772840",
+      "created_at": "2026-05-20 09:27:59"
+    },
+    "f7d5f3d6-e25c-44bb-acd1-3e09f62cc4df": {
+      "session_id": "d6bd5010-997a-4195-bf61-7fc6f4445bbf",
+      "commit_hash": "714ba77bdf33bcbb0b0ce70f43718c7471772840",
+      "created_at": "2026-05-20 09:30:09"
+    },
+    "f596b2b5-497b-4259-8c64-cf19f0139c10": {
+      "session_id": "52799f39-cec0-4ac8-a989-bff8e6e8b380",
+      "commit_hash": "714ba77bdf33bcbb0b0ce70f43718c7471772840",
+      "created_at": "2026-05-20 09:31:43"
+    },
+    "ae4730dd-2bc2-41ff-b550-efcbfc2aa692": {
+      "session_id": "414f57cb-71d2-4ae6-a144-d294f297b105",
+      "commit_hash": "6819d2598c416a998d93825d37ecf6128cee1be1",
+      "created_at": "2026-05-20 10:00:03"
+    },
+    "0135e250-47b0-44ee-a2ab-0292ae11265f": {
+      "session_id": "f602df7f-bb53-42e1-87f4-bf619ca70c66",
+      "commit_hash": "6819d2598c416a998d93825d37ecf6128cee1be1",
+      "created_at": "2026-05-20 10:21:04"
+    },
+    "97821a9c-728f-4d38-bf9b-62ae420e8392": {
+      "session_id": "1a1ebd80-b656-4aaa-8199-b7112913ceeb",
+      "commit_hash": "2bd9e0dc9f74977733bf7e0dd4c2f47ee5f175f3",
+      "created_at": "2026-05-20 12:24:24"
+    },
+    "df15e429-33e9-4f15-a9fa-55e79e807025": {
+      "session_id": "36036ab1-8fe8-4db5-b56e-89bee608e3ed",
+      "commit_hash": "2bd9e0dc9f74977733bf7e0dd4c2f47ee5f175f3",
+      "created_at": "2026-05-20 12:24:24"
+    },
+    "a7fe71fc-3256-431d-a4ea-41e8624dd3cb": {
+      "session_id": "9bb34bf5-7024-4a92-ab4c-d14fe490df39",
+      "commit_hash": "6819d2598c416a998d93825d37ecf6128cee1be1",
+      "created_at": "2026-05-20 12:35:03"
+    },
+    "6647431e-5c71-4875-ba35-61d1986b82b3": {
+      "session_id": "9bafe4cb-ec41-45f6-bd86-1bacb36d84bf",
+      "commit_hash": "c035565787e8bee1df47deb900491b55136455ee",
+      "created_at": "2026-05-20 15:28:35"
+    },
+    "db232448-5961-4d52-9608-d9f4ac08d4a9": {
+      "session_id": "4b3a78d4-b760-4ccc-9210-bf8135f491ba",
+      "commit_hash": "c035565787e8bee1df47deb900491b55136455ee",
+      "created_at": "2026-05-20 15:42:16"
+    },
+    "cffb2ba9-a2cd-4652-824b-ed516287633f": {
+      "session_id": "4b3a78d4-b760-4ccc-9210-bf8135f491ba",
+      "commit_hash": "85d68720d45354bb125b264204dc264b8d28b547",
+      "created_at": "2026-05-21 01:49:28"
+    },
+    "1d4ee854-21b3-401c-bac9-17e42ea19149": {
+      "session_id": "5562923b-ad16-417e-95ad-920c3097e95e",
+      "commit_hash": "cdeb1cce855ee251c95475676e52aa4a1eb2ef76",
+      "created_at": "2026-05-22 03:03:05"
+    },
+    "e451b5cc-676e-465f-850f-9dc74c49d366": {
+      "session_id": "5063a533-dc46-44c6-b662-d8711ece650f",
+      "commit_hash": "cdeb1cce855ee251c95475676e52aa4a1eb2ef76",
+      "created_at": "2026-05-22 06:28:40"
+    },
+    "9b1cac95-57ee-4c43-b091-cb0330a0b1f5": {
+      "session_id": "d6bd5010-997a-4195-bf61-7fc6f4445bbf",
+      "commit_hash": "cdeb1cce855ee251c95475676e52aa4a1eb2ef76",
+      "created_at": "2026-05-22 08:41:54"
+    },
+    "71e450da-467d-46f2-9494-dd91a9e2645b": {
+      "session_id": "d6bd5010-997a-4195-bf61-7fc6f4445bbf",
+      "commit_hash": "cdeb1cce855ee251c95475676e52aa4a1eb2ef76",
+      "created_at": "2026-05-22 09:15:40"
+    },
+    "1a148fab-27ef-410f-82a2-e5dfce9b06b2": {
+      "session_id": "5ae50289-7f49-4f50-b8e0-fefdaaef00f6",
+      "commit_hash": "819aead99679351923c0e4c3cab3aa4ce9cfc69f",
+      "created_at": "2026-06-02 01:43:08"
+    },
+    "94080527-2455-4f6a-8564-164c5cf83e4c": {
+      "session_id": "384541db-4805-4320-8edb-113f6590d595",
+      "commit_hash": "ffb3d092895aff16fa0df1a910b954f14743bdc6",
+      "created_at": "2026-06-02 03:20:32"
+    },
+    "ce7a64fe-2c5c-4c1f-80ad-c55f5ae4ecbf": {
+      "session_id": "397d23d4-e649-4fbf-805c-89852b38cd40",
+      "commit_hash": "42f8f7800d4db34b7b49a836af79b312e8763f1e",
+      "created_at": "2026-06-02 06:50:00"
+    },
+    "f32ddb69-225b-4707-a1bb-ef1d71a3dea5": {
+      "session_id": "c6abd6df-f1f9-467b-9c86-09a346d53362",
+      "commit_hash": "42f8f7800d4db34b7b49a836af79b312e8763f1e",
+      "created_at": "2026-06-02 06:53:53"
+    },
+    "a53bb44a-3a35-4862-9a18-4d6fe8af3bf9": {
+      "session_id": "f18db3c4-73aa-4eb0-be9c-1f64eb154acc",
+      "commit_hash": "49fc1ce18c8111ec8e5d4c517a1f95744c7a4ec3",
+      "created_at": "2026-06-06 14:10:11"
+    },
+    "83d87c75-1059-44da-87cd-14578716133e": {
+      "session_id": "3e62929f-119d-4985-abe1-73e0d9ca785b",
+      "commit_hash": "49fc1ce18c8111ec8e5d4c517a1f95744c7a4ec3",
+      "created_at": "2026-06-06 14:10:41"
+    },
+    "453ed58c-00f3-4066-bd37-6b1d52758634": {
+      "session_id": "af44f9ee-7ec9-44e6-9e82-23a096e6f3fc",
+      "commit_hash": "4de7a137c27ef79a5f96cf0c955c89cddd5481b0",
+      "created_at": "2026-06-06 14:34:00"
+    },
+    "56aa1f3d-f373-4544-9915-d67173054ba3": {
+      "session_id": "6d8ddec0-2c26-4869-a725-a1a42d577ccc",
+      "commit_hash": "3eaf49289c571ca14b3fd5c4de24b8c3fa698e1f",
+      "created_at": "2026-06-07 04:04:23"
+    },
+    "1eee05d8-e7c8-4789-b179-24502a74b2a8": {
+      "session_id": "afbdb94e-2de1-4d40-be65-98b63d2c58f0",
+      "commit_hash": "2eb4ef36cad4be5180c6dc8549b3cc6132b9820d",
+      "created_at": "2026-06-08 00:12:50"
+    },
+    "d6a89abf-f686-46f9-8cbb-608268dcfbdb": {
+      "session_id": "11924163-b620-44c0-b537-cbd630f1f087",
+      "commit_hash": "2eb4ef36cad4be5180c6dc8549b3cc6132b9820d",
+      "created_at": "2026-06-08 00:14:37"
+    },
+    "687e49d9-606f-4c83-ba75-53847fbfcec1": {
+      "session_id": "bfd8c6d2-3ac2-4739-bac1-9709689f81b0",
+      "commit_hash": "2eb4ef36cad4be5180c6dc8549b3cc6132b9820d",
+      "created_at": "2026-06-08 00:17:36"
+    },
+    "8af16476-6e9a-4882-a8e2-d1717b8b48b2": {
+      "session_id": "2c0e6147-8054-4163-b9d8-e08658f5420d",
+      "commit_hash": "2eb4ef36cad4be5180c6dc8549b3cc6132b9820d",
+      "created_at": "2026-06-08 00:18:35"
+    },
+    "46d2b146-8f18-4ee7-9dcd-378be51d04bc": {
+      "session_id": "41833add-b0bb-4716-a576-6e00d36a98a9",
+      "commit_hash": "2eb4ef36cad4be5180c6dc8549b3cc6132b9820d",
+      "created_at": "2026-06-08 00:18:52"
+    },
+    "a4845e6e-3840-4127-bace-0843de541e63": {
+      "session_id": "6734de35-250b-4fdd-821e-afa53d47005a",
+      "commit_hash": "2eb4ef36cad4be5180c6dc8549b3cc6132b9820d",
+      "created_at": "2026-06-08 00:19:06"
+    },
+    "045c844e-bad7-47b4-b892-ddba8a370a3a": {
+      "session_id": "b3608ab7-6d73-460e-bf5c-2b8b9210ea93",
+      "commit_hash": "2eb4ef36cad4be5180c6dc8549b3cc6132b9820d",
+      "created_at": "2026-06-08 00:20:25"
+    },
+    "3fba7a42-4954-4b6b-90ef-3a25a888ae0b": {
+      "session_id": "2ae5cbc2-c7c1-4221-ae18-9699779742ea",
+      "commit_hash": "2eb4ef36cad4be5180c6dc8549b3cc6132b9820d",
+      "created_at": "2026-06-08 05:08:07"
     }
   },
   "sessions": {
@@ -1636,7 +1891,7 @@
     "25e85ed4-8ae6-4119-ac26-0e810f1d9790": {
       "session_type": "claude",
       "started_at": "2026-04-28T02:44:20.154762+00:00",
-      "total_turns": 17
+      "total_turns": 19
     },
     "019dd1fa-683e-7f01-b1e0-aa60aa570488": {
       "session_type": "codex",
@@ -1826,8 +2081,1288 @@
     "5e2f9e1d-14cd-4925-8a3a-c48deabf7757": {
       "session_type": "claude",
       "started_at": "2026-05-11T00:41:20.056755+00:00",
+      "total_turns": 4
+    },
+    "58ce3694-2290-41ad-a0cc-1217ec947769": {
+      "session_type": "claude",
+      "started_at": "2026-05-11T02:28:55.713962+00:00",
+      "total_turns": 25
+    },
+    "019e14fa-4b2a-7dd1-82de-ae6482429e4d": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:00:08.106Z",
+      "total_turns": 1
+    },
+    "019e14fc-46fe-7a01-9b59-df2c1a0a19b1": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:02:18.110Z",
+      "total_turns": 1
+    },
+    "019e1500-2611-7310-a5f0-dcdc1816fab9": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:06:31.825Z",
+      "total_turns": 1
+    },
+    "019e1502-15a8-7ea3-bfe1-4ef7261f6ff0": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:08:38.696Z",
+      "total_turns": 1
+    },
+    "019e1505-15dc-72c2-962a-0846bb779d5b": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:11:55.356Z",
+      "total_turns": 1
+    },
+    "019e1506-53cb-73c3-b59f-7b9206cca7bf": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:13:16.747Z",
+      "total_turns": 1
+    },
+    "019e1507-e679-7ca0-90c9-e94461d57471": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:14:59.833Z",
+      "total_turns": 1
+    },
+    "019e150a-9439-7590-b255-1acc91110f7e": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:17:55.385Z",
+      "total_turns": 1
+    },
+    "019e150c-9949-7710-83a0-c9e52fd0a757": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:20:07.753Z",
+      "total_turns": 1
+    },
+    "019e1510-2017-7150-badf-6b1357352028": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:23:58.872Z",
+      "total_turns": 1
+    },
+    "019e1512-8b11-7090-899b-111e99215620": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:26:37.329Z",
+      "total_turns": 1
+    },
+    "019e151c-3e7f-7dd2-b4cb-3a30979624e7": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:37:13.087Z",
+      "total_turns": 1
+    },
+    "019e1527-2a47-7391-8b08-580f82771348": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:49:08.807Z",
+      "total_turns": 1
+    },
+    "019e152b-a3e8-7892-8325-2c2d1dba2f7f": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T03:54:02.088Z",
+      "total_turns": 1
+    },
+    "019e1541-95cf-7ee3-9b29-8c1f4282b982": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T04:18:00.271Z",
+      "total_turns": 1
+    },
+    "019e1542-7823-7d41-9b5c-b63207e819b1": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T04:18:58.211Z",
+      "total_turns": 1
+    },
+    "019e1544-40d7-7a51-bda4-875bb11035c0": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T04:20:55.127Z",
+      "total_turns": 1
+    },
+    "019e1545-4b55-7d10-a418-96b2b4d3e1bb": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T04:22:03.349Z",
+      "total_turns": 1
+    },
+    "019e1551-9671-7b61-8e88-6644be343d53": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T04:35:29.009Z",
+      "total_turns": 1
+    },
+    "019e1554-7bf6-7c93-9e59-553121a45e07": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T04:38:38.838Z",
+      "total_turns": 1
+    },
+    "019e1559-ae83-7ef0-92e5-0cb6b6cdd1c6": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T04:44:19.459Z",
+      "total_turns": 2
+    },
+    "019e1558-cd86-78c1-a185-9b9251aea5be": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T04:43:21.862Z",
+      "total_turns": 1
+    },
+    "019e1585-209b-7951-87a6-188d7fce47ec": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T05:31:46.715Z",
+      "total_turns": 1
+    },
+    "019e15a6-7e96-77f0-89cb-e02c28a7629a": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T06:08:13.462Z",
+      "total_turns": 1
+    },
+    "019e15a7-aabd-74b3-8fa5-8bf5d51cbc4c": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T06:09:30.301Z",
+      "total_turns": 1
+    },
+    "019e15a8-7ce2-7d93-9071-f1d7eec77e37": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T06:10:24.098Z",
+      "total_turns": 1
+    },
+    "019e15b1-d53f-7c60-a583-14ab994069ce": {
+      "session_type": "codex",
+      "started_at": "2026-05-11T06:20:36.543Z",
+      "total_turns": 1
+    },
+    "c11ad550-4fcf-4690-9b9d-3e9263a8483b": {
+      "session_type": "claude",
+      "started_at": "2026-05-18T16:05:00.395672+00:00",
+      "total_turns": 0
+    },
+    "7f344d43-d7f3-4c59-86dd-c15aa04500d6": {
+      "session_type": "claude",
+      "started_at": "2026-05-18T16:21:59.036995+00:00",
+      "total_turns": 0
+    },
+    "abb3f176-0482-42e7-8635-b29bef44e0cd": {
+      "session_type": "claude",
+      "started_at": "2026-05-18T16:22:39.068636+00:00",
+      "total_turns": 2
+    },
+    "019e3be7-13f5-7590-9490-a79c941b8bc0": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:24:20.213Z",
+      "total_turns": 1
+    },
+    "019e3be9-f009-76a2-8891-1100e56723d7": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:27:27.625Z",
+      "total_turns": 1
+    },
+    "019e3be5-eb90-7240-840c-7ad3646cf9b9": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:23:04.336Z",
+      "total_turns": 7
+    },
+    "019e3bf1-aaa4-7f42-9a8b-ec003c107081": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:35:54.148Z",
+      "total_turns": 38
+    },
+    "019e3bf4-2868-7c61-ab06-b350813fb2ad": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:38:37.416Z",
+      "total_turns": 1
+    },
+    "019e3bf2-1623-7633-a3fe-1ba46cfbbda3": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:36:21.667Z",
+      "total_turns": 1
+    },
+    "019e3bf2-0b56-7730-8b7c-3c669497d9bb": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:36:18.903Z",
+      "total_turns": 1
+    },
+    "019e3bf2-0164-7dd1-907b-f5ab9837be7e": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:36:16.356Z",
+      "total_turns": 1
+    },
+    "019e3bf6-d8d6-7e70-a113-0550e94e5a91": {
+      "session_type": "codex",
+      "started_at": "2026-05-18T16:41:33.654Z",
+      "total_turns": 8
+    },
+    "31384984-3d70-4ac1-bfd8-108167548e58": {
+      "session_type": "claude",
+      "started_at": "2026-05-19T00:10:10.285785+00:00",
+      "total_turns": 0
+    },
+    "b4e7068f-8446-438b-a19f-8d8a5b90aa8b": {
+      "session_type": "claude",
+      "started_at": "2026-05-19T00:12:18.580002+00:00",
+      "total_turns": 0
+    },
+    "019e3d97-d3d6-7fc1-8f0e-5ec4331ca444": {
+      "session_type": "codex",
+      "started_at": "2026-05-19T00:17:00.886Z",
+      "total_turns": 1
+    },
+    "37fc63e7-f400-477a-9e64-55a2ae3324e8": {
+      "session_type": "claude",
+      "started_at": "2026-05-19T00:18:21.373835+00:00",
+      "total_turns": 1
+    },
+    "019e3d9b-c019-75c2-84f2-605b5fce72ae": {
+      "session_type": "codex",
+      "started_at": "2026-05-19T00:21:17.977Z",
+      "total_turns": 36
+    },
+    "019e3d99-cb4a-7f90-9360-4c68e2da97b3": {
+      "session_type": "codex",
+      "started_at": "2026-05-19T00:19:09.770Z",
+      "total_turns": 1
+    },
+    "019e3db6-7a7a-7713-9e2d-b32e03d9820b": {
+      "session_type": "codex",
+      "started_at": "2026-05-19T00:50:29.626Z",
+      "total_turns": 1
+    },
+    "019e409a-09ee-71a2-a7a9-864cbd44a3cc": {
+      "session_type": "codex",
+      "started_at": "2026-05-19T14:18:17.454Z",
+      "total_turns": 1
+    },
+    "c6abd6df-f1f9-467b-9c86-09a346d53362": {
+      "session_type": "claude",
+      "started_at": "2026-05-19T14:48:10.214537+00:00",
+      "total_turns": 0
+    },
+    "52799f39-cec0-4ac8-a989-bff8e6e8b380": {
+      "session_type": "claude",
+      "started_at": "2026-05-19T14:49:24.010132+00:00",
       "total_turns": 3
+    },
+    "019e40c0-be9f-79c2-aacf-24514929dbce": {
+      "session_type": "codex",
+      "started_at": "2026-05-19T15:00:34.079Z",
+      "total_turns": 1
+    },
+    "019e44ad-ee3b-7e32-867b-39af5314e5c1": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T09:18:29.947Z",
+      "total_turns": 1
+    },
+    "d6bd5010-997a-4195-bf61-7fc6f4445bbf": {
+      "session_type": "claude",
+      "started_at": "2026-05-20T09:29:06.608195+00:00",
+      "total_turns": 1
+    },
+    "019e44b9-8822-7b03-a6d0-58d7ac9421e6": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T09:31:10.242Z",
+      "total_turns": 1
+    },
+    "414f57cb-71d2-4ae6-a144-d294f297b105": {
+      "session_type": "claude",
+      "started_at": "2026-05-20T09:31:43.504219+00:00",
+      "total_turns": 2
+    },
+    "019e44bd-b94d-7301-bfa2-210ce09c38c7": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T09:35:44.973Z",
+      "total_turns": 1
+    },
+    "019e44c6-d5eb-7a52-acf1-6522c63a9200": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T09:45:42.123Z",
+      "total_turns": 1
+    },
+    "019e44c8-98b1-7ba2-9327-4ea85d7a82a7": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T09:47:37.521Z",
+      "total_turns": 1
+    },
+    "f602df7f-bb53-42e1-87f4-bf619ca70c66": {
+      "session_type": "claude",
+      "started_at": "2026-05-20T10:00:03.422438+00:00",
+      "total_turns": 1
+    },
+    "9bafe4cb-ec41-45f6-bd86-1bacb36d84bf": {
+      "session_type": "claude",
+      "started_at": "2026-05-20T10:21:04.542509+00:00",
+      "total_turns": 3
+    },
+    "1a1ebd80-b656-4aaa-8199-b7112913ceeb": {
+      "session_type": "claude",
+      "started_at": "2026-05-20T12:23:49.933666+00:00",
+      "total_turns": 1
+    },
+    "36036ab1-8fe8-4db5-b56e-89bee608e3ed": {
+      "session_type": "claude",
+      "started_at": "2026-05-20T12:24:15.991983+00:00",
+      "total_turns": 0
+    },
+    "019e4558-5bb7-7dd1-be61-097586c9d9d4": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T12:24:39.095Z",
+      "total_turns": 1
+    },
+    "019e455f-0f33-7353-96b1-d7f85d2d908d": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T12:31:58.259Z",
+      "total_turns": 1
+    },
+    "9bb34bf5-7024-4a92-ab4c-d14fe490df39": {
+      "session_type": "claude",
+      "started_at": "2026-05-20T12:35:03.412804+00:00",
+      "total_turns": 0
+    },
+    "019e456e-e116-7c01-bd9e-abb8b1236111": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T12:49:15.030Z",
+      "total_turns": 1
+    },
+    "019e45ff-141b-7781-8490-988a748c5046": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T15:26:45.275Z",
+      "total_turns": 1
+    },
+    "4b3a78d4-b760-4ccc-9210-bf8135f491ba": {
+      "session_type": "claude",
+      "started_at": "2026-05-20T15:28:35.667426+00:00",
+      "total_turns": 8
+    },
+    "019e460d-c1ea-7093-a6ce-b420ff3bbc5a": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T15:42:47.274Z",
+      "total_turns": 1
+    },
+    "019e4613-5ee7-70f3-8056-5b2c676072dc": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T15:48:55.143Z",
+      "total_turns": 1
+    },
+    "019e4615-46f1-7620-81fa-3477ca8e7634": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T15:51:00.081Z",
+      "total_turns": 1
+    },
+    "019e4629-b7d4-7f52-b4cb-8c390b8b4ac5": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T16:13:19.700Z",
+      "total_turns": 1
+    },
+    "019e462c-7ccc-7d40-9f98-fb530a9f9568": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T16:16:21.196Z",
+      "total_turns": 1
+    },
+    "019e462e-d42a-7ab0-9096-d9579fc475a1": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T16:18:54.634Z",
+      "total_turns": 1
+    },
+    "019e4631-e7bc-76d1-b2ac-1b4852ea8666": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T16:22:16.252Z",
+      "total_turns": 1
+    },
+    "019e4633-72d0-7452-85c4-243314e3613c": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T16:23:57.392Z",
+      "total_turns": 1
+    },
+    "019e4699-0b0c-7a10-87f0-1387be173e90": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T18:14:55.500Z",
+      "total_turns": 1
+    },
+    "019e46c7-883b-74a3-b537-f0baac3cc060": {
+      "session_type": "codex",
+      "started_at": "2026-05-20T19:05:42.203Z",
+      "total_turns": 1
+    },
+    "5562923b-ad16-417e-95ad-920c3097e95e": {
+      "session_type": "claude",
+      "started_at": "2026-05-21T01:49:28.173920+00:00",
+      "total_turns": 1
+    },
+    "019e483f-2991-7010-b4cc-e584dd52e571": {
+      "session_type": "codex",
+      "started_at": "2026-05-21T01:55:59.505Z",
+      "total_turns": 1
+    },
+    "5063a533-dc46-44c6-b662-d8711ece650f": {
+      "session_type": "claude",
+      "started_at": "2026-05-22T06:28:40.079426+00:00",
+      "total_turns": 0
+    },
+    "5ae50289-7f49-4f50-b8e0-fefdaaef00f6": {
+      "session_type": "claude",
+      "started_at": "2026-06-01T23:46:36.007075+00:00",
+      "total_turns": 25
+    },
+    "019e8596-7ffa-7250-bfbe-4dcf000b008a": {
+      "session_type": "codex",
+      "started_at": "2026-06-01T23:48:13.492Z",
+      "total_turns": 1
+    },
+    "019e8597-5ace-7f62-8d9b-0d7fe28243e1": {
+      "session_type": "codex",
+      "started_at": "2026-06-01T23:49:09.518Z",
+      "total_turns": 1
+    },
+    "019e8598-2e15-7030-910e-3252117e936f": {
+      "session_type": "codex",
+      "started_at": "2026-06-01T23:50:03.623Z",
+      "total_turns": 1
+    },
+    "019e859a-4955-7113-bef7-96507a46f628": {
+      "session_type": "codex",
+      "started_at": "2026-06-01T23:52:21.738Z",
+      "total_turns": 1
+    },
+    "019e859d-0f2f-7040-be11-d6b9750cf678": {
+      "session_type": "codex",
+      "started_at": "2026-06-01T23:55:23.431Z",
+      "total_turns": 1
+    },
+    "019e859e-037b-7d70-ba49-66c974a87683": {
+      "session_type": "codex",
+      "started_at": "2026-06-01T23:56:26.064Z",
+      "total_turns": 1
+    },
+    "019e85a0-05ad-71e2-8e5c-2c9b41951370": {
+      "session_type": "codex",
+      "started_at": "2026-06-01T23:58:37.738Z",
+      "total_turns": 1
+    },
+    "019e85a3-a7c2-7160-a646-b205a671d8a7": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:02:35.607Z",
+      "total_turns": 1
+    },
+    "019e85a4-6c62-7df0-b4b4-c30166d6e41e": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:03:25.950Z",
+      "total_turns": 1
+    },
+    "019e85a5-ee1e-75f3-ad7a-299c68517651": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:05:04.692Z",
+      "total_turns": 1
+    },
+    "019e85b7-0321-7022-861a-88fea86ec815": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:23:44.240Z",
+      "total_turns": 1
+    },
+    "019e85b8-a9c4-7063-b23e-5d20c772d7b5": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:25:32.466Z",
+      "total_turns": 1
+    },
+    "019e85bb-73c2-73d2-abbe-f51dadf4eb43": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:28:35.262Z",
+      "total_turns": 1
+    },
+    "019e85bd-3ce9-7c90-8d6c-c8ee4ed29583": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:30:32.372Z",
+      "total_turns": 1
+    },
+    "019e85bf-30d1-71f2-b17f-ca8b34610596": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:32:40.309Z",
+      "total_turns": 1
+    },
+    "019e85c0-8f5f-7ac3-9cdb-1b3c907112d5": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:34:10.108Z",
+      "total_turns": 1
+    },
+    "019e85c1-b240-76f3-bad3-db0fa67b8be4": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:35:24.441Z",
+      "total_turns": 1
+    },
+    "019e85c4-0604-7573-a8cc-77a842d2ca95": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:37:57.046Z",
+      "total_turns": 1
+    },
+    "019e85c5-59bb-7a62-afc9-1e52b9bc78eb": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:39:24.173Z",
+      "total_turns": 1
+    },
+    "019e85c9-cd74-7c02-b466-bef2f4820263": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:44:15.780Z",
+      "total_turns": 1
+    },
+    "019e85cb-f6f7-7c71-b4a1-906ad6b8fd24": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:46:37.317Z",
+      "total_turns": 1
+    },
+    "019e85cd-6bba-7e50-b896-6a30ecdc0b8d": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:48:12.744Z",
+      "total_turns": 1
+    },
+    "019e85c6-97b6-7173-b264-6b4558c799b8": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:40:45.342Z",
+      "total_turns": 1
+    },
+    "019e85d6-27aa-7eb0-abbe-3763c70793c3": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T00:57:45.213Z",
+      "total_turns": 1
+    },
+    "019e85dc-fae6-73f0-bb9e-7a4dcd8b3be0": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T01:05:12.440Z",
+      "total_turns": 1
+    },
+    "019e85e3-b61c-7fc0-b55d-1e6324591bcd": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T01:12:33.586Z",
+      "total_turns": 1
+    },
+    "019e85ea-fea6-7951-a3d3-2d0bc28b7088": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T01:20:30.919Z",
+      "total_turns": 1
+    },
+    "019e85ee-9c02-7880-8789-fe04ed6ff373": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T01:24:27.861Z",
+      "total_turns": 1
+    },
+    "384541db-4805-4320-8edb-113f6590d595": {
+      "session_type": "claude",
+      "started_at": "2026-06-02T02:12:38.868942+00:00",
+      "total_turns": 3
+    },
+    "019e861f-a80c-79f0-9fb4-2dbf6a4c160c": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T02:18:02.349Z",
+      "total_turns": 1
+    },
+    "019e862b-206b-7d83-b60e-20f8a7d4ca21": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T02:30:33.851Z",
+      "total_turns": 1
+    },
+    "019e8631-3840-7b63-a039-a40a58548c5d": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T02:37:13.174Z",
+      "total_turns": 1
+    },
+    "019e8636-dfb5-7290-96c6-46e7e1c7eec9": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T02:43:23.718Z",
+      "total_turns": 1
+    },
+    "019e863b-400f-70e0-a88b-670c9d88732e": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T02:48:10.524Z",
+      "total_turns": 1
+    },
+    "019e8640-cfb7-75c0-ab5a-bba0b83f8b16": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T02:54:14.981Z",
+      "total_turns": 1
+    },
+    "019e8648-ffb4-7b72-917f-f36e4a6c224e": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T03:03:11.555Z",
+      "total_turns": 1
+    },
+    "019e864d-287c-7790-aad0-4f53d2f78200": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T03:07:44.142Z",
+      "total_turns": 1
+    },
+    "019e8656-9457-7f82-9160-124dd2d3259d": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T03:18:01.587Z",
+      "total_turns": 1
+    },
+    "397d23d4-e649-4fbf-805c-89852b38cd40": {
+      "session_type": "claude",
+      "started_at": "2026-06-02T03:20:32.935702+00:00",
+      "total_turns": 5
+    },
+    "019e8661-bded-7532-b722-36bc1afe5224": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T03:30:13.119Z",
+      "total_turns": 1
+    },
+    "019e866e-d654-7770-898b-3ebdc780029f": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T03:44:31.339Z",
+      "total_turns": 1
+    },
+    "019e8679-70d9-7221-903e-a4c340a1f69f": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T03:56:06.259Z",
+      "total_turns": 1
+    },
+    "019e8682-ca18-77f0-9ae3-b42a3ec2aa28": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:06:18.923Z",
+      "total_turns": 1
+    },
+    "019e8688-0816-7891-a70a-72be83572926": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:12:02.517Z",
+      "total_turns": 1
+    },
+    "019e8692-2ace-7341-9daf-4497d1ee8a89": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:23:06.792Z",
+      "total_turns": 1
+    },
+    "019e8695-e5cf-7810-8c67-5db32d35d342": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:27:11.248Z",
+      "total_turns": 1
+    },
+    "019e8697-75df-7ab1-834d-30b611483224": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:28:53.730Z",
+      "total_turns": 1
+    },
+    "019e86a0-cba4-7391-81ff-32386a57454c": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:39:05.468Z",
+      "total_turns": 1
+    },
+    "019e86a3-42ea-70b1-b9f6-f1aca2601592": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:41:47.096Z",
+      "total_turns": 1
+    },
+    "019e86a4-95d9-74f3-8d45-070a14586eb3": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:43:13.841Z",
+      "total_turns": 1
+    },
+    "019e86a7-2f71-7330-ba55-9a7751873d11": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:46:04.314Z",
+      "total_turns": 1
+    },
+    "019e86a8-a3bc-7a02-8f94-d1077d0a5730": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:47:39.503Z",
+      "total_turns": 1
+    },
+    "019e86ab-80a4-7290-b294-41871d3c6c48": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:50:47.186Z",
+      "total_turns": 1
+    },
+    "019e86ad-8585-7013-80af-fb8d098114b1": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:52:59.510Z",
+      "total_turns": 1
+    },
+    "019e86b0-697c-7e60-bceb-3258ca221366": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:56:08.845Z",
+      "total_turns": 1
+    },
+    "019e86b3-cd11-7910-8d35-c2ef9eddd13b": {
+      "session_type": "codex",
+      "started_at": "2026-06-02T04:59:50.952Z",
+      "total_turns": 1
+    },
+    "af44f9ee-7ec9-44e6-9e82-23a096e6f3fc": {
+      "session_type": "claude",
+      "started_at": "2026-06-06T09:50:47.446582+00:00",
+      "total_turns": 112
+    },
+    "019e9c59-7102-73e0-b1da-cd5b094becff": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T09:52:47.889Z",
+      "total_turns": 1
+    },
+    "019e9c5a-6c37-7611-a343-b57622cd8f44": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T09:53:52.195Z",
+      "total_turns": 1
+    },
+    "019e9c5b-0b62-7f71-89bc-d4d30371da30": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T09:54:32.941Z",
+      "total_turns": 1
+    },
+    "019e9c5b-882c-7e70-ae02-069952cd99cf": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T09:55:04.888Z",
+      "total_turns": 1
+    },
+    "019e9c5c-877d-7362-9ef9-e9987d4853d3": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T09:56:10.249Z",
+      "total_turns": 1
+    },
+    "019e9c5d-0d9d-7a02-b541-5ff740ff7521": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T09:56:44.585Z",
+      "total_turns": 1
+    },
+    "019e9c5d-a324-7022-bd7a-9a6cc20dd59f": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T09:57:22.864Z",
+      "total_turns": 1
+    },
+    "019e9c5f-646c-74c1-9e2a-14dd5ba70a17": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T09:59:17.880Z",
+      "total_turns": 1
+    },
+    "019e9c76-1292-7c23-828d-16a508d6e8df": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:24:04.278Z",
+      "total_turns": 1
+    },
+    "019e9c77-ffb7-7553-8641-5f2d42801cb3": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:26:10.501Z",
+      "total_turns": 1
+    },
+    "019e9c7c-8500-7c82-8e07-9dd475008e00": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:31:06.764Z",
+      "total_turns": 1
+    },
+    "019e9c7d-ab0f-70b1-97e5-41091f3f7328": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:32:22.044Z",
+      "total_turns": 1
+    },
+    "019e9c7f-44b9-7421-8de7-e88988b78e3e": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:34:06.928Z",
+      "total_turns": 1
+    },
+    "019e9c82-fd30-7612-ac24-937f1fa78f59": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:38:10.747Z",
+      "total_turns": 1
+    },
+    "019e9c83-ef6e-7000-a13e-877d1cba9f3c": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:39:12.764Z",
+      "total_turns": 1
+    },
+    "019e9c84-95f4-7103-a259-394131630d15": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:39:55.392Z",
+      "total_turns": 1
+    },
+    "019e9c85-4bbf-7252-b36e-bb28818d29ee": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:40:41.932Z",
+      "total_turns": 1
+    },
+    "019e9c86-4ced-7511-952f-4558aea3db0f": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:41:47.770Z",
+      "total_turns": 1
+    },
+    "019e9c87-2303-7800-b075-03b04cdd343a": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:42:42.576Z",
+      "total_turns": 1
+    },
+    "019e9c87-c281-7890-816f-975a5b0e6252": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:43:23.405Z",
+      "total_turns": 1
+    },
+    "019e9c89-6f1d-7d80-9d9b-65a25317e13e": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:45:13.129Z",
+      "total_turns": 1
+    },
+    "019e9c8b-6e70-7790-8fe8-7dd21926334f": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:47:24.037Z",
+      "total_turns": 1
+    },
+    "019e9c8d-00f7-7bf0-83d7-7250e34c9cc9": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:49:07.076Z",
+      "total_turns": 1
+    },
+    "019e9c8d-ac66-73b2-9154-ba513d85e023": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:49:50.962Z",
+      "total_turns": 1
+    },
+    "019e9c8f-489a-7d42-bdef-83df84dcb8d2": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:51:36.488Z",
+      "total_turns": 1
+    },
+    "019e9c90-d28c-79e2-a178-7adf226d5ede": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:53:17.337Z",
+      "total_turns": 1
+    },
+    "019e9c93-5d6c-7102-84c8-c9d0a969a1cf": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T10:56:03.961Z",
+      "total_turns": 1
+    },
+    "019e9c97-63c0-7de3-b382-4f38e6706399": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:00:27.724Z",
+      "total_turns": 1
+    },
+    "019e9c98-af3d-7893-8b57-6c408df7f79f": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:01:52.586Z",
+      "total_turns": 1
+    },
+    "019e9c99-5097-7da2-990d-3554b086c9c9": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:02:33.891Z",
+      "total_turns": 1
+    },
+    "019e9c9d-6ab1-7973-8a86-864652cd4b0d": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:07:02.719Z",
+      "total_turns": 1
+    },
+    "019e9c9f-b3e5-7380-82db-bc74a6087583": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:09:32.531Z",
+      "total_turns": 1
+    },
+    "019e9ca1-c57d-7c73-9fee-1a03d4caf6d4": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:11:48.115Z",
+      "total_turns": 1
+    },
+    "019e9ca3-a4a8-71b1-af54-1c1b18645437": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:13:50.772Z",
+      "total_turns": 1
+    },
+    "019e9ca4-abcf-7370-9419-037bebcde181": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:14:58.139Z",
+      "total_turns": 1
+    },
+    "019e9ca6-0087-7433-9ce5-1f850113185b": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:16:25.365Z",
+      "total_turns": 1
+    },
+    "019e9ca7-9199-72b1-8567-c42d864ede8d": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:18:08.038Z",
+      "total_turns": 1
+    },
+    "019e9ca8-ead5-7f71-a2b0-3a67188a293d": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:19:36.419Z",
+      "total_turns": 1
+    },
+    "019e9caa-18c2-7a90-a887-95baa353be4b": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:20:53.711Z",
+      "total_turns": 1
+    },
+    "019e9cb8-8c24-7ab3-9cb1-13edc2572fd0": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:36:40.759Z",
+      "total_turns": 1
+    },
+    "019e9cb9-eb9e-77b1-ab10-d95176c86e45": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:38:10.732Z",
+      "total_turns": 1
+    },
+    "019e9cbd-a8f9-7310-8470-b472bfcee863": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:42:15.815Z",
+      "total_turns": 1
+    },
+    "019e9cc5-1b7e-7651-9d59-f289834fd23a": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:50:23.887Z",
+      "total_turns": 1
+    },
+    "019e9cc8-fb62-78c0-abd1-5a329a1fc0e9": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T11:54:37.816Z",
+      "total_turns": 1
+    },
+    "019e9cde-2f3e-7e13-aee5-c4a5dea29cbe": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T12:17:47.341Z",
+      "total_turns": 1
+    },
+    "019e9ce2-b7fa-7c42-aa29-03e9dff55ac4": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T12:22:44.491Z",
+      "total_turns": 1
+    },
+    "019e9cea-8671-7493-af74-49ae6818a904": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T12:31:16.097Z",
+      "total_turns": 1
+    },
+    "019e9cf0-3159-78a0-a8c6-307d0fe5aa07": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T12:37:27.529Z",
+      "total_turns": 1
+    },
+    "019e9cf8-0046-7f71-8363-f8df422fca5b": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T12:45:59.251Z",
+      "total_turns": 1
+    },
+    "019e9cfe-97d7-7180-b157-97679729f2f7": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T12:53:11.267Z",
+      "total_turns": 1
+    },
+    "019e9d09-4a0b-7553-a5a4-f62cfbb2c7de": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:04:52.249Z",
+      "total_turns": 1
+    },
+    "019e9d11-dccb-7b01-b042-c1e6a5b46480": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:14:14.102Z",
+      "total_turns": 1
+    },
+    "019e9d22-463f-7931-9185-65bc0cce13a8": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:32:09.684Z",
+      "total_turns": 1
+    },
+    "019e9d29-9a42-7551-b8b1-4cd6a16779fd": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:40:09.940Z",
+      "total_turns": 1
+    },
+    "019e9d2a-4e29-78f2-bced-41693655d62b": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:40:55.988Z",
+      "total_turns": 1
+    },
+    "019e9d2b-2abc-76e3-b7e5-4d05df052be7": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:41:52.455Z",
+      "total_turns": 1
+    },
+    "019e9d2b-e9c8-7041-a560-20f0719d10ea": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:42:41.363Z",
+      "total_turns": 1
+    },
+    "019e9d2c-a02f-75d3-be90-8df31f1fd286": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:43:28.058Z",
+      "total_turns": 1
+    },
+    "019e9d35-2b81-7cc0-b57c-7961cf625445": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:52:48.013Z",
+      "total_turns": 1
+    },
+    "019e9d36-0279-7bc1-b9d1-be8d67e36452": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:53:43.047Z",
+      "total_turns": 1
+    },
+    "019e9d3a-b5ca-7900-bd80-bb0dfe66eeaa": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:58:51.099Z",
+      "total_turns": 1
+    },
+    "019e9d3b-9fc8-7992-a2d2-693ec12b2c5b": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T13:59:50.997Z",
+      "total_turns": 1
+    },
+    "019e9d3e-2478-7403-a4a6-347c5c66f5d1": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:02:36.042Z",
+      "total_turns": 1
+    },
+    "f18db3c4-73aa-4eb0-be9c-1f64eb154acc": {
+      "session_type": "claude",
+      "started_at": "2026-06-06T14:09:48.560670+00:00",
+      "total_turns": 1
+    },
+    "3e62929f-119d-4985-abe1-73e0d9ca785b": {
+      "session_type": "claude",
+      "started_at": "2026-06-06T14:10:21.198046+00:00",
+      "total_turns": 1
+    },
+    "019e9d46-5bfc-7590-8af8-8d91334d26c8": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:11:34.536Z",
+      "total_turns": 1
+    },
+    "019e9d4a-dfab-7643-8715-9d9ac48dba81": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:16:30.390Z",
+      "total_turns": 1
+    },
+    "019e9d4f-e497-75e2-9b79-54c00a73a25c": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:21:59.331Z",
+      "total_turns": 1
+    },
+    "019e9d55-0107-7663-ac85-5d2e5aaafa14": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:27:34.290Z",
+      "total_turns": 1
+    },
+    "019e9d56-5ed9-7880-ae82-3d0c932d7ac2": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:29:03.844Z",
+      "total_turns": 1
+    },
+    "019e9d58-09a0-76d3-a0ac-80c2cae6dc58": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:30:53.099Z",
+      "total_turns": 1
+    },
+    "019e9d58-fa6a-7132-958f-aafcc3d6dfe7": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:31:54.742Z",
+      "total_turns": 1
+    },
+    "019e9d5c-3b00-7cf3-9a38-a3c80cf0feda": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:35:27.883Z",
+      "total_turns": 1
+    },
+    "019e9d63-d5a5-75a1-be51-aaca1edbee16": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T14:43:46.229Z",
+      "total_turns": 1
+    },
+    "019e9d90-b87a-7120-bf5c-328f7e4b61c7": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T15:32:47.884Z",
+      "total_turns": 1
+    },
+    "019e9d95-e2d1-76d0-a0f3-395abc5a924e": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T15:38:26.396Z",
+      "total_turns": 1
+    },
+    "019e9d96-83cd-7f41-b69c-ace1e4512574": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T15:39:07.608Z",
+      "total_turns": 1
+    },
+    "019e9d9a-028b-7881-9472-0b2b355e7a83": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T15:42:56.662Z",
+      "total_turns": 1
+    },
+    "019e9da1-7d45-7dd0-892d-c681858be52b": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T15:51:06.837Z",
+      "total_turns": 1
+    },
+    "019e9da7-05ae-74c1-9825-3abd0207876b": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T15:57:09.433Z",
+      "total_turns": 1
+    },
+    "019e9dad-bb13-7de0-ba91-0e43218466d9": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T16:04:29.086Z",
+      "total_turns": 1
+    },
+    "019e9db5-e2ed-72f0-969d-ea4b12e2130e": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T16:13:23.576Z",
+      "total_turns": 1
+    },
+    "019e9dbc-fc35-7ae1-af75-9618daabcbb1": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T16:21:08.801Z",
+      "total_turns": 1
+    },
+    "019e9f07-d6ec-76a3-bb46-0f5cfbd91009": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T22:22:31.675Z",
+      "total_turns": 1
+    },
+    "019e9f0a-c67a-7fc3-8250-cf34af415905": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T22:25:44.070Z",
+      "total_turns": 1
+    },
+    "019e9f0b-a549-7953-9b2f-1c74d154948f": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T22:26:41.108Z",
+      "total_turns": 1
+    },
+    "019e9f41-072c-7203-a96e-1787cd105603": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T23:24:59.580Z",
+      "total_turns": 1
+    },
+    "019e9f42-e7be-7bf2-8dd1-ec05d326942e": {
+      "session_type": "codex",
+      "started_at": "2026-06-06T23:27:02.601Z",
+      "total_turns": 1
+    },
+    "019e9fd6-6d7d-7002-be97-8692de49ee19": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T02:08:10.642Z",
+      "total_turns": 1
+    },
+    "019e9fef-13fe-76f1-bdaf-8b97f05c2e63": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T02:35:06.132Z",
+      "total_turns": 1
+    },
+    "019e9ff4-7813-7c00-b7ca-e01841205829": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T02:40:59.423Z",
+      "total_turns": 1
+    },
+    "019ea02a-0f2f-71a3-8625-876cccbbf8c7": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T03:39:31.530Z",
+      "total_turns": 1
+    },
+    "019ea02c-79ab-7940-848f-9aeb9c6da8ea": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T03:42:09.848Z",
+      "total_turns": 1
+    },
+    "6d8ddec0-2c26-4869-a725-a1a42d577ccc": {
+      "session_type": "claude",
+      "started_at": "2026-06-07T04:04:19.987624+00:00",
+      "total_turns": 1
+    },
+    "019ea040-d90b-73d0-8233-93d6ae08d6d4": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:04:24.983Z",
+      "total_turns": 1
+    },
+    "019ea045-2c25-7c41-8f65-d94a074eb78b": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:09:08.407Z",
+      "total_turns": 1
+    },
+    "019ea047-aced-7482-a988-6c71cbe86b7d": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:11:52.446Z",
+      "total_turns": 1
+    },
+    "019ea04a-9d6d-7b10-9145-f0f1860e3d1e": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:15:05.082Z",
+      "total_turns": 1
+    },
+    "019ea04c-3052-7aa2-b332-b2abd0f4a404": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:16:48.224Z",
+      "total_turns": 1
+    },
+    "019ea051-a147-78e2-9334-29f9c1d66ec2": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:22:44.828Z",
+      "total_turns": 1
+    },
+    "019ea054-6206-7861-9d26-ca6a45aa8e02": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:25:45.239Z",
+      "total_turns": 1
+    },
+    "019ea056-16c6-7220-8313-449f7b7d1b12": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:27:37.050Z",
+      "total_turns": 1
+    },
+    "019ea059-6680-74a2-a6c0-64dc41b2eac4": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:31:14.068Z",
+      "total_turns": 1
+    },
+    "019ea05a-de11-7701-ab3f-debbe61811df": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:32:50.207Z",
+      "total_turns": 1
+    },
+    "019ea05e-3d61-7820-b391-ee8dc0aff09a": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:36:31.217Z",
+      "total_turns": 1
+    },
+    "019ea062-5a8a-7413-92ba-e92ce36be129": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T04:41:00.823Z",
+      "total_turns": 1
+    },
+    "019ea286-6580-75f1-a530-7989b09b42f4": {
+      "session_type": "codex",
+      "started_at": "2026-06-07T14:39:37.377Z",
+      "total_turns": 1
+    },
+    "afbdb94e-2de1-4d40-be65-98b63d2c58f0": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T00:12:27.482407+00:00",
+      "total_turns": 1
+    },
+    "11924163-b620-44c0-b537-cbd630f1f087": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T00:12:51.550318+00:00",
+      "total_turns": 1
+    },
+    "d8aee313-6e1d-4dd6-bc80-c69a928f446d": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T00:14:38.142146+00:00",
+      "total_turns": 1
+    },
+    "bfd8c6d2-3ac2-4739-bac1-9709689f81b0": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T00:16:38.160605+00:00",
+      "total_turns": 1
+    },
+    "2c0e6147-8054-4163-b9d8-e08658f5420d": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T00:17:37.828447+00:00",
+      "total_turns": 1
+    },
+    "41833add-b0bb-4716-a576-6e00d36a98a9": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T00:18:36.927864+00:00",
+      "total_turns": 1
+    },
+    "6734de35-250b-4fdd-821e-afa53d47005a": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T00:18:53.603898+00:00",
+      "total_turns": 1
+    },
+    "b3608ab7-6d73-460e-bf5c-2b8b9210ea93": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T00:19:07.984688+00:00",
+      "total_turns": 1
+    },
+    "2ae5cbc2-c7c1-4221-ae18-9699779742ea": {
+      "session_type": "claude",
+      "started_at": "2026-06-08T05:08:02.691350+00:00",
+      "total_turns": 1
+    },
+    "019ea5ae-9f3a-7162-b2af-d312a29f1899": {
+      "session_type": "codex",
+      "started_at": "2026-06-08T05:22:25.223Z",
+      "total_turns": 2
     }
   },
-  "updated_at": "2026-05-11T02:01:05.655431+00:00"
+  "updated_at": "2026-06-08T05:53:25.524835+00:00"
 }

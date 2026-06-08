@@ -1,0 +1,12 @@
+{
+  "id": "9b1cac95-57ee-4c43-b091-cb0330a0b1f5",
+  "session_id": "d6bd5010-997a-4195-bf61-7fc6f4445bbf",
+  "git_commit_hash": "cdeb1cce855ee251c95475676e52aa4a1eb2ef76",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "AGENTS.md                                          |  12 +-\n CHANGELOG.md                                       |  26 ++\n CLAUDE.md                                          |   2 +-\n README.md                                          |  28 +++\n ROADMAP.md                                         |  41 +++-\n docs/perf/v0-7-0-pdi-baseline.md                   |  29 +++\n docs/research/v0-7-0-hook-contract-spike.md        | 101 ++++++++\n pyproject.toml                                     |   2 +-\n scripts/spike_probe.py                             |  33 +++\n src/entirecontext/__init__.py                      |   2 +-\n src/entirecontext/cli/session_cmds.py              |  84 +++++++\n src/entirecontext/core/config.py                   |   7 +\n src/entirecontext/core/decision_extraction.py      |  59 +++--\n .../core/decision_prompt_surfacing.py              | 168 +++++++++----\n src/entirecontext/db/connection.py                 |   2 +-\n src/entirecontext/hooks/handler.py                 | 102 +++++++-\n src/entirecontext/hooks/turn_capture.py            |  15 +-\n tests/fixtures/perf_decisions.py                   |  94 ++++++++\n tests/test_decision_extraction.py                  | 117 ++++++++-\n tests/test_decision_extraction_baseline_diff.py    | 133 ++++++++++\n tests/test_e2e_pdi.py                              | 131 ++++++++++\n tests/test_hooks_performance.py                    | 170 +++++++++++++\n tests/test_pdi_handler.py                          | 267 +++++++++++++++++++++\n tests/test_pdi_optimizer.py                        |  68 ++++++\n tests/test_session_cmds.py                         | 107 +++++++++\n uv.lock                                            |   2 +-\n 26 files changed, 1705 insertions(+), 97 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-05-22 08:41:54",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

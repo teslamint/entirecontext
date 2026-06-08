@@ -1,0 +1,12 @@
+{
+  "id": "ce7a64fe-2c5c-4c1f-80ad-c55f5ae4ecbf",
+  "session_id": "397d23d4-e649-4fbf-805c-89852b38cd40",
+  "git_commit_hash": "42f8f7800d4db34b7b49a836af79b312e8763f1e",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "ROADMAP.md                                          |   10 +-\n pyproject.toml                                      |    3 +-\n src/entirecontext/__init__.py                       |    2 +-\n src/entirecontext/core/decision_prompt_surfacing.py |   97 +++++++-\n src/entirecontext/hooks/handler.py                  |   39 ++-\n tests/test_e2e_pdi.py                               |   59 +++++\n tests/test_pdi_handler.py                           |   94 +++++++-\n tests/test_pdi_optimizer.py                         |   30 +++\n uv.lock                                             | 2010 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++----------------------------------------------------------------------\n 9 files changed, 1378 insertions(+), 966 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-02 06:50:00",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}
