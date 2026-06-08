@@ -186,6 +186,16 @@ def get_dashboard_stats(
         ).fetchone()["total"]
         or 0
     )
+    events_with_selection = (
+        conn.execute(
+            "SELECT COUNT(DISTINCT re.id) AS total"
+            " FROM retrieval_events re"
+            " JOIN retrieval_selections rs ON rs.retrieval_event_id = re.id"
+            + (" WHERE re.created_at >= ?" if since is not None else ""),
+            since_params,
+        ).fetchone()["total"]
+        or 0
+    )
 
     applications_row = conn.execute(
         "SELECT COUNT(*) AS total,"
@@ -200,7 +210,7 @@ def get_dashboard_stats(
 
     retrieval_assisted_session_rate = retrieval_sessions_total / sessions_ended if sessions_ended > 0 else 0.0
     search_to_selection_rate = (
-        retrieval_selections_total / retrieval_events_total if retrieval_events_total > 0 else 0.0
+        events_with_selection / retrieval_events_total if retrieval_events_total > 0 else 0.0
     )
     applied_context_rate = (
         context_applications_with_selection / retrieval_selections_total if retrieval_selections_total > 0 else 0.0
