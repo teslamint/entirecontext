@@ -94,6 +94,7 @@ def _detect_overlapping_decisions(
         LEFT JOIN turns t ON t.id = rs.turn_id
         WHERE rs.session_id = ?
           AND rs.result_type = 'decision'
+          AND re.search_type != 'post_tool_use'
           AND NOT EXISTS (
               SELECT 1 FROM decision_outcomes do
               WHERE do.decision_id = rs.result_id
