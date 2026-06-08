@@ -89,3 +89,40 @@ def test_ingest_codex_notify_event_is_idempotent(ec_repo):
     turn_count = conn.execute("SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)).fetchone()[0]
     conn.close()
     assert turn_count == 1
+
+
+def test_duplicate_notify_does_not_refresh_last_activity_at(ec_repo):
+    """Commit 150faab: duplicate notify events must not update last_activity_at."""
+    import time
+
+    codex_home = ec_repo.parent / "codex-home"
+    session_id = "s-codex-dup"
+    _write_codex_session_file(codex_home, session_id=session_id, cwd=str(ec_repo))
+    _enable_codex_notify(ec_repo)
+
+    payload = {"thread_id": session_id, "cwd": str(ec_repo), "codex_home": str(codex_home)}
+
+    # First ingest
+    ingest_codex_notify_event(payload, payload_text="{}")
+
+    conn = get_db(str(ec_repo))
+    row1 = conn.execute(
+        "SELECT last_activity_at, total_turns FROM sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    conn.close()
+    assert row1 is not None
+    assert row1["total_turns"] == 1
+    first_activity = row1["last_activity_at"]
+
+    time.sleep(0.05)
+
+    # Second ingest — duplicate
+    ingest_codex_notify_event(payload, payload_text="{}")
+
+    conn = get_db(str(ec_repo))
+    row2 = conn.execute(
+        "SELECT last_activity_at, total_turns FROM sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    conn.close()
+    assert row2["total_turns"] == 1, "Turn count should not change on duplicate"
+    assert row2["last_activity_at"] == first_activity, "last_activity_at must not change on duplicate"
