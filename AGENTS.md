@@ -61,6 +61,16 @@ Decisions with cross-cutting or long-lived impact go into `docs/adr/` using the 
 - EC decisions that graduate to project-wide policy should get a companion ADR.
 - Lightweight decisions stay as EC records only; ADRs are for durable, cross-cutting policy.
 
+## Retrospective Carry-Forward Rule
+
+When a retrospective identifies deferred items:
+
+1. Register each carry-forward in `ROADMAP.md` under the target version, or mark explicit won't-fix with rationale.
+2. Do not close the retro until all deferrals are registered or resolved.
+3. If the target version ships without the carry-forward, the next retro must re-evaluate and re-register or close it.
+
+Rationale: v0.9.0 retro found that 4 releases of drift occurred because deferred items were discussed but never registered in ROADMAP.
+
 ## Decision and Lesson Reuse Policy
 
 Agents working in this repository must use stored decisions and lessons as part of the development workflow, not optional background context.

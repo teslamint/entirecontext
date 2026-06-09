@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Dev process conventions** (PR #165) — Conventional Commits CI gate (`amannn/action-semantic-pull-request@v5`), ADR directory with template and bootstrap records, measure-first principle in AGENTS.md, mypy strict with grandfather overrides for 79 legacy modules.
+- **Retrospective carry-forward rule** — AGENTS.md policy: retro deferrals must be registered in ROADMAP or explicitly closed. Prevents multi-release drift (v0.9.0 finding).
+- **ADR-0003: sessions_ended non-monotonic evaluation** — investigated `codex_ingest.py` `ended_at = NULL` reset. Won't-fix: Codex-only, self-healing via idle timeout, low impact on rate stability.
+
+### Changed
+
+- **`auto_extract` default true deferred to v1.0** — measure-first: 2-month dead code path requires live worker verification before enabling by default.
+
 ## [0.9.1] - 2026-06-09
 
 ### Fixed
