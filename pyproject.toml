@@ -37,6 +37,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "ruff>=0.9.0",
     "hypothesis>=6.100.0",
+    "mypy>=1.15.0",
 ]
 
 [project.scripts]
@@ -58,6 +59,97 @@ source-include = ["LICENSE", "CHANGELOG.md"]
 [tool.ruff]
 target-version = "py312"
 line-length = 120
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+# Legacy modules grandfathered from strict mode (2026-06-09).
+# Overrides silence all mypy diagnostics for listed modules until removed.
+# Shrink this list over time. See docs/adr/0002-mypy-strict-gradual.md.
+[[tool.mypy.overrides]]
+module = [
+    "entirecontext.cli.ast_cmds",
+    "entirecontext.cli.blame_cmds",
+    "entirecontext.cli.checkpoint_cmds",
+    "entirecontext.cli.dashboard_cmds",
+    "entirecontext.cli.decisions_cmds",
+    "entirecontext.cli.event_cmds",
+    "entirecontext.cli.futures_cmds",
+    "entirecontext.cli.graph_cmds",
+    "entirecontext.cli.hook_cmds",
+    "entirecontext.cli.import_cmds",
+    "entirecontext.cli.index_cmds",
+    "entirecontext.cli.mcp_cmds",
+    "entirecontext.cli.project_cmds",
+    "entirecontext.cli.purge_cmds",
+    "entirecontext.cli.repo_cmds",
+    "entirecontext.cli.rewind_cmds",
+    "entirecontext.cli.search_cmds",
+    "entirecontext.cli.session_cmds",
+    "entirecontext.cli.sync_cmds",
+    "entirecontext.core.activation",
+    "entirecontext.core.agent_graph",
+    "entirecontext.core.ast_index",
+    "entirecontext.core.async_worker",
+    "entirecontext.core.attribution",
+    "entirecontext.core.auto_apply",
+    "entirecontext.core.auto_assess",
+    "entirecontext.core.checkpoint",
+    "entirecontext.core.config",
+    "entirecontext.core.consolidation",
+    "entirecontext.core.content_filter",
+    "entirecontext.core.context",
+    "entirecontext.core.cross_repo",
+    "entirecontext.core.dashboard",
+    "entirecontext.core.decision_candidates",
+    "entirecontext.core.decision_extraction",
+    "entirecontext.core.decision_prompt_surfacing",
+    "entirecontext.core.decisions",
+    "entirecontext.core.embedding",
+    "entirecontext.core.event",
+    "entirecontext.core.futures",
+    "entirecontext.core.knowledge_graph",
+    "entirecontext.core.llm",
+    "entirecontext.core.project",
+    "entirecontext.core.purge",
+    "entirecontext.core.resolve",
+    "entirecontext.core.search",
+    "entirecontext.core.security",
+    "entirecontext.core.session",
+    "entirecontext.core.telemetry",
+    "entirecontext.core.tidy_pr",
+    "entirecontext.core.turn",
+    "entirecontext.db.migrations",
+    "entirecontext.db.migrations.v005",
+    "entirecontext.db.migrations.v011",
+    "entirecontext.db.migrations.v012",
+    "entirecontext.db.schema",
+    "entirecontext.hooks.codex_ingest",
+    "entirecontext.hooks.decision_hooks",
+    "entirecontext.hooks.handler",
+    "entirecontext.hooks.session_lifecycle",
+    "entirecontext.hooks.turn_capture",
+    "entirecontext.mcp.runtime",
+    "entirecontext.mcp.server",
+    "entirecontext.mcp.tools.checkpoint",
+    "entirecontext.mcp.tools.decision_candidates",
+    "entirecontext.mcp.tools.decisions",
+    "entirecontext.mcp.tools.futures",
+    "entirecontext.mcp.tools.misc",
+    "entirecontext.mcp.tools.search",
+    "entirecontext.mcp.tools.session",
+    "entirecontext.sync.auto_sync",
+    "entirecontext.sync.coordinator",
+    "entirecontext.sync.engine",
+    "entirecontext.sync.export_flow",
+    "entirecontext.sync.exporter",
+    "entirecontext.sync.git_transport",
+    "entirecontext.sync.merge",
+    "entirecontext.sync.security",
+    "entirecontext.sync.shadow_branch",
+]
+ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
