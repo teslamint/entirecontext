@@ -15,6 +15,7 @@ When modifying a source module, always run the existing tests for that module be
 - Keep each commit focused on one change area with scope (example: `feat(search): add hybrid reranking`).
 - PRs should include: purpose, key changes, test evidence (commands + results), and linked issue/task.
 - Include CLI output snippets or screenshots when user-facing command behavior changes.
+- Decision traceability chain: Spec (`docs/superpowers/plans/`) → ADR (`docs/adr/`) → Plan → Code. PRs that change behavior should reference the governing ADR or EC decision.
 
 ## Dogfooding Workflow
 
@@ -31,6 +32,34 @@ This project's own features should be actively used during development sessions.
 | After work | `ec_feedback` — record agree/disagree on prior assessments |
 | Debugging | `ec_related` with file paths — find turns that touched the area |
 | Cross-session | `ec_session_context` — get the previous session's summary |
+
+## Measure-First Principle
+
+Before implementing any feature or behavior change:
+
+1. Define measurable success criteria (metric name, target value, measurement method).
+2. Verify the measurement infrastructure exists and works (dashboard query, test assertion, CLI command).
+3. If measurement infra is missing, build it first as a separate commit/PR.
+4. After implementation, verify the metric moved as expected.
+
+Skip only for pure documentation, config, or CI-only changes. State when skipped and why.
+
+Rationale: v0.8.1 showed that building features without pre-existing measurement leads to formula bugs that ship undetected across multiple releases.
+
+## Architecture Decision Records (ADR)
+
+Decisions with cross-cutting or long-lived impact go into `docs/adr/` using the template in `docs/adr/README.md`.
+
+### When to write an ADR
+- New module boundaries, data model changes, or public interface contracts
+- Technology or dependency choices
+- Convention or policy establishment (like this one)
+- Any decision where "why not the obvious alternative?" deserves a written answer
+
+### ADR ↔ EC Decision bridge
+- ADRs reference EC decision IDs in their footer when an EC record exists.
+- EC decisions that graduate to project-wide policy should get a companion ADR.
+- Lightweight decisions stay as EC records only; ADRs are for durable, cross-cutting policy.
 
 ## Decision and Lesson Reuse Policy
 
