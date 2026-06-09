@@ -80,7 +80,7 @@ async def ec_search(
                     config=config,
                 )
             elif search_type == "hybrid":
-                from ...core.hybrid_search import hybrid_search
+                from ...core.search import hybrid_search
 
                 results = hybrid_search(
                     conn,

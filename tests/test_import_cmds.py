@@ -45,7 +45,7 @@ class TestImportCmds:
         monkeypatch.chdir(ec_repo)
         mock_result = ImportResult(sessions=2, turns=5, turn_content=3, checkpoints=1, events=1, event_links=1)
         monkeypatch.setattr("entirecontext.core.import_aline.import_from_aline", lambda **kwargs: mock_result)
-        monkeypatch.setattr("entirecontext.core.indexing.rebuild_fts_indexes", lambda conn: None)
+        monkeypatch.setattr("entirecontext.core.search.rebuild_fts_indexes", lambda conn: None)
 
         result = runner.invoke(app, ["import", "--from-aline", "/tmp/fake.db"])
         assert result.exit_code == 0
@@ -69,7 +69,7 @@ class TestImportCmds:
         mock_result = ImportResult(sessions=1, turns=1)
         monkeypatch.setattr("entirecontext.core.import_aline.import_from_aline", lambda **kwargs: mock_result)
         rebuild_mock = MagicMock()
-        monkeypatch.setattr("entirecontext.core.indexing.rebuild_fts_indexes", rebuild_mock)
+        monkeypatch.setattr("entirecontext.core.search.rebuild_fts_indexes", rebuild_mock)
 
         result = runner.invoke(app, ["import", "--from-aline", "/tmp/fake.db"])
         assert result.exit_code == 0
@@ -81,7 +81,7 @@ class TestImportCmds:
         mock_result = ImportResult(sessions=1, turns=1)
         monkeypatch.setattr("entirecontext.core.import_aline.import_from_aline", lambda **kwargs: mock_result)
         monkeypatch.setattr(
-            "entirecontext.core.indexing.rebuild_fts_indexes",
+            "entirecontext.core.search.rebuild_fts_indexes",
             MagicMock(side_effect=Exception("FTS rebuild failed")),
         )
 
