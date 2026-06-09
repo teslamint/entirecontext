@@ -191,8 +191,9 @@ def get_dashboard_stats(
             "SELECT COUNT(DISTINCT rs.session_id) AS total"
             " FROM retrieval_selections rs"
             " JOIN sessions s ON rs.session_id = s.id"
-            " WHERE s.ended_at IS NOT NULL" + (" AND rs.created_at >= ?" if since is not None else ""),
-            since_params,
+            " WHERE s.ended_at IS NOT NULL"
+            + (" AND s.started_at >= ? AND rs.created_at >= ?" if since is not None else ""),
+            since_params * 2 if since is not None else since_params,
         ).fetchone()["total"]
         or 0
     )
@@ -220,12 +221,13 @@ def get_dashboard_stats(
 
     sessions_with_application = (
         conn.execute(
-            "SELECT COUNT(DISTINCT ca.session_id) AS total"
+            "SELECT COUNT(DISTINCT rs.session_id) AS total"
             " FROM context_applications ca"
-            " JOIN sessions s ON ca.session_id = s.id"
-            " WHERE ca.retrieval_selection_id IS NOT NULL"
-            " AND s.ended_at IS NOT NULL" + (" AND ca.created_at >= ?" if since is not None else ""),
-            since_params,
+            " JOIN retrieval_selections rs ON rs.id = ca.retrieval_selection_id"
+            " JOIN sessions s ON rs.session_id = s.id"
+            " WHERE s.ended_at IS NOT NULL"
+            + (" AND s.started_at >= ? AND rs.created_at >= ?" if since is not None else ""),
+            since_params * 2 if since is not None else since_params,
         ).fetchone()["total"]
         or 0
     )
