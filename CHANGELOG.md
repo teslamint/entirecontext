@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`applied_context_rate` session-based formula** — numerator/denominator changed from per-selection counts (`context_applications_with_selection / retrieval_selections_total`, structurally capped at ~6.7%) to per-session counts (`sessions_with_application / sessions_with_selection`). Both queries filter `ended_at IS NOT NULL` (v0.8.1 normalization pattern). Maturity intervene dimension now reachable.
+
+### Changed
+
+- Telemetry output adds `sessions_with_selection` and `sessions_with_application` counters for transparency.
+
 ## [0.9.0] - 2026-06-09
 
 ### Added
