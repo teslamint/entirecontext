@@ -30,6 +30,22 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Type check
+        run: uv run mypy src/entirecontext/
+
   test:
     runs-on: ubuntu-latest
     strategy:
