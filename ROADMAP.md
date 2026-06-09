@@ -230,6 +230,15 @@ Theme: automate the weakest maturity dimension (intervene=5), activate deferred 
 - [x] **Duplicate notify regression test** — guards 150faab auto-close accuracy invariant.
 - [ ] **Rule-based verdict mapping tuning** — deferred to n≥30 enriched assessments (current: n=10).
 
+## v0.9.1 — Measurement Calibration
+
+Theme: fix measurement formulas so maturity scores reflect actual loop completion, and establish the retro carry-forward process.
+
+- [x] **`applied_context_rate` session-based formula** — numerator/denominator changed from per-selection counts to per-session counts. Old formula structurally capped at ~6.7%; new formula `sessions_with_application / sessions_with_selection` reaches threshold naturally. ec decision `b09d1aed`.
+- [ ] **`auto_extract` default true** — pending local dogfooding confirmation (config flip in v0.3.0 code, never enabled). ec decision `309d472a`.
+- [ ] **Retro carry-forward → ROADMAP registration rule** — v0.9.0 retro finding: deferred items were not transferred to ROADMAP, causing 4-release drift. Rule: retro completion must register carry-forwards in ROADMAP or mark explicit won't-fix.
+- [ ] **`reopen → sessions_ended` non-monotonic evaluation** — deferred from v0.8.1, v0.9.0. Evaluate whether session reopen can make `sessions_ended` count decrease and whether this matters for rate stability. Resolve as fix or won't-fix.
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.
