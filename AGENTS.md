@@ -15,7 +15,7 @@ When modifying a source module, always run the existing tests for that module be
 - Keep each commit focused on one change area with scope (example: `feat(search): add hybrid reranking`).
 - PRs should include: purpose, key changes, test evidence (commands + results), and linked issue/task.
 - Include CLI output snippets or screenshots when user-facing command behavior changes.
-- Decision traceability chain: Spec (`docs/superpowers/plans/`) → ADR (`docs/adr/`) → Plan → Code. PRs that change behavior should reference the governing ADR or EC decision.
+- Decision traceability chain: Spec (`docs/superpowers/specs/`) → ADR (`docs/adr/`) → Plan → Code. PRs that change behavior should reference the governing ADR or EC decision.
 
 ## Dogfooding Workflow
 
