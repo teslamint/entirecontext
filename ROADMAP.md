@@ -245,6 +245,14 @@ Theme: codify deferred process rules, evaluate measurement edge cases, add dev p
 - [x] **Dev process conventions** (PR #165) — Conventional Commits CI gate, ADR directory, measure-first principle, mypy strict with grandfather overrides.
 - Deferred: **`auto_extract` default true** → v1.0 (measure-first: 2-month dead code path requires live verification before default-on). ec decision `309d472a`.
 
+## v0.9.3 — Cleanup & Version Sync
+
+Theme: remove legacy shims, fix version drift, correct ADR-0003 trigger documentation.
+
+- [x] **Remove `hybrid_search.py` and `indexing.py` shim modules** (#27) — all callers migrated to `core.search` and `core.embedding` direct imports.
+- [x] **`__version__` sync** — runtime version in `__init__.py` was stuck at `0.7.1` since v0.7.1; now synced to release version.
+- [x] **ADR-0003 correction** — "self-healing via idle timeout" was inaccurate; corrected to event-driven re-closure.
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.
