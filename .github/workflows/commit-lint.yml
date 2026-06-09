@@ -18,6 +18,7 @@ jobs:
           types: |
             feat
             fix
+            refactor
             ref
             perf
             docs

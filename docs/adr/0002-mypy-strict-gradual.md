@@ -12,14 +12,16 @@ type annotations to all 79 modules in one pass would be a large, risky change.
 ## Decision
 
 Enable mypy strict mode globally. Grandfather the 79 failing modules via
-`[[tool.mypy.overrides]]` with `ignore_errors = true`. New files are strict from day one.
+`[[tool.mypy.overrides]]` with `ignore_errors = true`. New files and any modules not on the
+override list are strict from day one.
 
 The override list in `pyproject.toml` is the single source of truth for legacy debt.
 To annotate a module: remove it from the list, run mypy, fix errors, commit.
 
 ## Consequences
 
-- New code is strictly typed from the start — no regression.
+- New files and non-grandfathered modules are strictly typed from the start — no regression there.
 - Legacy modules can be annotated incrementally without blocking other work.
 - The override list is visible, countable, and shrinks monotonically.
 - `ignore_errors = true` silences ALL mypy diagnostics in grandfathered modules, including potential real bugs. Accepted trade-off: fixing those modules is the remedy.
+- Editing a grandfathered module does not partially re-enable strict checking; type enforcement only returns when that module leaves the override list.

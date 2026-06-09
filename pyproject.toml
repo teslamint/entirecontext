@@ -65,6 +65,7 @@ python_version = "3.12"
 strict = true
 
 # Legacy modules grandfathered from strict mode (2026-06-09).
+# Overrides silence all mypy diagnostics for listed modules until removed.
 # Shrink this list over time. See docs/adr/0002-mypy-strict-gradual.md.
 [[tool.mypy.overrides]]
 module = [
