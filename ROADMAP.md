@@ -241,7 +241,7 @@ Theme: fix measurement formulas so maturity scores reflect actual loop completio
 Theme: codify deferred process rules, evaluate measurement edge cases, add dev process conventions.
 
 - [x] **Retro carry-forward → ROADMAP registration rule** — v0.9.0 retro finding: deferred items were not transferred to ROADMAP, causing 4-release drift. Rule added to AGENTS.md: retro completion must register carry-forwards in ROADMAP or mark explicit won't-fix.
-- [x] **`reopen → sessions_ended` non-monotonic evaluation** — evaluated: `codex_ingest.py:335` resets `ended_at = NULL` on new turn arrival for existing codex sessions, causing transient `sessions_ended` decrease. Impact: minor (codex sessions only, re-closed by idle timeout). Resolution: won't-fix, documented as known limitation. See ADR-0003.
+- [x] **`reopen → sessions_ended` non-monotonic evaluation** — evaluated: `codex_ingest.py:335` resets `ended_at = NULL` on new turn arrival for existing codex sessions, causing `sessions_ended` decrease. Impact: minor (codex sessions only, eventually re-closed by next hook invocation — not timer-based). Resolution: won't-fix, documented as known limitation. See ADR-0003.
 - [x] **Dev process conventions** (PR #165) — Conventional Commits CI gate, ADR directory, measure-first principle, mypy strict with grandfather overrides.
 - Deferred: **`auto_extract` default true** → v1.0 (measure-first: 2-month dead code path requires live verification before default-on). ec decision `309d472a`.
 
