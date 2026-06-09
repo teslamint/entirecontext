@@ -186,6 +186,17 @@ def get_dashboard_stats(
         ).fetchone()["total"]
         or 0
     )
+    sessions_with_selection = (
+        conn.execute(
+            "SELECT COUNT(DISTINCT rs.session_id) AS total"
+            " FROM retrieval_selections rs"
+            " JOIN sessions s ON rs.session_id = s.id"
+            " WHERE s.ended_at IS NOT NULL"
+            + (" AND s.started_at >= ? AND rs.created_at >= ?" if since is not None else ""),
+            since_params * 2 if since is not None else since_params,
+        ).fetchone()["total"]
+        or 0
+    )
     events_with_selection = (
         conn.execute(
             "SELECT COUNT(DISTINCT re.id) AS total"
@@ -208,11 +219,22 @@ def get_dashboard_stats(
     context_applications_with_selection = applications_row["with_selection"] or 0
     lesson_reuse_count = applications_row["lesson_reuse"] or 0
 
+    sessions_with_application = (
+        conn.execute(
+            "SELECT COUNT(DISTINCT rs.session_id) AS total"
+            " FROM context_applications ca"
+            " JOIN retrieval_selections rs ON rs.id = ca.retrieval_selection_id"
+            " JOIN sessions s ON rs.session_id = s.id"
+            " WHERE s.ended_at IS NOT NULL"
+            + (" AND s.started_at >= ? AND rs.created_at >= ?" if since is not None else ""),
+            since_params * 2 if since is not None else since_params,
+        ).fetchone()["total"]
+        or 0
+    )
+
     retrieval_assisted_session_rate = retrieval_sessions_total / sessions_ended if sessions_ended > 0 else 0.0
     search_to_selection_rate = events_with_selection / retrieval_events_total if retrieval_events_total > 0 else 0.0
-    applied_context_rate = (
-        context_applications_with_selection / retrieval_selections_total if retrieval_selections_total > 0 else 0.0
-    )
+    applied_context_rate = sessions_with_application / sessions_with_selection if sessions_with_selection > 0 else 0.0
     lesson_reuse_rate = lesson_reuse_count / context_applications_total if context_applications_total > 0 else 0.0
 
     changed_ended_sessions = (
@@ -358,10 +380,12 @@ def get_dashboard_stats(
             },
             "retrieval_selections": {
                 "total": retrieval_selections_total,
+                "sessions_with_selection": sessions_with_selection,
             },
             "context_applications": {
                 "total": context_applications_total,
                 "with_selection": context_applications_with_selection,
+                "sessions_with_application": sessions_with_application,
             },
             "rates": {
                 "retrieval_assisted_session_rate": retrieval_assisted_session_rate,

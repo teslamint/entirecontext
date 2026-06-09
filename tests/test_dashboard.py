@@ -73,15 +73,15 @@ def _seed_db(ec_repo, ec_db):
 def _seed_telemetry(ec_db):
     ec_db.execute(
         """INSERT INTO retrieval_events (id, session_id, turn_id, source, search_type, target, query, result_count, latency_ms, created_at)
-           VALUES ('re-1', 'dash-s1', NULL, 'cli', 'regex', 'turn', 'auth', 2, 5, datetime('now'))"""
+           VALUES ('re-1', 'dash-s2', NULL, 'cli', 'regex', 'turn', 'auth', 2, 5, datetime('now'))"""
     )
     ec_db.execute(
         """INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, turn_id, result_type, result_id, rank, created_at)
-           VALUES ('rs-1', 're-1', 'dash-s1', NULL, 'assessment', 'asmt-1', 1, datetime('now'))"""
+           VALUES ('rs-1', 're-1', 'dash-s2', NULL, 'assessment', 'asmt-1', 1, datetime('now'))"""
     )
     ec_db.execute(
         """INSERT INTO context_applications (id, session_id, turn_id, retrieval_selection_id, source_type, source_id, application_type, created_at)
-           VALUES ('ca-1', 'dash-s1', NULL, 'rs-1', 'assessment', 'asmt-1', 'lesson_applied', datetime('now'))"""
+           VALUES ('ca-1', 'dash-s2', NULL, 'rs-1', 'assessment', 'asmt-1', 'lesson_applied', datetime('now'))"""
     )
     ec_db.commit()
 
@@ -406,6 +406,54 @@ class TestGetDashboardStats:
             if key.endswith("_rate"):
                 assert 0.0 <= value <= 1.0, f"{key} = {value} is outside [0, 1]"
 
+    def test_applied_context_rate_session_based(self, ec_repo, ec_db):
+        """applied_context_rate uses session-based denominator, not selection count."""
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+
+        project = get_project(str(ec_repo))
+
+        # Session 1: 10 selections, 1 application -> should count as 1 session with application
+        s1 = create_session(ec_db, project["id"], session_id="acr-s1")
+        ec_db.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (s1["id"],))
+        ec_db.execute(
+            "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, created_at)"
+            " VALUES ('acr-re1', ?, 'hook', 'regex', 'turn', 'q', datetime('now'))",
+            (s1["id"],),
+        )
+        for i in range(10):
+            ec_db.execute(
+                "INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, result_type, result_id, rank, created_at)"
+                f" VALUES ('acr-rs1-{i}', 'acr-re1', ?, 'turn', 'turn-{i}', {i + 1}, datetime('now'))",
+                (s1["id"],),
+            )
+        ec_db.execute(
+            "INSERT INTO context_applications (id, session_id, retrieval_selection_id, source_type, source_id, application_type, created_at)"
+            " VALUES ('acr-ca1', ?, 'acr-rs1-0', 'decision', 'd1', 'decision_change', datetime('now'))",
+            (s1["id"],),
+        )
+
+        # Session 2: 5 selections, 0 applications -> 1 session without application
+        s2 = create_session(ec_db, project["id"], session_id="acr-s2")
+        ec_db.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (s2["id"],))
+        ec_db.execute(
+            "INSERT INTO retrieval_events (id, session_id, source, search_type, target, query, created_at)"
+            " VALUES ('acr-re2', ?, 'hook', 'regex', 'turn', 'q', datetime('now'))",
+            (s2["id"],),
+        )
+        for i in range(5):
+            ec_db.execute(
+                "INSERT INTO retrieval_selections (id, retrieval_event_id, session_id, result_type, result_id, rank, created_at)"
+                f" VALUES ('acr-rs2-{i}', 'acr-re2', ?, 'turn', 'turn-{i}', {i + 1}, datetime('now'))",
+                (s2["id"],),
+            )
+        ec_db.commit()
+
+        stats = get_dashboard_stats(ec_db)
+        # Session-based: 1 session with app / 2 sessions with selections = 0.5
+        # Old per-selection: 1 app / 15 selections = 0.067
+        assert stats["telemetry"]["rates"]["applied_context_rate"] == 0.5
+
     def test_retrieval_rate_ignores_active_session_retrieval(self, ec_repo, ec_db):
         from uuid import uuid4
 
@@ -490,8 +538,8 @@ def _mock_stats() -> dict:
         },
         "telemetry": {
             "retrieval_events": {"total": 2, "sessions_with_retrieval": 1},
-            "retrieval_selections": {"total": 1},
-            "context_applications": {"total": 1, "with_selection": 1},
+            "retrieval_selections": {"total": 1, "sessions_with_selection": 1},
+            "context_applications": {"total": 1, "with_selection": 1, "sessions_with_application": 1},
             "rates": {
                 "retrieval_assisted_session_rate": 0.5,
                 "search_to_selection_rate": 0.5,
@@ -551,8 +599,8 @@ class TestDashboardCLI:
             },
             "telemetry": {
                 "retrieval_events": {"total": 0, "sessions_with_retrieval": 0},
-                "retrieval_selections": {"total": 0},
-                "context_applications": {"total": 0, "with_selection": 0},
+                "retrieval_selections": {"total": 0, "sessions_with_selection": 0},
+                "context_applications": {"total": 0, "with_selection": 0, "sessions_with_application": 0},
                 "rates": {
                     "retrieval_assisted_session_rate": 0.0,
                     "search_to_selection_rate": 0.0,
