@@ -9,7 +9,7 @@ import pytest
 
 from entirecontext.core.attribution import get_file_attributions, get_file_attribution_summary
 from entirecontext.core.embedding import cosine_similarity
-from entirecontext.core.indexing import rebuild_fts_indexes
+from entirecontext.core.search import rebuild_fts_indexes
 from entirecontext.core.session import create_session
 from entirecontext.core.turn import create_turn
 from entirecontext.db.connection import get_memory_db
@@ -175,7 +175,7 @@ class TestEmbedText:
 
 class TestGenerateEmbeddings:
     def test_generate_embeddings_import_error(self, db):
-        from entirecontext.core.indexing import generate_embeddings
+        from entirecontext.core.embedding import generate_embeddings
 
         with patch.dict("sys.modules", {"sentence_transformers": None}):
             with pytest.raises(ImportError, match="sentence-transformers"):

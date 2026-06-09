@@ -26,7 +26,7 @@ def index_cmd(
 
     conn = get_db(repo_path)
     try:
-        from ..core.indexing import rebuild_fts_indexes
+        from ..core.search import rebuild_fts_indexes
 
         counts = rebuild_fts_indexes(conn)
         console.print("[green]FTS indexes rebuilt:[/green]")
@@ -35,7 +35,7 @@ def index_cmd(
 
         if semantic:
             try:
-                from ..core.indexing import generate_embeddings
+                from ..core.embedding import generate_embeddings
 
                 count = generate_embeddings(conn, repo_path, model_name=model, force=force)
                 console.print(f"[green]Generated {count} embeddings[/green] (model: {model})")

@@ -23,7 +23,7 @@ class TestIndexCommand:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.indexing.rebuild_fts_indexes", return_value=counts),
+            patch("entirecontext.core.search.rebuild_fts_indexes", return_value=counts),
         ):
             result = runner.invoke(app, ["index"])
             assert result.exit_code == 0
@@ -37,8 +37,8 @@ class TestIndexCommand:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.indexing.rebuild_fts_indexes", return_value=counts),
-            patch("entirecontext.core.indexing.generate_embeddings", return_value=25) as mock_gen,
+            patch("entirecontext.core.search.rebuild_fts_indexes", return_value=counts),
+            patch("entirecontext.core.embedding.generate_embeddings", return_value=25) as mock_gen,
         ):
             result = runner.invoke(app, ["index", "--semantic"])
             assert result.exit_code == 0
@@ -51,9 +51,9 @@ class TestIndexCommand:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.indexing.rebuild_fts_indexes", return_value=counts),
+            patch("entirecontext.core.search.rebuild_fts_indexes", return_value=counts),
             patch(
-                "entirecontext.core.indexing.generate_embeddings",
+                "entirecontext.core.embedding.generate_embeddings",
                 side_effect=ImportError("sentence-transformers is required"),
             ),
         ):
@@ -67,8 +67,8 @@ class TestIndexCommand:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.indexing.rebuild_fts_indexes", return_value=counts),
-            patch("entirecontext.core.indexing.generate_embeddings", return_value=50) as mock_gen,
+            patch("entirecontext.core.search.rebuild_fts_indexes", return_value=counts),
+            patch("entirecontext.core.embedding.generate_embeddings", return_value=50) as mock_gen,
         ):
             result = runner.invoke(app, ["index", "--semantic", "--force"])
             assert result.exit_code == 0
@@ -80,8 +80,8 @@ class TestIndexCommand:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.indexing.rebuild_fts_indexes", return_value=counts),
-            patch("entirecontext.core.indexing.generate_embeddings", return_value=10) as mock_gen,
+            patch("entirecontext.core.search.rebuild_fts_indexes", return_value=counts),
+            patch("entirecontext.core.embedding.generate_embeddings", return_value=10) as mock_gen,
         ):
             result = runner.invoke(app, ["index", "--semantic", "--model", "custom-model"])
             assert result.exit_code == 0

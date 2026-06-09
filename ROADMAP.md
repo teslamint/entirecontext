@@ -235,9 +235,23 @@ Theme: automate the weakest maturity dimension (intervene=5), activate deferred 
 Theme: fix measurement formulas so maturity scores reflect actual loop completion, and establish the retro carry-forward process.
 
 - [x] **`applied_context_rate` session-based formula** — numerator/denominator changed from per-selection counts to per-session counts. Old formula structurally capped at ~6.7%; new formula `sessions_with_application / sessions_with_selection` reaches threshold naturally. ec decision `b09d1aed`.
-- [ ] **`auto_extract` default true** — pending local dogfooding confirmation (config flip in v0.3.0 code, never enabled). ec decision `309d472a`.
-- [ ] **Retro carry-forward → ROADMAP registration rule** — v0.9.0 retro finding: deferred items were not transferred to ROADMAP, causing 4-release drift. Rule: retro completion must register carry-forwards in ROADMAP or mark explicit won't-fix.
-- [ ] **`reopen → sessions_ended` non-monotonic evaluation** — deferred from v0.8.1, v0.9.0. Evaluate whether session reopen can make `sessions_ended` count decrease and whether this matters for rate stability. Resolve as fix or won't-fix.
+
+## v0.9.2 — Process & Measurement Housekeeping
+
+Theme: codify deferred process rules, evaluate measurement edge cases, add dev process conventions.
+
+- [x] **Retro carry-forward → ROADMAP registration rule** — v0.9.0 retro finding: deferred items were not transferred to ROADMAP, causing 4-release drift. Rule added to AGENTS.md: retro completion must register carry-forwards in ROADMAP or mark explicit won't-fix.
+- [x] **`reopen → sessions_ended` non-monotonic evaluation** — evaluated: `codex_ingest.py:335` resets `ended_at = NULL` on new turn arrival for existing codex sessions, causing `sessions_ended` decrease. Impact: minor (codex sessions only, eventually re-closed by next hook invocation — not timer-based). Resolution: won't-fix, documented as known limitation. See ADR-0003.
+- [x] **Dev process conventions** (PR #165) — Conventional Commits CI gate, ADR directory, measure-first principle, mypy strict with grandfather overrides.
+- Deferred: **`auto_extract` default true** → v1.0 (measure-first: 2-month dead code path requires live verification before default-on). ec decision `309d472a`.
+
+## v0.9.3 — Cleanup & Version Sync
+
+Theme: remove legacy shims, fix version drift, correct ADR-0003 trigger documentation.
+
+- [x] **Remove `hybrid_search.py` and `indexing.py` shim modules** (#27) — all callers migrated to `core.search` and `core.embedding` direct imports.
+- [x] **`__version__` sync** — runtime version in `__init__.py` was stuck at `0.7.1` since v0.7.1; now synced to release version.
+- [x] **ADR-0003 correction** — "self-healing via idle timeout" was inaccurate; corrected to event-driven re-closure.
 
 ## v1.0 — Loop Completes Autonomously
 
@@ -245,6 +259,7 @@ Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop 
 
 The last manual bottleneck is **outcome attribution**. Current automation: SessionEnd infers `ignored` for surfaced-but-unacted decisions (config-gated, fully automatic); `ec decision supersede` auto-writes a `replaced` outcome (trigger is manual, recording is automatic); `ec_context_apply` auto-records `accepted` (trigger is manual — the agent or user must call it). Note: `contradicted` staleness auto-promotion exists but is not an outcome path — it changes `staleness_status` after someone manually records a `contradicted` outcome. The gap: no path automatically detects that an agent _followed_ a surfaced decision — `accepted` requires the agent to explicitly call `ec_context_apply`, and `refined` has no automatic path at all.
 
+- [ ] **`auto_extract` default true** — pending live worker verification (dead 2+ months). Measure-first: confirm `SessionEnd → background worker → decision_candidates` path produces candidates before flipping default. ec decision `309d472a`.
 - [ ] **Git-evidence-based outcome inference** — when PDI injects decision X and the session modifies `decision_files` for X, infer outcome from commit diff evidence. This is outcome _attribution_, not behavior _judgment_ — consistent with the project boundary (see Non-Goals)
 - [ ] **Alpha → stable status** — flip README badge and pyproject classifier once the loop gate is met
 

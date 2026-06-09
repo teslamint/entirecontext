@@ -91,7 +91,7 @@ def _import_from_aline(
 
         if not dry_run:
             try:
-                from ..core.indexing import rebuild_fts_indexes
+                from ..core.search import rebuild_fts_indexes
 
                 rebuild_fts_indexes(conn)
                 console.print("  FTS indexes rebuilt")

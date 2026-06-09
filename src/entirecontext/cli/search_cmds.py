@@ -92,7 +92,7 @@ def search(
                     )
                     raise typer.Exit(1)
             elif hybrid:
-                from ..core.hybrid_search import hybrid_search as _hybrid_search
+                from ..core.search import hybrid_search as _hybrid_search
 
                 started_at = time.perf_counter()
                 results = _hybrid_search(

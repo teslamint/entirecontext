@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
-from entirecontext.core.hybrid_search import hybrid_search, rrf_fuse
+from entirecontext.core.search import hybrid_search, rrf_fuse
 
 runner = CliRunner()
 
@@ -279,7 +279,7 @@ class TestSearchHybridCLI:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.hybrid_search.hybrid_search", return_value=[]) as mock_hs,
+            patch("entirecontext.core.search.hybrid_search", return_value=[]) as mock_hs,
         ):
             runner.invoke(app, ["search", "auth", "--hybrid"])
             mock_hs.assert_called_once()
@@ -289,7 +289,7 @@ class TestSearchHybridCLI:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.hybrid_search.hybrid_search", return_value=[]),
+            patch("entirecontext.core.search.hybrid_search", return_value=[]),
         ):
             result = runner.invoke(app, ["search", "auth", "--hybrid"])
             assert result.exit_code == 0
@@ -312,7 +312,7 @@ class TestSearchHybridCLI:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.hybrid_search.hybrid_search", return_value=fake_results),
+            patch("entirecontext.core.search.hybrid_search", return_value=fake_results),
         ):
             result = runner.invoke(app, ["search", "auth", "--hybrid"])
             assert result.exit_code == 0
@@ -322,7 +322,7 @@ class TestSearchHybridCLI:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.hybrid_search.hybrid_search", return_value=[]) as mock_hs,
+            patch("entirecontext.core.search.hybrid_search", return_value=[]) as mock_hs,
         ):
             runner.invoke(app, ["search", "auth", "--hybrid"])
             mock_hs.assert_called_once()
@@ -334,7 +334,7 @@ class TestSearchHybridCLI:
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
             patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.hybrid_search.hybrid_search", return_value=[]) as mock_hs,
+            patch("entirecontext.core.search.hybrid_search", return_value=[]) as mock_hs,
         ):
             runner.invoke(app, ["search", "auth", "--hybrid", "--limit", "5"])
             call_kwargs = mock_hs.call_args.kwargs
