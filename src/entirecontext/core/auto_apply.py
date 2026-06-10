@@ -304,8 +304,10 @@ def _has_new_decision_with_file_overlap(
         (session_start, decision_id, session_id),
     ).fetchall()
 
-    # Also include manual decisions (no decision_candidates row) that
-    # overlap the actual modified files — merge with candidate-backed set.
+    # Also check manual decisions (no decision_candidates row) created
+    # after session start. The overlap_set filter below prevents cross-
+    # session false positives — only decisions touching the same files
+    # as the actual session edits qualify.
     candidate_ids = {row["id"] for row in new_decisions}
     manual_decisions = conn.execute(
         """
@@ -314,9 +316,8 @@ def _has_new_decision_with_file_overlap(
         JOIN decision_files df ON df.decision_id = d.id
         WHERE d.created_at >= ?
           AND d.id != ?
-          AND d.id NOT IN (SELECT id FROM decisions WHERE id IN ({placeholders}))
-        """.format(placeholders=",".join("?" * len(candidate_ids)) if candidate_ids else "'__none__'"),
-        (session_start, decision_id, *candidate_ids),
+        """,
+        (session_start, decision_id),
     ).fetchall()
     all_decisions = list(new_decisions) + [r for r in manual_decisions if r["id"] not in candidate_ids]
 
