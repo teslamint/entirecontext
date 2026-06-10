@@ -332,12 +332,31 @@ def _rank_and_format_lessons_for_pdi(
 
     file_paths = _get_uncommitted_file_paths(repo_path)
     commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
-    if commit_file_paths:
-        seen = set(file_paths)
-        for p in commit_file_paths:
-            if p not in seen:
-                seen.add(p)
-                file_paths.append(p)
+    seen = set(file_paths)
+    for p in commit_file_paths:
+        if p not in seen:
+            seen.add(p)
+            file_paths.append(p)
+
+    # Include untracked files so newly created files match relevant lessons
+    try:
+        import subprocess as _sp
+
+        untracked = _sp.run(
+            ["git", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if untracked.returncode == 0:
+            for p in untracked.stdout.strip().splitlines():
+                p = p.strip()
+                if p and p not in seen:
+                    seen.add(p)
+                    file_paths.append(p)
+    except Exception:
+        pass
 
     conn = get_db(repo_path)
     try:

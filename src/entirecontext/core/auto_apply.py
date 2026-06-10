@@ -347,21 +347,6 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
     total_added = 0
     total_deleted = 0
 
-    # Count untracked new files in the overlap set — git diff misses
-    # files that haven't been staged yet (e.g. Write tool creates new file).
-    if not result.stdout.strip():
-        try:
-            status_cmd = ["git", "status", "--porcelain", "--"] + overlap_files
-            status_result = subprocess.run(
-                status_cmd, cwd=repo_path, capture_output=True, text=True, timeout=5
-            )
-            if status_result.returncode == 0:
-                for sline in status_result.stdout.strip().splitlines():
-                    if sline.startswith("??") or sline.startswith("A "):
-                        total_added += 1
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
-
     for line in result.stdout.strip().splitlines():
         parts = line.split("\t")
         if len(parts) >= 2:
@@ -373,10 +358,24 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
             except ValueError:
                 continue
 
+    # Always check for untracked/new files in the overlap set — git diff
+    # misses unstaged files, and they may coexist with tracked changes.
+    try:
+        status_cmd = ["git", "status", "--porcelain", "--"] + overlap_files
+        status_result = subprocess.run(
+            status_cmd, cwd=repo_path, capture_output=True, text=True, timeout=5
+        )
+        if status_result.returncode == 0:
+            for sline in status_result.stdout.strip().splitlines():
+                if sline.startswith("??") or sline.startswith("A "):
+                    total_added += 1
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
     if total_added == 0 and total_deleted == 0:
         return "accepted"
 
-    if total_added > total_deleted:
+    if total_added >= total_deleted:
         return "refined"
     return "replaced"
 
