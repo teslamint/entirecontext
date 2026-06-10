@@ -22,7 +22,8 @@ coverage.json
 .claude
 .cursor/
 .codex/
-.omc/
+.omc/*
+!.omc/RELEASE_RULE.md
 .serena/
 agents.lock
 .agents/.gitignore
