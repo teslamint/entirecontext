@@ -188,29 +188,48 @@ def _detect_overlapping_lessons(
         if assessment_id in seen_assessments:
             continue
 
-        checkpoint_files_row = conn.execute(
+        checkpoint_row = conn.execute(
             """
-            SELECT c.files_snapshot
+            SELECT c.files_snapshot, c.git_commit_hash
             FROM assessments a
             JOIN checkpoints c ON c.id = a.checkpoint_id
             WHERE a.id = ?
-              AND c.files_snapshot IS NOT NULL
             """,
             (assessment_id,),
         ).fetchone()
 
-        if not checkpoint_files_row:
+        if not checkpoint_row:
             continue
 
-        try:
-            snapshot = json.loads(checkpoint_files_row["files_snapshot"])
-            if isinstance(snapshot, dict):
-                lesson_paths = set(snapshot.keys())
-            elif isinstance(snapshot, list):
-                lesson_paths = {str(p) for p in snapshot if p}
-            else:
-                continue
-        except (json.JSONDecodeError, TypeError):
+        lesson_paths: set[str] = set()
+        snapshot_raw = checkpoint_row["files_snapshot"]
+        if snapshot_raw:
+            try:
+                snapshot = json.loads(snapshot_raw)
+                if isinstance(snapshot, dict):
+                    lesson_paths = set(snapshot.keys())
+                elif isinstance(snapshot, list):
+                    lesson_paths = {str(p) for p in snapshot if p}
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Fallback: if files_snapshot is NULL (auto-created checkpoints),
+        # derive file list from the checkpoint's git commit.
+        if not lesson_paths and checkpoint_row["git_commit_hash"] and repo_path:
+            try:
+                git_result = subprocess.run(
+                    ["git", "show", "--name-only", "--format=", checkpoint_row["git_commit_hash"]],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if git_result.returncode == 0:
+                    lesson_paths = {line.strip() for line in git_result.stdout.splitlines() if line.strip()}
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+
+        if not lesson_paths:
             continue
 
         normalized_lesson_paths = {_normalize_file_path(p, repo_root) for p in lesson_paths}
@@ -308,7 +327,10 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
         return "accepted"
 
     try:
-        cmd = ["git", "diff", "--numstat", f"{start_sha}..HEAD", "--"] + overlap_files
+        # Include uncommitted (staged + unstaged) edits — SessionEnd often
+        # runs before the user commits, so start_sha..HEAD alone misses
+        # working-tree changes and falls back to "accepted".
+        cmd = ["git", "diff", "--numstat", start_sha, "--"] + overlap_files
         result = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True, timeout=5)
         if result.returncode != 0:
             return "accepted"

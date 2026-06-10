@@ -61,7 +61,9 @@ def rank_lessons_for_prompt(
 
     Returns lessons sorted by: (has_file_overlap DESC, created_at DESC).
     """
-    lessons = get_surfaceable_lessons(conn, limit=limit * 3)
+    # Fetch a wide candidate set so file-overlap scoring sees older
+    # relevant lessons, not just the most recent ones.
+    lessons = get_surfaceable_lessons(conn, limit=200)
     if not lessons:
         return []
 
