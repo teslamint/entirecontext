@@ -109,6 +109,11 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
 
     session_id = data.get("session_id")
 
+    # Skip lesson surfacing on resumed sessions — lessons shown on resume
+    # would get credited for edits that happened before the resume.
+    if data.get("source") == "resume":
+        return
+
     from ..core.decision_prompt_surfacing import (
         _get_recent_commit_file_paths,
         _get_uncommitted_file_paths,

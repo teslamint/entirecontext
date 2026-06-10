@@ -164,6 +164,7 @@ def _detect_overlapping_lessons(
                rs.result_type, rs.turn_id, t.turn_number, rs.created_at
         FROM retrieval_selections rs
         JOIN retrieval_events re ON re.id = rs.retrieval_event_id
+        JOIN assessments a ON a.id = rs.result_id AND a.feedback IS NOT NULL
         LEFT JOIN turns t ON t.id = rs.turn_id
         WHERE rs.session_id = ?
           AND rs.result_type IN ('assessment', 'lesson')
@@ -201,24 +202,15 @@ def _detect_overlapping_lessons(
         if not checkpoint_row:
             continue
 
+        # Prefer commit's changed files over full files_snapshot — the
+        # snapshot from `--snapshot` contains ALL tracked files, which
+        # would match any edit and inflate lesson_reuse_rate.
         lesson_paths: set[str] = set()
-        snapshot_raw = checkpoint_row["files_snapshot"]
-        if snapshot_raw:
-            try:
-                snapshot = json.loads(snapshot_raw)
-                if isinstance(snapshot, dict):
-                    lesson_paths = set(snapshot.keys())
-                elif isinstance(snapshot, list):
-                    lesson_paths = {str(p) for p in snapshot if p}
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        # Fallback: if files_snapshot is NULL (auto-created checkpoints),
-        # derive file list from the checkpoint's git commit.
-        if not lesson_paths and checkpoint_row["git_commit_hash"] and repo_path:
+        commit_hash = checkpoint_row["git_commit_hash"]
+        if commit_hash and repo_path:
             try:
                 git_result = subprocess.run(
-                    ["git", "show", "--name-only", "--format=", checkpoint_row["git_commit_hash"]],
+                    ["git", "show", "--name-only", "--format=", commit_hash],
                     cwd=repo_path,
                     capture_output=True,
                     text=True,
@@ -228,6 +220,19 @@ def _detect_overlapping_lessons(
                     lesson_paths = {line.strip() for line in git_result.stdout.splitlines() if line.strip()}
             except (subprocess.TimeoutExpired, FileNotFoundError):
                 pass
+
+        # Fallback to files_snapshot only if commit diff yielded nothing
+        if not lesson_paths:
+            snapshot_raw = checkpoint_row["files_snapshot"]
+            if snapshot_raw:
+                try:
+                    snapshot = json.loads(snapshot_raw)
+                    if isinstance(snapshot, dict):
+                        lesson_paths = set(snapshot.keys())
+                    elif isinstance(snapshot, list):
+                        lesson_paths = {str(p) for p in snapshot if p}
+                except (json.JSONDecodeError, TypeError):
+                    pass
 
         if not lesson_paths:
             continue
