@@ -57,36 +57,41 @@ def _extract_lesson_files(
     commit_hash: str | None,
     repo_path: str | None = None,
 ) -> set[str]:
-    """Extract file paths from a lesson's checkpoint snapshot or commit."""
-    lesson_files: set[str] = set()
+    """Extract file paths from a lesson's checkpoint commit or snapshot.
 
-    if snapshot_raw:
-        try:
-            snapshot = json.loads(snapshot_raw) if isinstance(snapshot_raw, str) else snapshot_raw
-            if isinstance(snapshot, dict):
-                lesson_files = set(snapshot.keys())
-            elif isinstance(snapshot, list):
-                lesson_files = {str(p) for p in snapshot if p}
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-    # Fallback: derive files from the checkpoint's git commit when
-    # files_snapshot is absent (auto-created checkpoints).
-    if not lesson_files and commit_hash and repo_path:
+    Prefers commit changed-files over full files_snapshot — the snapshot
+    from ``--snapshot`` contains ALL tracked files, which would match any
+    edit and inflate overlap scores.
+    """
+    # Prefer commit's changed files (narrow, accurate)
+    if commit_hash and repo_path:
         try:
             git_result = subprocess.run(
-                ["git", "show", "--name-only", "--format=", commit_hash],
+                ["git", "-c", "core.quotePath=false", "show", "--name-only", "--format=", commit_hash],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
             if git_result.returncode == 0:
-                lesson_files = {line.strip() for line in git_result.stdout.splitlines() if line.strip()}
+                commit_files = {line.strip() for line in git_result.stdout.splitlines() if line.strip()}
+                if commit_files:
+                    return commit_files
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass
 
-    return lesson_files
+    # Fallback to files_snapshot only when commit diff unavailable
+    if snapshot_raw:
+        try:
+            snapshot = json.loads(snapshot_raw) if isinstance(snapshot_raw, str) else snapshot_raw
+            if isinstance(snapshot, dict):
+                return set(snapshot.keys())
+            if isinstance(snapshot, list):
+                return {str(p) for p in snapshot if p}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return set()
 
 
 def rank_lessons_for_prompt(

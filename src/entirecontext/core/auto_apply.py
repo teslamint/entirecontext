@@ -210,7 +210,7 @@ def _detect_overlapping_lessons(
         if commit_hash and repo_path:
             try:
                 git_result = subprocess.run(
-                    ["git", "show", "--name-only", "--format=", commit_hash],
+                    ["git", "-c", "core.quotePath=false", "show", "--name-only", "--format=", commit_hash],
                     cwd=repo_path,
                     capture_output=True,
                     text=True,
@@ -346,6 +346,22 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
 
     total_added = 0
     total_deleted = 0
+
+    # Count untracked new files in the overlap set — git diff misses
+    # files that haven't been staged yet (e.g. Write tool creates new file).
+    if not result.stdout.strip():
+        try:
+            status_cmd = ["git", "status", "--porcelain", "--"] + overlap_files
+            status_result = subprocess.run(
+                status_cmd, cwd=repo_path, capture_output=True, text=True, timeout=5
+            )
+            if status_result.returncode == 0:
+                for sline in status_result.stdout.strip().splitlines():
+                    if sline.startswith("??") or sline.startswith("A "):
+                        total_added += 1
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
     for line in result.stdout.strip().splitlines():
         parts = line.split("\t")
         if len(parts) >= 2:
