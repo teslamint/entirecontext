@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import subprocess
 from typing import Any
 
 
@@ -51,11 +52,49 @@ def get_checkpoint_file_paths(
     return []
 
 
+def _extract_lesson_files(
+    snapshot_raw: str | None,
+    commit_hash: str | None,
+    repo_path: str | None = None,
+) -> set[str]:
+    """Extract file paths from a lesson's checkpoint snapshot or commit."""
+    lesson_files: set[str] = set()
+
+    if snapshot_raw:
+        try:
+            snapshot = json.loads(snapshot_raw) if isinstance(snapshot_raw, str) else snapshot_raw
+            if isinstance(snapshot, dict):
+                lesson_files = set(snapshot.keys())
+            elif isinstance(snapshot, list):
+                lesson_files = {str(p) for p in snapshot if p}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Fallback: derive files from the checkpoint's git commit when
+    # files_snapshot is absent (auto-created checkpoints).
+    if not lesson_files and commit_hash and repo_path:
+        try:
+            git_result = subprocess.run(
+                ["git", "show", "--name-only", "--format=", commit_hash],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if git_result.returncode == 0:
+                lesson_files = {line.strip() for line in git_result.stdout.splitlines() if line.strip()}
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
+
+    return lesson_files
+
+
 def rank_lessons_for_prompt(
     conn: sqlite3.Connection,
     *,
     file_paths: list[str] | None = None,
     limit: int = 5,
+    repo_path: str | None = None,
 ) -> list[dict[str, Any]]:
     """Rank lessons by file overlap with working-area files, then recency.
 
@@ -73,22 +112,13 @@ def rank_lessons_for_prompt(
     for lesson in lessons:
         overlap_score = 0.0
         snapshot_raw = lesson.pop("files_snapshot", None)
-        lesson.pop("git_commit_hash", None)
+        commit_hash = lesson.pop("git_commit_hash", None)
 
-        if file_set and snapshot_raw:
-            try:
-                snapshot = json.loads(snapshot_raw) if isinstance(snapshot_raw, str) else snapshot_raw
-                if isinstance(snapshot, dict):
-                    lesson_files = set(snapshot.keys())
-                elif isinstance(snapshot, list):
-                    lesson_files = set(str(p) for p in snapshot if p)
-                else:
-                    lesson_files = set()
-                overlap_count = len(file_set & lesson_files)
-                if overlap_count > 0:
-                    overlap_score = 10.0 + overlap_count
-            except (json.JSONDecodeError, TypeError):
-                pass
+        if file_set:
+            lesson_files = _extract_lesson_files(snapshot_raw, commit_hash, repo_path)
+            overlap_count = len(file_set & lesson_files)
+            if overlap_count > 0:
+                overlap_score = 10.0 + overlap_count
 
         scored.append((overlap_score, lesson))
 

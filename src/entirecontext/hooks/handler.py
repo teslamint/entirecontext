@@ -130,7 +130,7 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
 
     conn = get_db(repo_path)
     try:
-        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=5)
+        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=5, repo_path=repo_path)
         if not lessons:
             return
 
@@ -250,39 +250,41 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
         trimmed = _result[0]
 
+        # Build decision section (may be empty if no decisions matched)
+        md = ""
         if trimmed:
             from ..core.decision_prompt_surfacing import _format_decision_entry
 
             entries = [_format_decision_entry(d, i + 1) for i, d in enumerate(trimmed)]
             md = "## Related Decisions\n\n" + "\n\n".join(entries)
 
-            # Best-effort lesson surfacing in separate timeout thread —
-            # lesson latency must never block decision output.
-            # Telemetry is recorded ONLY when the result is used (after
-            # timeout check + trim), not inside the thread, so abandoned
-            # threads don't create phantom selections.
-            try:
-                remaining_tokens = max_tokens - _estimate_tokens(md)
-                _lesson_result: list[tuple[str, list[dict]] | None] = []
+        # Best-effort lesson surfacing in separate timeout thread —
+        # runs even when no decisions matched, filling the full token budget.
+        # Telemetry is recorded ONLY when the result is used (after
+        # timeout check + trim), not inside the thread.
+        try:
+            remaining_tokens = max_tokens - _estimate_tokens(md)
+            _lesson_result: list[tuple[str, list[dict]] | None] = []
 
-                def _lesson_wrapper() -> None:
-                    try:
-                        _lesson_result.append(
-                            _rank_and_format_lessons_for_pdi(repo_path, session_id, config, remaining_tokens)
-                        )
-                    except Exception:
-                        _lesson_result.append(None)
+            def _lesson_wrapper() -> None:
+                try:
+                    _lesson_result.append(
+                        _rank_and_format_lessons_for_pdi(repo_path, session_id, config, remaining_tokens)
+                    )
+                except Exception:
+                    _lesson_result.append(None)
 
-                lt = threading.Thread(target=_lesson_wrapper, daemon=True)
-                lt.start()
-                lt.join(timeout=0.1)
-                if not lt.is_alive() and _lesson_result and _lesson_result[0]:
-                    lesson_md, surviving_lessons = _lesson_result[0]
-                    md = md + "\n\n" + lesson_md
-                    _record_pdi_lesson_telemetry(repo_path, session_id, surviving_lessons)
-            except Exception:
-                pass
+            lt = threading.Thread(target=_lesson_wrapper, daemon=True)
+            lt.start()
+            lt.join(timeout=0.1)
+            if not lt.is_alive() and _lesson_result and _lesson_result[0]:
+                lesson_md, surviving_lessons = _lesson_result[0]
+                md = (md + "\n\n" + lesson_md) if md else lesson_md
+                _record_pdi_lesson_telemetry(repo_path, session_id, surviving_lessons)
+        except Exception:
+            pass
 
+        if md:
             print(
                 json.dumps(
                     {
@@ -334,7 +336,7 @@ def _rank_and_format_lessons_for_pdi(
 
     conn = get_db(repo_path)
     try:
-        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=3)
+        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=3, repo_path=repo_path)
         if not lessons:
             return None
 

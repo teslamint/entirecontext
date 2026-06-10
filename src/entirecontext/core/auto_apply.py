@@ -259,11 +259,13 @@ def _detect_overlapping_lessons(
 
 def _has_new_decision_with_file_overlap(conn: sqlite3.Connection, session_id: str, decision_id: str) -> bool:
     """Check if a new decision was created during this session with overlapping decision_files."""
-    session_row = conn.execute("SELECT created_at FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    session_row = conn.execute("SELECT created_at, started_at FROM sessions WHERE id = ?", (session_id,)).fetchone()
     if not session_row:
         return False
 
-    session_start = session_row["created_at"]
+    # Prefer started_at (ISO with T and timezone) over created_at
+    # (SQLite datetime('now') format) to avoid cross-format string comparison.
+    session_start = session_row["started_at"] or session_row["created_at"]
 
     repo_root: str | None = None
     session_meta = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
