@@ -304,21 +304,23 @@ def _has_new_decision_with_file_overlap(
         (session_start, decision_id, session_id),
     ).fetchall()
 
-    # Fallback: if no candidates link to session, check timestamp-only
-    # but restrict to overlap_files (not all original decision_files)
-    if not new_decisions:
-        new_decisions = conn.execute(
-            """
-            SELECT DISTINCT d.id
-            FROM decisions d
-            JOIN decision_files df ON df.decision_id = d.id
-            WHERE d.created_at >= ?
-              AND d.id != ?
-            """,
-            (session_start, decision_id),
-        ).fetchall()
+    # Also include manual decisions (no decision_candidates row) that
+    # overlap the actual modified files — merge with candidate-backed set.
+    candidate_ids = {row["id"] for row in new_decisions}
+    manual_decisions = conn.execute(
+        """
+        SELECT DISTINCT d.id
+        FROM decisions d
+        JOIN decision_files df ON df.decision_id = d.id
+        WHERE d.created_at >= ?
+          AND d.id != ?
+          AND d.id NOT IN (SELECT id FROM decisions WHERE id IN ({placeholders}))
+        """.format(placeholders=",".join("?" * len(candidate_ids)) if candidate_ids else "'__none__'"),
+        (session_start, decision_id, *candidate_ids),
+    ).fetchall()
+    all_decisions = list(new_decisions) + [r for r in manual_decisions if r["id"] not in candidate_ids]
 
-    for row in new_decisions:
+    for row in all_decisions:
         new_files = {
             _normalize_file_path(r["file_path"], repo_root)
             for r in conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (row["id"],)).fetchall()

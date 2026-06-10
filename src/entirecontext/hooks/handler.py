@@ -277,11 +277,15 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
             except Exception as e:
                 _exc.append(e)
 
+        import time
+
+        _t_start = time.monotonic()
         t = threading.Thread(target=_rank_wrapper, daemon=True)
         t.start()
         t.join(timeout=timeout_s)
         if t.is_alive():
             return 0
+        decision_elapsed = time.monotonic() - _t_start
 
         if _exc:
             raise _exc[0]
@@ -299,10 +303,9 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
             entries = [_format_decision_entry(d, i + 1) for i, d in enumerate(trimmed)]
             md = "## Related Decisions\n\n" + "\n\n".join(entries)
 
-        # Best-effort lesson surfacing in separate timeout thread —
-        # runs even when no decisions matched, filling the full token budget.
-        # Telemetry is recorded ONLY when the result is used (after
-        # timeout check + trim), not inside the thread.
+        # Best-effort lesson surfacing — spend only the remaining time
+        # budget so total PDI latency stays within inject_timeout_ms.
+        lesson_timeout = max(0.01, timeout_s - decision_elapsed)
         try:
             remaining_tokens = max_tokens - _estimate_tokens(md)
             _lesson_result: list[tuple[str, list[dict]] | None] = []
@@ -317,7 +320,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
             lt = threading.Thread(target=_lesson_wrapper, daemon=True)
             lt.start()
-            lt.join(timeout=0.1)
+            lt.join(timeout=lesson_timeout)
             if not lt.is_alive() and _lesson_result and _lesson_result[0]:
                 lesson_md, surviving_lessons = _lesson_result[0]
                 md = (md + "\n\n" + lesson_md) if md else lesson_md
