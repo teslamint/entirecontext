@@ -93,6 +93,15 @@ def _handle_session_start(data: dict[str, Any]) -> int:
     return 0
 
 
+def _cleanup_lesson_fallback(repo_path: str) -> None:
+    """Remove stale lesson fallback file from a previous session."""
+    from pathlib import Path
+
+    fallback = Path(repo_path) / ".entirecontext" / "lessons-context.md"
+    if fallback.exists():
+        fallback.unlink(missing_ok=True)
+
+
 def _surface_lessons_on_start(data: dict[str, Any]) -> None:
     """Surface relevant lessons at SessionStart. Never raises to caller."""
     from ..core.config import load_config
@@ -105,13 +114,13 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
 
     config = load_config(repo_path)
     if not config.get("capture", {}).get("surface_lessons_on_start", True):
+        _cleanup_lesson_fallback(repo_path)
         return
 
     session_id = data.get("session_id")
 
-    # Skip lesson surfacing on resumed sessions — lessons shown on resume
-    # would get credited for edits that happened before the resume.
     if data.get("source") == "resume":
+        _cleanup_lesson_fallback(repo_path)
         return
 
     from ..core.decision_prompt_surfacing import (
@@ -156,6 +165,7 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
     try:
         lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=5, repo_path=repo_path)
         if not lessons:
+            _cleanup_lesson_fallback(repo_path)
             return
 
         from ..core.context import transaction
