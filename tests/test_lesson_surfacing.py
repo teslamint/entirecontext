@@ -240,3 +240,55 @@ def test_session_start_lesson_surfacing_records_telemetry(lesson_setup, monkeypa
         "SELECT * FROM retrieval_selections WHERE result_type = 'assessment'",
     ).fetchall()
     assert len(selections) >= 1
+
+
+def test_pdi_lesson_failure_does_not_suppress_decisions(lesson_setup, capsys, monkeypatch):
+    """If lesson ranking throws, decisions still appear in output."""
+    import entirecontext.core.config as config_mod
+    from entirecontext.core.decisions import create_decision, link_decision_to_file
+
+    ctx = lesson_setup
+    conn = ctx["conn"]
+
+    decision = create_decision(conn, title="Auth decision", rationale="JWT approach")
+    link_decision_to_file(conn, decision["id"], "src/auth.py")
+
+    import pathlib
+
+    (pathlib.Path(ctx["repo_path"]) / "src").mkdir(exist_ok=True)
+    (pathlib.Path(ctx["repo_path"]) / "src" / "auth.py").write_text("# auth\n")
+    import subprocess
+
+    subprocess.run(["git", "-C", ctx["repo_path"], "add", "src/auth.py"], capture_output=True)
+
+    config = {
+        "capture": {"auto_capture": True},
+        "decisions": {
+            "injection": {
+                "inject_on_user_prompt": True,
+                "top_k": 5,
+                "max_tokens": 800,
+                "min_confidence": 0.0,
+                "inject_timeout_ms": 5000,
+            },
+        },
+    }
+    monkeypatch.setattr(config_mod, "load_config", lambda *a, **kw: config)
+
+    monkeypatch.setattr(
+        "entirecontext.core.lesson_surfacing.rank_lessons_for_prompt",
+        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("lesson boom")),
+    )
+
+    from entirecontext.hooks.handler import _handle_user_prompt
+
+    data = {
+        "cwd": ctx["repo_path"],
+        "session_id": ctx["session_id"],
+        "prompt": "fix auth",
+    }
+    result = _handle_user_prompt(data)
+    assert result == 0
+
+    captured = capsys.readouterr()
+    assert "Related Decisions" in captured.out

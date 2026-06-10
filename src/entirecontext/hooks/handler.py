@@ -255,6 +255,31 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
             entries = [_format_decision_entry(d, i + 1) for i, d in enumerate(trimmed)]
             md = "## Related Decisions\n\n" + "\n\n".join(entries)
+
+            # Best-effort lesson surfacing in separate timeout thread —
+            # lesson latency must never block decision output.
+            try:
+                remaining_tokens = max_tokens - _estimate_tokens(md)
+                _lesson_result: list[str | None] = []
+
+                def _lesson_wrapper() -> None:
+                    try:
+                        _lesson_result.append(
+                            _rank_and_format_lessons_for_pdi(
+                                repo_path, session_id, config, remaining_tokens
+                            )
+                        )
+                    except Exception:
+                        _lesson_result.append(None)
+
+                lt = threading.Thread(target=_lesson_wrapper, daemon=True)
+                lt.start()
+                lt.join(timeout=0.1)
+                if not lt.is_alive() and _lesson_result and _lesson_result[0]:
+                    md = md + "\n\n" + _lesson_result[0]
+            except Exception:
+                pass
+
             print(
                 json.dumps(
                     {
@@ -269,6 +294,80 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         print(f"EntireContext PDI error: {e}", file=sys.stderr)
 
     return 0
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token."""
+    return len(text) // 4
+
+
+def _rank_and_format_lessons_for_pdi(
+    repo_path: str, session_id: str | None, config: dict, remaining_tokens: int
+) -> str | None:
+    """Rank and format lessons for PDI. Returns Markdown or None."""
+    if remaining_tokens < 100:
+        return None
+
+    from ..core.decision_prompt_surfacing import (
+        _get_recent_commit_file_paths,
+        _get_uncommitted_file_paths,
+    )
+    from ..core.lesson_surfacing import format_lesson_entry, rank_lessons_for_prompt
+    from ..db import get_db
+
+    file_paths = _get_uncommitted_file_paths(repo_path)
+    commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
+    if commit_file_paths:
+        seen = set(file_paths)
+        for p in commit_file_paths:
+            if p not in seen:
+                seen.add(p)
+                file_paths.append(p)
+
+    conn = get_db(repo_path)
+    try:
+        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=3)
+        if not lessons:
+            return None
+
+        from ..core.context import transaction
+        from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        with transaction(conn):
+            event = record_retrieval_event(
+                conn,
+                source="hook",
+                search_type="lesson_surfacing",
+                target="assessment",
+                query=",".join(file_paths[:10]) if file_paths else "",
+                result_count=len(lessons),
+                latency_ms=0,
+                session_id=session_id,
+                file_filter=",".join(file_paths[:10]) if file_paths else None,
+            )
+            for idx, lesson in enumerate(lessons, start=1):
+                record_retrieval_selection(
+                    conn,
+                    event["id"],
+                    result_type="assessment",
+                    result_id=lesson["id"],
+                    rank=idx,
+                    session_id=session_id,
+                )
+
+        entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
+        result = "## Relevant Lessons\n\n" + "\n\n".join(entries)
+
+        if _estimate_tokens(result) > remaining_tokens:
+            while entries and _estimate_tokens("## Relevant Lessons\n\n" + "\n\n".join(entries)) > remaining_tokens:
+                entries.pop()
+            if not entries:
+                return None
+            result = "## Relevant Lessons\n\n" + "\n\n".join(entries)
+
+        return result
+    finally:
+        conn.close()
 
 
 def _handle_stop(data: dict[str, Any]) -> int:
