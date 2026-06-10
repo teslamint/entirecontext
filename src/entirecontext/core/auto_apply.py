@@ -142,20 +142,112 @@ def _detect_overlapping_decisions(
     return matches
 
 
+def _detect_overlapping_lessons(
+    conn: sqlite3.Connection, session_id: str, repo_path: str | None = None
+) -> list[dict[str, Any]]:
+    """Detect surfaced lessons/assessments with file overlap. No writes.
+
+    Checks retrieval_selections with result_type IN ('assessment', 'lesson'),
+    cross-references with checkpoint files_snapshot, and compares with
+    session-modified files. Deduplicates by result_id.
+    Skips if a context_application already exists for this selection+session.
+    """
+    modified_files = _collect_session_modified_files(conn, session_id, repo_path)
+    if not modified_files:
+        return []
+
+    rows = conn.execute(
+        """
+        SELECT rs.id AS selection_id, rs.result_id AS assessment_id,
+               rs.result_type, rs.turn_id, t.turn_number, rs.created_at
+        FROM retrieval_selections rs
+        JOIN retrieval_events re ON re.id = rs.retrieval_event_id
+        LEFT JOIN turns t ON t.id = rs.turn_id
+        WHERE rs.session_id = ?
+          AND rs.result_type IN ('assessment', 'lesson')
+          AND NOT EXISTS (
+              SELECT 1 FROM context_applications ca
+              WHERE ca.retrieval_selection_id = rs.id
+                AND ca.session_id = ?
+          )
+        ORDER BY rs.result_id, COALESCE(t.turn_number, 0) ASC, rs.created_at ASC
+        """,
+        (session_id, session_id),
+    ).fetchall()
+
+    seen_assessments: set[str] = set()
+    matches: list[dict[str, Any]] = []
+
+    repo_root = os.path.realpath(repo_path) if repo_path else None
+
+    for row in rows:
+        assessment_id = row["assessment_id"]
+        if assessment_id in seen_assessments:
+            continue
+
+        checkpoint_files_row = conn.execute(
+            """
+            SELECT c.files_snapshot
+            FROM assessments a
+            JOIN checkpoints c ON c.id = a.checkpoint_id
+            WHERE a.id = ?
+              AND c.files_snapshot IS NOT NULL
+            """,
+            (assessment_id,),
+        ).fetchone()
+
+        if not checkpoint_files_row:
+            continue
+
+        try:
+            snapshot = json.loads(checkpoint_files_row["files_snapshot"])
+            if isinstance(snapshot, dict):
+                lesson_paths = set(snapshot.keys())
+            elif isinstance(snapshot, list):
+                lesson_paths = {str(p) for p in snapshot if p}
+            else:
+                continue
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+        normalized_lesson_paths = {_normalize_file_path(p, repo_root) for p in lesson_paths}
+
+        surfaced_turn = row["turn_number"] or 0
+        overlap = {
+            path
+            for path in normalized_lesson_paths
+            if path in modified_files and any(t >= surfaced_turn for t in modified_files[path])
+        }
+        if not overlap:
+            continue
+
+        seen_assessments.add(assessment_id)
+        matches.append(
+            {
+                "assessment_id": assessment_id,
+                "selection_id": row["selection_id"],
+                "result_type": row["result_type"],
+                "turn_id": row["turn_id"],
+                "overlap_files": sorted(overlap),
+            }
+        )
+
+    return matches
+
+
 def infer_applied_decisions(
     conn: sqlite3.Connection, session_id: str, *, dry_run: bool = False, repo_path: str | None = None
 ) -> dict[str, Any]:
-    """Infer 'accepted' outcome for decisions whose files were modified this session.
-
-    If dry_run or no matches, return count only. Otherwise atomically write BOTH
-    context_application + accepted outcome in ONE transaction per match.
-    """
+    """Infer outcomes for decisions and lessons whose files were modified this session."""
     matches = _detect_overlapping_decisions(conn, session_id, repo_path)
+    lesson_matches = _detect_overlapping_lessons(conn, session_id, repo_path)
 
-    if dry_run or not matches:
-        return {"applied_count": len(matches), "applied_decisions": []}
+    if dry_run or (not matches and not lesson_matches):
+        return {"applied_count": len(matches) + len(lesson_matches), "applied_decisions": []}
 
     applied: list[dict[str, Any]] = []
+
+    # Decision outcomes
     for match in matches:
         note = f"auto: session_end file_overlap ({', '.join(match['overlap_files'][:3])})"
         infer_session = session_id
@@ -176,6 +268,24 @@ def infer_applied_decisions(
                 match["decision_id"],
                 outcome_type="accepted",
                 retrieval_selection_id=match["selection_id"],
+                session_id=infer_session,
+                turn_id=infer_turn,
+                note=note,
+            )
+        applied.append(match)
+
+    # Lesson applications (no decision_outcome — assessments aren't decisions)
+    for match in lesson_matches:
+        note = f"auto: session_end lesson_overlap ({', '.join(match['overlap_files'][:3])})"
+        infer_session = session_id
+        infer_turn = match["turn_id"]
+        if infer_session and not infer_turn:
+            infer_session = None
+        with transaction(conn):
+            record_context_application(
+                conn,
+                application_type="lesson_applied",
+                selection_id=match["selection_id"],
                 session_id=infer_session,
                 turn_id=infer_turn,
                 note=note,
