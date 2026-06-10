@@ -150,8 +150,9 @@ def _detect_overlapping_lessons(
 
     Checks retrieval_selections with result_type IN ('assessment', 'lesson'),
     cross-references with checkpoint files_snapshot, and compares with
-    session-modified files. Deduplicates by result_id.
-    Skips if a context_application already exists for this selection+session.
+    session-modified files. Deduplicates by assessment_id (not selection_id)
+    so the same lesson surfaced via both SessionStart and PDI produces only
+    one context_application per session.
     """
     modified_files = _collect_session_modified_files(conn, session_id, repo_path)
     if not modified_files:
@@ -168,7 +169,8 @@ def _detect_overlapping_lessons(
           AND rs.result_type IN ('assessment', 'lesson')
           AND NOT EXISTS (
               SELECT 1 FROM context_applications ca
-              WHERE ca.retrieval_selection_id = rs.id
+              WHERE ca.source_type IN ('assessment', 'lesson')
+                AND ca.source_id = rs.result_id
                 AND ca.session_id = ?
           )
         ORDER BY rs.result_id, COALESCE(t.turn_number, 0) ASC, rs.created_at ASC
@@ -244,8 +246,21 @@ def _has_new_decision_with_file_overlap(conn: sqlite3.Connection, session_id: st
 
     session_start = session_row["created_at"]
 
+    repo_root: str | None = None
+    session_meta = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    if session_meta and session_meta["metadata"]:
+        try:
+            import json as _json
+
+            meta = _json.loads(session_meta["metadata"])
+            rp = meta.get("repo_path")
+            if rp:
+                repo_root = os.path.realpath(rp)
+        except (ValueError, TypeError):
+            pass
+
     original_files = {
-        r["file_path"]
+        _normalize_file_path(r["file_path"], repo_root)
         for r in conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (decision_id,)).fetchall()
     }
     if not original_files:
@@ -264,7 +279,7 @@ def _has_new_decision_with_file_overlap(conn: sqlite3.Connection, session_id: st
 
     for row in new_decisions:
         new_files = {
-            r["file_path"]
+            _normalize_file_path(r["file_path"], repo_root)
             for r in conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (row["id"],)).fetchall()
         }
         if original_files & new_files:

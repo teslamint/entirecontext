@@ -331,6 +331,18 @@ def _rank_and_format_lessons_for_pdi(
         from ..core.context import transaction
         from ..core.telemetry import record_retrieval_event, record_retrieval_selection
 
+        # Resolve current turn_id so lesson selections are anchored to the
+        # prompt turn — prevents false lesson_applied when files were edited
+        # before the lesson was surfaced.
+        current_turn_id = None
+        if session_id:
+            turn_row = conn.execute(
+                "SELECT id FROM turns WHERE session_id = ? ORDER BY turn_number DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if turn_row:
+                current_turn_id = turn_row["id"]
+
         with transaction(conn):
             event = record_retrieval_event(
                 conn,
@@ -351,6 +363,7 @@ def _rank_and_format_lessons_for_pdi(
                     result_id=lesson["id"],
                     rank=idx,
                     session_id=session_id,
+                    turn_id=current_turn_id,
                 )
 
         entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
