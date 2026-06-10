@@ -1,10 +1,11 @@
-"""SessionEnd auto-apply: infer 'accepted' outcome for decisions with file overlap."""
+"""SessionEnd auto-apply: infer outcomes for decisions/lessons with file overlap."""
 
 from __future__ import annotations
 
 import json
 import os
 import sqlite3
+import subprocess
 from typing import Any
 
 from .context import transaction
@@ -235,6 +236,105 @@ def _detect_overlapping_lessons(
     return matches
 
 
+def _has_new_decision_with_file_overlap(
+    conn: sqlite3.Connection, session_id: str, decision_id: str
+) -> bool:
+    """Check if a new decision was created during this session with overlapping decision_files."""
+    session_row = conn.execute(
+        "SELECT created_at FROM sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    if not session_row:
+        return False
+
+    session_start = session_row["created_at"]
+
+    original_files = {
+        r["file_path"]
+        for r in conn.execute(
+            "SELECT file_path FROM decision_files WHERE decision_id = ?", (decision_id,)
+        ).fetchall()
+    }
+    if not original_files:
+        return False
+
+    new_decisions = conn.execute(
+        """
+        SELECT DISTINCT d.id
+        FROM decisions d
+        JOIN decision_files df ON df.decision_id = d.id
+        WHERE d.created_at >= ?
+          AND d.id != ?
+        """,
+        (session_start, decision_id),
+    ).fetchall()
+
+    for row in new_decisions:
+        new_files = {
+            r["file_path"]
+            for r in conn.execute(
+                "SELECT file_path FROM decision_files WHERE decision_id = ?", (row["id"],)
+            ).fetchall()
+        }
+        if original_files & new_files:
+            return True
+
+    return False
+
+
+def _classify_diff_pattern(
+    repo_path: str, session_id: str, overlap_files: list[str], conn: sqlite3.Connection
+) -> str:
+    """Classify diff as 'refined' (net additions) or 'replaced' (net deletions).
+
+    Uses git diff --numstat between session start commit and HEAD,
+    filtered to overlapping files.
+    """
+    session_row = conn.execute(
+        "SELECT metadata FROM sessions WHERE id = ?", (session_id,)
+    ).fetchone()
+    if not session_row or not session_row["metadata"]:
+        return "accepted"
+
+    try:
+        metadata = json.loads(session_row["metadata"])
+        start_sha = metadata.get("start_git_commit")
+    except (json.JSONDecodeError, TypeError):
+        return "accepted"
+
+    if not start_sha:
+        return "accepted"
+
+    try:
+        cmd = ["git", "diff", "--numstat", f"{start_sha}..HEAD", "--"] + overlap_files
+        result = subprocess.run(
+            cmd, cwd=repo_path, capture_output=True, text=True, timeout=5
+        )
+        if result.returncode != 0:
+            return "accepted"
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return "accepted"
+
+    total_added = 0
+    total_deleted = 0
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("\t")
+        if len(parts) >= 2:
+            try:
+                added = int(parts[0]) if parts[0] != "-" else 0
+                deleted = int(parts[1]) if parts[1] != "-" else 0
+                total_added += added
+                total_deleted += deleted
+            except ValueError:
+                continue
+
+    if total_added == 0 and total_deleted == 0:
+        return "accepted"
+
+    if total_added > total_deleted:
+        return "refined"
+    return "replaced"
+
+
 def infer_applied_decisions(
     conn: sqlite3.Connection, session_id: str, *, dry_run: bool = False, repo_path: str | None = None
 ) -> dict[str, Any]:
@@ -247,9 +347,27 @@ def infer_applied_decisions(
 
     applied: list[dict[str, Any]] = []
 
-    # Decision outcomes
+    # Layer 2 config gate
+    infer_outcome_type = False
+    if repo_path:
+        try:
+            from .config import load_config
+
+            cfg = load_config(repo_path)
+            infer_outcome_type = cfg.get("decisions", {}).get("infer_outcome_type", True)
+        except Exception:
+            pass
+
+    # Decision outcomes — with optional Layer 2 classification
     for match in matches:
-        note = f"auto: session_end file_overlap ({', '.join(match['overlap_files'][:3])})"
+        outcome_type = "accepted"
+        if infer_outcome_type and repo_path:
+            if _has_new_decision_with_file_overlap(conn, session_id, match["decision_id"]):
+                outcome_type = _classify_diff_pattern(
+                    repo_path, session_id, match["overlap_files"], conn
+                )
+
+        note = f"auto: session_end {outcome_type} ({', '.join(match['overlap_files'][:3])})"
         infer_session = session_id
         infer_turn = match["turn_id"]
         if infer_session and not infer_turn:
@@ -266,7 +384,7 @@ def infer_applied_decisions(
             record_decision_outcome(
                 conn,
                 match["decision_id"],
-                outcome_type="accepted",
+                outcome_type=outcome_type,
                 retrieval_selection_id=match["selection_id"],
                 session_id=infer_session,
                 turn_id=infer_turn,
