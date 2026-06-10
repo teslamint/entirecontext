@@ -126,12 +126,31 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
 
     file_paths = _get_uncommitted_file_paths(repo_path)
     commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
-    if commit_file_paths:
-        seen = set(file_paths)
-        for p in commit_file_paths:
-            if p not in seen:
-                seen.add(p)
-                file_paths.append(p)
+    seen = set(file_paths)
+    for p in commit_file_paths:
+        if p not in seen:
+            seen.add(p)
+            file_paths.append(p)
+
+    # Include untracked files so newly created files match relevant lessons
+    try:
+        import subprocess as _sp
+
+        untracked = _sp.run(
+            ["git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if untracked.returncode == 0:
+            for p in untracked.stdout.strip().splitlines():
+                p = p.strip()
+                if p and p not in seen:
+                    seen.add(p)
+                    file_paths.append(p)
+    except Exception:
+        pass
 
     conn = get_db(repo_path)
     try:
@@ -168,6 +187,13 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
         entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
         output = "## Relevant Lessons\n\n" + "\n\n".join(entries)
         print(output)
+
+        # Write fallback file for agents that don't capture stdout
+        from pathlib import Path
+
+        fallback_path = Path(repo_path) / ".entirecontext" / "lessons-context.md"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_text(output, encoding="utf-8")
     finally:
         conn.close()
 
@@ -343,7 +369,7 @@ def _rank_and_format_lessons_for_pdi(
         import subprocess as _sp
 
         untracked = _sp.run(
-            ["git", "ls-files", "--others", "--exclude-standard"],
+            ["git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"],
             cwd=repo_path,
             capture_output=True,
             text=True,
