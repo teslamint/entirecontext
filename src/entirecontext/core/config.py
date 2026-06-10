@@ -17,6 +17,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "intent_summary": False,
         "emit_aar": True,
         "codex_session_idle_minutes": 60,
+        "surface_lessons_on_start": True,
         "exclusions": {
             "enabled": False,
             "content_patterns": [],
@@ -93,6 +94,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "extract_sources": ["session", "checkpoint", "assessment"],
         "infer_ignored_on_session_end": False,
         "infer_applied_on_session_end": True,
+        "infer_outcome_type": True,
         "ignored_inference_min_turn_gap": 2,
         "candidate_min_confidence": 0.35,
         "noise_gate_min_turns_with_files": 3,

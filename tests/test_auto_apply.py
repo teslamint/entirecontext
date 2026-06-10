@@ -97,7 +97,7 @@ def test_infer_applied_creates_application_and_outcome(auto_apply_setup):
     ).fetchone()
     assert outcome_row is not None
     assert outcome_row["outcome_type"] == "accepted"
-    assert "auto: session_end file_overlap" in outcome_row["note"]
+    assert "auto: session_end accepted" in outcome_row["note"]
 
 
 def test_infer_applied_atomicity_both_or_neither(auto_apply_setup, monkeypatch):

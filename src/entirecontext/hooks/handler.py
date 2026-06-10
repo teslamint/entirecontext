@@ -84,7 +84,128 @@ def _handle_session_start(data: dict[str, Any]) -> int:
             print(result)
     except Exception:
         pass
+
+    try:
+        _surface_lessons_on_start(data)
+    except Exception:
+        pass
+
     return 0
+
+
+def _cleanup_lesson_fallback(repo_path: str) -> None:
+    """Remove stale lesson fallback file from a previous session."""
+    from pathlib import Path
+
+    fallback = Path(repo_path) / ".entirecontext" / "lessons-context.md"
+    if fallback.exists():
+        fallback.unlink(missing_ok=True)
+
+
+def _surface_lessons_on_start(data: dict[str, Any]) -> None:
+    """Surface relevant lessons at SessionStart. Never raises to caller."""
+    from ..core.config import load_config
+    from ..core.project import find_git_root
+
+    cwd = data.get("cwd", ".")
+    repo_path = find_git_root(cwd)
+    if not repo_path:
+        return
+
+    config = load_config(repo_path)
+    if not config.get("capture", {}).get("surface_lessons_on_start", True):
+        _cleanup_lesson_fallback(repo_path)
+        return
+
+    session_id = data.get("session_id")
+
+    if data.get("source") == "resume":
+        _cleanup_lesson_fallback(repo_path)
+        return
+
+    from ..core.decision_prompt_surfacing import (
+        _get_recent_commit_file_paths,
+        _get_uncommitted_file_paths,
+    )
+    from ..core.lesson_surfacing import (
+        format_lesson_entry,
+        rank_lessons_for_prompt,
+    )
+    from ..db import get_db
+
+    file_paths = _get_uncommitted_file_paths(repo_path)
+    commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
+    seen = set(file_paths)
+    for p in commit_file_paths:
+        if p not in seen:
+            seen.add(p)
+            file_paths.append(p)
+
+    # Include untracked files so newly created files match relevant lessons
+    try:
+        import subprocess as _sp
+
+        untracked = _sp.run(
+            ["git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if untracked.returncode == 0:
+            for p in untracked.stdout.strip().splitlines():
+                p = p.strip()
+                if p and p not in seen:
+                    seen.add(p)
+                    file_paths.append(p)
+    except Exception:
+        pass
+
+    conn = get_db(repo_path)
+    try:
+        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=5, repo_path=repo_path)
+        if not lessons:
+            _cleanup_lesson_fallback(repo_path)
+            return
+
+        from ..core.context import transaction
+        from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        with transaction(conn):
+            event = record_retrieval_event(
+                conn,
+                source="hook",
+                search_type="lesson_surfacing",
+                target="assessment",
+                query=",".join(file_paths[:10]) if file_paths else "",
+                result_count=len(lessons),
+                latency_ms=0,
+                session_id=session_id,
+                file_filter=",".join(file_paths[:10]) if file_paths else None,
+            )
+            for idx, lesson in enumerate(lessons, start=1):
+                sel = record_retrieval_selection(
+                    conn,
+                    event["id"],
+                    result_type="assessment",
+                    result_id=lesson["id"],
+                    rank=idx,
+                    session_id=session_id,
+                )
+                lesson["selection_id"] = sel["id"]
+
+        entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
+        output = "## Relevant Lessons\n\n" + "\n\n".join(entries)
+        print(output)
+
+        # Write fallback file for agents that don't capture stdout
+        from pathlib import Path
+
+        fallback_path = Path(repo_path) / ".entirecontext" / "lessons-context.md"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_text(output, encoding="utf-8")
+    finally:
+        conn.close()
 
 
 def _handle_user_prompt(data: dict[str, Any]) -> int:
@@ -156,11 +277,15 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
             except Exception as e:
                 _exc.append(e)
 
+        import time
+
+        _t_start = time.monotonic()
         t = threading.Thread(target=_rank_wrapper, daemon=True)
         t.start()
         t.join(timeout=timeout_s)
         if t.is_alive():
             return 0
+        decision_elapsed = time.monotonic() - _t_start
 
         if _exc:
             raise _exc[0]
@@ -170,11 +295,40 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
         trimmed = _result[0]
 
+        # Build decision section (may be empty if no decisions matched)
+        md = ""
         if trimmed:
             from ..core.decision_prompt_surfacing import _format_decision_entry
 
             entries = [_format_decision_entry(d, i + 1) for i, d in enumerate(trimmed)]
             md = "## Related Decisions\n\n" + "\n\n".join(entries)
+
+        # Best-effort lesson surfacing — spend only the remaining time
+        # budget so total PDI latency stays within inject_timeout_ms.
+        lesson_timeout = max(0.01, timeout_s - decision_elapsed)
+        try:
+            remaining_tokens = max_tokens - _estimate_tokens(md)
+            _lesson_result: list[tuple[str, list[dict]] | None] = []
+
+            def _lesson_wrapper() -> None:
+                try:
+                    _lesson_result.append(
+                        _rank_and_format_lessons_for_pdi(repo_path, session_id, config, remaining_tokens)
+                    )
+                except Exception:
+                    _lesson_result.append(None)
+
+            lt = threading.Thread(target=_lesson_wrapper, daemon=True)
+            lt.start()
+            lt.join(timeout=lesson_timeout)
+            if not lt.is_alive() and _lesson_result and _lesson_result[0]:
+                lesson_md, surviving_lessons = _lesson_result[0]
+                md = (md + "\n\n" + lesson_md) if md else lesson_md
+                _record_pdi_lesson_telemetry(repo_path, session_id, surviving_lessons)
+        except Exception:
+            pass
+
+        if md:
             print(
                 json.dumps(
                     {
@@ -189,6 +343,122 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         print(f"EntireContext PDI error: {e}", file=sys.stderr)
 
     return 0
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate: ~4 chars per token."""
+    return len(text) // 4
+
+
+def _rank_and_format_lessons_for_pdi(
+    repo_path: str, session_id: str | None, config: dict, remaining_tokens: int
+) -> tuple[str, list[dict]] | None:
+    """Rank, trim, and format lessons for PDI. No telemetry writes.
+
+    Returns (markdown, surviving_lessons) or None. Telemetry is recorded
+    by the caller only when the result is actually used — this prevents
+    phantom selections when the thread is abandoned by timeout.
+    """
+    if remaining_tokens < 100:
+        return None
+
+    from ..core.decision_prompt_surfacing import (
+        _get_recent_commit_file_paths,
+        _get_uncommitted_file_paths,
+    )
+    from ..core.lesson_surfacing import format_lesson_entry, rank_lessons_for_prompt
+    from ..db import get_db
+
+    file_paths = _get_uncommitted_file_paths(repo_path)
+    commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
+    seen = set(file_paths)
+    for p in commit_file_paths:
+        if p not in seen:
+            seen.add(p)
+            file_paths.append(p)
+
+    # Include untracked files so newly created files match relevant lessons
+    try:
+        import subprocess as _sp
+
+        untracked = _sp.run(
+            ["git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if untracked.returncode == 0:
+            for p in untracked.stdout.strip().splitlines():
+                p = p.strip()
+                if p and p not in seen:
+                    seen.add(p)
+                    file_paths.append(p)
+    except Exception:
+        pass
+
+    conn = get_db(repo_path)
+    try:
+        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=3, repo_path=repo_path)
+        if not lessons:
+            return None
+
+        entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
+        result = "## Relevant Lessons\n\n" + "\n\n".join(entries)
+
+        if _estimate_tokens(result) > remaining_tokens:
+            while entries and _estimate_tokens("## Relevant Lessons\n\n" + "\n\n".join(entries)) > remaining_tokens:
+                entries.pop()
+                lessons.pop()
+            if not entries:
+                return None
+            result = "## Relevant Lessons\n\n" + "\n\n".join(entries)
+
+        return result, lessons
+    finally:
+        conn.close()
+
+
+def _record_pdi_lesson_telemetry(repo_path: str, session_id: str | None, lessons: list[dict]) -> None:
+    """Record telemetry for PDI lessons that were actually shown to the user."""
+    from ..core.context import transaction
+    from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+    from ..db import get_db
+
+    conn = get_db(repo_path)
+    try:
+        current_turn_id = None
+        if session_id:
+            turn_row = conn.execute(
+                "SELECT id FROM turns WHERE session_id = ? ORDER BY turn_number DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if turn_row:
+                current_turn_id = turn_row["id"]
+
+        with transaction(conn):
+            event = record_retrieval_event(
+                conn,
+                source="hook",
+                search_type="lesson_surfacing",
+                target="assessment",
+                query="",
+                result_count=len(lessons),
+                latency_ms=0,
+                session_id=session_id,
+            )
+            for idx, lesson in enumerate(lessons, start=1):
+                record_retrieval_selection(
+                    conn,
+                    event["id"],
+                    result_type="assessment",
+                    result_id=lesson["id"],
+                    rank=idx,
+                    session_id=session_id,
+                    turn_id=current_turn_id,
+                )
+    finally:
+        conn.close()
 
 
 def _handle_stop(data: dict[str, Any]) -> int:
