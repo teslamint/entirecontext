@@ -22,6 +22,7 @@ coverage.json
 .claude
 .cursor/
 .codex/
+.omc/
 .serena/
 agents.lock
 .agents/.gitignore
