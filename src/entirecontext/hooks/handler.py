@@ -84,7 +84,87 @@ def _handle_session_start(data: dict[str, Any]) -> int:
             print(result)
     except Exception:
         pass
+
+    try:
+        _surface_lessons_on_start(data)
+    except Exception:
+        pass
+
     return 0
+
+
+def _surface_lessons_on_start(data: dict[str, Any]) -> None:
+    """Surface relevant lessons at SessionStart. Never raises to caller."""
+    from ..core.config import load_config
+    from ..core.project import find_git_root
+
+    cwd = data.get("cwd", ".")
+    repo_path = find_git_root(cwd)
+    if not repo_path:
+        return
+
+    config = load_config(repo_path)
+    if not config.get("capture", {}).get("surface_lessons_on_start", True):
+        return
+
+    session_id = data.get("session_id")
+
+    from ..core.decision_prompt_surfacing import (
+        _get_recent_commit_file_paths,
+        _get_uncommitted_file_paths,
+    )
+    from ..core.lesson_surfacing import (
+        format_lesson_entry,
+        rank_lessons_for_prompt,
+    )
+    from ..db import get_db
+
+    file_paths = _get_uncommitted_file_paths(repo_path)
+    commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
+    if commit_file_paths:
+        seen = set(file_paths)
+        for p in commit_file_paths:
+            if p not in seen:
+                seen.add(p)
+                file_paths.append(p)
+
+    conn = get_db(repo_path)
+    try:
+        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=5)
+        if not lessons:
+            return
+
+        from ..core.context import transaction
+        from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+
+        with transaction(conn):
+            event = record_retrieval_event(
+                conn,
+                source="hook",
+                search_type="lesson_surfacing",
+                target="assessment",
+                query=",".join(file_paths[:10]) if file_paths else "",
+                result_count=len(lessons),
+                latency_ms=0,
+                session_id=session_id,
+                file_filter=",".join(file_paths[:10]) if file_paths else None,
+            )
+            for idx, lesson in enumerate(lessons, start=1):
+                sel = record_retrieval_selection(
+                    conn,
+                    event["id"],
+                    result_type="assessment",
+                    result_id=lesson["id"],
+                    rank=idx,
+                    session_id=session_id,
+                )
+                lesson["selection_id"] = sel["id"]
+
+        entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
+        output = "## Relevant Lessons\n\n" + "\n\n".join(entries)
+        print(output)
+    finally:
+        conn.close()
 
 
 def _handle_user_prompt(data: dict[str, Any]) -> int:

@@ -154,3 +154,89 @@ def test_format_lesson_entry_output(lesson_setup):
     assert "### 1." in output
     assert "token refresh" in output.lower()
     assert lessons[0]["id"][:12] in output
+
+
+def test_session_start_surfaces_lessons_to_stdout(lesson_setup, capsys, monkeypatch):
+    """SessionStart dispatches lesson surfacing and prints to stdout."""
+    import entirecontext.core.config as config_mod
+
+    ctx = lesson_setup
+    monkeypatch.setattr(
+        config_mod,
+        "load_config",
+        lambda *a, **kw: {
+            "capture": {"auto_capture": True, "surface_lessons_on_start": True},
+            "decisions": {},
+        },
+    )
+
+    from entirecontext.hooks.handler import _handle_session_start
+
+    data = {
+        "cwd": ctx["repo_path"],
+        "session_id": ctx["session_id"],
+    }
+    _handle_session_start(data)
+
+    captured = capsys.readouterr()
+    assert "Lessons" in captured.out or "lesson" in captured.out.lower()
+
+
+def test_session_start_lesson_surfacing_config_off(lesson_setup, capsys, monkeypatch):
+    """surface_lessons_on_start=False skips lesson surfacing."""
+    import entirecontext.core.config as config_mod
+
+    ctx = lesson_setup
+    monkeypatch.setattr(
+        config_mod,
+        "load_config",
+        lambda *a, **kw: {
+            "capture": {"auto_capture": True, "surface_lessons_on_start": False},
+            "decisions": {},
+        },
+    )
+
+    from entirecontext.hooks.handler import _handle_session_start
+
+    data = {
+        "cwd": ctx["repo_path"],
+        "session_id": ctx["session_id"],
+    }
+    _handle_session_start(data)
+
+    captured = capsys.readouterr()
+    assert "Relevant Lessons" not in captured.out
+
+
+def test_session_start_lesson_surfacing_records_telemetry(lesson_setup, monkeypatch):
+    """Lesson surfacing records retrieval_event and retrieval_selection."""
+    import entirecontext.core.config as config_mod
+
+    ctx = lesson_setup
+    monkeypatch.setattr(
+        config_mod,
+        "load_config",
+        lambda *a, **kw: {
+            "capture": {"auto_capture": True, "surface_lessons_on_start": True},
+            "decisions": {},
+        },
+    )
+
+    from entirecontext.hooks.handler import _handle_session_start
+
+    data = {
+        "cwd": ctx["repo_path"],
+        "session_id": ctx["session_id"],
+    }
+    _handle_session_start(data)
+
+    conn = ctx["conn"]
+    events = conn.execute(
+        "SELECT * FROM retrieval_events WHERE search_type = 'lesson_surfacing'",
+    ).fetchall()
+    assert len(events) >= 1
+
+    selections = conn.execute(
+        "SELECT * FROM retrieval_selections WHERE result_type = 'assessment'",
+    ).fetchall()
+    assert len(selections) >= 1
