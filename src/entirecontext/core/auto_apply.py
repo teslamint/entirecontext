@@ -262,15 +262,16 @@ def _detect_overlapping_lessons(
     return matches
 
 
-def _has_new_decision_with_file_overlap(conn: sqlite3.Connection, session_id: str, decision_id: str) -> bool:
-    """Check if a new decision was created during this session with overlapping decision_files."""
+def _has_new_decision_with_file_overlap(
+    conn: sqlite3.Connection, session_id: str, decision_id: str, overlap_files: list[str]
+) -> bool:
+    """Check if a new decision created IN THIS SESSION overlaps the actually-modified files."""
     session_row = conn.execute("SELECT created_at, started_at FROM sessions WHERE id = ?", (session_id,)).fetchone()
     if not session_row:
         return False
 
-    # Prefer started_at (ISO with T and timezone) over created_at
-    # (SQLite datetime('now') format) to avoid cross-format string comparison.
     session_start = session_row["started_at"] or session_row["created_at"]
+    overlap_set = set(overlap_files)
 
     repo_root: str | None = None
     session_meta = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
@@ -285,13 +286,8 @@ def _has_new_decision_with_file_overlap(conn: sqlite3.Connection, session_id: st
         except (ValueError, TypeError):
             pass
 
-    original_files = {
-        _normalize_file_path(r["file_path"], repo_root)
-        for r in conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (decision_id,)).fetchall()
-    }
-    if not original_files:
-        return False
-
+    # Scope to decisions created after session start AND linked to this session
+    # via decision_candidates (prevents cross-session false positives).
     new_decisions = conn.execute(
         """
         SELECT DISTINCT d.id
@@ -299,16 +295,35 @@ def _has_new_decision_with_file_overlap(conn: sqlite3.Connection, session_id: st
         JOIN decision_files df ON df.decision_id = d.id
         WHERE d.created_at >= ?
           AND d.id != ?
+          AND EXISTS (
+              SELECT 1 FROM decision_candidates dc
+              WHERE dc.promoted_decision_id = d.id
+                AND dc.session_id = ?
+          )
         """,
-        (session_start, decision_id),
+        (session_start, decision_id, session_id),
     ).fetchall()
+
+    # Fallback: if no candidates link to session, check timestamp-only
+    # but restrict to overlap_files (not all original decision_files)
+    if not new_decisions:
+        new_decisions = conn.execute(
+            """
+            SELECT DISTINCT d.id
+            FROM decisions d
+            JOIN decision_files df ON df.decision_id = d.id
+            WHERE d.created_at >= ?
+              AND d.id != ?
+            """,
+            (session_start, decision_id),
+        ).fetchall()
 
     for row in new_decisions:
         new_files = {
             _normalize_file_path(r["file_path"], repo_root)
             for r in conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (row["id"],)).fetchall()
         }
-        if original_files & new_files:
+        if overlap_set & new_files:
             return True
 
     return False
@@ -358,8 +373,9 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
             except ValueError:
                 continue
 
-    # Always check for untracked/new files in the overlap set — git diff
-    # misses unstaged files, and they may coexist with tracked changes.
+    # Count truly untracked files only (??) — staged adds ("A ") are
+    # already included in git diff --numstat, so counting them again
+    # would inflate total_added and flip replaced→refined.
     try:
         status_cmd = ["git", "status", "--porcelain", "--"] + overlap_files
         status_result = subprocess.run(
@@ -367,7 +383,7 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
         )
         if status_result.returncode == 0:
             for sline in status_result.stdout.strip().splitlines():
-                if sline.startswith("??") or sline.startswith("A "):
+                if sline.startswith("??"):
                     total_added += 1
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
@@ -407,7 +423,7 @@ def infer_applied_decisions(
     for match in matches:
         outcome_type = "accepted"
         if infer_outcome_type and repo_path:
-            if _has_new_decision_with_file_overlap(conn, session_id, match["decision_id"]):
+            if _has_new_decision_with_file_overlap(conn, session_id, match["decision_id"], match["overlap_files"]):
                 outcome_type = _classify_diff_pattern(repo_path, session_id, match["overlap_files"], conn)
 
         note = f"auto: session_end {outcome_type} ({', '.join(match['overlap_files'][:3])})"
