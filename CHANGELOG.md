@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Lesson surfacing: SessionStart** — broad-context surfacing with file-overlap ranking from checkpoint `files_snapshot`. Config gate `capture.surface_lessons_on_start` (default true).
+- **Lesson surfacing: PDI** — narrow-context injection into `additionalContext`. Decisions take priority; lessons fill remaining token budget. Timeout-isolated (100ms) to never block decision output.
+- **Git-evidence outcome inference: Layer 2** — `refined`/`replaced` classification via new-decision gate + diff pattern analysis. Config gate `decisions.infer_outcome_type` (default true).
+- **Auto-apply lesson extension** — lesson/assessment file-overlap detection using checkpoint `files_snapshot` at SessionEnd. Drives `lesson_reuse_rate` for maturity 75.
+
+### Changed
+
+- Performance test threshold: 250ms → 300ms (CI runner variance tolerance).
+- `.omc/RELEASE_RULE.md`: added Codex review pre-release gate (shift-left checklist).
+
 ## [0.9.3] - 2026-06-09
 
 ### Added

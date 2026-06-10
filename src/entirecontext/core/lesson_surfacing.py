@@ -39,7 +39,9 @@ def get_checkpoint_file_paths(
     if not row or not row["files_snapshot"]:
         return []
     try:
-        snapshot = json.loads(row["files_snapshot"]) if isinstance(row["files_snapshot"], str) else row["files_snapshot"]
+        snapshot = (
+            json.loads(row["files_snapshot"]) if isinstance(row["files_snapshot"], str) else row["files_snapshot"]
+        )
         if isinstance(snapshot, dict):
             return list(snapshot.keys())
         if isinstance(snapshot, list):

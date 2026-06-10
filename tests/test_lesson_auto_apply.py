@@ -148,7 +148,7 @@ def test_lesson_no_overlap_no_application(ec_db, ec_repo):
         turn_id=turn["id"],
     )
 
-    result = infer_applied_decisions(conn, current_session["id"], repo_path=str(ec_repo))
+    infer_applied_decisions(conn, current_session["id"], repo_path=str(ec_repo))
     apps = conn.execute(
         "SELECT * FROM context_applications WHERE session_id = ?",
         (current_session["id"],),
@@ -204,7 +204,7 @@ def test_lesson_and_decision_both_detected(lesson_auto_apply_setup):
         turn_id=turn_row["id"],
     )
 
-    result = infer_applied_decisions(conn, ctx["current_session_id"], repo_path=ctx["repo_path"])
+    infer_applied_decisions(conn, ctx["current_session_id"], repo_path=ctx["repo_path"])
 
     decision_apps = conn.execute(
         "SELECT * FROM context_applications WHERE source_type = 'decision' AND session_id = ?",

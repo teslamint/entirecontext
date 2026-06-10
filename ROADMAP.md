@@ -33,7 +33,7 @@ That foundation is useful, but it is broader than the product wedge. The next ph
 
 **Target users (through v1.0):** individual developers (1) + agent frameworks via MCP (3). Team-scoped features are deferred to v1.x+.
 
-With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61. v0.8.1 corrected measurement infrastructure (codex session auto-close, rate normalization, verdict accuracy baseline). v0.9.0 automates the weakest dimension (intervene=5) with SessionEnd auto-apply inference, backfill tooling, and Signal C activation.
+With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61. v0.8.1 corrected measurement infrastructure (codex session auto-close, rate normalization, verdict accuracy baseline). v0.9.0 automates the weakest dimension (intervene=5) with SessionEnd auto-apply inference, backfill tooling, and Signal C activation. v0.10.0 adds dual-channel lesson surfacing (SessionStart + PDI) to activate `lesson_reuse_rate`, and Layer 2 git-evidence outcome inference (refined/replaced) to close the v1.0 autonomous-loop gate.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -253,6 +253,18 @@ Theme: remove legacy shims, fix version drift, correct ADR-0003 trigger document
 - [x] **`__version__` sync** — runtime version in `__init__.py` was stuck at `0.7.1` since v0.7.1; now synced to release version.
 - [x] **ADR-0003 correction** — "self-healing via idle timeout" was inaccurate; corrected to event-driven re-closure.
 
+## v0.10.0 — Lesson Surfacing + Git-Evidence Outcome Inference
+
+Close retro carry-forward debt, activate lesson-reuse path for maturity 75, add layered outcome inference.
+
+- [x] **Carry-forward** — perf threshold 250→300ms, Codex shift-left review gate in RELEASE_RULE.md
+- [x] **Lesson surfacing: SessionStart** — dual-channel surfacing: broad-context lessons from checkpoint `files_snapshot` overlap at session start
+- [x] **Lesson surfacing: PDI** — narrow-context lesson injection into `additionalContext`; decisions priority, lessons fill remaining token budget; timeout-isolated (100ms)
+- [x] **Auto-apply lesson extension** — lesson/assessment file-overlap detection at SessionEnd using checkpoint `files_snapshot`; drives `lesson_reuse_rate` for intervene score
+- [x] **Git-evidence outcome inference: Layer 2** — `refined`/`replaced` classification via new-decision gate + diff pattern; `infer_outcome_type` config (default true)
+- [ ] **Maturity ≥ 75** — measurement outcome, requires sufficient session volume with lesson surfacing active
+- Out-of-band: ghost release cleanup (1a), `auto_extract` production verification (1e)
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.
@@ -260,7 +272,7 @@ Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop 
 The last manual bottleneck is **outcome attribution**. Current automation: SessionEnd infers `ignored` for surfaced-but-unacted decisions (config-gated, fully automatic); `ec decision supersede` auto-writes a `replaced` outcome (trigger is manual, recording is automatic); `ec_context_apply` auto-records `accepted` (trigger is manual — the agent or user must call it). Note: `contradicted` staleness auto-promotion exists but is not an outcome path — it changes `staleness_status` after someone manually records a `contradicted` outcome. The gap: no path automatically detects that an agent _followed_ a surfaced decision — `accepted` requires the agent to explicitly call `ec_context_apply`, and `refined` has no automatic path at all.
 
 - [ ] **`auto_extract` default true** — pending live worker verification (dead 2+ months). Measure-first: confirm `SessionEnd → background worker → decision_candidates` path produces candidates before flipping default. ec decision `309d472a`.
-- [ ] **Git-evidence-based outcome inference** — when PDI injects decision X and the session modifies `decision_files` for X, infer outcome from commit diff evidence. This is outcome _attribution_, not behavior _judgment_ — consistent with the project boundary (see Non-Goals)
+- [x] **Git-evidence-based outcome inference** — shipped in v0.10.0: Layer 1 (file-overlap → accepted) + Layer 2 (new-decision gate + diff pattern → refined/replaced). `contradicted` auto-inference deferred (semantic judgment).
 - [ ] **Alpha → stable status** — flip README badge and pyproject classifier once the loop gate is met
 
 ## Hardening Backlog

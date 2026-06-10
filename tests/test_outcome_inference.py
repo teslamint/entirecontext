@@ -32,7 +32,8 @@ def outcome_setup(ec_db, ec_repo):
     # Record start commit
     start_sha = subprocess.run(
         ["git", "-C", repo_path, "rev-parse", "HEAD"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     conn.execute(
         "UPDATE sessions SET metadata = ? WHERE id = ?",
@@ -136,7 +137,8 @@ def test_replaced_outcome_on_net_deletions(outcome_setup):
     # Update start_sha to before the replacement
     start_sha = subprocess.run(
         ["git", "-C", repo_path, "rev-parse", "HEAD"],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     ).stdout.strip()
     conn.execute(
         "UPDATE sessions SET metadata = ? WHERE id = ?",
@@ -236,7 +238,7 @@ def test_infer_outcome_type_config_off_falls_back_to_accepted(outcome_setup, mon
 
     monkeypatch.setattr(config_mod, "load_config", patched_load)
 
-    result = infer_applied_decisions(conn, ctx["session_id"], repo_path=repo_path)
+    infer_applied_decisions(conn, ctx["session_id"], repo_path=repo_path)
 
     outcome = conn.execute(
         "SELECT * FROM decision_outcomes WHERE decision_id = ? AND session_id = ?",

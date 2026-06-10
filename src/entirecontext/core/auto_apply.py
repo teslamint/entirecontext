@@ -236,13 +236,9 @@ def _detect_overlapping_lessons(
     return matches
 
 
-def _has_new_decision_with_file_overlap(
-    conn: sqlite3.Connection, session_id: str, decision_id: str
-) -> bool:
+def _has_new_decision_with_file_overlap(conn: sqlite3.Connection, session_id: str, decision_id: str) -> bool:
     """Check if a new decision was created during this session with overlapping decision_files."""
-    session_row = conn.execute(
-        "SELECT created_at FROM sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session_row = conn.execute("SELECT created_at FROM sessions WHERE id = ?", (session_id,)).fetchone()
     if not session_row:
         return False
 
@@ -250,9 +246,7 @@ def _has_new_decision_with_file_overlap(
 
     original_files = {
         r["file_path"]
-        for r in conn.execute(
-            "SELECT file_path FROM decision_files WHERE decision_id = ?", (decision_id,)
-        ).fetchall()
+        for r in conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (decision_id,)).fetchall()
     }
     if not original_files:
         return False
@@ -271,9 +265,7 @@ def _has_new_decision_with_file_overlap(
     for row in new_decisions:
         new_files = {
             r["file_path"]
-            for r in conn.execute(
-                "SELECT file_path FROM decision_files WHERE decision_id = ?", (row["id"],)
-            ).fetchall()
+            for r in conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (row["id"],)).fetchall()
         }
         if original_files & new_files:
             return True
@@ -281,17 +273,13 @@ def _has_new_decision_with_file_overlap(
     return False
 
 
-def _classify_diff_pattern(
-    repo_path: str, session_id: str, overlap_files: list[str], conn: sqlite3.Connection
-) -> str:
+def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[str], conn: sqlite3.Connection) -> str:
     """Classify diff as 'refined' (net additions) or 'replaced' (net deletions).
 
     Uses git diff --numstat between session start commit and HEAD,
     filtered to overlapping files.
     """
-    session_row = conn.execute(
-        "SELECT metadata FROM sessions WHERE id = ?", (session_id,)
-    ).fetchone()
+    session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
     if not session_row or not session_row["metadata"]:
         return "accepted"
 
@@ -306,9 +294,7 @@ def _classify_diff_pattern(
 
     try:
         cmd = ["git", "diff", "--numstat", f"{start_sha}..HEAD", "--"] + overlap_files
-        result = subprocess.run(
-            cmd, cwd=repo_path, capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True, timeout=5)
         if result.returncode != 0:
             return "accepted"
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -363,9 +349,7 @@ def infer_applied_decisions(
         outcome_type = "accepted"
         if infer_outcome_type and repo_path:
             if _has_new_decision_with_file_overlap(conn, session_id, match["decision_id"]):
-                outcome_type = _classify_diff_pattern(
-                    repo_path, session_id, match["overlap_files"], conn
-                )
+                outcome_type = _classify_diff_pattern(repo_path, session_id, match["overlap_files"], conn)
 
         note = f"auto: session_end {outcome_type} ({', '.join(match['overlap_files'][:3])})"
         infer_session = session_id

@@ -265,9 +265,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                 def _lesson_wrapper() -> None:
                     try:
                         _lesson_result.append(
-                            _rank_and_format_lessons_for_pdi(
-                                repo_path, session_id, config, remaining_tokens
-                            )
+                            _rank_and_format_lessons_for_pdi(repo_path, session_id, config, remaining_tokens)
                         )
                     except Exception:
                         _lesson_result.append(None)
