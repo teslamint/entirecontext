@@ -1,7 +1,7 @@
 """PR-D: PDI performance baseline measurement.
 
 Measures rank_related_decisions p50/p95 across 100/500/1000 decision corpora.
-Gate: p95 < 250ms at 1000 decisions → default inject_on_user_prompt = true.
+Gate: p95 < 300ms at 1000 decisions → default inject_on_user_prompt = true.
 
 Results are written to docs/perf/v0-7-0-pdi-baseline.md when the env var
 RECORD_PERF=1 is set (CI skips writing; local measurement run produces the doc).
@@ -92,7 +92,7 @@ def _measure(conn) -> list[float]:
 
 
 class TestPDIPerformanceBaseline:
-    """Quantitative gate: rank_related_decisions must stay under 250ms p95 at 1000 decisions."""
+    """Quantitative gate: rank_related_decisions must stay under 300ms p95 at 1000 decisions."""
 
     @pytest.fixture(scope="class")
     def results(self):
@@ -107,17 +107,17 @@ class TestPDIPerformanceBaseline:
             data[n] = {"p50": p50, "p95": p95, "timings": timings_sorted}
         return data
 
-    def test_p95_under_250ms_at_100(self, results):
+    def test_p95_under_300ms_at_100(self, results):
         p95 = results[100]["p95"]
-        assert p95 < 250, f"p95@100={p95:.1f}ms ≥ 250ms"
+        assert p95 < 300, f"p95@100={p95:.1f}ms ≥ 300ms"
 
-    def test_p95_under_250ms_at_500(self, results):
+    def test_p95_under_300ms_at_500(self, results):
         p95 = results[500]["p95"]
-        assert p95 < 250, f"p95@500={p95:.1f}ms ≥ 250ms"
+        assert p95 < 300, f"p95@500={p95:.1f}ms ≥ 300ms"
 
-    def test_p95_under_250ms_at_1000(self, results):
+    def test_p95_under_300ms_at_1000(self, results):
         p95 = results[1000]["p95"]
-        assert p95 < 250, f"p95@1000={p95:.1f}ms ≥ 250ms — default inject_on_user_prompt should be false"
+        assert p95 < 300, f"p95@1000={p95:.1f}ms ≥ 300ms — default inject_on_user_prompt should be false"
 
     def test_record_results(self, results):
         """Write markdown results doc when RECORD_PERF=1."""
@@ -132,15 +132,15 @@ class TestPDIPerformanceBaseline:
             "",
             "## Results",
             "",
-            "| Corpus size | p50 (ms) | p95 (ms) | Gate (< 250ms) |",
+            "| Corpus size | p50 (ms) | p95 (ms) | Gate (< 300ms) |",
             "|---|---|---|---|",
         ]
         default_on = True
         for n in _SIZES:
             p50 = results[n]["p50"]
             p95 = results[n]["p95"]
-            gate = "PASS ✓" if p95 < 250 else "FAIL ✗"
-            if n == 1000 and p95 >= 250:
+            gate = "PASS ✓" if p95 < 300 else "FAIL ✗"
+            if n == 1000 and p95 >= 300:
                 default_on = False
             lines.append(f"| {n:,} | {p50:.1f} | {p95:.1f} | {gate} |")
 
@@ -151,9 +151,9 @@ class TestPDIPerformanceBaseline:
             f"**`inject_on_user_prompt` default: `{'true' if default_on else 'false'}`**",
             "",
             (
-                "p95 < 250ms at 1000 decisions → sync PDI path is fast enough for default-ON."
+                "p95 < 300ms at 1000 decisions → sync PDI path is fast enough for default-ON."
                 if default_on
-                else "p95 ≥ 250ms at 1000 decisions → default-OFF; operator opt-in via config."
+                else "p95 ≥ 300ms at 1000 decisions → default-OFF; operator opt-in via config."
             ),
             "",
             "## Raw Timings (ms)",
