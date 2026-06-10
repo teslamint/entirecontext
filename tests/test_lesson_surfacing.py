@@ -292,3 +292,58 @@ def test_pdi_lesson_failure_does_not_suppress_decisions(lesson_setup, capsys, mo
 
     captured = capsys.readouterr()
     assert "Related Decisions" in captured.out
+
+
+def test_pdi_success_path_includes_lessons_in_output(lesson_setup, capsys, monkeypatch):
+    """PDI happy path: lesson appears in additionalContext alongside decisions."""
+    import json as json_mod
+    import pathlib
+    import subprocess
+
+    import entirecontext.core.config as config_mod
+    from entirecontext.core.decisions import create_decision, link_decision_to_file
+
+    ctx = lesson_setup
+    conn = ctx["conn"]
+
+    decision = create_decision(conn, title="Auth decision", rationale="JWT approach")
+    link_decision_to_file(conn, decision["id"], "src/auth.py")
+
+    (pathlib.Path(ctx["repo_path"]) / "src").mkdir(exist_ok=True)
+    (pathlib.Path(ctx["repo_path"]) / "src" / "auth.py").write_text("# auth\n")
+    subprocess.run(["git", "-C", ctx["repo_path"], "add", "src/auth.py"], capture_output=True)
+
+    config = {
+        "capture": {"auto_capture": True, "surface_lessons_on_start": True},
+        "decisions": {
+            "injection": {
+                "inject_on_user_prompt": True,
+                "top_k": 5,
+                "max_tokens": 2000,
+                "min_confidence": 0.0,
+                "inject_timeout_ms": 5000,
+            },
+        },
+    }
+    monkeypatch.setattr(config_mod, "load_config", lambda *a, **kw: config)
+
+    from entirecontext.hooks.handler import _handle_user_prompt
+
+    data = {
+        "cwd": ctx["repo_path"],
+        "session_id": ctx["session_id"],
+        "prompt": "fix auth token refresh",
+    }
+    _handle_user_prompt(data)
+
+    captured = capsys.readouterr()
+    for line in captured.out.strip().split("\n"):
+        try:
+            parsed = json_mod.loads(line)
+            ctx_text = parsed.get("hookSpecificOutput", {}).get("additionalContext", "")
+            if "Related Decisions" in ctx_text and "Relevant Lessons" in ctx_text:
+                return
+        except json_mod.JSONDecodeError:
+            continue
+
+    assert False, "Expected both 'Related Decisions' and 'Relevant Lessons' in additionalContext"

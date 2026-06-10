@@ -258,9 +258,12 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
             # Best-effort lesson surfacing in separate timeout thread —
             # lesson latency must never block decision output.
+            # Telemetry is recorded ONLY when the result is used (after
+            # timeout check + trim), not inside the thread, so abandoned
+            # threads don't create phantom selections.
             try:
                 remaining_tokens = max_tokens - _estimate_tokens(md)
-                _lesson_result: list[str | None] = []
+                _lesson_result: list[tuple[str, list[dict]] | None] = []
 
                 def _lesson_wrapper() -> None:
                     try:
@@ -274,7 +277,9 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                 lt.start()
                 lt.join(timeout=0.1)
                 if not lt.is_alive() and _lesson_result and _lesson_result[0]:
-                    md = md + "\n\n" + _lesson_result[0]
+                    lesson_md, surviving_lessons = _lesson_result[0]
+                    md = md + "\n\n" + lesson_md
+                    _record_pdi_lesson_telemetry(repo_path, session_id, surviving_lessons)
             except Exception:
                 pass
 
@@ -301,8 +306,13 @@ def _estimate_tokens(text: str) -> int:
 
 def _rank_and_format_lessons_for_pdi(
     repo_path: str, session_id: str | None, config: dict, remaining_tokens: int
-) -> str | None:
-    """Rank and format lessons for PDI. Returns Markdown or None."""
+) -> tuple[str, list[dict]] | None:
+    """Rank, trim, and format lessons for PDI. No telemetry writes.
+
+    Returns (markdown, surviving_lessons) or None. Telemetry is recorded
+    by the caller only when the result is actually used — this prevents
+    phantom selections when the thread is abandoned by timeout.
+    """
     if remaining_tokens < 100:
         return None
 
@@ -328,12 +338,30 @@ def _rank_and_format_lessons_for_pdi(
         if not lessons:
             return None
 
-        from ..core.context import transaction
-        from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+        entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
+        result = "## Relevant Lessons\n\n" + "\n\n".join(entries)
 
-        # Resolve current turn_id so lesson selections are anchored to the
-        # prompt turn — prevents false lesson_applied when files were edited
-        # before the lesson was surfaced.
+        if _estimate_tokens(result) > remaining_tokens:
+            while entries and _estimate_tokens("## Relevant Lessons\n\n" + "\n\n".join(entries)) > remaining_tokens:
+                entries.pop()
+                lessons.pop()
+            if not entries:
+                return None
+            result = "## Relevant Lessons\n\n" + "\n\n".join(entries)
+
+        return result, lessons
+    finally:
+        conn.close()
+
+
+def _record_pdi_lesson_telemetry(repo_path: str, session_id: str | None, lessons: list[dict]) -> None:
+    """Record telemetry for PDI lessons that were actually shown to the user."""
+    from ..core.context import transaction
+    from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+    from ..db import get_db
+
+    conn = get_db(repo_path)
+    try:
         current_turn_id = None
         if session_id:
             turn_row = conn.execute(
@@ -349,11 +377,10 @@ def _rank_and_format_lessons_for_pdi(
                 source="hook",
                 search_type="lesson_surfacing",
                 target="assessment",
-                query=",".join(file_paths[:10]) if file_paths else "",
+                query="",
                 result_count=len(lessons),
                 latency_ms=0,
                 session_id=session_id,
-                file_filter=",".join(file_paths[:10]) if file_paths else None,
             )
             for idx, lesson in enumerate(lessons, start=1):
                 record_retrieval_selection(
@@ -365,18 +392,6 @@ def _rank_and_format_lessons_for_pdi(
                     session_id=session_id,
                     turn_id=current_turn_id,
                 )
-
-        entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
-        result = "## Relevant Lessons\n\n" + "\n\n".join(entries)
-
-        if _estimate_tokens(result) > remaining_tokens:
-            while entries and _estimate_tokens("## Relevant Lessons\n\n" + "\n\n".join(entries)) > remaining_tokens:
-                entries.pop()
-            if not entries:
-                return None
-            result = "## Relevant Lessons\n\n" + "\n\n".join(entries)
-
-        return result
     finally:
         conn.close()
 
