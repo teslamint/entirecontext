@@ -1,8 +1,26 @@
 # Lessons Learned
 
-_Generated from 10 assessed changes._
+_Generated from 18 assessed changes._
 
 ## 🟢 Expand (increases future options)
+
+### ✅ chore(deps): bump sentence-transformers from 5.5.0 to 5.5.1
+
+**Feedback:** agree — auto:committed
+
+_Assessment: d28a0263 | 2026-06-06T14:40:01.177319+00:00_ 
+
+### ✅ chore(deps): bump sentence-transformers from 5.5.0 to 5.5.1
+
+**Feedback:** agree — auto:committed
+
+_Assessment: d58c0efa | 2026-06-06T14:40:01.169773+00:00_ 
+
+### ✅ feat(distill): v0.8.0 auto-assess automation (#157)
+
+**Feedback:** agree — auto:committed
+
+_Assessment: dbe3569f | 2026-06-06T14:40:01.145677+00:00_ 
 
 ### ✅ MCP 입력 정규화와 FTS 오류 처리를 안정화해 에이전트가 검색·결정 도구를 더 예측 가능하게 사용할 수 있게 하므로 future option을 넓힌다.
 
@@ -91,6 +109,36 @@ _Assessment: 84288d4f | 2026-02-20T10:48:16.009213+00:00_
 _Assessment: dd6184a2 | 2026-02-20T08:51:22.221135+00:00_ 
 
 ## 🟡 Neutral
+
+### ✅ Auto-assessed checkpoint
+
+**Feedback:** agree — auto:committed
+
+_Assessment: b5fed17f | 2026-06-07T04:04:23.897323+00:00_ 
+
+### ✅ Merge branch 'docs/roadmap-direction-2026-06-02'
+
+**Feedback:** agree — auto:committed
+
+_Assessment: 5d19a93c | 2026-06-06T14:40:01.191856+00:00_ 
+
+### ✅ fix(hooks): prevent codex-notify stdin blocking that accumulates zombie processes
+
+**Feedback:** agree — auto:committed
+
+_Assessment: d9e00b3f | 2026-06-06T14:40:01.184484+00:00_ 
+
+### ✅ Auto-assessed checkpoint
+
+**Feedback:** agree — auto:committed
+
+_Assessment: be7950ff | 2026-06-06T14:40:01.161669+00:00_ 
+
+### ✅ Auto-assessed checkpoint
+
+**Feedback:** agree — auto:committed
+
+_Assessment: 4ac6facf | 2026-06-06T14:40:01.154162+00:00_ 
 
 ### ✅ 릴리스 커밋의 closing reference를 기준으로 GitHub 이슈를 자동 종료해 운영 마찰은 줄이지만, 결정 메모리 루프 자체의 선택지를 크게 넓히거나 좁히지는 않는다.
 
