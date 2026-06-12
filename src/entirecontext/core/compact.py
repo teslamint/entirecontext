@@ -116,3 +116,54 @@ def vacuum_db(repo_path: str) -> dict[str, int]:
 
     db_after = db_path.stat().st_size
     return {"db_before": db_before, "db_after": db_after}
+
+
+def compact_repo(
+    conn,
+    repo_path: str,
+    *,
+    retention_days: int = 30,
+    limit: int = 10000,
+    dry_run: bool = True,
+) -> dict:
+    """Orchestrate full compaction: consolidate → orphan cleanup → vacuum.
+
+    Args:
+        conn: DB connection.
+        repo_path: Absolute path to the git repository root.
+        retention_days: Content files older than this many days are consolidated.
+        limit: Maximum turns to consolidate in one run.
+        dry_run: If True, only report — no changes.
+
+    Returns:
+        Report dict with before/after sizes, consolidation stats, orphan stats.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from .consolidation import consolidate_old_turns
+
+    before = measure_storage(repo_path)
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    before_date = cutoff.isoformat()
+    consolidation = consolidate_old_turns(
+        conn, repo_path, before_date=before_date, limit=limit, dry_run=dry_run
+    )
+
+    orphans = remove_orphan_content_files(conn, repo_path, dry_run=dry_run)
+
+    vacuum = {}
+    if not dry_run:
+        vacuum = vacuum_db(repo_path)
+
+    after = measure_storage(repo_path)
+
+    return {
+        "before": before,
+        "after": after,
+        "consolidation": consolidation,
+        "orphans": orphans,
+        "vacuum": vacuum,
+        "retention_days": retention_days,
+        "dry_run": dry_run,
+    }

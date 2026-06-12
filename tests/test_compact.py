@@ -88,3 +88,38 @@ class TestVacuumDb:
         assert "db_before" in result
         assert "db_after" in result
         assert result["db_after"] <= result["db_before"]
+
+
+from entirecontext.core.compact import compact_repo
+
+
+class TestCompactRepo:
+    def test_dry_run_returns_report(self, ec_repo, ec_db):
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+        from entirecontext.core.turn import create_turn, save_turn_content
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="s1")
+        t = create_turn(ec_db, session["id"], 1, user_message="msg")
+        save_turn_content(str(ec_repo), ec_db, t["id"], session["id"], '{"m": 1}')
+
+        report = compact_repo(ec_db, str(ec_repo), retention_days=0, dry_run=True)
+        assert "before" in report
+        assert "consolidation" in report
+        assert "orphans" in report
+        assert report["consolidation"]["consolidated"] == 0  # dry run
+
+    def test_execute_consolidates_and_reports(self, ec_repo, ec_db):
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+        from entirecontext.core.turn import create_turn, save_turn_content
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="s1")
+        t = create_turn(ec_db, session["id"], 1, user_message="msg")
+        save_turn_content(str(ec_repo), ec_db, t["id"], session["id"], '{"m": 1}')
+
+        report = compact_repo(ec_db, str(ec_repo), retention_days=0, dry_run=False)
+        assert report["consolidation"]["consolidated"] == 1
+        assert report["after"]["content_file_count"] == 0
