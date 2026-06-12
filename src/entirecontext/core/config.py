@@ -14,6 +14,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "checkpoint_on_commit": True,
         "checkpoint_on_session_end": False,
         "auto_cleanup_no_changes": False,
+        "content_retention_days": 30,
         "intent_summary": False,
         "emit_aar": True,
         "codex_session_idle_minutes": 60,
