@@ -1,13 +1,25 @@
+import os
+import time
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
+from typer.testing import CliRunner
+
+from entirecontext.cli import app
+from entirecontext.core.compact import (
+    compact_repo,
+    find_orphan_content_files,
+    measure_storage,
+    remove_orphan_content_files,
+    vacuum_db,
+)
 from entirecontext.core.config import DEFAULT_CONFIG
+
+runner = CliRunner()
 
 
 def test_content_retention_days_default():
     assert DEFAULT_CONFIG["capture"]["content_retention_days"] == 30
-
-
-from entirecontext.core.compact import find_orphan_content_files
 
 
 class TestFindOrphanContentFiles:
@@ -33,9 +45,6 @@ class TestFindOrphanContentFiles:
         orphans = find_orphan_content_files(ec_db, str(ec_repo), min_age_seconds=0)
         assert len(orphans) == 1
         assert orphans[0] == orphan_file
-
-
-from entirecontext.core.compact import remove_orphan_content_files
 
 
 class TestRemoveOrphanContentFiles:
@@ -69,9 +78,6 @@ class TestRemoveOrphanContentFiles:
         assert not content_dir.exists()
 
 
-from entirecontext.core.compact import measure_storage, vacuum_db
-
-
 class TestMeasureStorage:
     def test_returns_content_and_db_sizes(self, ec_repo, ec_db):
         result = measure_storage(str(ec_repo))
@@ -88,9 +94,6 @@ class TestVacuumDb:
         assert "db_before" in result
         assert "db_after" in result
         assert result["db_after"] <= result["db_before"]
-
-
-from entirecontext.core.compact import compact_repo
 
 
 class TestCompactRepo:
@@ -123,15 +126,6 @@ class TestCompactRepo:
         report = compact_repo(ec_db, str(ec_repo), retention_days=0, dry_run=False)
         assert report["consolidation"]["consolidated"] == 1
         assert report["after"]["content_file_count"] == 0
-
-
-from unittest.mock import MagicMock, patch
-
-from typer.testing import CliRunner
-
-from entirecontext.cli import app
-
-runner = CliRunner()
 
 
 class TestCompactCLI:
@@ -214,8 +208,7 @@ class TestCompactCLI:
 
 class TestCompactIntegration:
     def test_full_compact_cycle(self, ec_repo, ec_db):
-        """End-to-end: create content → compact → verify cleanup."""
-        from entirecontext.core.compact import compact_repo, measure_storage
+        """End-to-end: create content -> compact -> verify cleanup."""
         from entirecontext.core.project import get_project
         from entirecontext.core.session import create_session
         from entirecontext.core.turn import create_turn, save_turn_content
@@ -227,10 +220,6 @@ class TestCompactIntegration:
             t = create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
             save_turn_content(str(ec_repo), ec_db, t["id"], session["id"], f'{{"n": {i}}}')
 
-        # Add an orphan (backdate mtime so it clears the 3600s age guard)
-        import os
-        import time
-
         orphan_dir = Path(str(ec_repo)) / ".entirecontext" / "content" / "ghost"
         orphan_dir.mkdir(parents=True)
         orphan_file = orphan_dir / "phantom.jsonl"
@@ -239,7 +228,7 @@ class TestCompactIntegration:
         os.utime(orphan_file, (old_mtime, old_mtime))
 
         before = measure_storage(str(ec_repo))
-        assert before["content_file_count"] == 6  # 5 real + 1 orphan
+        assert before["content_file_count"] == 6
 
         report = compact_repo(ec_db, str(ec_repo), retention_days=0, dry_run=False)
 
@@ -249,7 +238,6 @@ class TestCompactIntegration:
 
     def test_respects_retention_days(self, ec_repo, ec_db):
         """Content newer than retention_days is preserved."""
-        from entirecontext.core.compact import compact_repo
         from entirecontext.core.project import get_project
         from entirecontext.core.session import create_session
         from entirecontext.core.turn import create_turn, save_turn_content
@@ -259,7 +247,6 @@ class TestCompactIntegration:
         t = create_turn(ec_db, session["id"], 1, user_message="recent")
         save_turn_content(str(ec_repo), ec_db, t["id"], session["id"], '{"recent": true}')
 
-        # retention_days=9999 → nothing qualifies
         report = compact_repo(ec_db, str(ec_repo), retention_days=9999, dry_run=False)
         assert report["consolidation"]["consolidated"] == 0
         assert report["after"]["content_file_count"] == 1

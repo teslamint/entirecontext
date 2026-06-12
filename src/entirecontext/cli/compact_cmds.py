@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
@@ -31,7 +31,7 @@ def compact_cmd(
         help="Keep content files newer than N days (default: from config, fallback 30)",
     ),
     limit: int = typer.Option(10000, "--limit", "-n", help="Max turns to consolidate per run"),
-):
+) -> None:
     """Compact storage: consolidate old content, remove orphans, vacuum DB.
 
     Runs in dry-run mode by default — use --execute to apply changes.
@@ -62,7 +62,7 @@ def compact_cmd(
     _print_report(report)
 
 
-def _print_report(report: dict) -> None:
+def _print_report(report: dict[str, Any]) -> None:
     before = report["before"]
     after = report["after"]
     cons = report["consolidation"]

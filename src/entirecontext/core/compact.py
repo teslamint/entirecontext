@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 def find_orphan_content_files(
-    conn, repo_path: str, *, min_age_seconds: int = 3600
+    conn: sqlite3.Connection, repo_path: str, *, min_age_seconds: int = 3600
 ) -> list[Path]:
     """Find JSONL content files on disk that have no matching turn_content row.
 
@@ -40,7 +42,7 @@ def find_orphan_content_files(
 
 
 def remove_orphan_content_files(
-    conn, repo_path: str, *, dry_run: bool = True, min_age_seconds: int = 3600
+    conn: sqlite3.Connection, repo_path: str, *, dry_run: bool = True, min_age_seconds: int = 3600
 ) -> dict[str, int]:
     """Find and optionally remove orphan content files.
 
@@ -119,13 +121,13 @@ def vacuum_db(repo_path: str) -> dict[str, int]:
 
 
 def compact_repo(
-    conn,
+    conn: sqlite3.Connection,
     repo_path: str,
     *,
     retention_days: int = 30,
     limit: int = 10000,
     dry_run: bool = True,
-) -> dict:
+) -> dict[str, Any]:
     """Orchestrate full compaction: consolidate → orphan cleanup → vacuum.
 
     Args:
