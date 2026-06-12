@@ -32,6 +32,7 @@ cli/             business    SQLite     Claude Code   shadow branch
   index_cmds     consolidation
   event_cmds     hybrid_search
   import_cmds    async_worker
+  compact_cmds   compact
   mcp_cmds
 ```
 
