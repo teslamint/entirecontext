@@ -210,3 +210,56 @@ class TestCompactCLI:
             runner.invoke(app, ["compact", "--retention-days", "7"])
             call_kwargs = mock_compact.call_args
             assert call_kwargs.kwargs.get("retention_days") == 7
+
+
+class TestCompactIntegration:
+    def test_full_compact_cycle(self, ec_repo, ec_db):
+        """End-to-end: create content → compact → verify cleanup."""
+        from entirecontext.core.compact import compact_repo, measure_storage
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+        from entirecontext.core.turn import create_turn, save_turn_content
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="int-test")
+
+        for i in range(5):
+            t = create_turn(ec_db, session["id"], i + 1, user_message=f"turn {i}")
+            save_turn_content(str(ec_repo), ec_db, t["id"], session["id"], f'{{"n": {i}}}')
+
+        # Add an orphan (backdate mtime so it clears the 3600s age guard)
+        import os
+        import time
+
+        orphan_dir = Path(str(ec_repo)) / ".entirecontext" / "content" / "ghost"
+        orphan_dir.mkdir(parents=True)
+        orphan_file = orphan_dir / "phantom.jsonl"
+        orphan_file.write_text('{"orphan": true}')
+        old_mtime = time.time() - 7200
+        os.utime(orphan_file, (old_mtime, old_mtime))
+
+        before = measure_storage(str(ec_repo))
+        assert before["content_file_count"] == 6  # 5 real + 1 orphan
+
+        report = compact_repo(ec_db, str(ec_repo), retention_days=0, dry_run=False)
+
+        assert report["consolidation"]["consolidated"] == 5
+        assert report["orphans"]["orphans_removed"] == 1
+        assert report["after"]["content_file_count"] == 0
+
+    def test_respects_retention_days(self, ec_repo, ec_db):
+        """Content newer than retention_days is preserved."""
+        from entirecontext.core.compact import compact_repo
+        from entirecontext.core.project import get_project
+        from entirecontext.core.session import create_session
+        from entirecontext.core.turn import create_turn, save_turn_content
+
+        project = get_project(str(ec_repo))
+        session = create_session(ec_db, project["id"], session_id="ret-test")
+        t = create_turn(ec_db, session["id"], 1, user_message="recent")
+        save_turn_content(str(ec_repo), ec_db, t["id"], session["id"], '{"recent": true}')
+
+        # retention_days=9999 → nothing qualifies
+        report = compact_repo(ec_db, str(ec_repo), retention_days=9999, dry_run=False)
+        assert report["consolidation"]["consolidated"] == 0
+        assert report["after"]["content_file_count"] == 1
