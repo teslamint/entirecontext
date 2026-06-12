@@ -35,7 +35,11 @@ def find_orphan_content_files(
     orphans = []
     for jsonl_file in content_dir.rglob("*.jsonl"):
         if jsonl_file.resolve() not in known_paths:
-            if jsonl_file.stat().st_mtime < cutoff_mtime:
+            try:
+                mtime = jsonl_file.stat().st_mtime
+            except (FileNotFoundError, OSError):
+                continue
+            if mtime < cutoff_mtime:
                 orphans.append(jsonl_file)
 
     return sorted(orphans)
@@ -83,7 +87,13 @@ def measure_storage(repo_path: str) -> dict[str, int]:
             content_bytes += f.stat().st_size
             content_count += 1
 
-    db_bytes = db_path.stat().st_size if db_path.exists() else 0
+    db_bytes = 0
+    if db_path.exists():
+        db_bytes = db_path.stat().st_size
+        for suffix in ("-wal", "-shm"):
+            sidecar = db_path.with_name(db_path.name + suffix)
+            if sidecar.exists():
+                db_bytes += sidecar.stat().st_size
 
     return {
         "content_bytes": content_bytes,
@@ -143,6 +153,11 @@ def compact_repo(
     from datetime import datetime, timedelta, timezone
 
     from .consolidation import consolidate_old_turns
+
+    if retention_days < 0:
+        raise ValueError(f"retention_days must be non-negative, got {retention_days}")
+    if limit < 0:
+        raise ValueError(f"limit must be non-negative, got {limit}")
 
     before = measure_storage(repo_path)
 

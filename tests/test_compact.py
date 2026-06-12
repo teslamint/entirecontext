@@ -97,6 +97,18 @@ class TestVacuumDb:
 
 
 class TestCompactRepo:
+    def test_rejects_negative_retention_days(self, ec_repo, ec_db):
+        import pytest
+
+        with pytest.raises(ValueError, match="retention_days must be non-negative"):
+            compact_repo(ec_db, str(ec_repo), retention_days=-1)
+
+    def test_rejects_negative_limit(self, ec_repo, ec_db):
+        import pytest
+
+        with pytest.raises(ValueError, match="limit must be non-negative"):
+            compact_repo(ec_db, str(ec_repo), limit=-1)
+
     def test_dry_run_returns_report(self, ec_repo, ec_db):
         from entirecontext.core.project import get_project
         from entirecontext.core.session import create_session

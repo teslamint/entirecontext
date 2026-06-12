@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional
 
 import typer
@@ -49,6 +50,11 @@ def compact_cmd(
     if retention_days is None:
         config = load_config(repo_path)
         retention_days = config.get("capture", {}).get("content_retention_days", 30)
+
+    db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
+    if not execute and not db_path.exists():
+        console.print("[dim]No EntireContext database found — nothing to compact.[/dim]")
+        return
 
     conn = get_db(repo_path)
     try:
