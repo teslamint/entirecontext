@@ -26,6 +26,7 @@ from . import rewind_cmds  # noqa: E402
 from . import search_cmds  # noqa: E402
 from . import session_cmds  # noqa: E402
 from . import sync_cmds  # noqa: E402
+from . import compact_cmds  # noqa: E402
 
 _MODULES = (
     project_cmds,
@@ -48,6 +49,7 @@ _MODULES = (
     dashboard_cmds,
     context_cmds,
     decisions_cmds,
+    compact_cmds,
 )
 
 for module in _MODULES:

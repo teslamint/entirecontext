@@ -123,3 +123,90 @@ class TestCompactRepo:
         report = compact_repo(ec_db, str(ec_repo), retention_days=0, dry_run=False)
         assert report["consolidation"]["consolidated"] == 1
         assert report["after"]["content_file_count"] == 0
+
+
+from unittest.mock import MagicMock, patch
+
+from typer.testing import CliRunner
+
+from entirecontext.cli import app
+
+runner = CliRunner()
+
+
+class TestCompactCLI:
+    def test_not_in_repo(self):
+        with patch("entirecontext.core.project.find_git_root", return_value=None):
+            result = runner.invoke(app, ["compact"])
+            assert result.exit_code == 1
+
+    def test_dry_run_by_default(self):
+        mock_conn = MagicMock()
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.db.check_and_migrate"),
+            patch(
+                "entirecontext.core.compact.compact_repo",
+                return_value={
+                    "before": {"content_bytes": 1000, "content_file_count": 10, "db_bytes": 500},
+                    "after": {"content_bytes": 1000, "content_file_count": 10, "db_bytes": 500},
+                    "consolidation": {"candidates": 5, "consolidated": 0},
+                    "orphans": {"orphans_found": 2, "orphans_removed": 0, "bytes_freed": 0},
+                    "vacuum": {},
+                    "retention_days": 30,
+                    "dry_run": True,
+                },
+            ) as mock_compact,
+        ):
+            result = runner.invoke(app, ["compact"])
+            assert result.exit_code == 0
+            call_kwargs = mock_compact.call_args
+            assert call_kwargs.kwargs.get("dry_run", True) is True
+
+    def test_execute_flag(self):
+        mock_conn = MagicMock()
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.db.check_and_migrate"),
+            patch(
+                "entirecontext.core.compact.compact_repo",
+                return_value={
+                    "before": {"content_bytes": 1000, "content_file_count": 10, "db_bytes": 500},
+                    "after": {"content_bytes": 200, "content_file_count": 2, "db_bytes": 400},
+                    "consolidation": {"candidates": 8, "consolidated": 8},
+                    "orphans": {"orphans_found": 1, "orphans_removed": 1, "bytes_freed": 100},
+                    "vacuum": {"db_before": 500, "db_after": 400},
+                    "retention_days": 30,
+                    "dry_run": False,
+                },
+            ) as mock_compact,
+        ):
+            result = runner.invoke(app, ["compact", "--execute"])
+            assert result.exit_code == 0
+            call_kwargs = mock_compact.call_args
+            assert call_kwargs.kwargs.get("dry_run") is False
+
+    def test_retention_days_option(self):
+        mock_conn = MagicMock()
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.db.check_and_migrate"),
+            patch(
+                "entirecontext.core.compact.compact_repo",
+                return_value={
+                    "before": {"content_bytes": 0, "content_file_count": 0, "db_bytes": 0},
+                    "after": {"content_bytes": 0, "content_file_count": 0, "db_bytes": 0},
+                    "consolidation": {"candidates": 0, "consolidated": 0},
+                    "orphans": {"orphans_found": 0, "orphans_removed": 0, "bytes_freed": 0},
+                    "vacuum": {},
+                    "retention_days": 7,
+                    "dry_run": True,
+                },
+            ) as mock_compact,
+        ):
+            runner.invoke(app, ["compact", "--retention-days", "7"])
+            call_kwargs = mock_compact.call_args
+            assert call_kwargs.kwargs.get("retention_days") == 7
