@@ -174,6 +174,13 @@ class TestCompactCLI:
             assert result.exit_code == 0
             assert "nothing to compact" in result.output.lower()
 
+    def test_execute_no_db_refuses(self, tmp_path):
+        """--execute with no DB must abort to prevent treating all content as orphans."""
+        with patch("entirecontext.core.project.find_git_root", return_value=str(tmp_path)):
+            result = runner.invoke(app, ["compact", "--execute"])
+            assert result.exit_code == 1
+            assert "refusing" in result.output.lower()
+
     def test_dry_run_by_default(self, tmp_path):
         mock_conn = MagicMock()
         db_file = tmp_path / ".entirecontext" / "db" / "local.db"
