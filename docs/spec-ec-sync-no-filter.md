@@ -1,9 +1,10 @@
 # Spec: `ec sync --no-filter` Runtime Propagation
 
 ## Status
-- Proposed
+- Implemented / historical specification
 - Owner: EntireContext CLI/Sync
 - Scope: `ec sync` command path only
+- Current reference: `README.md`, `docs/spec.md`, `src/entirecontext/cli/sync_cmds.py`, sync CLI tests
 
 ## Problem Statement
 `ec sync` currently accepts `--no-filter`, but the option is not propagated to the runtime sync config passed to `perform_sync(...)`.

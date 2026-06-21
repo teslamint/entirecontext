@@ -1,25 +1,30 @@
 # EntireContext Specification
 
-> Time-travel searchable agent memory anchored to your codebase.
+> Git-anchored decision memory for coding agents.
 
-**Version**: 0.1.0
-**Status**: Implementation-aligned specification (as of 2026-03-07)
+**Package version**: 0.9.3
+**Reference status**: Current implementation reference, refreshed 2026-06-20
+**Primary source of truth**: `src/entirecontext/`, `pyproject.toml`, and contract tests
 
 ---
 
 ## 1. Scope and Source of Truth
 
-This document describes the behavior implemented in the current codebase.
+This document describes the behavior implemented in the current codebase at a reference level. For user onboarding and product framing, start with `README.md`; for exact runtime behavior, use the source modules named below and the corresponding tests.
 
-- Primary source of truth (runtime behavior):
-  - `src/entirecontext/`
-- Supporting docs (user-facing):
-  - `README.md`
+- Runtime behavior: `src/entirecontext/`
+- CLI surface: `src/entirecontext/cli/__init__.py` and `src/entirecontext/cli/*_cmds.py`
+- MCP surface: `src/entirecontext/mcp/server.py` and `src/entirecontext/mcp/tools/*.py`
+- Data schema: `src/entirecontext/db/schema.py`
+- Hook behavior: `src/entirecontext/hooks/handler.py`, `session_lifecycle.py`, `turn_capture.py`, `decision_hooks.py`
+- Public user guide: `README.md`
+- Contract drift guard: `tests/test_contract_sync.py`
 
 ### Status tags used in this spec
 
 - `[Implemented]`: behavior is present in code now.
 - `[Partial]`: partially implemented or implemented with known caveats.
+- `[Historical]`: retained as provenance, not a current behavior claim.
 - `[Planned]`: intentionally not implemented yet.
 
 ---
@@ -37,9 +42,11 @@ User / Agent
 Core Engine
   ├─ Capture (sessions/turns)
   ├─ Checkpoint
-  ├─ Search (regex/FTS/semantic)
+  ├─ Search (regex/FTS/semantic/hybrid)
+  ├─ Decision memory + context telemetry
   ├─ Attribution
-  ├─ Futures assessment
+  ├─ Futures assessment + lessons
+  ├─ Dashboard/graph/AST/compaction
   └─ Cross-repo orchestration
 
 Storage
@@ -60,7 +67,7 @@ Storage
 
 ## 3. Data Model
 
-Schema version: **6**.
+Schema version: **14**.
 Minimum SQLite version: **3.38.0+**.
 
 Reference:
@@ -71,15 +78,17 @@ Reference:
 
 - `projects`, `agents`, `sessions`, `turns`, `turn_content`
 - `checkpoints`, `events`, `event_sessions`, `event_checkpoints`
-- `attributions`, `embeddings`
-- `assessments` (futures), `assessment_relationships` (typed links between assessments)
-- `ast_symbols` (Python AST symbol index)
-- `sync_metadata` (`last_sync_error`, `last_sync_duration_ms`, `sync_pid` included)
+- `attributions`, `embeddings`, `ast_symbols`
+- `assessments`, `assessment_relationships`
+- `decisions`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments`, `decision_outcomes`
+- `retrieval_events`, `retrieval_selections`, `context_applications`
+- `operation_events`, `decision_candidates`
+- `sync_metadata`
 
 ### 3.2 Search indexes `[Implemented]`
 
-- FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`
-- Trigger-based synchronization for insert/update/delete
+- FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates`
+- Trigger-based synchronization for insert/update/delete where defined in `schema.py`
 
 ### 3.3 Global DB `[Implemented]`
 
@@ -91,41 +100,61 @@ Reference:
 
 ## 4.1 CLI interface `[Implemented]`
 
-Validated command set (from `ec --help`):
+Validated command set (from `ec --help`, 2026-06-20):
 
-- Top-level: `init`, `enable`, `disable`, `status`, `config`, `doctor`, `search`, `sync`, `pull`, `rewind`, `blame`, `index`, `import`, `dashboard`, `graph`, `ast-search`
-- Groups: `session`, `hook`, `checkpoint`, `repo`, `event`, `mcp`, `futures`, `purge`
+- Top-level commands: `init`, `enable`, `disable`, `status`, `config`, `doctor`, `search`, `sync`, `pull`, `rewind`, `blame`, `index`, `import`, `graph`, `ast-search`, `dashboard`, `compact`
+- Groups: `session`, `hook`, `checkpoint`, `repo`, `event`, `mcp`, `futures`, `purge`, `context`, `decision`
 
 ### Key command groups
 
-- `ec checkpoint`: `create`, `list`, `show`, `diff`
-- `ec futures`: `assess`, `list`, `feedback`, `lessons`, `trend`, `relate`, `relationships`, `unrelate`, `tidy-pr`, `report`, `worker-status`, `worker-stop`, `worker-launch`
-- `ec session`: `list`, `show`, `current`, `export`, `consolidate`, `graph`, `activate`
+- `ec session`: `list`, `show`, `current`, `export`, `consolidate`, `graph`, `activate`, `backfill-ended-at`, `backfill-applied`
+- `ec checkpoint`: `create`, `list`, `show`, `diff`, `assess-accuracy`
+- `ec decision`: `create`, `list`, `show`, `rejected-alternatives`, `link`, `stale`, `outcome`, `update`, `supersede`, `unlink`, `search`, `chain`, `stale-all`, `extract-candidates`, `extract-from-session`, `surface-prompt`, `candidates`, `alternatives`
+- `ec context`: `select`, `apply`
+- `ec futures`: `assess`, `list`, `feedback`, `lessons`, `enrich-backlog`, `relate`, `relationships`, `unrelate`, `trend`, `report`, `tidy-pr`, `worker-status`, `worker-stop`, `worker-launch`
 - `ec purge`: `session`, `turn`, `match`
-- `ec sync`: supports `--no-filter`
+- `ec mcp`: `serve`
+- `ec sync`: supports `--no-filter` and `--if-enabled`
 
 ## 4.2 MCP interface `[Implemented]`
 
-Transport: stdio.
+Transport: stdio. Source of truth is `src/entirecontext/mcp/server.py` plus the `register_tools()` functions under `src/entirecontext/mcp/tools/`. `tests/test_contract_sync.py` asserts that this registered set matches the README `### Available Tools` table.
 
-Implemented tools (12):
+Implemented tools (29):
 
-1. `ec_search`
-2. `ec_checkpoint_list`
-3. `ec_session_context`
-4. `ec_attribution`
-5. `ec_rewind`
-6. `ec_related`
-7. `ec_turn_content`
-8. `ec_assess`
-9. `ec_assess_create`
-10. `ec_feedback`
-11. `ec_lessons`
-12. `ec_assess_trends`
+1. `ec_activate`
+2. `ec_assess`
+3. `ec_assess_create`
+4. `ec_assess_trends`
+5. `ec_ast_search`
+6. `ec_attribution`
+7. `ec_checkpoint_list`
+8. `ec_context_apply`
+9. `ec_dashboard`
+10. `ec_decision_candidate_confirm`
+11. `ec_decision_candidate_get`
+12. `ec_decision_candidate_list`
+13. `ec_decision_candidate_reject`
+14. `ec_decision_context`
+15. `ec_decision_create`
+16. `ec_decision_get`
+17. `ec_decision_list`
+18. `ec_decision_outcome`
+19. `ec_decision_related`
+20. `ec_decision_search`
+21. `ec_decision_stale`
+22. `ec_feedback`
+23. `ec_graph`
+24. `ec_lessons`
+25. `ec_related`
+26. `ec_rewind`
+27. `ec_search`
+28. `ec_session_context`
+29. `ec_turn_content`
 
 Cross-repo support:
 
-- tools support `repos` parameter (`null` current repo, `["*"]` all repos, `["name"]` selected repos)
+- Tools accept a `repos` parameter (`null` current repo, `["*"]` all repos, `["name"]` selected repos) where applicable; MCP runtime normalizes scalar/list/wildcard shapes at the boundary.
 
 ## 4.3 Hook contract `[Implemented]`
 
@@ -136,6 +165,7 @@ Hook dispatcher handles:
 - `Stop`
 - `PostToolUse`
 - `SessionEnd`
+- `PostCommit`
 
 Runtime entrypoint:
 
@@ -143,8 +173,8 @@ Runtime entrypoint:
 
 Install location and format:
 
-- Installed by `ec enable` into `.claude/settings.local.json`
-- Uses Claude hook object format with `matcher` + nested `hooks`
+- Claude Code hooks are installed by `ec enable` into `.claude/settings.local.json` using Claude hook object format with `matcher` + nested `hooks`.
+- User-level MCP config is installed by `ec enable` into `~/.claude/settings.json` under `mcpServers.entirecontext`.
 
 Exit codes:
 
@@ -153,7 +183,7 @@ Exit codes:
 
 ## 4.4 Git hooks `[Implemented]`
 
-Installed by `ec enable`:
+Installed by `ec enable` unless `--no-git-hooks` is passed:
 
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
 - `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`
@@ -233,25 +263,27 @@ Artifacts:
 
 ## 7.1 Data and CLI `[Implemented]`
 
-- `assessments` table stores verdict/feedback metadata
-- CLI:
-  - `ec futures assess`
-  - `ec futures list`
-  - `ec futures feedback`
-  - `ec futures lessons`
+- `assessments` table stores verdict/feedback metadata.
+- `assessment_relationships` stores typed relationships between assessments.
+- CLI commands: `assess`, `list`, `feedback`, `lessons`, `enrich-backlog`, `trend`, `relate`, `relationships`, `unrelate`, `tidy-pr`, `report`, `worker-status`, `worker-stop`, `worker-launch`.
 
 ## 7.2 MCP exposure `[Implemented]`
 
-- `ec_assess` (read assessment)
-- `ec_lessons` (read distilled lessons inputs)
+- `ec_assess`
+- `ec_assess_create`
+- `ec_feedback`
+- `ec_lessons`
+- `ec_assess_trends`
 
-## 7.3 Auto-distill behavior `[Implemented]`
+## 7.3 Auto-distill and feedback behavior `[Implemented]`
 
-- `futures feedback` triggers auto-distill check
-- session end lifecycle also triggers auto-distill check
-- gated by config: `futures.auto_distill`
+- `futures feedback` triggers auto-distill checks.
+- Session end lifecycle can trigger auto-distill checks.
+- Assessment enrichment/backlog processing is controlled by `[futures]` config keys such as `auto_distill`, `assess_enrich`, and `assess_backfill_window_days`.
 
 ---
+
+## 7b. Content Filtering and Purge `[Implemented]`
 
 ## 7b. Content Filtering and Purge `[Implemented]`
 
@@ -297,11 +329,19 @@ Source:
 
 - `src/entirecontext/core/config.py`
 
+This is an operator-facing excerpt, not a replacement for `DEFAULT_CONFIG`.
+
 ```toml
 [capture]
 auto_capture = true
 checkpoint_on_commit = true
 checkpoint_on_session_end = false
+auto_cleanup_no_changes = false
+content_retention_days = 30
+intent_summary = false
+emit_aar = true
+codex_session_idle_minutes = 60
+surface_lessons_on_start = true
 
 [capture.exclusions]
 enabled = false
@@ -316,6 +356,7 @@ semantic_model = "all-MiniLM-L6-v2"
 
 [sync]
 auto_sync = false
+auto_sync_on_push = false
 auto_pull = false
 cooldown_seconds = 300
 pull_staleness_seconds = 600
@@ -329,20 +370,45 @@ color = true
 [security]
 filter_secrets = true
 patterns = [
-  "(?i)(api[_-]?key|secret|password|token)\\s*[=:]\\s*[\\'\"]?[\\w-]+",
+  "(?i)(api[_-]?key|secret|password|token)\\s*[=:]\\s*['\"]?[\\w-]+",
   "(?i)bearer\\s+[\\w.-]+",
   "ghp_[a-zA-Z0-9]{36}",
   "sk-[a-zA-Z0-9]{48}",
 ]
 
-[filtering.query_redaction]
-enabled = false
-patterns = []
-replacement = "[FILTERED]"
+[index]
+auto_embed = false
+embed_model = "all-MiniLM-L6-v2"
 
 [futures]
 auto_distill = false
 lessons_output = "LESSONS.md"
+default_backend = "claude"
+default_model = ""
+assess_enrich = true
+assess_backfill_window_days = 7
+
+[decisions]
+auto_stale_check = false
+auto_extract = false
+show_related_on_start = false
+surface_on_tool_use = false
+infer_applied_on_session_end = true
+infer_outcome_type = true
+auto_promotion_contradicted_threshold = 2
+auto_embed = true
+
+[decisions.injection]
+inject_on_user_prompt = true
+top_k = 5
+max_tokens = 800
+min_confidence = 0.4
+inject_timeout_ms = 250
+
+[filtering.query_redaction]
+enabled = false
+patterns = []
+replacement = "[FILTERED]"
 ```
 
 ---
@@ -355,50 +421,49 @@ lessons_output = "LESSONS.md"
 
 ## Phase 2: Git integration
 
-- `[Partial]` Checkpoint + sync/pull + rewind are present
-- `[Implemented]` post-commit automation path dispatches `PostCommit` and creates checkpoints when policy allows
+- `[Implemented]` Checkpoint, rewind, sync/pull, post-commit checkpoint path, and pre-push sync gate
 
 ## Phase 3: Semantic + MCP
 
-- `[Implemented]` semantic indexing/search and MCP tools
-- `[Implemented]` MCP toolset expanded beyond initial draft (9 tools)
+- `[Implemented]` Semantic indexing/search when optional dependencies are installed
+- `[Implemented]` MCP server with 29 registered `ec_*` tools guarded by `tests/test_contract_sync.py`
 
 ## Phase 4: Attribution + Multi-agent
 
 - `[Implemented]` line attribution CLI/API and agent hierarchy fields
+- `[Implemented]` session graph and spreading activation retrieval
 
 ## Phase 5: Sharing + Cross-repo
 
 - `[Implemented]` global repo index and cross-repo query paths
-- `[Partial]` advanced sync conflict policy described in old draft is not fully wired in runtime path
+- `[Implemented]` artifact-level shadow-branch sync/pull with one non-fast-forward retry
 
-## Phase 6: Futures (added)
+## Phase 6: Futures and lessons
 
-- `[Implemented]` futures CLI, table, feedback loop, lessons generation
-- `[Implemented]` LLM backend abstraction and MCP read tools (`ec_assess`, `ec_lessons`)
+- `[Implemented]` futures CLI, assessment table, typed assessment relationships, feedback loop, lessons generation, enrichment worker, and LLM backend abstraction
 
-## Phase 7: Content Filtering & Purge (added)
+## Phase 7: Content Filtering & Purge
 
 - `[Implemented]` 3-layer content filtering: capture exclusion, query redaction, post-hoc purge
 - `[Implemented]` `ec purge session/turn/match` CLI with dry-run safety
-- `[Implemented]` per-session and global capture toggle
-- `[Implemented]` query-time redaction in search and MCP tools
+- `[Implemented]` per-session and global capture toggles
 
-## Phase 8: Dashboard, Graph, AST & Advanced Features (added)
+## Phase 8: Dashboard, Graph, AST & Advanced Features
 
-- `[Implemented]` Team dashboard (`ec dashboard`) — session/checkpoint/assessment aggregation
-- `[Implemented]` Knowledge graph (`ec graph`) — git entity traversal (6 node types, 6 edge types)
-- `[Implemented]` Code AST search (`ec ast-search`) — Python AST symbol indexing with FTS5
-- `[Implemented]` Memory consolidation (`ec session consolidate`) — old turn content compression
-- `[Implemented]` Multi-agent session graph (`ec session graph`) — BFS hierarchy traversal
-- `[Implemented]` Spreading activation (`ec session activate`) — related turn discovery via shared files/commits
-- `[Implemented]` Hybrid search (`--hybrid`) — FTS5 + recency RRF reranking
-- `[Implemented]` Assessment relationships (`ec futures relate/relationships/unrelate`) — typed links between assessments
-- `[Implemented]` Tidy PR generation (`ec futures tidy-pr`) — rule-based PR draft from narrow assessments
-- `[Implemented]` Futures report (`ec futures report`) — team-shareable Markdown report
-- `[Implemented]` Async assessment worker (`ec futures worker-*`) — background analysis without capture blocking
-- `[Implemented]` Session export (`ec session export`) — Markdown export with YAML frontmatter
-- `[Implemented]` MCP tools expanded: `ec_assess_create`, `ec_feedback`, `ec_assess_trends` (9 → 12)
+- `[Implemented]` Team dashboard (`ec dashboard`)
+- `[Implemented]` Knowledge graph (`ec graph`)
+- `[Implemented]` Code AST search (`ec ast-search`)
+- `[Implemented]` Memory consolidation (`ec session consolidate`) and storage compaction (`ec compact`)
+- `[Implemented]` Hybrid search (`--hybrid`)
+- `[Implemented]` Session export (`ec session export`)
+
+## Phase 9: Decision memory and proactive retrieval
+
+- `[Implemented]` first-class decisions, rejected alternatives, staleness/supersession, outcome tracking, and auto-promotion to `contradicted`
+- `[Implemented]` candidate decision extraction/review pipeline
+- `[Implemented]` Proactive Decision Injection on `UserPromptSubmit`
+- `[Implemented]` decision surfacing on `SessionStart` and optional `PostToolUse`
+- `[Implemented]` context telemetry (`retrieval_events`, `retrieval_selections`, `context_applications`)
 
 ---
 
@@ -414,37 +479,38 @@ Sync policy notes:
 
 ---
 
-## 11. Validation Checklist (2026-03-07)
+## 11. Validation Checklist (2026-06-20)
 
 ## CLI shape checks
 
-- `ec --help` confirms command groups including `futures`, `mcp`, `import`, `checkpoint`, `purge`, `dashboard`, `graph`, `ast-search`
-- `ec checkpoint --help` confirms `create/list/show/diff`
-- `ec futures --help` confirms `assess/list/feedback/lessons/trend/relate/relationships/unrelate/tidy-pr/report/worker-status/worker-stop/worker-launch`
-- `ec session --help` confirms `list/show/current/export/consolidate/graph/activate`
-- `ec purge --help` confirms `session/turn/match`
-- `ec sync --help` confirms `--no-filter` option exposure
+- `ec --help` confirms top-level commands including `compact`, `dashboard`, `graph`, `ast-search`, and groups including `context` and `decision`.
+- `ec checkpoint --help` confirms `create/list/show/diff/assess-accuracy`.
+- `ec decision --help` confirms decision CRUD, staleness, outcome, supersession, candidate extraction/review, and alternatives commands.
+- `ec context --help` confirms `select/apply`.
+- `ec futures --help` confirms assessment, feedback, lessons, enrichment, relationship, reporting, tidy-pr, and worker commands.
+- `ec session --help` confirms `list/show/current/export/consolidate/graph/activate/backfill-ended-at/backfill-applied`.
+- `ec sync --help` confirms `--no-filter` and `--if-enabled` option exposure.
 
 ## MCP checks
 
-- Source-level confirmation of 12 tools in `mcp/server.py`
-- Query-time redaction applied to `ec_search`, `ec_session_context`, `ec_turn_content`
+- `tests/test_contract_sync.py` source-extracts `mcp/server.py` registration modules and confirms 29 `ec_*` tools match `server.__all__` and README.
+- Query-time redaction applies to search/session/turn MCP responses where implemented by tool modules.
 
 ## Config checks
 
-- Source-level confirmation against `DEFAULT_CONFIG` in `core/config.py`
-- `capture.exclusions` and `filtering.query_redaction` sections present
+- Source-level confirmation against `DEFAULT_CONFIG` in `core/config.py`.
+- `capture.exclusions`, `[decisions]`, `[decisions.injection]`, `[futures]`, `[index]`, and `filtering.query_redaction` sections are present.
 
 ## Hook checks
 
-- Source-level confirmation of handled hook types, including `PostCommit` dispatch
-- Content filtering integrated in `on_user_prompt`, `on_stop`, `on_tool_use`
+- Source-level confirmation of handled hook types, including `PostCommit` dispatch.
+- Decision fallback filenames are guarded by `tests/test_contract_sync.py`: `decisions-context.md` and `decisions-context-tooluse`.
+- Content filtering integrated in `on_user_prompt`, `on_stop`, and `on_tool_use` paths.
 
 ## Sync policy checks
 
-- `uv run pytest tests/test_sync.py tests/test_sync_engine.py tests/test_sync_cmds.py`
-- `uv run pytest`
-- `uv build`
+- `ec sync --no-filter` propagates runtime filtering config and is covered by CLI tests.
+- Shadow-branch export/import and artifact-level merge behavior remain covered by sync tests.
 
 ---
 

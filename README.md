@@ -2,7 +2,7 @@
 
 **Git-anchored decision memory for coding agents.**
 
-![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue) ![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-green) ![Status Experimental](https://img.shields.io/badge/status-experimental-orange) ![License MIT](https://img.shields.io/badge/license-MIT-lightgrey)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue) ![Version 0.9.3](https://img.shields.io/badge/version-0.9.3-green) ![Status Experimental](https://img.shields.io/badge/status-experimental-orange) ![License MIT](https://img.shields.io/badge/license-MIT-lightgrey)
 
 > ⚠️ **Experimental** — API and data format may change without notice.
 
@@ -287,20 +287,32 @@ The sections below are reference material for the current CLI surface. They stay
 | Command | Description |
 |---------|-------------|
 | `ec init` | Initialize EntireContext in current git repo |
-| `ec enable [--no-git-hooks]` | Install Claude Code hooks and git hooks (skip git hooks with `--no-git-hooks`) |
-| `ec disable` | Remove Claude Code hooks |
+| `ec enable [--no-git-hooks]` | Install Claude Code hooks, git hooks, and user-level MCP config (skip git hooks with `--no-git-hooks`) |
+| `ec disable` | Remove Claude Code hooks and installed git hooks |
 | `ec status` | Show capture status (project, sessions, turns, active session) |
 | `ec config [KEY] [VALUE]` | Get or set configuration (dotted keys) |
-| `ec doctor` | Diagnose issues (schema, hooks, unsynced checkpoints) |
+| `ec doctor` | Diagnose issues (schema, hooks, unsynced checkpoints, MCP config) |
 | `ec search QUERY` | Search across sessions, turns, and events |
-| `ec blame FILE [-L START,END] [--summary]` | Show per-line human/agent attribution |
-| `ec rewind CHECKPOINT_ID` | Show or restore code state at a checkpoint |
-| `ec sync [--no-filter]` | Export to shadow branch, then push with one automatic artifact-merge retry on non-fast-forward (skip secret filtering with `--no-filter`) |
+| `ec sync [--no-filter] [--if-enabled]` | Export to shadow branch and push; `--if-enabled` gates pre-push sync by config |
 | `ec pull` | Fetch latest `origin` shadow branch snapshot and import |
+| `ec rewind CHECKPOINT_ID` | Show or restore code state at a checkpoint |
+| `ec blame FILE [-L START,END] [--summary]` | Show per-line human/agent attribution |
 | `ec index [--semantic] [--force] [--model NAME]` | Rebuild FTS5 indexes, optionally generate embeddings |
-| `ec dashboard [--since DATE] [--limit N]` | Show team dashboard: sessions, checkpoints, assessment trends |
+| `ec import --from-aline [PATH]` | Import sessions/turns/checkpoints from Aline DB |
 | `ec graph [--session ID] [--since DATE] [--limit N]` | Show knowledge graph of git entities |
 | `ec ast-search QUERY [--type TYPE] [--file PATH] [--limit N]` | Search indexed Python AST symbols |
+| `ec dashboard [--since DATE] [--limit N]` | Show team dashboard: sessions, checkpoints, assessment trends |
+| `ec compact [--execute] [--retention-days N] [--limit N]` | Compact storage; dry-run by default |
+| `ec session` | Session management |
+| `ec hook` | Hook handlers called by Claude Code and git hooks |
+| `ec checkpoint` | Checkpoint management |
+| `ec repo` | Repository registry management |
+| `ec event` | Event grouping and linking |
+| `ec mcp` | MCP server management |
+| `ec futures` | Futures assessment and lessons |
+| `ec purge` | Purge turns, sessions, or matching content (dry-run by default) |
+| `ec context` | Retrieval-selection and context-application telemetry |
+| `ec decision` | Decision memory management |
 
 ### `ec session` Subcommands
 
@@ -310,17 +322,21 @@ The sections below are reference material for the current CLI surface. They stay
 | `ec session show SESSION_ID` | Show session details and turn summaries |
 | `ec session current` | Show current active session |
 | `ec session export ID [--output FILE]` | Export session as Markdown (YAML frontmatter + sections) |
+| `ec session consolidate [--before DATE] [--session ID] [--limit N] [--execute]` | Compress old turn content (dry-run by default) |
 | `ec session graph [--agent ID] [--session ID] [--depth N]` | Visualise multi-agent session graph |
 | `ec session activate [--turn ID] [--session ID] [--hops N] [--limit N]` | Find related turns via spreading activation |
-| `ec session consolidate [--before DATE] [--session ID] [--limit N] [--execute]` | Compress old turn content (dry-run by default) |
+| `ec session backfill-ended-at` | Backfill missing `ended_at` values for sessions whose SessionEnd hook never fired |
+| `ec session backfill-applied` | Infer applied decisions for ended sessions with retrieval events |
 
 ### `ec checkpoint` Subcommands
 
 | Command | Description |
 |---------|-------------|
+| `ec checkpoint create` | Create a checkpoint at the current git state |
 | `ec checkpoint list` | List checkpoints (commit, branch, diff summary) |
 | `ec checkpoint show CHECKPOINT_ID` | Show checkpoint details and file snapshot |
 | `ec checkpoint diff ID1 ID2` | Diff between two checkpoints |
+| `ec checkpoint assess-accuracy` | Show verdict accuracy baseline from enrichment feedback |
 
 ### `ec event` Subcommands
 
@@ -339,6 +355,7 @@ The sections below are reference material for the current CLI surface. They stay
 | `ec futures list [-v VERDICT] [-n LIMIT]` | List assessments (filter by `--verdict`) |
 | `ec futures feedback ID FEEDBACK [-r REASON]` | Add agree/disagree feedback to an assessment |
 | `ec futures lessons [-o OUTPUT] [-s SINCE]` | Generate LESSONS.md from assessed changes with feedback |
+| `ec futures enrich-backlog` | Enrich rule-based assessments with LLM analysis or git-evidence feedback |
 | `ec futures trend [--since DATE] [--limit N]` | Show cross-repo assessment trend analysis |
 | `ec futures relate SRC TYPE TGT [--note TEXT]` | Add typed relationship between assessments |
 | `ec futures relationships ID [--direction DIR]` | List relationships for an assessment |
@@ -348,11 +365,40 @@ The sections below are reference material for the current CLI surface. They stay
 | `ec futures worker-status` | Show background assessment worker status |
 | `ec futures worker-stop` | Stop background assessment worker |
 | `ec futures worker-launch [--diff TEXT]` | Launch background assessment worker |
+
+### `ec decision` Subcommands
+
+| Command | Description |
+|---------|-------------|
 | `ec decision create TITLE [--rationale TEXT] [--scope TEXT]` | Create a decision record |
-| `ec decision list [--status STATUS] [--file PATH] [--limit N]` | List decisions (optional staleness/file filter) |
+| `ec decision list [--status STATUS] [--file PATH] [--limit N]` | List decisions with optional staleness/file filters |
 | `ec decision show DECISION_ID` | Show decision details and linked artifacts |
-| `ec decision link DECISION_ID [--assessment ID\|--checkpoint ID\|--commit SHA\|--file PATH]` | Link decision to assessment/checkpoint/commit/file |
-| `ec decision stale DECISION_ID --status STATUS` | Update decision staleness (`fresh\|stale\|superseded\|contradicted`) |
+| `ec decision rejected-alternatives DECISION_ID` | Show rejected alternatives for a decision |
+| `ec decision link DECISION_ID ...` | Link decision to assessment, checkpoint, commit, or file evidence |
+| `ec decision stale DECISION_ID [--status STATUS]` | Check or set decision staleness |
+| `ec decision outcome DECISION_ID --outcome TYPE` | Record accepted/ignored/contradicted/refined/replaced usage feedback |
+| `ec decision update DECISION_ID ...` | Update decision fields |
+| `ec decision supersede OLD NEW` | Mark a decision as superseded by another |
+| `ec decision unlink DECISION_ID ...` | Remove a decision link |
+| `ec decision search QUERY` | Search decisions by keyword |
+| `ec decision chain DECISION_ID` | Walk a supersession chain for debugging |
+| `ec decision stale-all` | Check staleness for all fresh decisions and persist results |
+| `ec decision extract-candidates SESSION_ID` | Extract candidate decisions from a session |
+| `ec decision candidates` | Candidate decision review flow |
+| `ec decision alternatives` | Rejected-alternative quality commands |
+
+### `ec context` Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `ec context select` | Record or inspect retrieval selections |
+| `ec context apply APPLICATION_TYPE` | Record how retrieved context was applied (`reference`, `decision_change`, `code_reuse`, or `lesson_applied`) |
+
+### `ec mcp` Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `ec mcp serve` | Start the MCP server over stdio |
 
 ### LLM Backends (`ec futures assess`)
 
@@ -478,7 +524,7 @@ ec mcp serve
 | `ec_session_context` | Get session details with recent turns. Auto-detects current session if `session_id` omitted |
 | `ec_turn_content` | Get full content for a specific turn (including JSONL content files) |
 | `ec_attribution` | Get human/agent attribution for a file, with optional line range |
-| `ec_context_apply` | Record how context was applied (e.g., `lesson_applied`, `accepted`) linking back to a prior retrieval selection |
+| `ec_context_apply` | Record how retrieved context was applied (`reference`, `decision_change`, `code_reuse`, or `lesson_applied`) linking back to a prior retrieval selection |
 | `ec_checkpoint_list` | List checkpoints, optionally filtered by `session_id` and `since` |
 | `ec_rewind` | Show state at a specific checkpoint |
 | `ec_assess` | Assess staged diff or checkpoint against roadmap via LLM |
@@ -520,19 +566,28 @@ Skip git hook installation with `ec enable --no-git-hooks`. Both hooks are remov
 
 Config merges in order: **defaults** ← **global** (`~/.entirecontext/config.toml`) ← **per-repo** (`.entirecontext/config.toml`).
 
-### Default Configuration
+### Common Configuration Defaults
+
+The source of truth is `src/entirecontext/core/config.py`. This excerpt lists operator-facing defaults; use `ec config` to inspect the merged global + per-repo value.
 
 ```toml
 [capture]
 auto_capture = true
 checkpoint_on_commit = true
+checkpoint_on_session_end = false
+auto_cleanup_no_changes = false
+content_retention_days = 30
+intent_summary = false
+emit_aar = true
+codex_session_idle_minutes = 60
+surface_lessons_on_start = true
 
 [capture.exclusions]
 enabled = false
-content_patterns = []    # regex — skip turns matching these
-file_patterns = []       # glob — exclude files from tracking
-tool_names = []          # exact — skip tool usage recording
-redact_patterns = []     # regex — replace matches with [FILTERED] before storage
+content_patterns = []
+file_patterns = []
+tool_names = []
+redact_patterns = []
 
 [search]
 default_mode = "regex"
@@ -540,6 +595,7 @@ semantic_model = "all-MiniLM-L6-v2"
 
 [sync]
 auto_sync = false
+auto_sync_on_push = false
 auto_pull = false
 cooldown_seconds = 300
 pull_staleness_seconds = 600
@@ -553,15 +609,44 @@ color = true
 [security]
 filter_secrets = true
 patterns = [
-    '(?i)(api[_-]?key|secret|password|token)\s*[=:]\s*[\'"]?[\w-]+',
-    '(?i)bearer\s+[\w.-]+',
-    'ghp_[a-zA-Z0-9]{36}',
-    'sk-[a-zA-Z0-9]{48}',
+  "(?i)(api[_-]?key|secret|password|token)\\s*[=:]\\s*['\"]?[\\w-]+",
+  "(?i)bearer\\s+[\\w.-]+",
+  "ghp_[a-zA-Z0-9]{36}",
+  "sk-[a-zA-Z0-9]{48}",
 ]
+
+[index]
+auto_embed = false
+embed_model = "all-MiniLM-L6-v2"
+
+[futures]
+auto_distill = false
+lessons_output = "LESSONS.md"
+default_backend = "claude"
+default_model = ""
+assess_enrich = true
+assess_backfill_window_days = 7
+
+[decisions]
+auto_stale_check = false
+auto_extract = false
+show_related_on_start = false
+surface_on_tool_use = false
+infer_applied_on_session_end = true
+infer_outcome_type = true
+auto_promotion_contradicted_threshold = 2
+auto_embed = true
+
+[decisions.injection]
+inject_on_user_prompt = true
+top_k = 5
+max_tokens = 800
+min_confidence = 0.4
+inject_timeout_ms = 250
 
 [filtering.query_redaction]
 enabled = false
-patterns = []            # regex — redact matches in search/MCP results
+patterns = []
 replacement = "[FILTERED]"
 ```
 
@@ -591,60 +676,51 @@ Shadow branch sync uses artifact-level merge only on `entirecontext/checkpoints/
 
 ## Architecture
 
-Sessions, turns, and checkpoints flow from Claude Code hooks through the core business logic into SQLite, with optional export via shadow branch sync.
+Sessions, turns, decisions, and checkpoints flow from Claude Code/git hooks through core services into SQLite, with optional export via shadow branch sync.
 
 ```
-CLI (Typer)  →  core/  →  db/  →  hooks/  →  sync/
-cli/             business    SQLite     Claude Code   shadow branch
-  project_cmds   logic       schema     integration   export/import
-  session_cmds   config      migration  turn capture  merge
-  search_cmds    security    connection session lifecycle
-  hook_cmds      cross_repo
-  checkpoint_cmds attribution
-  sync_cmds      event
-  rewind_cmds    indexing
-  repo_cmds      search
-  event_cmds     futures
-  blame_cmds     llm
-  index_cmds     import_aline
-  mcp_cmds       content_filter
-  futures_cmds   purge
-  import_cmds    export
-  purge_cmds     report
-  graph_cmds     tidy_pr
-  ast_cmds       dashboard
-  dashboard_cmds ast_index
-               knowledge_graph
-               agent_graph
-               activation
-               consolidation
-               hybrid_search
-               async_worker
+CLI (Typer)  →  core/ services  →  db/ SQLite  →  hooks/ capture  →  sync/ shadow branch
+  project_cmds     search              schema          session_lifecycle     coordinator
+  session_cmds     decisions           migration       turn_capture          merge
+  search_cmds      futures             connection      decision_hooks        export/import
+  sync_cmds        telemetry
+  checkpoint_cmds  attribution
+  decisions_cmds   content_filter
+  context_cmds     purge
+  futures_cmds     dashboard
+  compact_cmds     knowledge_graph
+  mcp_cmds         ast_index
+  ...              consolidation
 
-mcp/server.py — MCP server interface (optional dependency)
+mcp/server.py + mcp/tools/* expose the agent-facing MCP interface.
 ```
 
 ### Data Model
 
+Schema version: **14** (`src/entirecontext/db/schema.py`).
+
 | Table | Purpose |
 |-------|---------|
 | `projects` | Registered repos (name, path, remote URL) |
+| `agents` | Agent identities (type, role, parent agent) |
 | `sessions` | Captured sessions (type, title, summary, turn count) |
 | `turns` | Individual turns (user message, assistant summary, files touched) |
 | `turn_content` | JSONL content file references for full turn data |
 | `checkpoints` | Git-anchored snapshots (commit hash, branch, file snapshot, diff) |
-| `agents` | Agent identities (type, role, parent agent) |
-| `events` | Grouping mechanism (task / temporal / milestone) |
-| `event_sessions` | Many-to-many link between events and sessions |
-| `event_checkpoints` | Many-to-many link between events and checkpoints |
-| `assessments` | Futures assessment results (verdict, impact, feedback) |
-| `assessment_relationships` | Typed links between assessments (causes/fixes/contradicts) |
+| `events`, `event_sessions`, `event_checkpoints` | Task / temporal / milestone grouping and links |
+| `assessments`, `assessment_relationships` | Futures assessment results and typed assessment links |
+| `decisions` | Decision memory records, staleness, rejected alternatives, and supersession pointers |
+| `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments` | Evidence links from decisions to git/code/assessment context |
+| `decision_outcomes` | Usage feedback for decisions (`accepted`, `ignored`, `contradicted`, `refined`, `replaced`) |
+| `decision_candidates` | Auto-extracted candidate decisions before review/promotion |
+| `retrieval_events`, `retrieval_selections`, `context_applications` | Retrieval telemetry and context-application tracking |
 | `attributions` | Per-line human/agent file attribution |
 | `embeddings` | Semantic search vectors |
 | `ast_symbols` | Python AST symbol index (functions, classes, methods) |
 | `sync_metadata` | Shadow branch sync state |
+| `operation_events` | Durable operation/audit events |
 
-FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols` — auto-synced via triggers.
+FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates` — synchronized by triggers where applicable.
 
 ### Data Locations
 

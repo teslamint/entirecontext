@@ -1,4 +1,5 @@
 # Tiered Review Policy Proposal
+> **Status:** Proposal / historical process note. Current review principles live in `AGENTS.md`; this file records an unadopted tiering idea and is not itself binding policy.
 
 ## Motivation
 
