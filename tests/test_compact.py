@@ -208,10 +208,13 @@ class TestCompactCLI:
             call_kwargs = mock_compact.call_args
             assert call_kwargs.kwargs.get("dry_run", True) is True
 
-    def test_execute_flag(self):
+    def test_execute_flag(self, tmp_path):
         mock_conn = MagicMock()
+        db_file = tmp_path / ".entirecontext" / "db" / "local.db"
+        db_file.parent.mkdir(parents=True)
+        db_file.touch()
         with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.core.project.find_git_root", return_value=str(tmp_path)),
             patch("entirecontext.db.get_db", return_value=mock_conn),
             patch("entirecontext.db.check_and_migrate"),
             patch(
