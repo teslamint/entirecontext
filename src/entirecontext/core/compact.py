@@ -95,8 +95,10 @@ def measure_storage(repo_path: str) -> dict[str, int]:
         db_bytes = db_path.stat().st_size
         for suffix in ("-wal", "-shm"):
             sidecar = db_path.with_name(db_path.name + suffix)
-            if sidecar.exists():
+            try:
                 db_bytes += sidecar.stat().st_size
+            except (FileNotFoundError, OSError):
+                continue
 
     return {
         "content_bytes": content_bytes,
@@ -110,8 +112,10 @@ def _db_total_size(db_path: Path) -> int:
     total = db_path.stat().st_size if db_path.exists() else 0
     for suffix in ("-wal", "-shm"):
         sidecar = db_path.with_name(db_path.name + suffix)
-        if sidecar.exists():
+        try:
             total += sidecar.stat().st_size
+        except (FileNotFoundError, OSError):
+            continue
     return total
 
 
