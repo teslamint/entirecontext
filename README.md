@@ -8,6 +8,8 @@
 
 EntireContext captures AI coding work as it happens, distills decisions and lessons from it, and brings the right context back when similar code changes happen again.
 
+For a long-form A-to-Z orientation, see [the EntireContext Project Manual](docs/entirecontext-project-manual.md).
+
 ## Why It Exists
 
 AI coding tools generate changes quickly, but engineering judgment still gets buried in chat logs. Important decisions, rejected alternatives, and hard-won lessons disappear across sessions, repos, and agents, so teams keep rediscovering the same context.
