@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Documentation surface refresh** — README/spec now align with package version 0.9.3, schema v14, the current CLI groups, the 29-tool MCP surface, and proposal-vs-current doc status labels.
 - Performance test threshold: 250ms → 300ms (CI runner variance tolerance).
 - `.omc/RELEASE_RULE.md`: added Codex review pre-release gate (shift-left checklist).
 

@@ -1,4 +1,5 @@
 # Proposal: Integrating Documentation into Feature PRs
+> **Status:** Proposal / historical process note. Current repository policy lives in `AGENTS.md` and release-history changes belong in `CHANGELOG.md`; use this document as background unless a future ADR adopts it.
 
 ## Motivation
 

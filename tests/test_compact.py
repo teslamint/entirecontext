@@ -46,6 +46,16 @@ class TestFindOrphanContentFiles:
         assert len(orphans) == 1
         assert orphans[0] == orphan_file
 
+    def test_recent_orphan_preserved_by_min_age(self, ec_repo, ec_db):
+        """min_age_seconds safety guard preserves files with recent mtime."""
+        content_dir = Path(str(ec_repo)) / ".entirecontext" / "content" / "recent-session"
+        content_dir.mkdir(parents=True)
+        orphan_file = content_dir / "recent-turn.jsonl"
+        orphan_file.write_text('{"recent": true}')
+
+        orphans = find_orphan_content_files(ec_db, str(ec_repo), min_age_seconds=3600)
+        assert orphans == []
+
 
 class TestRemoveOrphanContentFiles:
     def test_dry_run_does_not_delete(self, ec_repo, ec_db):
@@ -93,6 +103,18 @@ class TestVacuumDb:
         result = vacuum_db(str(ec_repo))
         assert "db_before" in result
         assert "db_after" in result
+        assert result["db_after"] <= result["db_before"]
+
+    def test_vacuum_reclaims_space(self, ec_repo, ec_db):
+        """VACUUM should report actual reclamation even with another conn open."""
+        ec_db.execute("CREATE TABLE _inflate (data TEXT)")
+        ec_db.execute("INSERT INTO _inflate VALUES (?)", ("x" * 50000,))
+        ec_db.commit()
+        ec_db.execute("DELETE FROM _inflate")
+        ec_db.execute("DROP TABLE _inflate")
+        ec_db.commit()
+
+        result = vacuum_db(str(ec_repo))
         assert result["db_after"] <= result["db_before"]
 
 
@@ -152,6 +174,13 @@ class TestCompactCLI:
             assert result.exit_code == 0
             assert "nothing to compact" in result.output.lower()
 
+    def test_execute_no_db_refuses(self, tmp_path):
+        """--execute with no DB must abort to prevent treating all content as orphans."""
+        with patch("entirecontext.core.project.find_git_root", return_value=str(tmp_path)):
+            result = runner.invoke(app, ["compact", "--execute"])
+            assert result.exit_code == 1
+            assert "refusing" in result.output.lower()
+
     def test_dry_run_by_default(self, tmp_path):
         mock_conn = MagicMock()
         db_file = tmp_path / ".entirecontext" / "db" / "local.db"
@@ -179,10 +208,13 @@ class TestCompactCLI:
             call_kwargs = mock_compact.call_args
             assert call_kwargs.kwargs.get("dry_run", True) is True
 
-    def test_execute_flag(self):
+    def test_execute_flag(self, tmp_path):
         mock_conn = MagicMock()
+        db_file = tmp_path / ".entirecontext" / "db" / "local.db"
+        db_file.parent.mkdir(parents=True)
+        db_file.touch()
         with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.core.project.find_git_root", return_value=str(tmp_path)),
             patch("entirecontext.db.get_db", return_value=mock_conn),
             patch("entirecontext.db.check_and_migrate"),
             patch(

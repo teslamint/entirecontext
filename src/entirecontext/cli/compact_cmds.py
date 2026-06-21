@@ -29,7 +29,7 @@ def compact_cmd(
         None,
         "--retention-days",
         "-r",
-        help="Keep content files newer than N days (default: from config, fallback 30)",
+        help="Consolidate turns older than N days by turn timestamp (default: from config, fallback 30)",
     ),
     limit: int = typer.Option(10000, "--limit", "-n", help="Max turns to consolidate per run"),
 ) -> None:
@@ -52,7 +52,10 @@ def compact_cmd(
         retention_days = config.get("capture", {}).get("content_retention_days", 30)
 
     db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
-    if not execute and not db_path.exists():
+    if not db_path.exists():
+        if execute:
+            console.print("[red]No EntireContext database — refusing to execute (would treat all content as orphans).[/red]")
+            raise typer.Exit(1)
         console.print("[dim]No EntireContext database found — nothing to compact.[/dim]")
         return
 

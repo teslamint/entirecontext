@@ -84,16 +84,21 @@ def measure_storage(repo_path: str) -> dict[str, int]:
     content_count = 0
     if content_dir.exists():
         for f in content_dir.rglob("*.jsonl"):
-            content_bytes += f.stat().st_size
-            content_count += 1
+            try:
+                content_bytes += f.stat().st_size
+                content_count += 1
+            except (FileNotFoundError, OSError):
+                continue
 
     db_bytes = 0
     if db_path.exists():
         db_bytes = db_path.stat().st_size
         for suffix in ("-wal", "-shm"):
             sidecar = db_path.with_name(db_path.name + suffix)
-            if sidecar.exists():
+            try:
                 db_bytes += sidecar.stat().st_size
+            except (FileNotFoundError, OSError):
+                continue
 
     return {
         "content_bytes": content_bytes,
@@ -102,31 +107,43 @@ def measure_storage(repo_path: str) -> dict[str, int]:
     }
 
 
+def _db_total_size(db_path: Path) -> int:
+    """Return total size of DB file including WAL/SHM sidecars."""
+    total = db_path.stat().st_size if db_path.exists() else 0
+    for suffix in ("-wal", "-shm"):
+        sidecar = db_path.with_name(db_path.name + suffix)
+        try:
+            total += sidecar.stat().st_size
+        except (FileNotFoundError, OSError):
+            continue
+    return total
+
+
 def vacuum_db(repo_path: str) -> dict[str, int]:
     """Run VACUUM on the local DB and return before/after sizes.
 
-    Opens a dedicated connection for VACUUM (it cannot run inside a
-    transaction). Failures are logged but never propagate — VACUUM is
-    a minor hygiene step and must not abort a successful compact run.
+    Opens a dedicated connection because compact_repo() borrows (but
+    does not own) the caller's connection.  Failures are logged but
+    never propagate — VACUUM is a minor hygiene step and must not
+    abort a successful compact run.
     """
-    import sqlite3
-
     db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
     if not db_path.exists():
         return {"db_before": 0, "db_after": 0}
 
-    db_before = db_path.stat().st_size
+    db_before = _db_total_size(db_path)
 
     try:
         conn = sqlite3.connect(str(db_path))
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("VACUUM")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         conn.close()
     except sqlite3.OperationalError as exc:
         logger.warning("VACUUM skipped: %s", exc)
         return {"db_before": db_before, "db_after": db_before}
 
-    db_after = db_path.stat().st_size
+    db_after = _db_total_size(db_path)
     return {"db_before": db_before, "db_after": db_after}
 
 
@@ -173,7 +190,7 @@ def compact_repo(
     if not dry_run:
         vacuum = vacuum_db(repo_path)
 
-    after = measure_storage(repo_path)
+    after = measure_storage(repo_path) if not dry_run else before
 
     return {
         "before": before,
