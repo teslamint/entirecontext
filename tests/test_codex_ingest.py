@@ -125,10 +125,8 @@ def test_run_upstream_notify_sets_reentrance_guard_in_child_env(ec_repo, tmp_pat
     with patch("entirecontext.hooks.codex_ingest.subprocess.run") as mock_run:
         _run_upstream_notify(str(ec_repo), "")
         mock_run.assert_called_once()
-        call_kwargs = mock_run.call_args
-        env = call_kwargs.kwargs.get("env") or call_kwargs[1].get("env")
-        assert env is not None
-        assert env.get("EC_CODEX_NOTIFY_RUNNING") == "1"
+        env = mock_run.call_args.kwargs["env"]
+        assert env["EC_CODEX_NOTIFY_RUNNING"] == "1"
 
 
 def test_duplicate_notify_does_not_refresh_last_activity_at(ec_repo):

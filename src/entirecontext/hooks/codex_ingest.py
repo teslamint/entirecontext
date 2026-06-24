@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -226,8 +227,6 @@ def _save_state(repo_path: str, state: dict[str, Any]) -> None:
 
 
 def _run_upstream_notify(repo_path: str, payload_text: str) -> None:
-    import os
-
     if os.environ.get("EC_CODEX_NOTIFY_RUNNING"):
         return
 
