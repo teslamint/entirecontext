@@ -91,6 +91,44 @@ def test_ingest_codex_notify_event_is_idempotent(ec_repo):
     assert turn_count == 1
 
 
+def test_run_upstream_notify_skips_when_reentrance_guard_set(ec_repo, tmp_path, monkeypatch):
+    """Re-entrance guard: if EC_CODEX_NOTIFY_RUNNING is set, upstream must not run."""
+    from unittest.mock import patch
+
+    from entirecontext.hooks.codex_ingest import _run_upstream_notify, _save_state
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    _save_state(str(ec_repo), {"upstream_notify": ["echo", "should-not-run"]})
+    monkeypatch.setenv("EC_CODEX_NOTIFY_RUNNING", "1")
+
+    with patch("entirecontext.hooks.codex_ingest.subprocess.run") as mock_run:
+        _run_upstream_notify(str(ec_repo), "test")
+        mock_run.assert_not_called()
+
+
+def test_run_upstream_notify_sets_reentrance_guard_in_child_env(ec_repo, tmp_path, monkeypatch):
+    """Upstream subprocess must inherit EC_CODEX_NOTIFY_RUNNING=1."""
+    from unittest.mock import patch
+
+    from entirecontext.hooks.codex_ingest import _run_upstream_notify, _save_state
+
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.delenv("EC_CODEX_NOTIFY_RUNNING", raising=False)
+
+    _save_state(str(ec_repo), {"upstream_notify": ["echo", "hello"]})
+
+    with patch("entirecontext.hooks.codex_ingest.subprocess.run") as mock_run:
+        _run_upstream_notify(str(ec_repo), "")
+        mock_run.assert_called_once()
+        env = mock_run.call_args.kwargs["env"]
+        assert env["EC_CODEX_NOTIFY_RUNNING"] == "1"
+
+
 def test_duplicate_notify_does_not_refresh_last_activity_at(ec_repo):
     """Commit 150faab: duplicate notify events must not update last_activity_at."""
     import time
