@@ -226,6 +226,11 @@ def _save_state(repo_path: str, state: dict[str, Any]) -> None:
 
 
 def _run_upstream_notify(repo_path: str, payload_text: str) -> None:
+    import os
+
+    if os.environ.get("EC_CODEX_NOTIFY_RUNNING"):
+        return
+
     state = _load_state(repo_path)
     upstream = state.get("upstream_notify")
     if not isinstance(upstream, list) or not upstream:
@@ -237,8 +242,9 @@ def _run_upstream_notify(repo_path: str, payload_text: str) -> None:
     if payload_text.strip():
         cmd = cmd + [payload_text]
 
+    child_env = {**os.environ, "EC_CODEX_NOTIFY_RUNNING": "1"}
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=child_env)
     except (OSError, subprocess.TimeoutExpired):
         pass
 
