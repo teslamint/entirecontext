@@ -94,6 +94,10 @@ class CLIBackend(LLMBackend):
                 data = json.loads(output)
                 if isinstance(data, dict) and "result" in data:
                     return data["result"]
+                if isinstance(data, list):
+                    for item in reversed(data):
+                        if isinstance(item, dict) and item.get("type") == "result" and "result" in item:
+                            return item["result"]
             except json.JSONDecodeError:
                 pass
         return output
