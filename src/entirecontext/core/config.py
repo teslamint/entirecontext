@@ -74,7 +74,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "decisions": {
         "auto_stale_check": False,
-        "auto_extract": False,
+        "auto_extract": True,
         "show_related_on_start": False,
         "auto_promotion_contradicted_threshold": 2,
         "assessment_lookback_hours": 48,

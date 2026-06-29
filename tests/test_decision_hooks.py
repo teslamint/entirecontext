@@ -20,7 +20,7 @@ class TestDecisionConfig:
     def test_decisions_defaults_all_off(self):
         decisions = DEFAULT_CONFIG["decisions"]
         assert decisions["auto_stale_check"] is False
-        assert decisions["auto_extract"] is False
+        assert decisions["auto_extract"] is True
         assert decisions["show_related_on_start"] is False
 
     def test_extract_keywords_present(self):

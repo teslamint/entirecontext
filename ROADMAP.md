@@ -271,7 +271,7 @@ Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop 
 
 The last manual bottleneck is **outcome attribution**. Current automation: SessionEnd infers `ignored` for surfaced-but-unacted decisions (config-gated, fully automatic); `ec decision supersede` auto-writes a `replaced` outcome (trigger is manual, recording is automatic); `ec_context_apply` auto-records `accepted` (trigger is manual — the agent or user must call it). Note: `contradicted` staleness auto-promotion exists but is not an outcome path — it changes `staleness_status` after someone manually records a `contradicted` outcome. The gap: no path automatically detects that an agent _followed_ a surfaced decision — `accepted` requires the agent to explicitly call `ec_context_apply`, and `refined` has no automatic path at all.
 
-- [ ] **`auto_extract` default true** — pending live worker verification (dead 2+ months). Measure-first: confirm `SessionEnd → background worker → decision_candidates` path produces candidates before flipping default. ec decision `309d472a`.
+- [x] **`auto_extract` default true** — CLIBackend unwrap bug fixed (JSON array response), markdown fence stripping added, stale markers cleared, production verification confirmed candidates produced (1 candidate from 3 bundles).
 - [x] **Git-evidence-based outcome inference** — shipped in v0.10.0: Layer 1 (file-overlap → accepted) + Layer 2 (new-decision gate + diff pattern → refined/replaced). `contradicted` auto-inference deferred (semantic judgment).
 - [ ] **Alpha → stable status** — flip README badge and pyproject classifier once the loop gate is met
 
