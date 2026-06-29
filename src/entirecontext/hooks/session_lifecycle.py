@@ -298,6 +298,15 @@ def on_stop(data: dict[str, Any]) -> None:
     Claude Code sessions often terminate via process kill without /exit,
     skipping SessionEnd entirely. This ensures extraction runs for qualifying
     sessions (noise gate + keyword gate + marker guard inside maybe_extract_decisions).
+
+    Known limitations:
+    - Prefix capture (I2): If extraction succeeds mid-session from a Stop
+      event, the candidates_extracted marker blocks SessionEnd re-extraction.
+      Decisions from later turns are not captured. The delta is typically
+      1-2 turns. For killed sessions (the primary use case), this is
+      acceptable — there is no SessionEnd to fire anyway.
+    - Shared-cap edge: If all Stop attempts fail (LLM outage), SessionEnd
+      still gets one final uncapped attempt via source="session_end".
     """
     session_id = data.get("session_id")
     cwd = data.get("cwd", ".")

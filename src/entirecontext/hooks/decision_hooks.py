@@ -858,7 +858,15 @@ def _session_has_assessment_signal(conn, session_id: str) -> bool:
 
 
 def maybe_extract_decisions(repo_path: str, session_id: str, *, source: str = "session_end") -> None:
-    """Launch background candidate extraction if any of the three source gates fire. Never raises."""
+    """Launch background candidate extraction if any of the three source gates fire. Never raises.
+
+    Args:
+        source: "stop" applies extract_max_attempts cap; "session_end" bypasses it.
+
+    The cap prevents retry storms when LLM is unavailable: each Stop event
+    would otherwise spawn a new worker (parsed_ok stays False, marker never
+    set). SessionEnd is uncapped because it fires at most once per session.
+    """
     try:
         config = _load_decisions_config(repo_path)
         if not config.get("auto_extract", False):
