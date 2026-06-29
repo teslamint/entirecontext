@@ -273,7 +273,8 @@ The last manual bottleneck is **outcome attribution**. Current automation: Sessi
 
 - [x] **`auto_extract` default true** — CLIBackend unwrap bug fixed (JSON array response), markdown fence stripping added, stale markers cleared, production verification confirmed candidates produced (1 candidate from 3 bundles).
 - [x] **Git-evidence-based outcome inference** — shipped in v0.10.0: Layer 1 (file-overlap → accepted) + Layer 2 (new-decision gate + diff pattern → refined/replaced). `contradicted` auto-inference deferred (semantic judgment).
-- [ ] **Alpha → stable status** — flip README badge and pyproject classifier once the loop gate is met
+- [x] **Autonomous loop E2E wiring test** — `test_e2e_autonomous_loop.py` proves all five stages complete in-process; Stop hook fallback ensures extraction triggers on sessions without SessionEnd.
+- [ ] **Alpha → stable status** — flip README badge and pyproject classifier once production observability confirms loop completion across multiple real sessions
 
 ## Hardening Backlog
 
