@@ -261,6 +261,46 @@ def mark_session_extracted(conn, session_id: str) -> None:
     )
 
 
+def clear_stale_extraction_markers(conn) -> int:
+    """Clear candidates_extracted markers on sessions with zero candidates.
+
+    Returns count of markers cleared.
+    """
+    from .context import transaction
+
+    rows = conn.execute(
+        "SELECT id, metadata FROM sessions WHERE metadata IS NOT NULL"
+    ).fetchall()
+
+    cleared = 0
+    with transaction(conn):
+        for row in rows:
+            meta_raw = row["metadata"]
+            if not meta_raw:
+                continue
+            try:
+                meta = json.loads(meta_raw) if isinstance(meta_raw, str) else meta_raw
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(meta, dict) or not meta.get("candidates_extracted"):
+                continue
+
+            candidate_count = conn.execute(
+                "SELECT COUNT(*) FROM decision_candidates WHERE session_id = ?",
+                (row["id"],),
+            ).fetchone()[0]
+
+            if candidate_count == 0:
+                meta.pop("candidates_extracted", None)
+                conn.execute(
+                    "UPDATE sessions SET metadata = ? WHERE id = ?",
+                    (json.dumps(meta), row["id"]),
+                )
+                cleared += 1
+
+    return cleared
+
+
 # ---------------------------------------------------------------------------
 # Turn window derivation (used by checkpoint + assessment sources)
 # ---------------------------------------------------------------------------

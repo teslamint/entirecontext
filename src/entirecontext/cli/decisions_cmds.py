@@ -583,6 +583,19 @@ def _extract_from_session_impl(conn, session_id: str, repo_path: str, *, min_con
         ex.mark_session_extracted(conn, session_id)
 
 
+@decision_app.command("reset-extraction-markers")
+def decision_reset_extraction_markers():
+    """Clear stale extraction markers on sessions with zero candidates."""
+    conn, repo_path = get_repo_connection()
+    try:
+        from ..core.decision_extraction import clear_stale_extraction_markers
+
+        count = clear_stale_extraction_markers(conn)
+        console.print(f"[green]Cleared {count} stale extraction marker(s)[/green]")
+    finally:
+        conn.close()
+
+
 @decision_app.command("extract-candidates")
 def decision_extract_candidates(
     session_id: str = typer.Option(..., "--session", help="Session ID to extract candidates from"),

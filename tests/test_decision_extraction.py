@@ -1613,6 +1613,55 @@ class TestRunExtractionConfigGuardrails:
         assert any(w.startswith("extraction_weights_load:") for w in outcome.warnings)
 
 
+class TestClearStaleMarkers:
+    """Clearing stale extraction markers allows re-extraction."""
+
+    def test_clears_marker_on_session_with_no_candidates(self, ec_repo, ec_db):
+        from entirecontext.core.decision_extraction import (
+            is_session_extracted,
+            mark_session_extracted,
+            clear_stale_extraction_markers,
+        )
+        from entirecontext.core.session import create_session
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+
+        mark_session_extracted(ec_db, session["id"])
+        assert is_session_extracted(ec_db, session["id"]) is True
+
+        count = clear_stale_extraction_markers(ec_db)
+
+        assert count == 1
+        assert is_session_extracted(ec_db, session["id"]) is False
+
+    def test_preserves_marker_on_session_with_candidates(self, ec_repo, ec_db):
+        from entirecontext.core.decision_extraction import (
+            is_session_extracted,
+            mark_session_extracted,
+            clear_stale_extraction_markers,
+        )
+        from entirecontext.core.session import create_session
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+
+        mark_session_extracted(ec_db, session["id"])
+
+        ec_db.execute(
+            "INSERT INTO decision_candidates "
+            "(id, session_id, title, rationale, confidence, review_status, source_type, source_id, dedup_key) "
+            "VALUES (?, ?, 'test', 'test', 0.5, 'pending', 'session', ?, 'test-dedup')",
+            ("cand-1", session["id"], session["id"]),
+        )
+        ec_db.commit()
+
+        count = clear_stale_extraction_markers(ec_db)
+
+        assert count == 0
+        assert is_session_extracted(ec_db, session["id"]) is True
+
+
 class TestExtractionEmptyDraftWarning:
     """run_extraction should warn when bundles collected but no drafts."""
 
