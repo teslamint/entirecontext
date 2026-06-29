@@ -292,6 +292,26 @@ def on_session_end(data: dict[str, Any]) -> None:
     _maybe_emit_aar(repo_path, session_id)
 
 
+def on_stop(data: dict[str, Any]) -> None:
+    """Handle Stop hook — trigger extraction as SessionEnd fallback.
+
+    Claude Code sessions often terminate via process kill without /exit,
+    skipping SessionEnd entirely. This ensures extraction runs for qualifying
+    sessions (noise gate + keyword gate + marker guard inside maybe_extract_decisions).
+    """
+    session_id = data.get("session_id")
+    cwd = data.get("cwd", ".")
+
+    if not session_id:
+        return
+
+    repo_path = _find_git_root(cwd)
+    if not repo_path:
+        return
+
+    _maybe_extract_decisions(repo_path, session_id)
+
+
 def _maybe_infer_applied_decisions(repo_path: str, session_id: str) -> None:
     """Infer 'accepted' outcome for decisions whose files were modified. Config-gated."""
     try:

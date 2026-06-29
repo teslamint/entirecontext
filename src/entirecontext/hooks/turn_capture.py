@@ -281,6 +281,10 @@ def on_stop(data: dict[str, Any]) -> None:
     finally:
         conn.close()
 
+    from .session_lifecycle import on_stop as _on_stop_lifecycle
+
+    _on_stop_lifecycle(data)
+
 
 def on_tool_use(data: dict[str, Any]) -> None:
     """Handle PostToolUse — track tool usage on current turn."""
