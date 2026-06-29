@@ -1140,6 +1140,11 @@ def run_extraction(
             elif persist_result.reason == "duplicate":
                 outcome.duplicates_skipped += 1
 
+    if outcome.bundles_collected > 0 and outcome.drafts_parsed == 0:
+        outcome.warnings.append(
+            f"no_drafts: {outcome.bundles_collected} bundles collected but 0 drafts parsed"
+        )
+
     if outcome.parsed_ok:
         mark_session_extracted(conn, session_id)
         outcome.marked = True

@@ -1611,3 +1611,39 @@ class TestRunExtractionConfigGuardrails:
         outcome = run_extraction(ec_db, session["id"], str(ec_repo))
         assert outcome.candidates_inserted == 1
         assert any(w.startswith("extraction_weights_load:") for w in outcome.warnings)
+
+
+class TestExtractionEmptyDraftWarning:
+    """run_extraction should warn when bundles collected but no drafts."""
+
+    def test_warns_on_empty_drafts(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.core.decision_extraction import run_extraction
+        from entirecontext.core.session import create_session
+        from entirecontext.core.turn import create_turn
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        turn = create_turn(
+            ec_db,
+            session_id=session["id"],
+            turn_number=1,
+            user_message="should we use Redis?",
+            assistant_summary="We decided to use Redis for caching",
+            turn_status="completed",
+        )
+        ec_db.execute(
+            "UPDATE turns SET files_touched = ? WHERE id = ?",
+            (json.dumps(["src/cache.py"]), turn["id"]),
+        )
+        ec_db.commit()
+
+        monkeypatch.setattr(
+            "entirecontext.core.decision_extraction.call_extraction_llm",
+            lambda text, repo, source_type="session": "[]",
+        )
+
+        outcome = run_extraction(ec_db, session["id"], str(ec_repo))
+
+        assert outcome.bundles_collected > 0
+        assert outcome.drafts_parsed == 0
+        assert any("no_drafts" in w for w in outcome.warnings)
