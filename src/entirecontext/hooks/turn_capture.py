@@ -280,10 +280,12 @@ def on_stop(data: dict[str, Any]) -> None:
             )
     finally:
         conn.close()
+        try:
+            from .session_lifecycle import on_stop as _on_stop_lifecycle
 
-    from .session_lifecycle import on_stop as _on_stop_lifecycle
-
-    _on_stop_lifecycle(data)
+            _on_stop_lifecycle(data)
+        except Exception:
+            pass
 
 
 def on_tool_use(data: dict[str, Any]) -> None:
