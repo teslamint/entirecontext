@@ -7,18 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-29
+
+The autonomous decision-memory loop (`capture→distill→retrieve→intervene→outcome`) now completes without human intervention. This release ships the full loop gate: auto_extract default-on, CLIBackend fix, Stop hook fallback, and retry cap.
+
 ### Added
 
 - **Lesson surfacing: SessionStart** — broad-context surfacing with file-overlap ranking from checkpoint `files_snapshot`. Config gate `capture.surface_lessons_on_start` (default true).
 - **Lesson surfacing: PDI** — narrow-context injection into `additionalContext`. Decisions take priority; lessons fill remaining token budget. Timeout-isolated (100ms) to never block decision output.
 - **Git-evidence outcome inference: Layer 2** — `refined`/`replaced` classification via new-decision gate + diff pattern analysis. Config gate `decisions.infer_outcome_type` (default true).
 - **Auto-apply lesson extension** — lesson/assessment file-overlap detection using checkpoint `files_snapshot` at SessionEnd. Drives `lesson_reuse_rate` for maturity 75.
+- **`ec compact`** — storage compaction command: vacuum, purge old turns, rebuild FTS indexes. Subcommands: `ec compact vacuum`, `ec compact purge`, `ec compact rebuild-fts`, `ec compact all`.
+- **`auto_extract` default true** — decision candidate extraction runs automatically on SessionEnd and Stop hooks.
+- **`ec decision reset-extraction-markers`** — clear stale extraction markers on sessions with zero candidates.
+- **Extraction empty-draft warning** — `run_extraction` warns when bundles are collected but zero drafts parsed.
+- **Stop hook extraction fallback** — `on_stop` triggers `maybe_extract_decisions` for sessions killed without `/exit`.
+- **Extraction retry cap** — `extract_max_attempts` config (default 3) prevents unbounded extraction worker spawns when LLM is unavailable. Source-aware gating: Stop respects the cap, SessionEnd bypasses it.
+- **Autonomous loop E2E wiring test** — `test_e2e_autonomous_loop.py` proves all five loop stages complete in-process.
+
+### Fixed
+
+- **CLIBackend JSON array unwrap** — `claude --output-format json` returns a JSON array; previous logic only handled dict envelope.
+- **Markdown fence stripping** — `parse_llm_response` strips `` ```json `` fences before JSON parsing.
+- **Lifecycle delegation resilience** — SessionEnd delegation moved into `finally` block.
+- **compact VACUUM WAL** — VACUUM executes outside WAL mode; execute guard prevents concurrent runs.
+- **Codex notify fork loop** — prevent infinite fork loop when codex notify hook re-invokes itself.
 
 ### Changed
 
-- **Documentation surface refresh** — README/spec now align with package version 0.9.3, schema v14, the current CLI groups, the 29-tool MCP surface, and proposal-vs-current doc status labels.
-- Performance test threshold: 250ms → 300ms (CI runner variance tolerance).
-- `.omc/RELEASE_RULE.md`: added Codex review pre-release gate (shift-left checklist).
+- **Documentation surface refresh** — README/spec aligned with schema v14, CLI groups, 29-tool MCP surface.
+- Performance test threshold: 250ms → 300ms.
+- `.omc/RELEASE_RULE.md`: added Codex review pre-release gate.
 
 ## [0.9.3] - 2026-06-09
 
