@@ -460,6 +460,65 @@ class TestParseLLMResponse:
         assert len(drafts) == 1
 
 
+class TestParseFencedResponse:
+    """parse_llm_response should handle markdown-fenced JSON."""
+
+    def test_strips_json_fence(self):
+        from entirecontext.core.decision_extraction import parse_llm_response, SignalBundle
+
+        bundle = SignalBundle(
+            source_type="session",
+            source_id="s1",
+            session_id="s1",
+            checkpoint_id=None,
+            assessment_id=None,
+            text_blocks=["test"],
+            files=["src/db.py"],
+        )
+
+        fenced = '```json\n[{"title": "Use WAL mode", "rationale": "concurrent reads", "scope": "database"}]\n```'
+        drafts = parse_llm_response(fenced, bundle)
+
+        assert len(drafts) == 1
+        assert drafts[0].title == "Use WAL mode"
+
+    def test_strips_plain_fence(self):
+        from entirecontext.core.decision_extraction import parse_llm_response, SignalBundle
+
+        bundle = SignalBundle(
+            source_type="session",
+            source_id="s1",
+            session_id="s1",
+            checkpoint_id=None,
+            assessment_id=None,
+            text_blocks=["test"],
+            files=[],
+        )
+
+        fenced = '```\n[{"title": "Use WAL mode", "rationale": "concurrent reads", "scope": "database"}]\n```'
+        drafts = parse_llm_response(fenced, bundle)
+
+        assert len(drafts) == 1
+
+    def test_handles_unfenced_json(self):
+        from entirecontext.core.decision_extraction import parse_llm_response, SignalBundle
+
+        bundle = SignalBundle(
+            source_type="session",
+            source_id="s1",
+            session_id="s1",
+            checkpoint_id=None,
+            assessment_id=None,
+            text_blocks=["test"],
+            files=[],
+        )
+
+        raw = '[{"title": "Use WAL mode", "rationale": "concurrent reads", "scope": "database"}]'
+        drafts = parse_llm_response(raw, bundle)
+
+        assert len(drafts) == 1
+
+
 # ---------------------------------------------------------------------------
 # Integration tests — end-to-end run_extraction via shim
 # ---------------------------------------------------------------------------

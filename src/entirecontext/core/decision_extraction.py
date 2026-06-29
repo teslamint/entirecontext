@@ -576,8 +576,13 @@ def call_extraction_llm(user_text: str, repo_path: str, source_type: str = "sess
 def parse_llm_response(raw: str, bundle: SignalBundle) -> list[CandidateDraft]:
     if raw is None:
         raise DecisionExtractionError("llm returned None")
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        lines = stripped.split("\n")
+        if lines[-1].strip() == "```":
+            stripped = "\n".join(lines[1:-1]).strip()
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(stripped)
     except (ValueError, TypeError) as exc:
         raise DecisionExtractionError(f"llm output is not valid JSON: {exc}") from exc
     if not isinstance(parsed, list):
