@@ -22,6 +22,7 @@ class TestDecisionConfig:
         assert decisions["auto_stale_check"] is False
         assert decisions["auto_extract"] is True
         assert decisions["show_related_on_start"] is False
+        assert decisions["extract_max_attempts"] == 3
 
     def test_extract_keywords_present(self):
         keywords = DEFAULT_CONFIG["decisions"]["extract_keywords"]
@@ -2115,7 +2116,7 @@ class TestHandlerIntegration:
         )
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks.maybe_extract_decisions",
-            lambda rp, sid: extract_called.append((rp, sid)),
+            lambda rp, sid, *, source="session_end": extract_called.append((rp, sid)),
         )
         from entirecontext.hooks.handler import _handle_session_end
 
@@ -2524,3 +2525,139 @@ class TestRunPromptSurfaceWorker:
             body = Path(result["output_path"]).read_text(encoding="utf-8")
             # Pattern must not appear in markdown even though it was present in tmp.
             assert payload_value not in body
+
+
+class TestExtractionRetryCap:
+    """Stop hook respects extract_max_attempts; SessionEnd bypasses the cap."""
+
+    def _setup_extractable_session(self, ec_repo, ec_db):
+        """Create a session that passes noise gate + keyword gate."""
+        import json
+        from entirecontext.core.session import create_session
+        from entirecontext.core.turn import create_turn
+
+        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        session = create_session(ec_db, project_id)
+        for i in range(4):
+            turn = create_turn(
+                ec_db,
+                session_id=session["id"],
+                turn_number=i + 1,
+                user_message=f"msg {i}",
+                assistant_summary="We decided to use Redis" if i == 0 else f"done {i}",
+                turn_status="completed",
+            )
+            ec_db.execute(
+                "UPDATE turns SET files_touched = ? WHERE id = ?",
+                (json.dumps(["src/cache.py"]), turn["id"]),
+            )
+        ec_db.commit()
+        return session
+
+    def test_stop_capped_after_max_attempts(self, ec_repo, ec_db, monkeypatch):
+        """Stop-sourced extraction stops launching after extract_max_attempts."""
+        session = self._setup_extractable_session(ec_repo, ec_db)
+
+        # Pre-set attempt counter to max (3)
+        ec_db.execute(
+            "UPDATE sessions SET metadata = json_set(COALESCE(metadata, '{}'), "
+            "'$.extraction_attempts', json('3')) WHERE id = ?",
+            (session["id"],),
+        )
+        ec_db.commit()
+
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda repo, cmd, pid_name=None: launched.append(cmd),
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.worker_status",
+            lambda repo, pid_name=None: {"running": False},
+        )
+
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"], source="stop")
+
+        assert launched == [], "Should not launch when attempts >= max"
+
+    def test_session_end_bypasses_cap(self, ec_repo, ec_db, monkeypatch):
+        """SessionEnd-sourced extraction ignores attempt counter."""
+        session = self._setup_extractable_session(ec_repo, ec_db)
+
+        ec_db.execute(
+            "UPDATE sessions SET metadata = json_set(COALESCE(metadata, '{}'), "
+            "'$.extraction_attempts', json('10')) WHERE id = ?",
+            (session["id"],),
+        )
+        ec_db.commit()
+
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda repo, cmd, pid_name=None: launched.append(cmd),
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.worker_status",
+            lambda repo, pid_name=None: {"running": False},
+        )
+
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"], source="session_end")
+
+        assert len(launched) == 1, "SessionEnd should bypass cap"
+
+    def test_stop_increments_counter_on_launch(self, ec_repo, ec_db, monkeypatch):
+        """Each Stop launch increments extraction_attempts in session metadata."""
+        session = self._setup_extractable_session(ec_repo, ec_db)
+
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda repo, cmd, pid_name=None: launched.append(cmd),
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.worker_status",
+            lambda repo, pid_name=None: {"running": False},
+        )
+
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"], source="stop")
+
+        assert len(launched) == 1
+        import json
+
+        meta = json.loads(
+            ec_db.execute("SELECT metadata FROM sessions WHERE id = ?", (session["id"],)).fetchone()["metadata"]
+        )
+        assert meta.get("extraction_attempts") == 1
+
+    def test_default_source_is_session_end(self, ec_repo, ec_db, monkeypatch):
+        """Callers that omit source= default to session_end (no cap)."""
+        session = self._setup_extractable_session(ec_repo, ec_db)
+
+        ec_db.execute(
+            "UPDATE sessions SET metadata = json_set(COALESCE(metadata, '{}'), "
+            "'$.extraction_attempts', json('99')) WHERE id = ?",
+            (session["id"],),
+        )
+        ec_db.commit()
+
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker",
+            lambda repo, cmd, pid_name=None: launched.append(cmd),
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.worker_status",
+            lambda repo, pid_name=None: {"running": False},
+        )
+
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"])
+
+        assert len(launched) == 1, "Default source should bypass cap"

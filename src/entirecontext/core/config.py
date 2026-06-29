@@ -99,6 +99,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "ignored_inference_min_turn_gap": 2,
         "candidate_min_confidence": 0.35,
         "noise_gate_min_turns_with_files": 3,
+        "extract_max_attempts": 3,
         "candidate_dedup_similarity_threshold": 0.5,
         "candidate_redact_secrets": True,
         "ranking": {

@@ -33,12 +33,14 @@ class TestStopHookExtraction:
         extracted = []
         monkeypatch.setattr(
             "entirecontext.hooks.session_lifecycle._maybe_extract_decisions",
-            lambda repo, sid: extracted.append(sid),
+            lambda repo, sid, source="session_end": extracted.append({"sid": sid, "source": source}),
         )
 
         on_stop({"session_id": session["id"], "cwd": str(ec_repo)})
 
-        assert session["id"] in extracted
+        assert len(extracted) == 1
+        assert extracted[0]["sid"] == session["id"]
+        assert extracted[0]["source"] == "stop"
 
     def test_stop_noop_when_no_session_id(self, ec_repo, monkeypatch):
         """on_stop returns early when session_id is missing."""
@@ -47,7 +49,7 @@ class TestStopHookExtraction:
         extracted = []
         monkeypatch.setattr(
             "entirecontext.hooks.session_lifecycle._maybe_extract_decisions",
-            lambda repo, sid: extracted.append(sid),
+            lambda repo, sid, source="session_end": extracted.append(sid),
         )
 
         on_stop({"cwd": str(ec_repo)})

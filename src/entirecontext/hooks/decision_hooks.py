@@ -857,7 +857,7 @@ def _session_has_assessment_signal(conn, session_id: str) -> bool:
     return row is not None
 
 
-def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
+def maybe_extract_decisions(repo_path: str, session_id: str, *, source: str = "session_end") -> None:
     """Launch background candidate extraction if any of the three source gates fire. Never raises."""
     try:
         config = _load_decisions_config(repo_path)
@@ -870,6 +870,15 @@ def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
         try:
             if _session_has_extraction_marker(conn, session_id):
                 return
+
+            if source == "stop":
+                max_attempts = config.get("extract_max_attempts", 3)
+                meta = _load_session_metadata(conn, session_id)
+                attempts = meta.get("extraction_attempts", 0)
+                if not isinstance(attempts, int):
+                    attempts = 0
+                if attempts >= max_attempts:
+                    return
 
             min_turns = config.get("noise_gate_min_turns_with_files", 3)
             if not _session_passes_noise_gate(conn, session_id, min_turns=min_turns):
@@ -907,6 +916,16 @@ def maybe_extract_decisions(repo_path: str, session_id: str) -> None:
 
             if worker_status(repo_path, pid_name="worker-decision").get("running"):
                 return
+
+            if source == "stop":
+                from ..core.context import transaction
+
+                with transaction(conn):
+                    _write_session_metadata_patch(
+                        conn,
+                        session_id,
+                        {"$.extraction_attempts": attempts + 1},
+                    )
 
             import sys
 

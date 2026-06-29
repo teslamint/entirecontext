@@ -309,7 +309,7 @@ def on_stop(data: dict[str, Any]) -> None:
     if not repo_path:
         return
 
-    _maybe_extract_decisions(repo_path, session_id)
+    _maybe_extract_decisions(repo_path, session_id, source="stop")
 
 
 def _maybe_infer_applied_decisions(repo_path: str, session_id: str) -> None:
@@ -717,11 +717,11 @@ def _maybe_check_stale_decisions(repo_path: str) -> None:
         _record_hook_warning(repo_path, "decision_stale_dispatch", exc)
 
 
-def _maybe_extract_decisions(repo_path: str, session_id: str) -> None:
+def _maybe_extract_decisions(repo_path: str, session_id: str, *, source: str = "session_end") -> None:
     try:
         from .decision_hooks import maybe_extract_decisions
 
-        maybe_extract_decisions(repo_path, session_id)
+        maybe_extract_decisions(repo_path, session_id, source=source)
     except Exception as exc:
         _record_hook_warning(repo_path, "decision_extract_dispatch", exc)
 
