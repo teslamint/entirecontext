@@ -17,7 +17,7 @@ class TestDecisionConfig:
     def test_decisions_section_exists(self):
         assert "decisions" in DEFAULT_CONFIG
 
-    def test_decisions_defaults_all_off(self):
+    def test_decisions_defaults(self):
         decisions = DEFAULT_CONFIG["decisions"]
         assert decisions["auto_stale_check"] is False
         assert decisions["auto_extract"] is True

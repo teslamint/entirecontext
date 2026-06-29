@@ -12,13 +12,10 @@ import subprocess
 import uuid
 from pathlib import Path
 
-import pytest
-
 from entirecontext.core.auto_apply import infer_applied_decisions
 from entirecontext.core.auto_assess import auto_assess_checkpoint
 from entirecontext.core.decisions import (
     create_decision,
-    get_decision,
     link_decision_to_file,
     rank_related_decisions,
     _load_ranking_weights,

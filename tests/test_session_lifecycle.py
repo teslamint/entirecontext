@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 
 class TestStopHookExtraction:
     """Stop hook triggers extraction as SessionEnd fallback."""
