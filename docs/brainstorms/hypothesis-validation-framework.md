@@ -30,7 +30,7 @@ User-visible outcomes:
 
 Session-level A/B randomization is invalid here: treatment and control sessions share the same repo and the same decision DB. A treatment session that applies a decision commits code that later control sessions inherit — the treatment effect leaks into the control arm through the codebase (SUTVA violation). No amount of session-level coin-flipping fixes this.
 
-Instead, alternate injection on/off in **time blocks** (e.g., weekly), and compare block-level aggregates.
+Instead, alternate injection on/off in **4-day time blocks**, and compare block-level aggregates. (Resolved from review: at ~5 sessions/day, 4-day blocks yield ~20 sessions/block and ~1.75× more block pairs than weekly in the same calendar time, with shorter carryover accumulation per block. Since rare-event proxies are underpowered either way and the deliverable is directional signal, more pairs beats bigger blocks.)
 
 OFF blocks must suppress **every** proactive surfacing channel, not just one — the repo has four independent paths, each behind its own config key:
 
@@ -42,7 +42,7 @@ OFF blocks must suppress **every** proactive surfacing channel, not just one —
 | UserPromptSubmit sync injection (planned, v0.7.0+) | `[decisions.injection] inject_on_user_prompt` | true | false |
 | Decision MCP tools / manual `ec search` | — | enabled | enabled |
 
-Missing even one channel contaminates OFF blocks with partial treatment. If the toggles are flipped by hand or cron (the minimal path below), the flip script must set all of them atomically; if this graduates to a product feature, implement one central experiment-block helper that every proactive surfacing path consults, rather than per-channel checks that can drift.
+Missing even one channel contaminates OFF blocks with partial treatment. If the toggles are flipped by hand or cron (the minimal path below), the flip script must set all of them atomically. A reviewer-endorsed alternative that is still a small change: a single `[decisions.injection] experiment_block` flag consulted by all surfacing handlers — one source of truth, no per-key drift risk. Prefer the flag if Phase 2 work touches those handlers anyway; otherwise the atomic flip script suffices for a solo run.
 
 Assignment: flip the config keys above at block boundaries (manually or via cron) and log each transition — see Implementation and the Build vs Script Tradeoff section. A dedicated `experiment_schedule` config key with SessionStart block computation is the multi-user upgrade path, not the starting point.
 
@@ -109,6 +109,7 @@ No new CLI needed. Sampling is a SQL query against `decision_outcomes` (filter `
 - [ ] Standalone sampling script (or documented SQL) producing the 50-case review sheet: session_id, decision_id, files_overlap, turn content path — outcome label withheld.
 - [ ] Reviewer records verdict in a JSONL file: `{session_id, decision_id, verdict, rationale}`.
 - [ ] Precision computation: a ~20-line script over the verdicts file. Promote to `ec experiment` subcommands only if the audit becomes a recurring practice.
+- [ ] Lightweight explicit feedback (resolved from review): after `ec context apply`, print one line — `Applied. Useful? [Y/n/skip]`, default skip on Enter — and record the response as `feedback:yes/no/skip` in the existing `context_applications.note` field (no schema change). Acquiescence bias is real, but a biased explicit signal beats none: it provides an independent cross-check against auto-apply's file-overlap verdicts in this audit (agreement rate between manual feedback and inferred outcomes is itself a useful precision proxy). Skip-by-default keeps workflow friction near zero.
 
 ### Decision Gate
 
@@ -132,6 +133,7 @@ Therefore Phase 2 starts with a capture change, not an export command:
 
 - [ ] New table `ranking_snapshots`: `{id, retrieval_event_id, input_files JSON, input_diff_text TEXT, input_commits JSON, scored_candidates JSON (decision_id, score, per-signal breakdown — the FULL scored set before `scored[:limit]` truncation), effective_limit INTEGER, created_at}`. Written by `rank_related_decisions` callers when `[decisions] capture_ranking_snapshots = true` (default false).
 - [ ] Privacy policy for `input_diff_text` (and any persisted transcript excerpt): note that `content_filter.redact_content()` is a no-op unless `capture.exclusions.enabled` is set, so it alone is NOT a safety net. Requirements: (a) always apply `security.filter_secrets()` (default patterns) AND configured `redact_content` before persisting — defense-in-depth, matching the F4 worker's double-filter model; (b) cap stored diff at the existing 8192-byte truncation; (c) exclude `ranking_snapshots` from `ec sync` export by default; (d) cover with `ec purge`, and add a retention default (e.g. 90 days); (e) seeded-secret regression test proving a planted token never reaches the table.
+- [ ] Capture exhaustively while the config is on — no sampling. (Resolved from review: ~5–15 snapshots/day at ~10–30KB each ≈ 7–10MB over the 4–6 week collection window, trivial for SQLite; sampling at 1-in-3 would stretch collection to 12–18 weeks for no meaningful storage savings.)
 - [ ] Only after snapshots accumulate can labeling begin. Budget ~4–6 weeks of dogfooding to collect 100 usable cases.
 
 ### Design
@@ -155,7 +157,7 @@ Metrics:
 
 With only ~100 labeled cases, a 70/30 split leaves a 30-case test set — too small to distinguish a real NDCG lift from noise, and grid search over that set will overfit. Instead:
 
-1. Use **5-fold cross-validation** over the full labeled set; report mean ± std of NDCG@5 per weight configuration.
+1. Use **5-fold cross-validation** over the full labeled set; report mean ± std of NDCG@5 per weight configuration. Start labeling at 100 cases; if cross-fold NDCG@5 std ≥ 0.15 (folds of 20 are noisy for a position-sensitive metric), extend labeling to 150 before drawing tuning conclusions.
 2. Restrict the search space: vary only `file_exact_weight`, `diff_relevance_weight`, `quality_weight` within ±50% of defaults (coarse grid, ≤27 configurations) to limit multiple-comparison inflation.
 3. Ship new defaults only if the best configuration beats the current defaults by more than one std of the CV estimate — otherwise declare current weights adequate.
 4. Re-validate on the next 50 cases collected after the tuning decision (temporal holdout) before finalizing.
@@ -216,7 +218,7 @@ The only unavoidable product change is the ranking snapshot capture; everything 
 - Automated weight tuning in production (defer until benchmark shows a lift exceeding CV noise).
 - Three-arm comparative study (defer until injection experiment shows signal).
 - Changes to existing ranking or injection logic (this is measurement only).
-- User-facing feedback UI ("was this helpful?" prompts).
+- Feedback UI beyond the single-line `ec context apply` prompt (no per-injection ratings, no notification-driven surveys).
 - Integration with external CI systems for test pass rate collection.
 
 ## Sequencing
@@ -262,10 +264,14 @@ Phase 1 gates the outcome-derived signal chain (quality score → ranking boost 
 - **Snapshot storage**: ranking snapshots persist diff text, which may contain secrets. Mitigation: reuse the existing content_filter redaction path before persisting; gate behind opt-in config.
 - **Survivorship bias**: only decisions that survived extraction + confirmation are evaluated; the system may be filtering out the most useful candidates before they reach the ranker.
 
-## Review Questions
+## Resolved Questions
 
-- Is weekly the right block length, or do shorter blocks (3-4 days) give more pairs at acceptable carryover cost?
-- Should the injection experiment also suppress SessionStart surfacing files (the F4 async path), or only `additionalContext` injection?
-- For the ranking benchmark, is 100 labeled cases enough to start, given 5-fold CV — or should labeling wait for 150?
-- Should ranking snapshots be sampled (e.g., 1 in 3 calls) to bound storage growth, or captured exhaustively while the config is on?
-- Should we add an explicit "was this useful?" prompt to `ec context apply` as a lightweight ground-truth source, even though it biases toward positive responses?
+Answered in PR #184 review with codebase-grounded analysis; decisions folded into the body above.
+
+| Question | Resolution | Where applied |
+|----------|-----------|---------------|
+| Block length: weekly or 3–4 days? | **4-day blocks** — ~1.75× more pairs per calendar time, shorter carryover accumulation; pairs beat block size when the goal is directional signal | Approach 1 Design |
+| Suppress all proactive channels in OFF blocks? | **Yes, all of them** — one leaking channel contaminates the independent variable; single shared `experiment_block` flag endorsed as the drift-proof implementation | Approach 1 channel table |
+| 100 labeled cases enough for the benchmark? | **Start at 100**; extend to 150 only if cross-fold NDCG@5 std ≥ 0.15 — existing guardrails (1-std ship bar, temporal holdout) make early start safe, and waiting costs 2–3 extra weeks | Approach 3 Weight Tuning Protocol |
+| Sample or exhaustively capture snapshots? | **Exhaustive** — ~7–10MB over the collection window is trivial; 1-in-3 sampling stretches collection to 12–18 weeks | Approach 3 Prerequisite |
+| Add "was this useful?" prompt to `ec context apply`? | **Yes, minimally** — `Useful? [Y/n/skip]`, skip default, stored in existing `note` field; biased explicit signal beats none and cross-checks auto-apply precision | Approach 2 Implementation |
