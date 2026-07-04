@@ -30,7 +30,9 @@ User-visible outcomes:
 
 Session-level A/B randomization is invalid here: treatment and control sessions share the same repo and the same decision DB. A treatment session that applies a decision commits code that later control sessions inherit — the treatment effect leaks into the control arm through the codebase (SUTVA violation). No amount of session-level coin-flipping fixes this.
 
-Instead, alternate injection on/off in blocks defined by **meaningful-session count, not calendar time** — flip after every N checkpoint-bearing sessions (start with N=5), and compare block-level aggregates.
+Instead, alternate injection on/off in blocks defined by **qualifying-session count, not calendar time** — flip after every N qualifying sessions (start with N=5), and compare block-level aggregates.
+
+**Qualifying session** (the counter's unit, defined precisely because the naive alternatives both fail): `sessions.total_turns >= 5 AND EXISTS (checkpoint for that session)`. DB measurement shows why both conditions are needed: checkpoint-bearing alone matches 46 sessions/30d (mostly trivial hook records — counting those reintroduces the empty/noisy-block problem), `total_turns >= 5` alone matches 7/30d, and the conjunction matches 6/30d — the population the experiment actually cares about. Alternatively reuse the repo's existing noise-gate predicate (`noise_gate_min_turns_with_files`) if it converges on the same population. At ~6 qualifying sessions/month, one N=5 block spans roughly a month of calendar time — the 4+ block pairs Phase 3 wants is a multi-month commitment, consistent with the directional-signal framing.
 
 (Resolved from review, in two passes: an initial 4-day-calendar recommendation assumed ~5 sessions/day, but actual DB inspection found only ~7 meaningful sessions (≥5 turns) in the last 30 days — most session rows are trivial hook records. Short calendar blocks would therefore frequently be empty, producing "more pairs" that are empty pairs. Count-based blocks guarantee every block contains a comparable amount of real work. The second correction: carryover accumulation is **independent of block length** — a decision applied in an ON block lands in a git commit and persists into all subsequent blocks no matter how short they are — so block length cannot tune it away; it is an unavoidable limitation to report, not a design parameter.)
 
@@ -46,7 +48,7 @@ OFF blocks must suppress **every** proactive surfacing channel, not just one —
 
 Missing even one channel contaminates OFF blocks with partial treatment. If the toggles are flipped by hand or cron (the minimal path below), the flip script must set all of them atomically. A reviewer-endorsed alternative that is still a small change: a single `[decisions.injection] experiment_block` flag consulted by all surfacing handlers — one source of truth, no per-key drift risk. Prefer the flag if Phase 2 work touches those handlers anyway; otherwise the atomic flip script suffices for a solo run.
 
-Assignment: flip the config keys above when the checkpoint-bearing-session counter reaches N (a one-line SQL check against `checkpoints`/`sessions`, run manually or by a periodic script that flips when the threshold is crossed) and log each transition — see Implementation and the Build vs Script Tradeoff section. A dedicated `experiment_schedule` config key with SessionStart block computation is the multi-user upgrade path, not the starting point.
+Assignment: flip the config keys above when the qualifying-session counter reaches N (the SQL predicate above against `sessions`/`checkpoints`, run manually or by a periodic script that flips when the threshold is crossed) and log each transition — see Implementation and the Build vs Script Tradeoff section. A dedicated `experiment_schedule` config key with SessionStart block computation is the multi-user upgrade path, not the starting point.
 
 Crossover with multiple block pairs partially controls for time trends (repo maturity, task mix drift). Analyze as paired block differences, not pooled sessions.
 
@@ -78,7 +80,7 @@ Measured solo-dogfooding cadence is ~7 meaningful sessions per 30 days (DB-verif
 
 ### Implementation (minimal path)
 
-The existing config toggles already provide the on/off switches. Block transitions flip all four keys from the channel table above (`show_related_on_start`, `surface_on_user_prompt`, `surface_on_tool_use`, `inject_on_user_prompt`) atomically — triggered by the checkpoint-bearing-session counter, not the calendar — so no channel leaks treatment into OFF blocks. No scheduler code needed for a solo run.
+The existing config toggles already provide the on/off switches. Block transitions flip all four keys from the channel table above (`show_related_on_start`, `surface_on_user_prompt`, `surface_on_tool_use`, `inject_on_user_prompt`) atomically — triggered by the qualifying-session counter, not the calendar — so no channel leaks treatment into OFF blocks. No scheduler code needed for a solo run.
 
 - [ ] Record block membership: a one-line entry in a `experiment-blocks.jsonl` log (`{block_start, injection}`) maintained by hand or by the cron that flips the toggle.
 - [ ] Analysis: a standalone script (not shipped CLI) joining sessions to blocks by timestamp, computing paired block differences with confidence intervals, and counting manual retrieval_events per block for the compensation check.
@@ -133,10 +135,10 @@ The existing telemetry cannot support this benchmark. `retrieval_events` stores 
 
 Therefore Phase 2 starts with a capture change, not an export command:
 
-- [ ] New table `ranking_snapshots`: `{id, retrieval_event_id, input_files JSON, input_diff_text TEXT, input_commits JSON, scored_candidates JSON (decision_id, score, per-signal breakdown — the FULL scored set before `scored[:limit]` truncation), effective_limit INTEGER, created_at}`. Written by `rank_related_decisions` callers when `[decisions] capture_ranking_snapshots = true` (default false).
+- [ ] New table `ranking_snapshots`: `{id, retrieval_event_id, input_files JSON, input_diff_text TEXT, input_commits JSON, scored_candidates JSON (decision_id, score, per-signal breakdown — the FULL scored set before `scored[:limit]` truncation), effective_limit INTEGER, created_at}`. Capture must live **inside** `rank_related_decisions()` — after the sort, immediately before the `top = scored[:limit]` truncation (`core/decisions.py:1660-1661`) — because the full scored list is a local variable callers never see. Gate on `[decisions] capture_ranking_snapshots = true` (default false); the function already receives the input signals (file_paths, diff_text, commit_shas), so no signature change is needed beyond an optional snapshot sink.
 - [ ] Privacy policy for `input_diff_text` (and any persisted transcript excerpt): note that `content_filter.redact_content()` is a no-op unless `capture.exclusions.enabled` is set, so it alone is NOT a safety net. Requirements: (a) always apply `security.filter_secrets()` (default patterns) AND configured `redact_content` before persisting — defense-in-depth, matching the F4 worker's double-filter model; (b) cap stored diff at the existing 8192-byte truncation; (c) exclude `ranking_snapshots` from `ec sync` export by default; (d) cover with `ec purge`, and add a retention default (e.g. 90 days); (e) seeded-secret regression test proving a planted token never reaches the table.
-- [ ] Capture exhaustively while the config is on — no sampling. (Resolved from review: ~5–15 snapshots/day at ~10–30KB each ≈ 7–10MB over the 4–6 week collection window, trivial for SQLite; sampling at 1-in-3 would stretch collection to 12–18 weeks for no meaningful storage savings.)
-- [ ] Only after snapshots accumulate can labeling begin. Budget ~4–6 weeks of dogfooding to collect 100 usable cases.
+- [ ] Capture exhaustively while the config is on — no sampling. (Storage is a non-issue at ~10–30KB per snapshot; sampling would only stretch an already-long collection window.)
+- [ ] Collection timeline is **conditional on surfacing frequency**, not a fixed promise. The original 4–6-week estimate assumed 5–15 ranker calls/day; measured telemetry shows 56 retrieval events in 30 days with only a handful decision-related, and ~6 qualifying sessions/month. Under current cadence, 100 usable cases could take several months. Plan: (a) enable the proactive surfacing channels (`show_related_on_start`, `surface_on_user_prompt`) during collection so every session triggers ranker calls, (b) measure the actual snapshot rate after the first week and re-project the target date from data, (c) if the projection exceeds ~10 weeks, lower the initial labeling target to the first 50 cases and run a preliminary report.
 
 ### Design
 
@@ -236,7 +238,8 @@ Phase 2a (v0.11.0): Ranking Snapshot Capture
     exclusion, and seeded-secret test
 
 Phase 2b (v0.11.x): First Precision/Recall Report
-  → Labeling starts after ~100 snapshots accumulate (~4-6 weeks)
+  → Labeling starts after ~100 snapshots accumulate (timeline measured
+    after week 1, not promised; fallback to first-50 preliminary report)
   → Deliverable: P@5, NDCG@5, MRR, missed-relevant audit — no tuning yet
 
 Phase 2c (optional): Weight Tuning
@@ -272,7 +275,7 @@ Answered in PR #184 review with codebase-grounded analysis; decisions folded int
 
 | Question | Resolution | Where applied |
 |----------|-----------|---------------|
-| Block length: weekly or 3–4 days? | **Neither — session-count blocks** (flip every N=5 checkpoint-bearing sessions). Initial 4-day answer assumed ~5 sessions/day; DB inspection found ~7 meaningful sessions/30 days, so calendar blocks would often be empty. Carryover is independent of block length (applied decisions persist in git), so it's a reported limitation, not a tunable | Approach 1 Design |
+| Block length: weekly or 3–4 days? | **Neither — qualifying-session-count blocks** (flip every N=5 sessions matching `total_turns >= 5 AND EXISTS checkpoint`; checkpoint-bearing alone matches 46/30d of mostly trivial records, the conjunction 6/30d). Initial 4-day answer assumed ~5 sessions/day; DB inspection contradicted it. Carryover is independent of block length (applied decisions persist in git), so it's a reported limitation, not a tunable | Approach 1 Design |
 | Suppress all proactive channels in OFF blocks? | **Yes, all of them** — one leaking channel contaminates the independent variable; single shared `experiment_block` flag endorsed as the drift-proof implementation | Approach 1 channel table |
 | 100 labeled cases enough for the benchmark? | **Start at 100**; extend to 150 only if cross-fold NDCG@5 std ≥ 0.15 — existing guardrails (1-std ship bar, temporal holdout) make early start safe, and waiting costs 2–3 extra weeks | Approach 3 Weight Tuning Protocol |
 | Sample or exhaustively capture snapshots? | **Exhaustive** — ~7–10MB over the collection window is trivial; 1-in-3 sampling stretches collection to 12–18 weeks | Approach 3 Prerequisite |
