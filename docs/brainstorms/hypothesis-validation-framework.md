@@ -10,7 +10,7 @@ Current state: the feedback loops (outcome → quality → ranking) are architec
 
 User-visible outcomes:
 
-- Operators can see whether decision injection actually helps, with statistical confidence.
+- Operators can see whether decision injection actually helps, with honestly-reported uncertainty (directional signal at solo scale; statistical confidence only if the experiment scales to more users).
 - Ranking weights can be tuned empirically instead of hand-set.
 - The project can respond to the "memorizing transcripts isn't useful" criticism with data.
 
@@ -30,14 +30,21 @@ User-visible outcomes:
 
 Session-level A/B randomization is invalid here: treatment and control sessions share the same repo and the same decision DB. A treatment session that applies a decision commits code that later control sessions inherit — the treatment effect leaks into the control arm through the codebase (SUTVA violation). No amount of session-level coin-flipping fixes this.
 
-Instead, alternate injection on/off in **time blocks** (e.g., weekly), and compare block-level aggregates:
+Instead, alternate injection on/off in **time blocks** (e.g., weekly), and compare block-level aggregates.
 
-| Block | `inject_on_user_prompt` | `surface_on_session_start` | MCP tools |
-|-------|------------------------|---------------------------|-----------|
-| ON weeks | true | true | enabled |
-| OFF weeks | false | false | enabled |
+OFF blocks must suppress **every** proactive surfacing channel, not just one — the repo has four independent paths, each behind its own config key:
 
-Assignment: flip the existing `inject_on_user_prompt` config toggle at block boundaries (manually or via cron) and log each transition — see Implementation and the Build vs Script Tradeoff section. A dedicated `experiment_schedule` config key with SessionStart block computation is the multi-user upgrade path, not the starting point.
+| Channel | Config key (actual) | ON blocks | OFF blocks |
+|---------|--------------------|-----------|------------|
+| SessionStart related decisions | `[decisions] show_related_on_start` | true | false |
+| UserPromptSubmit async surfacing (F4 file) | `[decisions] surface_on_user_prompt` | true | false |
+| PostToolUse surfacing | `[decisions] surface_on_tool_use` | true | false |
+| UserPromptSubmit sync injection (planned, v0.7.0+) | `[decisions.injection] inject_on_user_prompt` | true | false |
+| Decision MCP tools / manual `ec search` | — | enabled | enabled |
+
+Missing even one channel contaminates OFF blocks with partial treatment. If the toggles are flipped by hand or cron (the minimal path below), the flip script must set all of them atomically; if this graduates to a product feature, implement one central experiment-block helper that every proactive surfacing path consults, rather than per-channel checks that can drift.
+
+Assignment: flip the config keys above at block boundaries (manually or via cron) and log each transition — see Implementation and the Build vs Script Tradeoff section. A dedicated `experiment_schedule` config key with SessionStart block computation is the multi-user upgrade path, not the starting point.
 
 Crossover with multiple block pairs partially controls for time trends (repo maturity, task mix drift). Analyze as paired block differences, not pooled sessions.
 
@@ -58,7 +65,7 @@ Dropped from the earlier draft: **assessment verdict distribution** (expand/narr
 
 ### Minimum Sample Size
 
-Assumption: revert/fixup baseline rate ~10% of sessions, and we care about an **absolute** reduction of 10 percentage points (10% → down to near-zero would be implausible; 10%→5% halving is the realistic target). Two-proportion test at α=0.05, power=0.80:
+Assumption: revert/fixup baseline rate ~10% of sessions, and the realistic effect to detect is an **absolute** reduction of 5 to 7.5 percentage points (a halving or better; anything smaller is not worth the experiment cost at this scale). Two-proportion test at α=0.05, power=0.80:
 
 - Detect 10%→5% (5pp absolute): ~435 sessions per arm
 - Detect 10%→2.5% (7.5pp absolute): ~180 sessions per arm
@@ -69,7 +76,7 @@ At solo-dogfooding cadence (~5 sessions/day, split across blocks) either target 
 
 ### Implementation (minimal path)
 
-The existing `inject_on_user_prompt` config toggle already provides the on/off switch. Block transitions can be done manually (or via cron editing the config) at block boundaries — no scheduler code needed for a solo run.
+The existing config toggles already provide the on/off switches. Block transitions flip all four keys from the channel table above (`show_related_on_start`, `surface_on_user_prompt`, `surface_on_tool_use`, `inject_on_user_prompt`) atomically — manually or via cron editing the config — so no channel leaks treatment into OFF blocks. No scheduler code needed for a solo run.
 
 - [ ] Record block membership: a one-line entry in a `experiment-blocks.jsonl` log (`{block_start, injection}`) maintained by hand or by the cron that flips the toggle.
 - [ ] Analysis: a standalone script (not shipped CLI) joining sessions to blocks by timestamp, computing paired block differences with confidence intervals, and counting manual retrieval_events per block for the compensation check.
@@ -105,7 +112,11 @@ No new CLI needed. Sampling is a SQL query against `decision_outcomes` (filter `
 
 ### Decision Gate
 
-If precision < 0.5 (more than half of "accepted" are false positives), the entire quality → ranking feedback loop is corrupted and must be redesigned before trusting the injection experiment results.
+If precision < 0.5 (more than half of "accepted" are false positives), the **outcome-derived signals** — quality scores, outcome-based ranking boosts, extraction-confidence feedback, and the decision-contradiction-rate proxy in Approach 1 — are corrupted and must not be trusted until auto_apply is redesigned.
+
+Scope of the gate, both directions:
+- **Not too broad**: direct ON/OFF quality metrics (turn count, revert/fixup rate, CI failures) do not depend on auto-apply and remain valid even if Phase 1 fails. Phase 3 can proceed on those metrics alone; only its outcome-derived proxy is blocked.
+- **Not too narrow**: this audit measures precision only. False negatives (decisions the agent applied without touching linked files, so no outcome was recorded) are invisible to it — a high precision score does not prove the loop captures everything. Label Phase 1 results as precision-only; a false-negative audit (sample sessions with surfaced-but-no-outcome decisions) is a candidate follow-up, not part of this gate.
 
 ## Approach 3: Ranking Precision Benchmark (Q3)
 
@@ -119,17 +130,26 @@ The existing telemetry cannot support this benchmark. `retrieval_events` stores 
 
 Therefore Phase 2 starts with a capture change, not an export command:
 
-- [ ] New table `ranking_snapshots`: `{id, retrieval_event_id, input_files JSON, input_diff_text TEXT, input_commits JSON, ranked_results JSON (decision_id, score, per-signal breakdown), created_at}`. Written by `rank_related_decisions` callers when `[decisions] capture_ranking_snapshots = true` (default false; diff text storage has size and secrecy implications — reuse the existing content_filter redaction path before persisting).
+- [ ] New table `ranking_snapshots`: `{id, retrieval_event_id, input_files JSON, input_diff_text TEXT, input_commits JSON, scored_candidates JSON (decision_id, score, per-signal breakdown — the FULL scored set before `scored[:limit]` truncation), effective_limit INTEGER, created_at}`. Written by `rank_related_decisions` callers when `[decisions] capture_ranking_snapshots = true` (default false).
+- [ ] Privacy policy for `input_diff_text` (and any persisted transcript excerpt): note that `content_filter.redact_content()` is a no-op unless `capture.exclusions.enabled` is set, so it alone is NOT a safety net. Requirements: (a) always apply `security.filter_secrets()` (default patterns) AND configured `redact_content` before persisting — defense-in-depth, matching the F4 worker's double-filter model; (b) cap stored diff at the existing 8192-byte truncation; (c) exclude `ranking_snapshots` from `ec sync` export by default; (d) cover with `ec purge`, and add a retention default (e.g. 90 days); (e) seeded-secret regression test proving a planted token never reaches the table.
 - [ ] Only after snapshots accumulate can labeling begin. Budget ~4–6 weeks of dogfooding to collect 100 usable cases.
 
 ### Design
 
-Offline evaluation dataset: collect N=100 real (context, ranked_decisions) snapshot pairs. An annotator labels each surfaced decision as relevant / partially relevant / irrelevant.
+Offline evaluation dataset: collect N=100 real (context, scored_candidates) snapshot pairs.
+
+Precision@k alone cannot detect **recall failures**: if candidate generation never gathered the right decision, the top-k can be 100% "relevant among what was considered" while the ranker still failed the user. Two design consequences:
+
+1. The snapshot stores the full scored candidate set (pre-truncation) plus the effective limit — note that production surfacing paths truncate aggressively (`surface_on_user_prompt_limit` defaults to 3, ranker slices `scored[:limit]`), so judging only what was surfaced would judge a 3-item window.
+2. The judgment pool per case = surfaced top-k ∪ sampled non-surfaced candidates ∪ a keyword/FTS sweep of the full decisions table for that context. Annotate the pool, not just the output.
+
+Labels: relevant / partially relevant / irrelevant per (context, decision) pair.
 
 Metrics:
 - **Precision@5**: fraction of top-5 that are relevant (partial counts 0.5)
 - **NDCG@5**: position-weighted relevance (gain: relevant=2, partial=1, irrelevant=0)
 - **MRR**: mean reciprocal rank of first relevant decision
+- **Missed-relevant audit**: count of pool-relevant decisions absent from the scored candidate set (candidate-generation recall failure) vs present-but-ranked-below-cutoff (ranking failure) — these have different fixes
 
 ### Weight Tuning Protocol
 
@@ -165,7 +185,7 @@ Implementation note: arm B requires building a transcript-injection path that do
 
 ### Pragmatic Start
 
-This is expensive. Defer until Approach 1 shows directional signal. If the injection experiment shows no effect and no compensatory manual retrieval, skip this and accept the article's thesis applies to us too.
+This is expensive. Defer until Approach 1 produces a directional read. Interpretation discipline: a null Phase 3 result says only that **proactive injection adds no incremental value over on-demand retrieval** — it says nothing about structured decisions vs raw transcripts vs no memory, which is precisely this approach's question. So a null Phase 3 does not license skipping Approach 4; it changes its priority. If Phase 3 is null AND the compensation check shows no manual retrieval either, run at least a small-N (5-task) version of this comparison before accepting the article's thesis; if Phase 3 is positive, run the full version to attribute the effect.
 
 ## Build vs Script Tradeoff
 
@@ -174,7 +194,7 @@ At solo-dogfooding scale, building the experiment framework as shipped product f
 | Component | Minimal path | Promote to product when |
 |-----------|-------------|------------------------|
 | Phase 1 sampling + precision | SQL + standalone scripts | Audit becomes a recurring (per-release) practice |
-| Phase 3 block switching | Existing `inject_on_user_prompt` toggle, flipped manually/cron | Multi-user experiment needs consistent assignment |
+| Phase 3 block switching | Existing surfacing toggles (all four channel keys), flipped atomically by script/cron | Multi-user experiment needs consistent assignment → central experiment-block helper |
 | Phase 3 analysis | Standalone script over sessions + blocks log | Same |
 | **Phase 2 `ranking_snapshots` capture** | **Must be product code** — hooks into `rank_related_decisions` call sites, needs redaction + config gate | n/a (only real build in this plan) |
 
@@ -202,23 +222,35 @@ The only unavoidable product change is the ranking snapshot capture; everything 
 ## Sequencing
 
 ```
-Phase 1 (v0.11.0): Outcome Inference Accuracy Audit
-  → Decision gate: if precision < 0.5, fix auto_apply before proceeding
+Phase 1 (v0.11.0): Outcome Inference Accuracy Audit (precision-only)
+  → Gate: if precision < 0.5, outcome-derived signals are untrusted until
+    auto_apply is fixed; direct ON/OFF metrics remain usable
   → If estimate in 0.4–0.6, extend N=50 → N=100 before deciding
 
-Phase 2 (v0.11.0): Ranking Snapshot Capture → Precision Benchmark
-  → Capture ships first; labeling starts after ~100 snapshots accumulate
-  → Weight tuning via cross-validation, only if lift exceeds CV noise
+Phase 2a (v0.11.0): Ranking Snapshot Capture
+  → The one product-code change; ships with redaction, purge, export
+    exclusion, and seeded-secret test
+
+Phase 2b (v0.11.x): First Precision/Recall Report
+  → Labeling starts after ~100 snapshots accumulate (~4-6 weeks)
+  → Deliverable: P@5, NDCG@5, MRR, missed-relevant audit — no tuning yet
+
+Phase 2c (optional): Weight Tuning
+  → Only if 2b shows headroom; 5-fold CV, ship only if lift exceeds CV
+    noise, temporal holdout before finalizing
 
 Phase 3 (v0.12.0): Injection On/Off Crossover Experiment
-  → Requires Phase 1 passing (feedback loop is trustworthy)
+  → Direct quality metrics usable regardless of Phase 1 outcome;
+    outcome-derived proxies only if Phase 1 passed
   → Requires 4+ block pairs; report directional signal with declared power
 
-Phase 4 (v0.13.0, conditional): Comparative Baseline
-  → Only if Phase 3 shows positive directional signal
+Phase 4 (v0.13.0, conditional on Phase 3 read):
+  → Phase 3 positive → full Comparative Baseline to attribute the effect
+  → Phase 3 null → small-N (5-task) Comparative Baseline before accepting
+    the article's thesis
 ```
 
-Phase 1 is gating because if outcome inference is broken, all downstream metrics (quality score, ranking, block-level quality signals) are built on sand.
+Phase 1 gates the outcome-derived signal chain (quality score → ranking boost → extraction feedback) because if outcome inference is broken, everything downstream of it is built on sand. It does not gate metrics that never touch auto_apply.
 
 ## Risks
 
