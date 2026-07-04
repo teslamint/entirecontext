@@ -275,12 +275,17 @@ def rank_decisions_for_prompt(
     prompt_text: str,
     config: dict[str, Any],
     limit: int | None = None,
+    capture_snapshots: bool | None = None,
 ) -> tuple[list[dict[str, Any]], list[str], str | None]:
     """Rank decisions relevant to a user prompt.
 
     Returns (surfaced, warnings, snapshot_id). ``surfaced`` is a list of full
     decision dicts with ``score`` and ``rank`` injected.  ``snapshot_id`` is
-    non-None when ``capture_ranking_snapshots`` is enabled in config.
+    non-None when snapshot capture is enabled.
+
+    ``capture_snapshots`` overrides the config flag when explicitly set.
+    Pass False from callers that do not create retrieval events (e.g. the
+    sync PDI fast path) to avoid orphaned snapshot rows.
     Telemetry is intentionally omitted here; the async worker path handles
     telemetry separately.
     """
@@ -324,7 +329,7 @@ def rank_decisions_for_prompt(
     quality_weights = _load_quality_weights(config)
 
     decisions_cfg = config.get("decisions", {})
-    capture = decisions_cfg.get("capture_ranking_snapshots", False)
+    capture = capture_snapshots if capture_snapshots is not None else decisions_cfg.get("capture_ranking_snapshots", False)
 
     ranked, stats = rank_related_decisions(
         conn,

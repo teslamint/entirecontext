@@ -194,3 +194,115 @@ def test_mcp_ec_decision_related_backpatches_snapshot(ec_repo, ec_db, monkeypatc
     ).fetchone()
     assert row is not None, "Expected a ranking snapshot to be captured"
     assert row["retrieval_event_id"] == "evt-test-1"
+
+
+def test_worker_path_backpatches_snapshot(ec_repo, ec_db, monkeypatch):
+    """run_prompt_surface_worker captures a snapshot and backpatches the event_id."""
+    from pathlib import Path
+
+    conn = ec_db
+    repo_path = str(ec_repo)
+
+    # Create session so telemetry FK constraints pass
+    proj_row = conn.execute("SELECT id FROM projects LIMIT 1").fetchone()
+    from entirecontext.core.session import create_session
+
+    sess = create_session(conn, project_id=proj_row["id"], session_type="chat")
+    sess_id = sess["id"]
+
+    # Create a decision with file link
+    from entirecontext.core.decisions import create_decision, link_decision_to_file
+
+    dec = create_decision(conn, title="Worker Path Decision", rationale="test")
+    link_decision_to_file(conn, dec["id"], "src/worker.py")
+
+    # Enable capture in config
+    monkeypatch.setattr(
+        "entirecontext.core.config.load_config",
+        lambda rp: {"decisions": {"capture_ranking_snapshots": True}},
+    )
+
+    # Write a tmp prompt file with content that will match
+    prompt_dir = Path(repo_path) / ".entirecontext" / "tmp"
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    prompt_file = prompt_dir / "test-prompt.txt"
+    prompt_file.write_text("working on src/worker.py changes")
+
+    # Monkeypatch git helpers used inside rank_decisions_for_prompt
+    monkeypatch.setattr(
+        "entirecontext.core.decision_prompt_surfacing._get_uncommitted_diff",
+        lambda rp: "",
+    )
+    monkeypatch.setattr(
+        "entirecontext.core.decision_prompt_surfacing._get_uncommitted_file_paths",
+        lambda rp: ["src/worker.py"],
+    )
+    monkeypatch.setattr(
+        "entirecontext.core.decision_prompt_surfacing._get_recent_commit_shas",
+        lambda rp, limit=5: [],
+    )
+    monkeypatch.setattr(
+        "entirecontext.core.decision_prompt_surfacing._get_recent_commit_file_paths",
+        lambda rp, limit=5: [],
+    )
+
+    from entirecontext.core.decision_prompt_surfacing import run_prompt_surface_worker
+
+    result = run_prompt_surface_worker(repo_path, sess_id, "no-turn", str(prompt_file))
+
+    assert result["count"] >= 1, f"Expected surfaced decisions, got {result}"
+    assert not result["warnings"], f"Unexpected warnings: {result['warnings']}"
+
+    # Worker uses its own connection and closes it. Re-open to query.
+    from entirecontext.db import get_db
+
+    conn2 = get_db(repo_path)
+    try:
+        # A snapshot should exist and be backpatched with a real event_id
+        row = conn2.execute(
+            "SELECT id, retrieval_event_id FROM ranking_snapshots"
+        ).fetchone()
+        assert row is not None, "Expected a ranking snapshot from the worker path"
+        assert row["retrieval_event_id"] is not None, "Expected retrieval_event_id to be backpatched"
+    finally:
+        conn2.close()
+
+
+def test_sync_pdi_path_does_not_capture_snapshot(ec_repo, ec_db, monkeypatch):
+    """The sync PDI fast path in handler.py must not capture snapshots (no event to link)."""
+    conn = ec_db
+    repo_path = str(ec_repo)
+
+    from entirecontext.core.decisions import create_decision, link_decision_to_file
+
+    dec = create_decision(conn, title="Sync Path Decision", rationale="test")
+    link_decision_to_file(conn, dec["id"], "src/sync.py")
+
+    # Enable capture in config
+    config = {
+        "decisions": {
+            "injection": {
+                "inject_on_user_prompt": True,
+                "top_k": 5,
+                "max_tokens": 800,
+                "min_confidence": 0.0,
+                "inject_timeout_ms": 5000,
+            },
+            "capture_ranking_snapshots": True,
+        }
+    }
+
+    from entirecontext.core.decision_prompt_surfacing import rank_decisions_for_prompt
+
+    # Call rank_decisions_for_prompt with capture_snapshots=False (as sync path does)
+    surfaced, warnings, snapshot_id = rank_decisions_for_prompt(
+        conn,
+        repo_path=repo_path,
+        prompt_text="working on src/sync.py",
+        config=config,
+        capture_snapshots=False,
+    )
+
+    assert snapshot_id is None, "Sync path should not capture snapshots"
+    count = conn.execute("SELECT COUNT(*) FROM ranking_snapshots").fetchone()[0]
+    assert count == 0, "No snapshot rows should exist when capture_snapshots=False"
