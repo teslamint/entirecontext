@@ -259,7 +259,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                             return None
                     except (ValueError, TypeError):
                         pass
-                surfaced, _ = rank_decisions_for_prompt(
+                surfaced, _, _snapshot_id = rank_decisions_for_prompt(
                     conn, repo_path=repo_path, prompt_text=prompt_text, config=config
                 )
                 return optimize_for_context_budget(

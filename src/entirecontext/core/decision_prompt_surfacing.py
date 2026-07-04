@@ -275,12 +275,14 @@ def rank_decisions_for_prompt(
     prompt_text: str,
     config: dict[str, Any],
     limit: int | None = None,
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """Rank decisions relevant to a user prompt. No side effects.
+) -> tuple[list[dict[str, Any]], list[str], str | None]:
+    """Rank decisions relevant to a user prompt.
 
-    Returns (surfaced, warnings). ``surfaced`` is a list of full decision
-    dicts with ``score`` and ``rank`` injected.  Telemetry is intentionally
-    omitted here; the async worker path handles telemetry separately.
+    Returns (surfaced, warnings, snapshot_id). ``surfaced`` is a list of full
+    decision dicts with ``score`` and ``rank`` injected.  ``snapshot_id`` is
+    non-None when ``capture_ranking_snapshots`` is enabled in config.
+    Telemetry is intentionally omitted here; the async worker path handles
+    telemetry separately.
     """
     warnings: list[str] = []
 
@@ -321,7 +323,10 @@ def rank_decisions_for_prompt(
     ranking_weights = _load_ranking_weights(config)
     quality_weights = _load_quality_weights(config)
 
-    ranked = rank_related_decisions(
+    decisions_cfg = config.get("decisions", {})
+    capture = decisions_cfg.get("capture_ranking_snapshots", False)
+
+    ranked, stats = rank_related_decisions(
         conn,
         file_paths=file_paths,
         diff_text=combined_diff,
@@ -331,6 +336,9 @@ def rank_decisions_for_prompt(
         include_contradicted=False,
         ranking=ranking_weights,
         quality=quality_weights,
+        _return_stats=True,
+        _capture_snapshots=capture,
+        _capture_config=config,
     )
 
     surfaced: list[dict[str, Any]] = []
@@ -342,7 +350,7 @@ def rank_decisions_for_prompt(
         full["rank"] = idx
         surfaced.append(full)
 
-    return surfaced, warnings
+    return surfaced, warnings, stats.get("snapshot_id")
 
 
 def optimize_for_context_budget(
@@ -427,7 +435,7 @@ def run_prompt_surface_worker(
         conn = get_db(repo_path)
         try:
             worker_limit = int(config.get("decisions", {}).get("surface_on_user_prompt_limit", 3))
-            surfaced, rank_warnings = rank_decisions_for_prompt(
+            surfaced, rank_warnings, snapshot_id = rank_decisions_for_prompt(
                 conn,
                 repo_path=repo_path,
                 prompt_text=prompt_text,
@@ -444,6 +452,7 @@ def run_prompt_surface_worker(
             if surfaced:
                 try:
                     from .context import transaction
+                    from .decisions import backpatch_snapshot_event
                     from .telemetry import record_retrieval_event, record_retrieval_selection
 
                     with transaction(conn):
@@ -457,6 +466,11 @@ def run_prompt_surface_worker(
                             latency_ms=0,
                             session_id=session_id,
                             file_filter=None,
+                        )
+                        backpatch_snapshot_event(
+                            conn,
+                            snapshot_id=snapshot_id,
+                            retrieval_event_id=event["id"],
                         )
                         for d in surfaced:
                             sel = record_retrieval_selection(

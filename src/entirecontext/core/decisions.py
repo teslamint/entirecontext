@@ -1701,6 +1701,18 @@ def rank_related_decisions(
     return top
 
 
+def backpatch_snapshot_event(
+    conn, *, snapshot_id: str | None, retrieval_event_id: str
+) -> None:
+    """Link a ranking snapshot to its retrieval event after telemetry creation."""
+    if snapshot_id is None:
+        return
+    conn.execute(
+        "UPDATE ranking_snapshots SET retrieval_event_id = ? WHERE id = ?",
+        (retrieval_event_id, snapshot_id),
+    )
+
+
 def check_staleness(conn, decision_id: str, repo_path: str) -> dict:
     """Check if linked files changed since decision creation.
 

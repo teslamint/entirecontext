@@ -108,7 +108,7 @@ class TestRankIncludesSignalB:
 
         # Use a prompt that shares no tokens with decision title/rationale
         config = dict(DEFAULT_CONFIG)
-        surfaced, warnings = rank_decisions_for_prompt(
+        surfaced, warnings, _snapshot_id = rank_decisions_for_prompt(
             ec_db,
             repo_path=str(ec_repo),
             prompt_text="completely unrelated prompt 98765",
