@@ -1,6 +1,6 @@
 # Hypothesis Validation Framework
 
-_Draft brainstorm. Created 2026-07-04. Milestone: v0.11.0. Confidence: 78%._
+_Draft brainstorm. Created 2026-07-04. Revised 2026-07-04 after self-review. Milestone: v0.11.0. Confidence: 72%._
 
 ## Intent
 
@@ -18,48 +18,59 @@ User-visible outcomes:
 
 | # | Question | Current evidence | Required evidence |
 |---|----------|-----------------|-------------------|
-| Q1 | Does surfacing decisions change agent behavior? | proxy: file overlap → "accepted" | causal: controlled comparison |
+| Q1 | Does **proactive injection** change agent behavior? | proxy: file overlap → "accepted" | causal: controlled comparison |
 | Q2 | When behavior changes, is the outcome better? | none | quality measurement on output |
 | Q3 | Does the ranker surface the right decisions? | none | precision@k against human labels |
 
-## Approach 1: Holdout Experiment (Q1 + Q2)
+**Scope note on Q1**: the controlled comparison below suppresses the proactive injection channel only. Decision MCP tools and manual `ec search` remain available in both arms (dogfooding instructions mandate their use, and disabling them changes the agent's toolset in ways that confound the comparison). A null result therefore means "proactive injection adds nothing over on-demand retrieval" — it does NOT mean "the decision system is useless." Testing the broader claim is Approach 4's job.
 
-### Design
+## Approach 1: Injection On/Off Experiment (Q1 + Q2)
 
-A/B split at session level: inject decisions in treatment sessions, suppress in control sessions. Measure output quality difference.
+### Design: Time-Block Crossover (not session-level randomization)
 
-| Dimension | Treatment | Control |
-|-----------|-----------|---------|
-| `inject_on_user_prompt` | true | false |
-| `surface_on_session_start` | true | false |
-| Decision MCP tools | enabled | enabled (but no proactive injection) |
+Session-level A/B randomization is invalid here: treatment and control sessions share the same repo and the same decision DB. A treatment session that applies a decision commits code that later control sessions inherit — the treatment effect leaks into the control arm through the codebase (SUTVA violation). No amount of session-level coin-flipping fixes this.
 
-Assignment: config key `[decisions.injection] holdout_probability = 0.0` (default off). When > 0, each SessionStart flips a coin; holdout sessions get `inject_on_user_prompt = false` silently. Session metadata records `{"holdout": true/false}`.
+Instead, alternate injection on/off in **time blocks** (e.g., weekly), and compare block-level aggregates:
+
+| Block | `inject_on_user_prompt` | `surface_on_session_start` | MCP tools |
+|-------|------------------------|---------------------------|-----------|
+| ON weeks | true | true | enabled |
+| OFF weeks | false | false | enabled |
+
+Assignment: config key `[decisions.injection] experiment_schedule = ""` (default empty = no experiment). When set to e.g. `"weekly-alternate:2026-07-07"`, SessionStart computes the current block from the anchor date and suppresses injection in OFF blocks. Session metadata records `{"injection_block": "on"|"off"}`.
+
+Crossover with multiple block pairs partially controls for time trends (repo maturity, task mix drift). Analyze as paired block differences, not pooled sessions.
+
+Known limitation — **not blind**: in a solo-dogfooding setup the operator is the tool's author and will notice when injections stop appearing. Behavioral compensation (manually running `ec search` more in OFF blocks) is likely and must be measured: compare manual retrieval_events counts between ON and OFF blocks and report alongside results. If OFF blocks show compensatory manual retrieval, the estimand shifts from "injection vs nothing" to "proactive vs on-demand retrieval" — still a useful question, but report which one was actually measured.
 
 ### Quality Signals (output proxies)
 
 Since we cannot measure "code quality" directly without human review, use observable proxies:
 
-| Signal | Source | Hypothesis |
-|--------|--------|-----------|
-| Commit revert rate | git log: revert commits within 24h of original | Treatment has fewer reverts |
-| Assessment verdict distribution | expand/narrow/neutral ratio | Treatment has higher expand rate |
-| Session duration for similar tasks | session metadata | Treatment is faster (fewer turns to completion) |
-| Test pass rate post-session | CI results if available | Treatment introduces fewer test failures |
-| Decision contradiction rate | outcome_type = contradicted in subsequent sessions | Treatment decisions get contradicted less |
+| Signal | Source | Hypothesis | Caveat |
+|--------|--------|-----------|--------|
+| Commit revert/fixup rate | git log: revert commits or `fix`-type commits touching same files within 48h | ON blocks have fewer | Rare in solo repos; may lack power |
+| Session turn count for similar tasks | session metadata | ON blocks complete in fewer turns | Task mix varies between blocks |
+| Test pass rate post-session | CI results if available | ON blocks introduce fewer failures | Only observable when CI runs |
+| Decision contradiction rate | outcome_type = contradicted in subsequent sessions | ON-block decisions contradicted less | Lagging indicator |
+
+Dropped from the earlier draft: **assessment verdict distribution** (expand/narrow ratio). The rule-based assessor derives verdicts from commit message patterns (`^feat` → expand), so this proxy measures commit-message wording habits, not output quality — it is circular.
 
 ### Minimum Sample Size
 
-Power analysis: to detect a 15% difference in revert rate (baseline ~10%) at α=0.05, β=0.80 → ~350 sessions per arm. At current dogfooding cadence (~5 sessions/day), this requires ~140 days or deliberate adoption scaling.
+Assumption: revert/fixup baseline rate ~10% of sessions, and we care about an **absolute** reduction of 10 percentage points (10% → down to near-zero would be implausible; 10%→5% halving is the realistic target). Two-proportion test at α=0.05, power=0.80:
 
-Pragmatic alternative: start with paired comparison on the same user doing similar tasks, reducing variance. 50 paired sessions may suffice for directional signal.
+- Detect 10%→5% (5pp absolute): ~435 sessions per arm
+- Detect 10%→2.5% (7.5pp absolute): ~180 sessions per arm
+
+At solo-dogfooding cadence (~5 sessions/day, split across blocks) either target takes months. Therefore: treat Approach 1 as a **directional signal generator**, not a hypothesis test. Report block-pair differences with confidence intervals and explicitly state the achieved power. Do not claim significance the sample cannot support. If directional signal is consistently positive across 4+ block pairs, that justifies recruiting more users for a properly powered run.
 
 ### Implementation
 
-- [ ] Add `holdout_probability` config key under `[decisions.injection]`.
-- [ ] SessionStart handler: if rand < holdout_probability, set session metadata `holdout=true` and suppress all proactive injection for this session.
-- [ ] AAR: record holdout status in after-action report.
-- [ ] New CLI: `ec experiment report` — aggregate quality signals split by holdout status, compute effect size + confidence interval.
+- [ ] Add `experiment_schedule` config key under `[decisions.injection]`.
+- [ ] SessionStart handler: compute block from anchor date; suppress proactive injection in OFF blocks; record `injection_block` in session metadata.
+- [ ] AAR: record block status in after-action report.
+- [ ] New CLI: `ec experiment report` — aggregate quality signals per block, compute paired block differences with confidence intervals, and report manual-retrieval compensation (retrieval_events count per block).
 
 ## Approach 2: Outcome Inference Accuracy Audit (validates Loop 1)
 
@@ -69,7 +80,7 @@ Pragmatic alternative: start with paired comparison on the same user doing simil
 
 ### Design
 
-Sample N=50 sessions where auto-apply inferred "accepted". For each, a human reviewer answers: "Did the agent actually use this decision's guidance, or was the file modification coincidental?"
+Sample N=50 sessions where auto-apply inferred "accepted". For each, a reviewer answers: "Did the agent actually use this decision's guidance, or was the file modification coincidental?"
 
 | Verdict | Meaning |
 |---------|---------|
@@ -77,15 +88,19 @@ Sample N=50 sessions where auto-apply inferred "accepted". For each, a human rev
 | False positive | File overlap was coincidental |
 | Ambiguous | Cannot determine from transcript |
 
+Precision note: with N=50, a point estimate near 0.5 carries a 95% CI of roughly ±0.14. That is adequate for the coarse gate below (distinguishing "mostly right" from "mostly wrong") but not for fine-grained calibration. If the estimate lands in 0.4–0.6, extend to N=100 before deciding.
+
+Annotator bias note: in the current solo setup the annotator is also the project author, who wants the heuristic to work. Mitigations: (a) annotate from the transcript alone without looking at which outcome was recorded, (b) write the verdict rationale before revealing the auto-inferred label, (c) when a second annotator becomes available, double-label a 20-case subset and report agreement. Until (c) happens, report results as single-annotator with declared conflict of interest.
+
 ### Implementation
 
-- [ ] New CLI: `ec experiment sample-outcomes --type accepted --count 50` — outputs session_id, decision_id, files_overlap, and a link to the relevant turn content for human review.
-- [ ] Reviewer records verdict in a JSONL file: `{session_id, decision_id, verdict}`.
+- [ ] New CLI: `ec experiment sample-outcomes --type accepted --count 50` — outputs session_id, decision_id, files_overlap, and a link to the relevant turn content for review, withholding the recorded outcome label until the verdict is written.
+- [ ] Reviewer records verdict in a JSONL file: `{session_id, decision_id, verdict, rationale}`.
 - [ ] New CLI: `ec experiment outcome-accuracy --verdicts <path>` — computes precision of the auto-apply heuristic.
 
 ### Decision Gate
 
-If precision < 0.5 (more than half of "accepted" are false positives), the entire quality → ranking feedback loop is corrupted and must be redesigned before trusting the holdout experiment results.
+If precision < 0.5 (more than half of "accepted" are false positives), the entire quality → ranking feedback loop is corrupted and must be redesigned before trusting the injection experiment results.
 
 ## Approach 3: Ranking Precision Benchmark (Q3)
 
@@ -93,29 +108,32 @@ If precision < 0.5 (more than half of "accepted" are false positives), the entir
 
 `rank_related_decisions()` returns top-k decisions for a given context (files, diff, commits). No ground truth exists for whether those k decisions are actually relevant.
 
+### Prerequisite: Signal Snapshot Capture (blocking)
+
+The existing telemetry cannot support this benchmark. `retrieval_events` stores only `query`, `file_filter`, `commit_filter`, `result_count`, and `latency_ms` — it does not store the diff text, the resolved file list, the ranked result list, or the per-signal score breakdown. Offline re-ranking (required for weight tuning) needs the ranker's exact inputs, and those are currently discarded after each call.
+
+Therefore Phase 2 starts with a capture change, not an export command:
+
+- [ ] New table `ranking_snapshots`: `{id, retrieval_event_id, input_files JSON, input_diff_text TEXT, input_commits JSON, ranked_results JSON (decision_id, score, per-signal breakdown), created_at}`. Written by `rank_related_decisions` callers when `[decisions] capture_ranking_snapshots = true` (default false; diff text storage has size and secrecy implications — reuse the existing content_filter redaction path before persisting).
+- [ ] Only after snapshots accumulate can labeling begin. Budget ~4–6 weeks of dogfooding to collect 100 usable cases.
+
 ### Design
 
-Offline evaluation dataset: collect N=100 real (context, surfaced_decisions) pairs from telemetry. A human annotator labels each surfaced decision as relevant/irrelevant/partially-relevant.
+Offline evaluation dataset: collect N=100 real (context, ranked_decisions) snapshot pairs. An annotator labels each surfaced decision as relevant / partially relevant / irrelevant.
 
 Metrics:
-- **Precision@5**: fraction of top-5 that are relevant
-- **NDCG@5**: position-weighted relevance
+- **Precision@5**: fraction of top-5 that are relevant (partial counts 0.5)
+- **NDCG@5**: position-weighted relevance (gain: relevant=2, partial=1, irrelevant=0)
 - **MRR**: mean reciprocal rank of first relevant decision
-
-### Implementation
-
-- [ ] New CLI: `ec experiment export-ranking-cases --count 100` — extracts (context_signals, ranked_decisions, metadata) from retrieval_events + retrieval_selections.
-- [ ] Annotation format: JSONL with `{case_id, decision_id, relevance: 0|1|2}`.
-- [ ] New CLI: `ec experiment ranking-eval --annotations <path>` — computes P@5, NDCG@5, MRR.
-- [ ] Once baseline established: grid search over RankingWeights to maximize NDCG@5 on the labeled set.
 
 ### Weight Tuning Protocol
 
-After 100+ labeled cases:
-1. Split 70/30 train/test.
-2. Grid search on train: vary `file_exact_weight`, `diff_relevance_weight`, `quality_weight` within ±50% of defaults.
-3. Evaluate on test: report NDCG@5 lift over default weights.
-4. If lift > 10%, ship new defaults. If < 5%, current weights are adequate.
+With only ~100 labeled cases, a 70/30 split leaves a 30-case test set — too small to distinguish a real NDCG lift from noise, and grid search over that set will overfit. Instead:
+
+1. Use **5-fold cross-validation** over the full labeled set; report mean ± std of NDCG@5 per weight configuration.
+2. Restrict the search space: vary only `file_exact_weight`, `diff_relevance_weight`, `quality_weight` within ±50% of defaults (coarse grid, ≤27 configurations) to limit multiple-comparison inflation.
+3. Ship new defaults only if the best configuration beats the current defaults by more than one std of the CV estimate — otherwise declare current weights adequate.
+4. Re-validate on the next 50 cases collected after the tuning decision (temporal holdout) before finalizing.
 
 ## Approach 4: Comparative Baseline (validates project thesis vs. article criticism)
 
@@ -138,23 +156,25 @@ Three-arm comparison on a fixed task set (e.g., 20 well-defined coding tasks on 
 
 Quality metric: human-graded output quality (1-5 scale) + task completion time.
 
+Implementation note: arm B requires building a transcript-injection path that does not currently exist (raw search results are not wired into `additionalContext`). Count that build cost into the decision to run this study.
+
 ### Pragmatic Start
 
-This is expensive. Defer until Approach 1 shows directional signal. If holdout shows no effect, skip this and accept the article's thesis applies to us too.
+This is expensive. Defer until Approach 1 shows directional signal. If the injection experiment shows no effect and no compensatory manual retrieval, skip this and accept the article's thesis applies to us too.
 
 ## Scope
 
 ### In
 
-- Holdout experiment infrastructure (config key, session metadata, report CLI).
-- Outcome inference accuracy audit tooling (sample, annotate, evaluate).
-- Ranking precision benchmark tooling (export, annotate, evaluate).
-- Documentation of methodology and decision gates.
+- Time-block crossover experiment infrastructure (config key, block computation, session metadata, report CLI).
+- Outcome inference accuracy audit tooling (sample, annotate, evaluate) with label-blinding.
+- Ranking snapshot capture (new table, config gate, redaction) and precision benchmark tooling (label, evaluate, cross-validate).
+- Documentation of methodology, achieved power, and decision gates.
 
 ### Out
 
-- Automated weight tuning in production (defer until benchmark shows > 10% lift opportunity).
-- Three-arm comparative study (defer until holdout shows signal).
+- Automated weight tuning in production (defer until benchmark shows a lift exceeding CV noise).
+- Three-arm comparative study (defer until injection experiment shows signal).
 - Changes to existing ranking or injection logic (this is measurement only).
 - User-facing feedback UI ("was this helpful?" prompts).
 - Integration with external CI systems for test pass rate collection.
@@ -164,32 +184,36 @@ This is expensive. Defer until Approach 1 shows directional signal. If holdout s
 ```
 Phase 1 (v0.11.0): Outcome Inference Accuracy Audit
   → Decision gate: if precision < 0.5, fix auto_apply before proceeding
+  → If estimate in 0.4–0.6, extend N=50 → N=100 before deciding
 
-Phase 2 (v0.11.0): Ranking Precision Benchmark
-  → Establishes baseline; enables weight tuning if lift > 10%
+Phase 2 (v0.11.0): Ranking Snapshot Capture → Precision Benchmark
+  → Capture ships first; labeling starts after ~100 snapshots accumulate
+  → Weight tuning via cross-validation, only if lift exceeds CV noise
 
-Phase 3 (v0.12.0): Holdout Experiment
+Phase 3 (v0.12.0): Injection On/Off Crossover Experiment
   → Requires Phase 1 passing (feedback loop is trustworthy)
-  → Requires sufficient session volume (~100 paired sessions minimum)
+  → Requires 4+ block pairs; report directional signal with declared power
 
 Phase 4 (v0.13.0, conditional): Comparative Baseline
-  → Only if Phase 3 shows positive effect
+  → Only if Phase 3 shows positive directional signal
 ```
 
-Phase 1 is gating because if outcome inference is broken, all downstream metrics (quality score, ranking, holdout quality signals) are built on sand.
+Phase 1 is gating because if outcome inference is broken, all downstream metrics (quality score, ranking, block-level quality signals) are built on sand.
 
 ## Risks
 
-- **Sample size**: dogfooding cadence may be too low for statistical significance. Mitigation: start with paired comparisons; recruit additional users.
-- **Hawthorne effect**: knowing a session is being evaluated changes behavior. Mitigation: holdout is silent; user doesn't know which arm they're in.
-- **Proxy validity**: commit revert rate and session duration may not correlate with actual code quality. Mitigation: treat as directional signals, not proof; supplement with human review on a subset.
-- **Annotation cost**: ranking benchmark requires human labeling of 500+ (decision, context) pairs. Mitigation: start with 100; assess inter-annotator agreement before scaling.
+- **Underpowered by construction**: solo-dogfooding volume cannot reach conventional significance for rare-event proxies like revert rate. Mitigation: report effect direction + CI + achieved power honestly; scale users before making strong claims.
+- **Cross-block carryover**: even with time blocks, decisions applied in ON blocks persist in the codebase and benefit OFF blocks. Crossover reduces but does not eliminate this; treat estimates as lower bounds on the true effect.
+- **Not blind**: the operator notices missing injections and may compensate with manual retrieval. Mitigation: measure manual retrieval per block and report which estimand was actually measured.
+- **Proxy validity**: revert rate and turn count may not correlate with actual code quality. Mitigation: treat as directional signals, not proof; supplement with human review on a subset.
+- **Annotation bias**: single annotator who is also the author. Mitigation: label-blinding, rationale-first verdicts, double-label a subset when a second annotator is available.
+- **Snapshot storage**: ranking snapshots persist diff text, which may contain secrets. Mitigation: reuse the existing content_filter redaction path before persisting; gate behind opt-in config.
 - **Survivorship bias**: only decisions that survived extraction + confirmation are evaluated; the system may be filtering out the most useful candidates before they reach the ranker.
 
 ## Review Questions
 
-- Is 50 sessions sufficient for the outcome inference audit, or should we require 100 for robust precision estimates?
-- Should the holdout experiment be per-user (consistent experience) or per-session (more samples faster)?
-- For the ranking benchmark, should "partially relevant" count as 0.5 or be treated as a separate category in NDCG?
-- Is commit revert rate actually observable in single-developer repos, or is it too rare to be a useful signal?
+- Is weekly the right block length, or do shorter blocks (3-4 days) give more pairs at acceptable carryover cost?
+- Should the injection experiment also suppress SessionStart surfacing files (the F4 async path), or only `additionalContext` injection?
+- For the ranking benchmark, is 100 labeled cases enough to start, given 5-fold CV — or should labeling wait for 150?
+- Should ranking snapshots be sampled (e.g., 1 in 3 calls) to bound storage growth, or captured exhaustively while the config is on?
 - Should we add an explicit "was this useful?" prompt to `ec context apply` as a lightweight ground-truth source, even though it biases toward positive responses?
