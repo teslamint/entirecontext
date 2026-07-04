@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 14
+SCHEMA_VERSION = 15
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -456,6 +456,21 @@ CREATE INDEX IF NOT EXISTS idx_decision_candidates_dedup ON decision_candidates(
 CREATE INDEX IF NOT EXISTS idx_decision_candidates_session ON decision_candidates(session_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uniq_decision_candidates_source_dedup
     ON decision_candidates(source_type, source_id, dedup_key);
+""",
+    "ranking_snapshots": """
+CREATE TABLE IF NOT EXISTS ranking_snapshots (
+    id TEXT PRIMARY KEY,
+    retrieval_event_id TEXT,
+    input_files TEXT,
+    input_diff_text TEXT,
+    input_commits TEXT,
+    scored_candidates TEXT NOT NULL,
+    effective_limit INTEGER NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (retrieval_event_id) REFERENCES retrieval_events(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_event_id ON ranking_snapshots(retrieval_event_id);
+CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_created_at ON ranking_snapshots(created_at DESC);
 """,
 }
 
