@@ -43,7 +43,7 @@ OFF blocks must suppress **every** proactive surfacing channel, not just one —
 | SessionStart related decisions | `[decisions] show_related_on_start` | true | false |
 | UserPromptSubmit async surfacing (F4 file) | `[decisions] surface_on_user_prompt` | true | false |
 | PostToolUse surfacing | `[decisions] surface_on_tool_use` | true | false |
-| UserPromptSubmit sync injection (planned, v0.7.0+) | `[decisions.injection] inject_on_user_prompt` | true | false |
+| UserPromptSubmit sync injection | `[decisions.injection] inject_on_user_prompt` | true | false |
 | Decision MCP tools / manual `ec search` | — | enabled | enabled |
 
 Missing even one channel contaminates OFF blocks with partial treatment. If the toggles are flipped by hand or cron (the minimal path below), the flip script must set all of them atomically. A reviewer-endorsed alternative that is still a small change: a single `[decisions.injection] experiment_block` flag consulted by all surfacing handlers — one source of truth, no per-key drift risk. Prefer the flag if Phase 2 work touches those handlers anyway; otherwise the atomic flip script suffices for a solo run.
