@@ -1672,6 +1672,8 @@ def rank_related_decisions(
 
         safe_diff = diff_text
         if safe_diff:
+            # filter_secrets is always-on (sk-, ghp_, Bearer); redact_content
+            # applies user-configured patterns only when _capture_config is passed.
             safe_diff = filter_secrets(safe_diff)
             if _capture_config:
                 safe_diff = redact_content(safe_diff, _capture_config)
