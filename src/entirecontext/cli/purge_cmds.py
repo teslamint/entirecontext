@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import typer
 
 purge_app = typer.Typer(help="Purge turns, sessions, or matching content.")
@@ -116,6 +118,36 @@ def purge_match_cmd(
 
         result = purge_by_pattern(conn, repo_path, pattern, dry_run=False)
         typer.echo(f"Deleted {result['deleted']} turns matching '{pattern}'")
+
+    finally:
+        conn.close()
+
+
+@purge_app.command("snapshots")
+def purge_snapshots_cmd(
+    retention_days: Optional[int] = typer.Option(
+        None,
+        "--retention-days",
+        help="Delete snapshots older than N days (default: from config, fallback 90)",
+    ),
+    execute: bool = typer.Option(False, "--execute", help="Actually delete (default is dry-run)"),
+):
+    """Purge old ranking snapshots (retention-based)."""
+    from ..core.config import load_config
+    from ..core.purge import purge_ranking_snapshots
+
+    conn, repo_path = _get_conn_and_repo()
+    try:
+        if retention_days is None:
+            config = load_config(repo_path)
+            retention_days = config.get("decisions", {}).get("ranking_snapshot_retention_days", 90)
+
+        result = purge_ranking_snapshots(conn, retention_days=retention_days, dry_run=not execute)
+
+        if result["dry_run"]:
+            typer.echo(f"[DRY RUN] Would delete {result['matched']} snapshots older than {retention_days}d")
+        else:
+            typer.echo(f"Deleted {result['deleted']} snapshots older than {retention_days}d")
 
     finally:
         conn.close()

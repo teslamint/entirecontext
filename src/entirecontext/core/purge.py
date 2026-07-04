@@ -100,6 +100,21 @@ def purge_session(conn, repo_path: str, session_id: str, dry_run: bool = True) -
     }
 
 
+def purge_ranking_snapshots(conn, retention_days: int = 90, dry_run: bool = True) -> dict[str, Any]:
+    """Purge ranking snapshots older than retention_days."""
+    cutoff = conn.execute("SELECT datetime('now', ?)", (f"-{retention_days} days",)).fetchone()[0]
+
+    matched = conn.execute(
+        "SELECT COUNT(*) FROM ranking_snapshots WHERE created_at < ?", (cutoff,)
+    ).fetchone()[0]
+
+    if dry_run:
+        return {"matched": matched, "deleted": 0, "dry_run": True}
+
+    conn.execute("DELETE FROM ranking_snapshots WHERE created_at < ?", (cutoff,))
+    return {"matched": matched, "deleted": matched, "dry_run": False}
+
+
 def purge_by_pattern(conn, repo_path: str, pattern: str, dry_run: bool = True) -> dict[str, Any]:
     """Purge turns matching a regex pattern in user_message or assistant_summary."""
     regex = re.compile(pattern, re.IGNORECASE)
