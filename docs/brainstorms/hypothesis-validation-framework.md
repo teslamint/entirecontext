@@ -30,7 +30,9 @@ User-visible outcomes:
 
 Session-level A/B randomization is invalid here: treatment and control sessions share the same repo and the same decision DB. A treatment session that applies a decision commits code that later control sessions inherit — the treatment effect leaks into the control arm through the codebase (SUTVA violation). No amount of session-level coin-flipping fixes this.
 
-Instead, alternate injection on/off in **4-day time blocks**, and compare block-level aggregates. (Resolved from review: at ~5 sessions/day, 4-day blocks yield ~20 sessions/block and ~1.75× more block pairs than weekly in the same calendar time, with shorter carryover accumulation per block. Since rare-event proxies are underpowered either way and the deliverable is directional signal, more pairs beats bigger blocks.)
+Instead, alternate injection on/off in blocks defined by **meaningful-session count, not calendar time** — flip after every N checkpoint-bearing sessions (start with N=5), and compare block-level aggregates.
+
+(Resolved from review, in two passes: an initial 4-day-calendar recommendation assumed ~5 sessions/day, but actual DB inspection found only ~7 meaningful sessions (≥5 turns) in the last 30 days — most session rows are trivial hook records. Short calendar blocks would therefore frequently be empty, producing "more pairs" that are empty pairs. Count-based blocks guarantee every block contains a comparable amount of real work. The second correction: carryover accumulation is **independent of block length** — a decision applied in an ON block lands in a git commit and persists into all subsequent blocks no matter how short they are — so block length cannot tune it away; it is an unavoidable limitation to report, not a design parameter.)
 
 OFF blocks must suppress **every** proactive surfacing channel, not just one — the repo has four independent paths, each behind its own config key:
 
@@ -44,7 +46,7 @@ OFF blocks must suppress **every** proactive surfacing channel, not just one —
 
 Missing even one channel contaminates OFF blocks with partial treatment. If the toggles are flipped by hand or cron (the minimal path below), the flip script must set all of them atomically. A reviewer-endorsed alternative that is still a small change: a single `[decisions.injection] experiment_block` flag consulted by all surfacing handlers — one source of truth, no per-key drift risk. Prefer the flag if Phase 2 work touches those handlers anyway; otherwise the atomic flip script suffices for a solo run.
 
-Assignment: flip the config keys above at block boundaries (manually or via cron) and log each transition — see Implementation and the Build vs Script Tradeoff section. A dedicated `experiment_schedule` config key with SessionStart block computation is the multi-user upgrade path, not the starting point.
+Assignment: flip the config keys above when the checkpoint-bearing-session counter reaches N (a one-line SQL check against `checkpoints`/`sessions`, run manually or by a periodic script that flips when the threshold is crossed) and log each transition — see Implementation and the Build vs Script Tradeoff section. A dedicated `experiment_schedule` config key with SessionStart block computation is the multi-user upgrade path, not the starting point.
 
 Crossover with multiple block pairs partially controls for time trends (repo maturity, task mix drift). Analyze as paired block differences, not pooled sessions.
 
@@ -72,11 +74,11 @@ Assumption: revert/fixup baseline rate ~10% of sessions, and the realistic effec
 
 (Normal-approximation estimates without continuity correction; treat as order-of-magnitude planning figures, not exact requirements.)
 
-At solo-dogfooding cadence (~5 sessions/day, split across blocks) either target takes months. Therefore: treat Approach 1 as a **directional signal generator**, not a hypothesis test. Report block-pair differences with confidence intervals and explicitly state the achieved power. Do not claim significance the sample cannot support. If directional signal is consistently positive across 4+ block pairs, that justifies recruiting more users for a properly powered run.
+Measured solo-dogfooding cadence is ~7 meaningful sessions per 30 days (DB-verified, not the ~5/day originally assumed) — either target takes **years**, not months, at this volume. Therefore: treat Approach 1 as a **directional signal generator**, not a hypothesis test. Report block-pair differences with confidence intervals and explicitly state the achieved power. Do not claim significance the sample cannot support. If directional signal is consistently positive across 4+ block pairs, that justifies recruiting more users for a properly powered run.
 
 ### Implementation (minimal path)
 
-The existing config toggles already provide the on/off switches. Block transitions flip all four keys from the channel table above (`show_related_on_start`, `surface_on_user_prompt`, `surface_on_tool_use`, `inject_on_user_prompt`) atomically — manually or via cron editing the config — so no channel leaks treatment into OFF blocks. No scheduler code needed for a solo run.
+The existing config toggles already provide the on/off switches. Block transitions flip all four keys from the channel table above (`show_related_on_start`, `surface_on_user_prompt`, `surface_on_tool_use`, `inject_on_user_prompt`) atomically — triggered by the checkpoint-bearing-session counter, not the calendar — so no channel leaks treatment into OFF blocks. No scheduler code needed for a solo run.
 
 - [ ] Record block membership: a one-line entry in a `experiment-blocks.jsonl` log (`{block_start, injection}`) maintained by hand or by the cron that flips the toggle.
 - [ ] Analysis: a standalone script (not shipped CLI) joining sessions to blocks by timestamp, computing paired block differences with confidence intervals, and counting manual retrieval_events per block for the compensation check.
@@ -109,7 +111,7 @@ No new CLI needed. Sampling is a SQL query against `decision_outcomes` (filter `
 - [ ] Standalone sampling script (or documented SQL) producing the 50-case review sheet: session_id, decision_id, files_overlap, turn content path — outcome label withheld.
 - [ ] Reviewer records verdict in a JSONL file: `{session_id, decision_id, verdict, rationale}`.
 - [ ] Precision computation: a ~20-line script over the verdicts file. Promote to `ec experiment` subcommands only if the audit becomes a recurring practice.
-- [ ] Lightweight explicit feedback (resolved from review): after `ec context apply`, print one line — `Applied. Useful? [Y/n/skip]`, default skip on Enter — and record the response as `feedback:yes/no/skip` in the existing `context_applications.note` field (no schema change). Acquiescence bias is real, but a biased explicit signal beats none: it provides an independent cross-check against auto-apply's file-overlap verdicts in this audit (agreement rate between manual feedback and inferred outcomes is itself a useful precision proxy). Skip-by-default keeps workflow friction near zero.
+- [ ] No apply-time feedback prompt (resolved, then corrected in review): a `Useful? [Y/n/skip]` prompt on `ec context apply` was considered and rejected. The primary callers are agents (MCP `ec_context_apply`, dogfooding-mandated CLI calls, programmatic auto_apply), so the "respondent" would be the same agent that chose to apply — self-confirmation, near-zero information. And at apply time the work outcome doesn't exist yet, so usefulness isn't assessable. If explicit ground truth is wanted later, collect it at **assess time** (the existing checkpoint → assess loop already runs after outcomes exist; a decision-reference field on assessments is the natural slot). For this audit, the independent signals remain the human transcript review above and the existing `ec_feedback`-on-assessment path.
 
 ### Decision Gate
 
@@ -218,7 +220,7 @@ The only unavoidable product change is the ranking snapshot capture; everything 
 - Automated weight tuning in production (defer until benchmark shows a lift exceeding CV noise).
 - Three-arm comparative study (defer until injection experiment shows signal).
 - Changes to existing ranking or injection logic (this is measurement only).
-- Feedback UI beyond the single-line `ec context apply` prompt (no per-injection ratings, no notification-driven surveys).
+- User-facing feedback UI of any kind, including apply-time prompts (rejected: agent callers make the signal self-confirming; assess-time collection is the future candidate).
 - Integration with external CI systems for test pass rate collection.
 
 ## Sequencing
@@ -257,7 +259,7 @@ Phase 1 gates the outcome-derived signal chain (quality score → ranking boost 
 ## Risks
 
 - **Underpowered by construction**: solo-dogfooding volume cannot reach conventional significance for rare-event proxies like revert rate. Mitigation: report effect direction + CI + achieved power honestly; scale users before making strong claims.
-- **Cross-block carryover**: even with time blocks, decisions applied in ON blocks persist in the codebase and benefit OFF blocks. Crossover reduces but does not eliminate this; treat estimates as lower bounds on the true effect.
+- **Cross-block carryover**: decisions applied in ON blocks persist in the codebase (git commits) and benefit all subsequent blocks — and this is independent of block length or count, so no block design eliminates it. Report it as a standing limitation and treat estimates as lower bounds on the true effect.
 - **Not blind**: the operator notices missing injections and may compensate with manual retrieval. Mitigation: measure manual retrieval per block and report which estimand was actually measured.
 - **Proxy validity**: revert rate and turn count may not correlate with actual code quality. Mitigation: treat as directional signals, not proof; supplement with human review on a subset.
 - **Annotation bias**: single annotator who is also the author. Mitigation: label-blinding, rationale-first verdicts, double-label a subset when a second annotator is available.
@@ -270,8 +272,8 @@ Answered in PR #184 review with codebase-grounded analysis; decisions folded int
 
 | Question | Resolution | Where applied |
 |----------|-----------|---------------|
-| Block length: weekly or 3–4 days? | **4-day blocks** — ~1.75× more pairs per calendar time, shorter carryover accumulation; pairs beat block size when the goal is directional signal | Approach 1 Design |
+| Block length: weekly or 3–4 days? | **Neither — session-count blocks** (flip every N=5 checkpoint-bearing sessions). Initial 4-day answer assumed ~5 sessions/day; DB inspection found ~7 meaningful sessions/30 days, so calendar blocks would often be empty. Carryover is independent of block length (applied decisions persist in git), so it's a reported limitation, not a tunable | Approach 1 Design |
 | Suppress all proactive channels in OFF blocks? | **Yes, all of them** — one leaking channel contaminates the independent variable; single shared `experiment_block` flag endorsed as the drift-proof implementation | Approach 1 channel table |
 | 100 labeled cases enough for the benchmark? | **Start at 100**; extend to 150 only if cross-fold NDCG@5 std ≥ 0.15 — existing guardrails (1-std ship bar, temporal holdout) make early start safe, and waiting costs 2–3 extra weeks | Approach 3 Weight Tuning Protocol |
 | Sample or exhaustively capture snapshots? | **Exhaustive** — ~7–10MB over the collection window is trivial; 1-in-3 sampling stretches collection to 12–18 weeks | Approach 3 Prerequisite |
-| Add "was this useful?" prompt to `ec context apply`? | **Yes, minimally** — `Useful? [Y/n/skip]`, skip default, stored in existing `note` field; biased explicit signal beats none and cross-checks auto-apply precision | Approach 2 Implementation |
+| Add "was this useful?" prompt to `ec context apply`? | **No** (initial "yes, minimally" corrected on second review) — callers are mostly agents, so responses would be self-confirmation with near-zero information, and apply-time precedes the outcome. Explicit ground truth, if wanted, belongs at assess time via the existing checkpoint → assess loop | Approach 2 Implementation |
