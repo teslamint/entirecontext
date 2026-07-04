@@ -102,6 +102,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "extract_max_attempts": 3,
         "candidate_dedup_similarity_threshold": 0.5,
         "candidate_redact_secrets": True,
+        "capture_ranking_snapshots": False,
+        "ranking_snapshot_retention_days": 90,
         "ranking": {
             "staleness_factors": {
                 "fresh": 1.0,
