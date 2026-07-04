@@ -37,7 +37,7 @@ Instead, alternate injection on/off in **time blocks** (e.g., weekly), and compa
 | ON weeks | true | true | enabled |
 | OFF weeks | false | false | enabled |
 
-Assignment: config key `[decisions.injection] experiment_schedule = ""` (default empty = no experiment). When set to e.g. `"weekly-alternate:2026-07-07"`, SessionStart computes the current block from the anchor date and suppresses injection in OFF blocks. Session metadata records `{"injection_block": "on"|"off"}`.
+Assignment: flip the existing `inject_on_user_prompt` config toggle at block boundaries (manually or via cron) and log each transition — see Implementation and the Build vs Script Tradeoff section. A dedicated `experiment_schedule` config key with SessionStart block computation is the multi-user upgrade path, not the starting point.
 
 Crossover with multiple block pairs partially controls for time trends (repo maturity, task mix drift). Analyze as paired block differences, not pooled sessions.
 
@@ -63,14 +63,17 @@ Assumption: revert/fixup baseline rate ~10% of sessions, and we care about an **
 - Detect 10%→5% (5pp absolute): ~435 sessions per arm
 - Detect 10%→2.5% (7.5pp absolute): ~180 sessions per arm
 
+(Normal-approximation estimates without continuity correction; treat as order-of-magnitude planning figures, not exact requirements.)
+
 At solo-dogfooding cadence (~5 sessions/day, split across blocks) either target takes months. Therefore: treat Approach 1 as a **directional signal generator**, not a hypothesis test. Report block-pair differences with confidence intervals and explicitly state the achieved power. Do not claim significance the sample cannot support. If directional signal is consistently positive across 4+ block pairs, that justifies recruiting more users for a properly powered run.
 
-### Implementation
+### Implementation (minimal path)
 
-- [ ] Add `experiment_schedule` config key under `[decisions.injection]`.
-- [ ] SessionStart handler: compute block from anchor date; suppress proactive injection in OFF blocks; record `injection_block` in session metadata.
-- [ ] AAR: record block status in after-action report.
-- [ ] New CLI: `ec experiment report` — aggregate quality signals per block, compute paired block differences with confidence intervals, and report manual-retrieval compensation (retrieval_events count per block).
+The existing `inject_on_user_prompt` config toggle already provides the on/off switch. Block transitions can be done manually (or via cron editing the config) at block boundaries — no scheduler code needed for a solo run.
+
+- [ ] Record block membership: a one-line entry in a `experiment-blocks.jsonl` log (`{block_start, injection}`) maintained by hand or by the cron that flips the toggle.
+- [ ] Analysis: a standalone script (not shipped CLI) joining sessions to blocks by timestamp, computing paired block differences with confidence intervals, and counting manual retrieval_events per block for the compensation check.
+- [ ] Only if the experiment graduates to multi-user scale: promote to an `experiment_schedule` config key + SessionStart block computation + `ec experiment report` CLI.
 
 ## Approach 2: Outcome Inference Accuracy Audit (validates Loop 1)
 
@@ -92,11 +95,13 @@ Precision note: with N=50, a point estimate near 0.5 carries a 95% CI of roughly
 
 Annotator bias note: in the current solo setup the annotator is also the project author, who wants the heuristic to work. Mitigations: (a) annotate from the transcript alone without looking at which outcome was recorded, (b) write the verdict rationale before revealing the auto-inferred label, (c) when a second annotator becomes available, double-label a 20-case subset and report agreement. Until (c) happens, report results as single-annotator with declared conflict of interest.
 
-### Implementation
+### Implementation (minimal path)
 
-- [ ] New CLI: `ec experiment sample-outcomes --type accepted --count 50` — outputs session_id, decision_id, files_overlap, and a link to the relevant turn content for review, withholding the recorded outcome label until the verdict is written.
+No new CLI needed. Sampling is a SQL query against `decision_outcomes` (filter `outcome_type='accepted'` with `note LIKE 'auto:%'`, join to sessions/turns for transcript links); label-blinding means the query output omits the recorded label column.
+
+- [ ] Standalone sampling script (or documented SQL) producing the 50-case review sheet: session_id, decision_id, files_overlap, turn content path — outcome label withheld.
 - [ ] Reviewer records verdict in a JSONL file: `{session_id, decision_id, verdict, rationale}`.
-- [ ] New CLI: `ec experiment outcome-accuracy --verdicts <path>` — computes precision of the auto-apply heuristic.
+- [ ] Precision computation: a ~20-line script over the verdicts file. Promote to `ec experiment` subcommands only if the audit becomes a recurring practice.
 
 ### Decision Gate
 
@@ -162,17 +167,32 @@ Implementation note: arm B requires building a transcript-injection path that do
 
 This is expensive. Defer until Approach 1 shows directional signal. If the injection experiment shows no effect and no compensatory manual retrieval, skip this and accept the article's thesis applies to us too.
 
+## Build vs Script Tradeoff
+
+At solo-dogfooding scale, building the experiment framework as shipped product features (`ec experiment` subcommands, scheduler config) costs more than the experiments themselves — each shipped command carries test, docs, and maintenance burden for what may be a one-shot validation. Default posture:
+
+| Component | Minimal path | Promote to product when |
+|-----------|-------------|------------------------|
+| Phase 1 sampling + precision | SQL + standalone scripts | Audit becomes a recurring (per-release) practice |
+| Phase 3 block switching | Existing `inject_on_user_prompt` toggle, flipped manually/cron | Multi-user experiment needs consistent assignment |
+| Phase 3 analysis | Standalone script over sessions + blocks log | Same |
+| **Phase 2 `ranking_snapshots` capture** | **Must be product code** — hooks into `rank_related_decisions` call sites, needs redaction + config gate | n/a (only real build in this plan) |
+
+The only unavoidable product change is the ranking snapshot capture; everything else starts as scripts under `scripts/experiments/` (or documented SQL) and earns promotion by repeated use.
+
 ## Scope
 
 ### In
 
-- Time-block crossover experiment infrastructure (config key, block computation, session metadata, report CLI).
-- Outcome inference accuracy audit tooling (sample, annotate, evaluate) with label-blinding.
-- Ranking snapshot capture (new table, config gate, redaction) and precision benchmark tooling (label, evaluate, cross-validate).
+- Ranking snapshot capture (new table, config gate, redaction) — the one product-code change.
+- Time-block crossover experiment: block log convention, analysis script, compensation check.
+- Outcome inference accuracy audit: sampling SQL/script with label-blinding, verdict format, precision script.
+- Precision benchmark tooling as scripts (label, evaluate, cross-validate).
 - Documentation of methodology, achieved power, and decision gates.
 
 ### Out
 
+- `ec experiment` CLI subcommands and `experiment_schedule` scheduler config (promote from scripts only on demonstrated recurring use).
 - Automated weight tuning in production (defer until benchmark shows a lift exceeding CV noise).
 - Three-arm comparative study (defer until injection experiment shows signal).
 - Changes to existing ranking or injection logic (this is measurement only).
