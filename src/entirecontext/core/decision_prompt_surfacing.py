@@ -454,7 +454,7 @@ def run_prompt_surface_worker(
             # a single consistent schema across all three channels. Wrapped
             # in ``transaction(conn)`` so the commit boundary is owned here
             # (per core/ transaction policy) instead of via a raw commit.
-            if surfaced:
+            if surfaced or snapshot_id:
                 try:
                     from .context import transaction
                     from .decisions import backpatch_snapshot_event

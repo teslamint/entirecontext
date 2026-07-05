@@ -114,6 +114,8 @@ def purge_session(conn, repo_path: str, session_id: str, dry_run: bool = True) -
 
 def purge_ranking_snapshots(conn, retention_days: int = 90, dry_run: bool = True) -> dict[str, Any]:
     """Purge ranking snapshots older than retention_days."""
+    if retention_days < 1:
+        raise ValueError(f"retention_days must be >= 1, got {retention_days}")
     cutoff = conn.execute("SELECT datetime('now', ?)", (f"-{retention_days} days",)).fetchone()[0]
 
     matched = conn.execute(

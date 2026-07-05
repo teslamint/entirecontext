@@ -271,7 +271,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
 
             # 3. Retrieval telemetry: stamp selection_ids before formatting.
             all_surfaced = file_related + stale_full
-            if all_surfaced:
+            if all_surfaced or snapshot_id:
                 try:
                     from ..core.context import transaction
                     from ..core.telemetry import record_retrieval_event, record_retrieval_selection
