@@ -69,19 +69,24 @@ def sessions_in_block(conn: sqlite3.Connection, start: str, end: str | None) -> 
     return [dict(r) for r in rows if r["checkpoint_count"] > 0]
 
 
-def manual_retrieval_count(conn: sqlite3.Connection, session_ids: list[str]) -> int:
-    """Count manual retrieval events (non-proactive) in given sessions."""
+def manual_retrieval_count(
+    conn: sqlite3.Connection, session_ids: list[str], start: str, end: str | None
+) -> int:
+    """Count manual retrieval events (non-proactive) in given sessions within a time window."""
     if not session_ids:
         return 0
     placeholders = ",".join("?" for _ in session_ids)
-    row = conn.execute(
-        f"""
+    query = f"""
         SELECT COUNT(*) FROM retrieval_events
         WHERE session_id IN ({placeholders})
           AND search_type NOT IN ('session_start', 'session_start_ranked', 'post_tool_use', 'user_prompt', 'lesson_surfacing')
-        """,
-        session_ids,
-    ).fetchone()
+          AND created_at >= ?
+    """
+    params: list = list(session_ids) + [start]
+    if end:
+        query += " AND created_at < ?"
+        params.append(end)
+    row = conn.execute(query, params).fetchone()
     return row[0]
 
 
@@ -91,7 +96,7 @@ def analyze(conn: sqlite3.Connection, blocks: list[dict]) -> dict:
         end = blocks[i + 1]["started_at"] if i + 1 < len(blocks) else None
         sessions = sessions_in_block(conn, block["started_at"], end)
         session_ids = [s["id"] for s in sessions]
-        manual_count = manual_retrieval_count(conn, session_ids)
+        manual_count = manual_retrieval_count(conn, session_ids, block["started_at"], end)
 
         block_results.append(
             {

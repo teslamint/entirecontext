@@ -246,7 +246,9 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         max_tokens = int(inject_cfg.get("max_tokens", 800))
         min_confidence = float(inject_cfg.get("min_confidence", 0.4))
 
-        def _rank_and_trim_in_thread() -> list[dict] | None:
+        capture_snapshots = config.get("decisions", {}).get("capture_ranking_snapshots", False)
+
+        def _rank_and_trim_in_thread() -> tuple[list[dict] | None, str | None]:
             from ..core.decision_prompt_surfacing import optimize_for_context_budget, rank_decisions_for_prompt
 
             conn = get_db(repo_path)
@@ -256,16 +258,40 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     try:
                         meta = json.loads(session_row[0])
                         if meta.get("capture_disabled"):
-                            return None
+                            return None, None
                     except (ValueError, TypeError):
                         pass
-                surfaced, _, _snapshot_id = rank_decisions_for_prompt(
+                surfaced, _, snap_id = rank_decisions_for_prompt(
                     conn, repo_path=repo_path, prompt_text=prompt_text, config=config,
-                    capture_snapshots=False,
+                    capture_snapshots=capture_snapshots,
                 )
+                if capture_snapshots and snap_id and surfaced:
+                    try:
+                        from ..core.context import transaction
+                        from ..core.decisions import backpatch_snapshot_event
+                        from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+
+                        with transaction(conn):
+                            evt = record_retrieval_event(
+                                conn,
+                                source="hook",
+                                search_type="user_prompt",
+                                target="decision",
+                                query="",
+                                result_count=len(surfaced),
+                                latency_ms=0,
+                                session_id=session_id,
+                            )
+                            backpatch_snapshot_event(conn, snapshot_id=snap_id, retrieval_event_id=evt["id"])
+                            for d in surfaced:
+                                record_retrieval_selection(
+                                    conn, evt["id"], result_type="decision", result_id=d["id"], rank=d.get("rank", 0),
+                                )
+                    except Exception:
+                        conn.execute("DELETE FROM ranking_snapshots WHERE id = ?", (snap_id,))
                 return optimize_for_context_budget(
                     surfaced, top_k=top_k, max_tokens=max_tokens, min_confidence=min_confidence
-                )
+                ), snap_id
             finally:
                 conn.close()
 
@@ -294,7 +320,9 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         if not _result or _result[0] is None:
             return 0
 
-        trimmed = _result[0]
+        trimmed, _pdi_snapshot_id = _result[0]
+        if trimmed is None:
+            return 0
 
         # Build decision section (may be empty if no decisions matched)
         md = ""

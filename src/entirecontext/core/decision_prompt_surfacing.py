@@ -489,6 +489,11 @@ def run_prompt_surface_worker(
                             d["selection_id"] = sel["id"]
                 except Exception as exc:
                     result["warnings"].append(f"telemetry:{exc}")
+                    if snapshot_id:
+                        try:
+                            conn.execute("DELETE FROM ranking_snapshots WHERE id = ?", (snapshot_id,))
+                        except Exception:
+                            pass
                     for d in surfaced:
                         d.pop("selection_id", None)
         finally:

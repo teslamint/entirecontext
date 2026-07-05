@@ -272,8 +272,8 @@ def test_worker_path_backpatches_snapshot(ec_repo, ec_db, monkeypatch):
         conn2.close()
 
 
-def test_sync_pdi_path_does_not_capture_snapshot(ec_repo, ec_db, monkeypatch):
-    """The sync PDI fast path in handler.py must not capture snapshots (no event to link)."""
+def test_rank_decisions_for_prompt_respects_capture_flag(ec_repo, ec_db, monkeypatch):
+    """rank_decisions_for_prompt with capture_snapshots=False produces no snapshot."""
     conn = ec_db
     repo_path = str(ec_repo)
 
@@ -282,23 +282,14 @@ def test_sync_pdi_path_does_not_capture_snapshot(ec_repo, ec_db, monkeypatch):
     dec = create_decision(conn, title="Sync Path Decision", rationale="test")
     link_decision_to_file(conn, dec["id"], "src/sync.py")
 
-    # Enable capture in config
     config = {
         "decisions": {
-            "injection": {
-                "inject_on_user_prompt": True,
-                "top_k": 5,
-                "max_tokens": 800,
-                "min_confidence": 0.0,
-                "inject_timeout_ms": 5000,
-            },
             "capture_ranking_snapshots": True,
         }
     }
 
     from entirecontext.core.decision_prompt_surfacing import rank_decisions_for_prompt
 
-    # Call rank_decisions_for_prompt with capture_snapshots=False (as sync path does)
     surfaced, warnings, snapshot_id = rank_decisions_for_prompt(
         conn,
         repo_path=repo_path,
@@ -307,6 +298,6 @@ def test_sync_pdi_path_does_not_capture_snapshot(ec_repo, ec_db, monkeypatch):
         capture_snapshots=False,
     )
 
-    assert snapshot_id is None, "Sync path should not capture snapshots"
+    assert snapshot_id is None, "capture_snapshots=False should produce no snapshot"
     count = conn.execute("SELECT COUNT(*) FROM ranking_snapshots").fetchone()[0]
     assert count == 0, "No snapshot rows should exist when capture_snapshots=False"
