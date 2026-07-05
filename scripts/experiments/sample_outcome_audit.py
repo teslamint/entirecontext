@@ -34,7 +34,7 @@ def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50) -> list[dict
         FROM decision_outcomes do
         JOIN decisions d ON d.id = do.decision_id
         WHERE do.outcome_type = 'accepted'
-          AND do.note LIKE 'auto:%'
+          AND do.note LIKE 'auto: session_end%'
         ORDER BY do.created_at DESC
         """
     ).fetchall()

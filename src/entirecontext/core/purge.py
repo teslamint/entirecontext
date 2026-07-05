@@ -85,6 +85,12 @@ def purge_session(conn, repo_path: str, session_id: str, dry_run: bool = True) -
         if tc:
             _delete_content_file(repo_path, tc["content_path"])
 
+    conn.execute(
+        "DELETE FROM ranking_snapshots WHERE retrieval_event_id IN "
+        "(SELECT id FROM retrieval_events WHERE session_id = ?)",
+        (session_id,),
+    )
+
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 
     content_dir = Path(repo_path) / ".entirecontext" / "content" / session_id

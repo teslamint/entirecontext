@@ -99,10 +99,25 @@ def analyze(conn: sqlite3.Connection, blocks: list[dict]) -> dict:
     off_blocks = [b for b in block_results if not b["injection"]]
     pairs = list(zip(on_blocks, off_blocks))
 
+    pair_deltas = []
+    for on_b, off_b in pairs:
+        on_turns = on_b["avg_turns"]
+        off_turns = off_b["avg_turns"]
+        pair_deltas.append(
+            {
+                "pair": (on_b["block_id"], off_b["block_id"]),
+                "on_sessions": on_b["qualifying_sessions"],
+                "off_sessions": off_b["qualifying_sessions"],
+                "avg_turns_delta": round(on_turns - off_turns, 3) if on_turns is not None and off_turns is not None else None,
+                "manual_retrieval_delta": on_b["manual_retrieval_events"] - off_b["manual_retrieval_events"],
+            }
+        )
+
     return {
         "total_blocks": len(block_results),
         "block_details": block_results,
         "pairs": len(pairs),
+        "pair_deltas": pair_deltas,
         "compensation_check": {
             "on_manual_retrieval_avg": (
                 sum(b["manual_retrieval_events"] for b in on_blocks) / len(on_blocks) if on_blocks else None
@@ -134,6 +149,10 @@ def main() -> None:
 
     print("\n--- Summary ---")
     print(f"Blocks: {result['total_blocks']}, Pairs: {result['pairs']}")
+    if result["pair_deltas"]:
+        print("\nPer-pair deltas (ON - OFF):")
+        for pd in result["pair_deltas"]:
+            print(f"  Pair {pd['pair']}: avg_turns_delta={pd['avg_turns_delta']}, manual_retrieval_delta={pd['manual_retrieval_delta']}")
     if result["pairs"] < 4:
         print("WARNING: <4 block pairs. Directional signal only; do not claim significance.")
     comp = result["compensation_check"]

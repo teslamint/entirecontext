@@ -1680,6 +1680,11 @@ def rank_related_decisions(
             if len(safe_diff.encode("utf-8")) > _SNAPSHOT_DIFF_MAX_BYTES:
                 safe_diff = safe_diff.encode("utf-8")[:_SNAPSHOT_DIFF_MAX_BYTES].decode("utf-8", errors="ignore")
 
+        safe_scored = json.dumps(scored)
+        safe_scored = filter_secrets(safe_scored)
+        if _capture_config:
+            safe_scored = redact_content(safe_scored, _capture_config)
+
         conn.execute(
             "INSERT INTO ranking_snapshots "
             "(id, input_files, input_diff_text, input_commits, scored_candidates, effective_limit) "
@@ -1689,7 +1694,7 @@ def rank_related_decisions(
                 json.dumps(file_paths) if file_paths else None,
                 safe_diff,
                 json.dumps(commit_shas) if commit_shas else None,
-                json.dumps(scored),
+                safe_scored,
                 limit,
             ),
         )
