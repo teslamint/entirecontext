@@ -1667,21 +1667,23 @@ def rank_related_decisions(
 
     # --- Snapshot capture (caller passes _capture_snapshots=True) ---
     snapshot_id = None
-    if _capture_snapshots and scored:
+    if _capture_snapshots:
         snapshot_id = str(uuid4())
+
+        configured_patterns = (
+            _capture_config.get("security", {}).get("patterns") if _capture_config else None
+        )
 
         safe_diff = diff_text
         if safe_diff:
-            # filter_secrets is always-on (sk-, ghp_, Bearer); redact_content
-            # applies user-configured patterns only when _capture_config is passed.
-            safe_diff = filter_secrets(safe_diff)
+            safe_diff = filter_secrets(safe_diff, patterns=configured_patterns)
             if _capture_config:
                 safe_diff = redact_content(safe_diff, _capture_config)
             if len(safe_diff.encode("utf-8")) > _SNAPSHOT_DIFF_MAX_BYTES:
                 safe_diff = safe_diff.encode("utf-8")[:_SNAPSHOT_DIFF_MAX_BYTES].decode("utf-8", errors="ignore")
 
         safe_scored = json.dumps(scored)
-        safe_scored = filter_secrets(safe_scored)
+        safe_scored = filter_secrets(safe_scored, patterns=configured_patterns)
         if _capture_config:
             safe_scored = redact_content(safe_scored, _capture_config)
 

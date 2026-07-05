@@ -322,6 +322,15 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                                 rank=idx,
                             )
                             d["selection_id"] = sel["id"]
+                        if snapshot_id and stale_full and file_related:
+                            for ridx, d in enumerate(file_related, start=1):
+                                record_retrieval_selection(
+                                    conn,
+                                    snapshot_event["id"],
+                                    result_type="decision",
+                                    result_id=d["id"],
+                                    rank=ridx,
+                                )
                 except Exception:
                     for d in all_surfaced:
                         d.pop("selection_id", None)

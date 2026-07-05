@@ -78,7 +78,7 @@ def manual_retrieval_count(conn: sqlite3.Connection, session_ids: list[str]) -> 
         f"""
         SELECT COUNT(*) FROM retrieval_events
         WHERE session_id IN ({placeholders})
-          AND search_type NOT IN ('session_start', 'post_tool_use', 'user_prompt', 'lesson_surfacing')
+          AND search_type NOT IN ('session_start', 'session_start_ranked', 'post_tool_use', 'user_prompt', 'lesson_surfacing')
         """,
         session_ids,
     ).fetchone()
