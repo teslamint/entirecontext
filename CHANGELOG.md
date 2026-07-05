@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`ranking_snapshots` table (schema v15)** — records retrieval ranking inputs (files, diff text, commits, scored candidates, effective limit) per `retrieval_events` row to support the hypothesis validation framework. Additive migration — no data rewrite.
+- **Experiment block infrastructure** — `[decisions.injection] experiment_block` config key atomically suppresses all 4 proactive decision surfacing channels for ON/OFF crossover experiment. Block transition script (`scripts/experiments/flip_block.py`) with treatment-independent qualifying gate (total_turns >= 5, no checkpoint requirement).
 
 ## [0.10.0] - 2026-06-29
 
