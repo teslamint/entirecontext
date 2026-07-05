@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import sqlite3
 import sys
@@ -24,7 +25,50 @@ def _connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50) -> list[dict]:
+def _normalize_to_relative(path: str, repo_root: str) -> str:
+    """Strip repo root prefix from an absolute path to get a relative path."""
+    prefix = repo_root.rstrip(os.sep) + os.sep
+    if path.startswith(prefix):
+        return path[len(prefix):]
+    return path
+
+
+def _relevant_content_paths(
+    session_turns: list, decision_files_set: set, conn: sqlite3.Connection, repo_root: str
+) -> list[str]:
+    """Select content_paths around the turns where decision files were touched."""
+    overlap_turn_indices = []
+    all_content: list[tuple[int, str]] = []
+
+    for i, turn in enumerate(session_turns):
+        tc = conn.execute("SELECT content_path FROM turn_content WHERE turn_id = ?", (turn["id"],)).fetchone()
+        if not tc:
+            continue
+        all_content.append((i, tc["content_path"]))
+
+        if turn["files_touched"]:
+            try:
+                parsed = json.loads(turn["files_touched"])
+                touched = parsed if isinstance(parsed, list) else []
+            except (json.JSONDecodeError, TypeError):
+                touched = []
+            touched_rel = {_normalize_to_relative(f, repo_root) for f in touched}
+            if touched_rel & decision_files_set:
+                overlap_turn_indices.append(i)
+
+    if not overlap_turn_indices:
+        return [cp for _, cp in all_content[:5]]
+
+    center = overlap_turn_indices[0]
+    window_start = max(0, center - 2)
+    window_end = center + 3
+    selected = [cp for idx, cp in all_content if window_start <= idx < window_end]
+    return selected[:5]
+
+
+def sample_accepted_outcomes(
+    conn: sqlite3.Connection, n: int = 50, repo_root: str = "."
+) -> list[dict]:
     """Sample N auto-inferred 'accepted' outcomes, label-blinded."""
     rows = conn.execute(
         """
@@ -44,6 +88,8 @@ def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50) -> list[dict
     if len(cases) > n:
         cases = random.sample(cases, n)
 
+    repo_root_abs = os.path.abspath(repo_root)
+
     review_sheet = []
     for case in cases:
         sid = case["session_id"]
@@ -53,29 +99,27 @@ def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50) -> list[dict
             r["file_path"]
             for r in conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (did,)).fetchall()
         ]
+        decision_files_set = set(decision_files)
 
         session_turns = conn.execute(
             "SELECT id, turn_number, files_touched FROM turns WHERE session_id = ? ORDER BY turn_number",
             (sid,),
         ).fetchall()
 
-        content_paths = []
         files_touched_all = set()
         for turn in session_turns:
-            tc = conn.execute("SELECT content_path FROM turn_content WHERE turn_id = ?", (turn["id"],)).fetchone()
-            if tc:
-                content_paths.append(tc["content_path"])
             if turn["files_touched"]:
                 try:
                     parsed = json.loads(turn["files_touched"])
                     if isinstance(parsed, list):
-                        files_touched_all.update(parsed)
-                    else:
-                        files_touched_all.update(f.strip() for f in turn["files_touched"].split(",") if f.strip())
+                        files_touched_all.update(
+                            _normalize_to_relative(f, repo_root_abs) for f in parsed
+                        )
                 except (json.JSONDecodeError, TypeError):
-                    files_touched_all.update(f.strip() for f in turn["files_touched"].split(",") if f.strip())
+                    pass
 
-        file_overlap = sorted(set(decision_files) & files_touched_all)
+        file_overlap = sorted(decision_files_set & files_touched_all)
+        content_paths = _relevant_content_paths(session_turns, decision_files_set, conn, repo_root_abs)
 
         review_sheet.append(
             {
@@ -86,7 +130,7 @@ def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50) -> list[dict
                 "decision_files": decision_files,
                 "file_overlap": file_overlap,
                 "session_turn_count": len(session_turns),
-                "content_paths": content_paths[:5],
+                "content_paths": content_paths,
                 # outcome_type intentionally withheld for blind review
             }
         )
@@ -99,6 +143,7 @@ def main() -> None:
     parser.add_argument("--db", default=".entirecontext/db/local.db")
     parser.add_argument("--n", type=int, default=50)
     parser.add_argument("--output", default="scripts/experiments/output/audit_cases.jsonl")
+    parser.add_argument("--repo-root", default=".")
     args = parser.parse_args()
 
     if not Path(args.db).exists():
@@ -106,7 +151,7 @@ def main() -> None:
         sys.exit(1)
 
     conn = _connect(args.db)
-    cases = sample_accepted_outcomes(conn, n=args.n)
+    cases = sample_accepted_outcomes(conn, n=args.n, repo_root=args.repo_root)
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
