@@ -470,6 +470,7 @@ def run_prompt_surface_worker(
                             result_count=len(surfaced),
                             latency_ms=0,
                             session_id=session_id,
+                            turn_id=turn_id,
                             file_filter=None,
                         )
                         backpatch_snapshot_event(

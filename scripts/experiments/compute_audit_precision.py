@@ -46,14 +46,19 @@ def compute_precision(verdicts_path: str) -> dict:
     if n == 0:
         return {"n": 0, "precision": None, "ci_lower": None, "ci_upper": None}
 
+    valid_verdicts = {"true_positive", "false_positive", "ambiguous"}
     counts = {"true_positive": 0, "false_positive": 0, "ambiguous": 0}
+    unknown = []
     for v in verdicts:
         verdict = v.get("verdict", "").lower()
-        if verdict in counts:
+        if verdict in valid_verdicts:
             counts[verdict] += 1
         else:
-            counts.setdefault(verdict, 0)
-            counts[verdict] += 1
+            unknown.append(verdict)
+
+    if unknown:
+        print(f"ERROR: Unknown verdict labels: {unknown}", file=sys.stderr)
+        sys.exit(1)
 
     evaluable = counts["true_positive"] + counts["false_positive"]
     if evaluable == 0:

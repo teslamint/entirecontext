@@ -17,6 +17,7 @@ def _create_ranking_snapshots(conn: sqlite3.Connection) -> None:
             input_files TEXT,
             input_diff_text TEXT,
             input_commits TEXT,
+            input_assessment_ids TEXT,
             scored_candidates TEXT NOT NULL,
             effective_limit INTEGER NOT NULL,
             created_at TEXT DEFAULT (datetime('now')),

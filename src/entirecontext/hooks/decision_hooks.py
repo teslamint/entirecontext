@@ -289,11 +289,12 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                             session_id=surfacing_session_id_tel,
                             file_filter=",".join(changed_files) if changed_files else None,
                         )
-                        backpatch_snapshot_event(
-                            conn,
-                            snapshot_id=snapshot_id,
-                            retrieval_event_id=event["id"],
-                        )
+                        if not stale_full:
+                            backpatch_snapshot_event(
+                                conn,
+                                snapshot_id=snapshot_id,
+                                retrieval_event_id=event["id"],
+                            )
                         for idx, d in enumerate(all_surfaced, start=1):
                             sel = record_retrieval_selection(
                                 conn,

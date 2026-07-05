@@ -464,6 +464,7 @@ CREATE TABLE IF NOT EXISTS ranking_snapshots (
     input_files TEXT,
     input_diff_text TEXT,
     input_commits TEXT,
+    input_assessment_ids TEXT,
     scored_candidates TEXT NOT NULL,
     effective_limit INTEGER NOT NULL,
     created_at TEXT DEFAULT (datetime('now')),

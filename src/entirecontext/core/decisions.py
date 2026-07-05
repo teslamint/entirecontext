@@ -1687,13 +1687,14 @@ def rank_related_decisions(
 
         conn.execute(
             "INSERT INTO ranking_snapshots "
-            "(id, input_files, input_diff_text, input_commits, scored_candidates, effective_limit) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(id, input_files, input_diff_text, input_commits, input_assessment_ids, scored_candidates, effective_limit) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 snapshot_id,
                 json.dumps(file_paths) if file_paths else None,
                 safe_diff,
                 json.dumps(commit_shas) if commit_shas else None,
+                json.dumps(assessment_ids) if assessment_ids else None,
                 safe_scored,
                 limit,
             ),

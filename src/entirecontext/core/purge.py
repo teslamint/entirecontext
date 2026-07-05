@@ -54,6 +54,12 @@ def purge_turns(conn, repo_path: str, turn_ids: list[str], dry_run: bool = True)
         if tc:
             _delete_content_file(repo_path, tc["content_path"])
 
+    conn.execute(
+        f"DELETE FROM ranking_snapshots WHERE retrieval_event_id IN "
+        f"(SELECT id FROM retrieval_events WHERE turn_id IN ({placeholders}))",
+        turn_ids,
+    )
+
     conn.execute(f"DELETE FROM turns WHERE id IN ({placeholders})", turn_ids)
 
     return {"matched_turns": len(rows), "deleted": len(rows), "dry_run": False, "previews": previews}
@@ -147,6 +153,13 @@ def purge_by_pattern(conn, repo_path: str, pattern: str, dry_run: bool = True) -
             _delete_content_file(repo_path, tc["content_path"])
 
     placeholders = ",".join("?" for _ in turn_ids)
+
+    conn.execute(
+        f"DELETE FROM ranking_snapshots WHERE retrieval_event_id IN "
+        f"(SELECT id FROM retrieval_events WHERE turn_id IN ({placeholders}))",
+        turn_ids,
+    )
+
     conn.execute(f"DELETE FROM turns WHERE id IN ({placeholders})", turn_ids)
 
     return {"matched_turns": len(matched), "deleted": len(matched), "dry_run": False, "previews": previews}

@@ -17,7 +17,15 @@ import argparse
 import json
 import sqlite3
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+
+
+def _normalize_ts(ts: str) -> str:
+    """Normalize ISO timestamps to a comparable format (+00:00 suffix)."""
+    if ts.endswith("Z"):
+        ts = ts[:-1] + "+00:00"
+    return datetime.fromisoformat(ts).astimezone(timezone.utc).isoformat()
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
@@ -37,7 +45,9 @@ def load_blocks(blocks_path: str) -> list[dict]:
         for line in f:
             line = line.strip()
             if line:
-                blocks.append(json.loads(line))
+                entry = json.loads(line)
+                entry["started_at"] = _normalize_ts(entry["started_at"])
+                blocks.append(entry)
     return sorted(blocks, key=lambda b: b["started_at"])
 
 
@@ -68,7 +78,7 @@ def manual_retrieval_count(conn: sqlite3.Connection, session_ids: list[str]) -> 
         f"""
         SELECT COUNT(*) FROM retrieval_events
         WHERE session_id IN ({placeholders})
-          AND search_type NOT IN ('session_start', 'post_tool_use', 'user_prompt')
+          AND search_type NOT IN ('session_start', 'post_tool_use', 'user_prompt', 'lesson_surfacing')
         """,
         session_ids,
     ).fetchone()

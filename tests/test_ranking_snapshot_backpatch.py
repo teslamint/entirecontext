@@ -209,6 +209,11 @@ def test_worker_path_backpatches_snapshot(ec_repo, ec_db, monkeypatch):
     sess = create_session(conn, project_id=proj_row["id"], session_type="chat")
     sess_id = sess["id"]
 
+    from entirecontext.core.turn import create_turn
+
+    turn = create_turn(conn, session_id=sess_id, turn_number=1, user_message="test")
+    turn_id = turn["id"]
+
     # Create a decision with file link
     from entirecontext.core.decisions import create_decision, link_decision_to_file
 
@@ -247,7 +252,7 @@ def test_worker_path_backpatches_snapshot(ec_repo, ec_db, monkeypatch):
 
     from entirecontext.core.decision_prompt_surfacing import run_prompt_surface_worker
 
-    result = run_prompt_surface_worker(repo_path, sess_id, "no-turn", str(prompt_file))
+    result = run_prompt_surface_worker(repo_path, sess_id, turn_id, str(prompt_file))
 
     assert result["count"] >= 1, f"Expected surfaced decisions, got {result}"
     assert not result["warnings"], f"Unexpected warnings: {result['warnings']}"
