@@ -265,33 +265,10 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     conn, repo_path=repo_path, prompt_text=prompt_text, config=config,
                     capture_snapshots=capture_snapshots,
                 )
-                if capture_snapshots and snap_id and surfaced:
-                    try:
-                        from ..core.context import transaction
-                        from ..core.decisions import backpatch_snapshot_event
-                        from ..core.telemetry import record_retrieval_event, record_retrieval_selection
-
-                        with transaction(conn):
-                            evt = record_retrieval_event(
-                                conn,
-                                source="hook",
-                                search_type="user_prompt",
-                                target="decision",
-                                query="",
-                                result_count=len(surfaced),
-                                latency_ms=0,
-                                session_id=session_id,
-                            )
-                            backpatch_snapshot_event(conn, snapshot_id=snap_id, retrieval_event_id=evt["id"])
-                            for d in surfaced:
-                                record_retrieval_selection(
-                                    conn, evt["id"], result_type="decision", result_id=d["id"], rank=d.get("rank", 0),
-                                )
-                    except Exception:
-                        conn.execute("DELETE FROM ranking_snapshots WHERE id = ?", (snap_id,))
-                return optimize_for_context_budget(
+                trimmed = optimize_for_context_budget(
                     surfaced, top_k=top_k, max_tokens=max_tokens, min_confidence=min_confidence
-                ), snap_id
+                )
+                return trimmed, snap_id
             finally:
                 conn.close()
 
@@ -368,6 +345,45 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     }
                 )
             )
+
+        if capture_snapshots and _pdi_snapshot_id:
+            try:
+                from ..core.context import transaction
+                from ..core.decisions import backpatch_snapshot_event
+                from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+
+                pdi_conn = get_db(repo_path)
+                try:
+                    with transaction(pdi_conn):
+                        evt = record_retrieval_event(
+                            pdi_conn,
+                            source="hook",
+                            search_type="user_prompt",
+                            target="decision",
+                            query="",
+                            result_count=len(trimmed) if trimmed else 0,
+                            latency_ms=0,
+                            session_id=session_id,
+                        )
+                        backpatch_snapshot_event(pdi_conn, snapshot_id=_pdi_snapshot_id, retrieval_event_id=evt["id"])
+                        if trimmed:
+                            for d in trimmed:
+                                record_retrieval_selection(
+                                    pdi_conn, evt["id"], result_type="decision",
+                                    result_id=d["id"], rank=d.get("rank", 0),
+                                )
+                finally:
+                    pdi_conn.close()
+            except Exception:
+                try:
+                    cleanup_conn = get_db(repo_path)
+                    try:
+                        cleanup_conn.execute("DELETE FROM ranking_snapshots WHERE id = ?", (_pdi_snapshot_id,))
+                        cleanup_conn.commit()
+                    finally:
+                        cleanup_conn.close()
+                except Exception:
+                    pass
     except Exception as e:
         print(f"EntireContext PDI error: {e}", file=sys.stderr)
 

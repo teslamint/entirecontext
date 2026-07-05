@@ -1670,9 +1670,16 @@ def rank_related_decisions(
     if _capture_snapshots:
         snapshot_id = str(uuid4())
 
-        configured_patterns = (
+        from .security import DEFAULT_PATTERNS
+
+        extra_patterns = (
             _capture_config.get("security", {}).get("patterns") if _capture_config else None
         )
+        if extra_patterns:
+            merged = list(dict.fromkeys(DEFAULT_PATTERNS + extra_patterns))
+            configured_patterns = merged
+        else:
+            configured_patterns = None
 
         safe_diff = diff_text
         if safe_diff:
