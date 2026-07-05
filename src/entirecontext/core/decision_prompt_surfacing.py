@@ -435,10 +435,11 @@ def run_prompt_surface_worker(
             result["warnings"].append(f"load_config:{exc}")
             config = {}
 
-        from ..db import get_db
+        from ..db import check_and_migrate, get_db
 
         conn = get_db(repo_path)
         try:
+            check_and_migrate(conn)
             worker_limit = int(config.get("decisions", {}).get("surface_on_user_prompt_limit", 3))
             surfaced, rank_warnings, snapshot_id = rank_decisions_for_prompt(
                 conn,

@@ -66,7 +66,14 @@ def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50) -> list[dict
             if tc:
                 content_paths.append(tc["content_path"])
             if turn["files_touched"]:
-                files_touched_all.update(f.strip() for f in turn["files_touched"].split(",") if f.strip())
+                try:
+                    parsed = json.loads(turn["files_touched"])
+                    if isinstance(parsed, list):
+                        files_touched_all.update(parsed)
+                    else:
+                        files_touched_all.update(f.strip() for f in turn["files_touched"].split(",") if f.strip())
+                except (json.JSONDecodeError, TypeError):
+                    files_touched_all.update(f.strip() for f in turn["files_touched"].split(",") if f.strip())
 
         file_overlap = sorted(set(decision_files) & files_touched_all)
 
