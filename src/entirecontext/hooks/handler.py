@@ -227,11 +227,14 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
     prompt_text = data.get("prompt", "")
 
     try:
-        from ..core.config import load_config
+        from ..core.config import is_experiment_off, load_config
 
         config = load_config(repo_path)
 
         if not config.get("capture", {}).get("auto_capture", True):
+            return 0
+
+        if is_experiment_off(config.get("decisions", {})):
             return 0
 
         inject_cfg = config.get("decisions", {}).get("injection", {})

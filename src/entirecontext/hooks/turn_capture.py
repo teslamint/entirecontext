@@ -199,7 +199,8 @@ def on_user_prompt(data: dict[str, Any], *, _resolved_repo_path: object = _GIT_R
         # Kept strictly after the wrapped commit so the turn row is durable
         # before the worker launches, and guarded inside the helper so a
         # launch failure cannot roll back the turn insert.
-        if config.get("decisions", {}).get("surface_on_user_prompt", False):
+        from ..core.config import is_experiment_off
+        if not is_experiment_off(config.get("decisions", {})) and config.get("decisions", {}).get("surface_on_user_prompt", False):
             _maybe_launch_prompt_surfacing_worker(repo_path, session_id, turn_id, prompt, config)
     finally:
         conn.close()

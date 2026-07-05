@@ -134,6 +134,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "auto_embed": True,
         "injection": {
             "inject_on_user_prompt": True,
+            "experiment_block": None,
             "top_k": 5,
             "max_tokens": 800,
             "min_confidence": 0.4,
@@ -171,6 +172,11 @@ def load_config(repo_path: str | Path | None = None) -> dict[str, Any]:
             config = _deep_merge(config, local_conf)
 
     return config
+
+
+def is_experiment_off(decisions_config: dict) -> bool:
+    """Return True when experiment_block is 'off', suppressing all proactive surfacing."""
+    return decisions_config.get("injection", {}).get("experiment_block") == "off"
 
 
 def save_config(repo_path: str | Path | None, key: str, value: str) -> None:
