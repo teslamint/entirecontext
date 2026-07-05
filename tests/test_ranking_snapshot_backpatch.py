@@ -103,7 +103,7 @@ def test_session_start_wiring_backpatches_snapshot(ec_repo, ec_db, monkeypatch):
     from entirecontext.hooks.decision_hooks import on_session_start_decisions
 
     data = {"session_id": sess_id, "repo_path": repo_path}
-    result = on_session_start_decisions(data)
+    on_session_start_decisions(data)
 
     # A snapshot should exist and be backpatched
     row = conn.execute(
@@ -129,8 +129,7 @@ def test_mcp_ec_decision_related_backpatches_snapshot(ec_repo, ec_db, monkeypatc
     project_id = proj_row["id"]
     from entirecontext.core.session import create_session
 
-    sess = create_session(conn, project_id=project_id, session_type="chat")
-    sess_id = sess["id"]
+    create_session(conn, project_id=project_id, session_type="chat")
 
     # Create a decision with file link
     from entirecontext.core.decisions import create_decision
