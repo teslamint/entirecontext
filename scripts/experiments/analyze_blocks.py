@@ -52,10 +52,14 @@ def load_blocks(blocks_path: str) -> list[dict]:
 
 
 def sessions_in_block(conn: sqlite3.Connection, start: str, end: str | None) -> list[dict]:
-    """Get qualifying sessions (total_turns >= 5 AND has checkpoint) within a time window."""
+    """Get qualifying sessions (total_turns >= 5) within a time window.
+
+    Uses total_turns only (no checkpoint requirement) to keep the gate
+    treatment-independent — injection ON/OFF must not affect which sessions
+    qualify, or the experiment introduces selection bias.
+    """
     query = """
-        SELECT s.id, s.total_turns, s.started_at, s.ended_at,
-               (SELECT COUNT(*) FROM checkpoints c WHERE c.session_id = s.id) as checkpoint_count
+        SELECT s.id, s.total_turns, s.started_at, s.ended_at
         FROM sessions s
         WHERE s.total_turns >= 5
           AND s.started_at >= ?
@@ -66,7 +70,7 @@ def sessions_in_block(conn: sqlite3.Connection, start: str, end: str | None) -> 
         params.append(end)
 
     rows = conn.execute(query, params).fetchall()
-    return [dict(r) for r in rows if r["checkpoint_count"] > 0]
+    return [dict(r) for r in rows]
 
 
 def manual_retrieval_count(
