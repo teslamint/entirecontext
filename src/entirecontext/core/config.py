@@ -51,6 +51,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             r"(?i)bearer\s+[\w.-]+",
             r"ghp_[a-zA-Z0-9]{36}",
             r"sk-[a-zA-Z0-9]{48}",
+            r"sk-proj-[a-zA-Z0-9_-]{20,}",
         ],
     },
     "filtering": {

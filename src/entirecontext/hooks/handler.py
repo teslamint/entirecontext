@@ -250,9 +250,11 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
         def _rank_and_trim_in_thread() -> tuple[list[dict] | None, str | None]:
             from ..core.decision_prompt_surfacing import optimize_for_context_budget, rank_decisions_for_prompt
+            from ..db import check_and_migrate
 
             conn = get_db(repo_path)
             try:
+                check_and_migrate(conn)
                 session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
                 if session_row and session_row[0]:
                     try:

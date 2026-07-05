@@ -60,10 +60,15 @@ def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50) -> list[dict
         ).fetchall()
 
         content_paths = []
+        files_touched_all = set()
         for turn in session_turns:
             tc = conn.execute("SELECT content_path FROM turn_content WHERE turn_id = ?", (turn["id"],)).fetchone()
             if tc:
                 content_paths.append(tc["content_path"])
+            if turn["files_touched"]:
+                files_touched_all.update(f.strip() for f in turn["files_touched"].split(",") if f.strip())
+
+        file_overlap = sorted(set(decision_files) & files_touched_all)
 
         review_sheet.append(
             {
@@ -72,6 +77,7 @@ def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50) -> list[dict
                 "decision_id": did,
                 "decision_title": case["decision_title"],
                 "decision_files": decision_files,
+                "file_overlap": file_overlap,
                 "session_turn_count": len(session_turns),
                 "content_paths": content_paths[:5],
                 # outcome_type intentionally withheld for blind review
