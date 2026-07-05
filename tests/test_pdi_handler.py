@@ -61,9 +61,10 @@ class TestPDIHandlerSyncPath:
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
             patch("entirecontext.core.config.load_config", return_value=_INJECTION_CONFIG),
             patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.db.check_and_migrate"),
             patch(
                 "entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt",
-                return_value=([_FAKE_DECISION], []),
+                return_value=([_FAKE_DECISION], [], None),
             ),
             patch(
                 "entirecontext.core.decision_prompt_surfacing.optimize_for_context_budget",
@@ -89,9 +90,10 @@ class TestPDIHandlerSyncPath:
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
             patch("entirecontext.core.config.load_config", return_value=_INJECTION_CONFIG),
             patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.db.check_and_migrate"),
             patch(
                 "entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt",
-                return_value=([], []),
+                return_value=([], [], None),
             ),
             patch(
                 "entirecontext.core.decision_prompt_surfacing.optimize_for_context_budget",
@@ -148,7 +150,7 @@ class TestPDIHandlerSyncPath:
 
         def _slow_rank(*args, **kwargs):
             time.sleep(0.5)
-            return ([_FAKE_DECISION], [])
+            return ([_FAKE_DECISION], [], None)
 
         config = {
             "decisions": {
@@ -166,6 +168,7 @@ class TestPDIHandlerSyncPath:
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
             patch("entirecontext.core.config.load_config", return_value=config),
             patch("entirecontext.db.get_db"),
+            patch("entirecontext.db.check_and_migrate"),
             patch(
                 "entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt",
                 side_effect=_slow_rank,
@@ -206,9 +209,10 @@ class TestPDIHandlerSyncPath:
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
             patch("entirecontext.core.config.load_config", return_value=_INJECTION_CONFIG),
             patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.db.check_and_migrate"),
             patch(
                 "entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt",
-                return_value=([_FAKE_DECISION], []),
+                return_value=([_FAKE_DECISION], [], None),
             ),
             patch(
                 "entirecontext.core.decision_prompt_surfacing.optimize_for_context_budget",
@@ -230,6 +234,7 @@ class TestPDIHandlerSyncPath:
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
             patch("entirecontext.core.config.load_config", return_value=_INJECTION_CONFIG),
             patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.db.check_and_migrate"),
             patch("entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt") as mock_rank,
         ):
             result = _handle_user_prompt(_HOOK_DATA)
@@ -253,9 +258,10 @@ class TestPDIHandlerSyncPath:
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo") as mock_find,
             patch("entirecontext.core.config.load_config", return_value=_INJECTION_CONFIG),
             patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.db.check_and_migrate"),
             patch(
                 "entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt",
-                return_value=([], []),
+                return_value=([], [], None),
             ),
         ):
             _handle_user_prompt(_HOOK_DATA)

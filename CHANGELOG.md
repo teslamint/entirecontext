@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`ranking_snapshots` table (schema v15)** — records retrieval ranking inputs (files, diff text, commits, scored candidates, effective limit) per `retrieval_events` row to support the hypothesis validation framework. Additive migration — no data rewrite.
+
 ## [0.10.0] - 2026-06-29
 
 The autonomous decision-memory loop (`capture→distill→retrieve→intervene→outcome`) now completes without human intervention. This release ships the full loop gate: auto_extract default-on, CLIBackend fix, Stop hook fallback, and retry cap.

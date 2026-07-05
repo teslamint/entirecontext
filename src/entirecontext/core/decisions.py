@@ -12,11 +12,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import uuid4
 
+from .content_filter import redact_content
 from .context import transaction
 from .resolve import escape_like as _escape_like
 from .resolve import resolve_assessment_id as _resolve_assessment_id
 from .resolve import resolve_checkpoint_id as _resolve_checkpoint_id
 from .resolve import resolve_decision_id as _resolve_decision_id
+from .security import filter_secrets
 
 
 class _UnsetType:
@@ -51,6 +53,8 @@ _SUCCESSOR_CHAIN_DEPTH_CAP = 10
 # (and more contradicted than accepted) will be automatically promoted to
 # staleness_status='contradicted'. Configurable via [decisions] TOML section.
 _DEFAULT_AUTO_PROMOTION_CONTRADICTED_THRESHOLD = 2
+
+_SNAPSHOT_DIFF_MAX_BYTES = 8192
 
 
 def _excluded_statuses(
@@ -1333,6 +1337,8 @@ def rank_related_decisions(
     ranking: RankingWeights | None = None,
     quality: QualityWeights | None = None,
     _return_stats: bool = False,
+    _capture_snapshots: bool = False,
+    _capture_config: dict | None = None,
 ) -> list[dict] | tuple[list[dict], dict]:
     """Rank decisions by current-change relevance using multi-signal scoring.
 
@@ -1658,10 +1664,70 @@ def rank_related_decisions(
         )
 
     scored.sort(key=lambda item: (item["score"], item.get("updated_at", "")), reverse=True)
+
+    # --- Snapshot capture (caller passes _capture_snapshots=True) ---
+    snapshot_id = None
+    if _capture_snapshots:
+        snapshot_id = str(uuid4())
+
+        from .security import DEFAULT_PATTERNS
+
+        extra_patterns = (
+            _capture_config.get("security", {}).get("patterns") if _capture_config else None
+        )
+        if extra_patterns:
+            merged = list(dict.fromkeys(DEFAULT_PATTERNS + extra_patterns))
+            configured_patterns = merged
+        else:
+            configured_patterns = None
+
+        safe_diff = diff_text
+        if safe_diff:
+            safe_diff = filter_secrets(safe_diff, patterns=configured_patterns)
+            if _capture_config:
+                safe_diff = redact_content(safe_diff, _capture_config)
+            if len(safe_diff.encode("utf-8")) > _SNAPSHOT_DIFF_MAX_BYTES:
+                safe_diff = safe_diff.encode("utf-8")[:_SNAPSHOT_DIFF_MAX_BYTES].decode("utf-8", errors="ignore")
+
+        safe_scored = json.dumps(scored)
+        safe_scored = filter_secrets(safe_scored, patterns=configured_patterns)
+        if _capture_config:
+            safe_scored = redact_content(safe_scored, _capture_config)
+
+        conn.execute(
+            "INSERT INTO ranking_snapshots "
+            "(id, input_files, input_diff_text, input_commits, input_assessment_ids, scored_candidates, effective_limit) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                snapshot_id,
+                json.dumps(file_paths) if file_paths else None,
+                safe_diff,
+                json.dumps(commit_shas) if commit_shas else None,
+                json.dumps(assessment_ids) if assessment_ids else None,
+                safe_scored,
+                limit,
+            ),
+        )
+    # --- End snapshot capture ---
+
     top = scored[:limit]
     if _return_stats:
+        if snapshot_id is not None:
+            filter_stats["snapshot_id"] = snapshot_id
         return top, filter_stats
     return top
+
+
+def backpatch_snapshot_event(
+    conn, *, snapshot_id: str | None, retrieval_event_id: str
+) -> None:
+    """Link a ranking snapshot to its retrieval event after telemetry creation."""
+    if snapshot_id is None:
+        return
+    conn.execute(
+        "UPDATE ranking_snapshots SET retrieval_event_id = ? WHERE id = ?",
+        (retrieval_event_id, snapshot_id),
+    )
 
 
 def check_staleness(conn, decision_id: str, repo_path: str) -> dict:

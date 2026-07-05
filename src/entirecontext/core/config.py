@@ -51,6 +51,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
             r"(?i)bearer\s+[\w.-]+",
             r"ghp_[a-zA-Z0-9]{36}",
             r"sk-[a-zA-Z0-9]{48}",
+            r"sk-proj-[a-zA-Z0-9_-]{20,}",
         ],
     },
     "filtering": {
@@ -102,6 +103,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "extract_max_attempts": 3,
         "candidate_dedup_similarity_threshold": 0.5,
         "candidate_redact_secrets": True,
+        "capture_ranking_snapshots": False,
+        "ranking_snapshot_retention_days": 90,
         "ranking": {
             "staleness_factors": {
                 "fresh": 1.0,

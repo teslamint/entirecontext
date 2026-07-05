@@ -189,6 +189,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             _load_quality_weights,
             _load_ranking_weights,
             _normalize_path,
+            backpatch_snapshot_event,
             get_decision,
             list_decisions,
             rank_related_decisions,
@@ -228,9 +229,12 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             ranking_weights = _load_ranking_weights(full_config)
             quality_weights = _load_quality_weights(full_config)
 
+            capture_snapshots = config.get("capture_ranking_snapshots", False)
+
             file_related: list[dict] = []
+            snapshot_id: str | None = None
             if normalized_files or diff_text or commit_shas or assessment_ids:
-                ranked = rank_related_decisions(
+                ranked, rank_stats = rank_related_decisions(
                     conn,
                     file_paths=normalized_files,
                     diff_text=diff_text,
@@ -240,7 +244,11 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                     include_contradicted=False,
                     ranking=ranking_weights,
                     quality=quality_weights,
+                    _return_stats=True,
+                    _capture_snapshots=capture_snapshots,
+                    _capture_config=full_config,
                 )
+                snapshot_id = rank_stats.get("snapshot_id")
                 for d in ranked:
                     if d["id"] not in seen_ids:
                         full = get_decision(conn, d["id"])
@@ -263,7 +271,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
 
             # 3. Retrieval telemetry: stamp selection_ids before formatting.
             all_surfaced = file_related + stale_full
-            if all_surfaced:
+            if all_surfaced or snapshot_id:
                 try:
                     from ..core.context import transaction
                     from ..core.telemetry import record_retrieval_event, record_retrieval_selection
@@ -281,6 +289,30 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                             session_id=surfacing_session_id_tel,
                             file_filter=",".join(changed_files) if changed_files else None,
                         )
+                        if snapshot_id:
+                            if stale_full:
+                                snapshot_event = record_retrieval_event(
+                                    conn,
+                                    source="hook",
+                                    search_type="session_start_ranked",
+                                    target="decision",
+                                    query=",".join(changed_files) if changed_files else "",
+                                    result_count=len(file_related),
+                                    latency_ms=0,
+                                    session_id=surfacing_session_id_tel,
+                                    file_filter=",".join(changed_files) if changed_files else None,
+                                )
+                                backpatch_snapshot_event(
+                                    conn,
+                                    snapshot_id=snapshot_id,
+                                    retrieval_event_id=snapshot_event["id"],
+                                )
+                            else:
+                                backpatch_snapshot_event(
+                                    conn,
+                                    snapshot_id=snapshot_id,
+                                    retrieval_event_id=event["id"],
+                                )
                         for idx, d in enumerate(all_surfaced, start=1):
                             sel = record_retrieval_selection(
                                 conn,
@@ -290,6 +322,15 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                                 rank=idx,
                             )
                             d["selection_id"] = sel["id"]
+                        if snapshot_id and stale_full and file_related:
+                            for ridx, d in enumerate(file_related, start=1):
+                                record_retrieval_selection(
+                                    conn,
+                                    snapshot_event["id"],
+                                    result_type="decision",
+                                    result_id=d["id"],
+                                    rank=ridx,
+                                )
                 except Exception:
                     for d in all_surfaced:
                         d.pop("selection_id", None)

@@ -50,6 +50,7 @@ class TestSchemaCreation:
             "decision_files",
             "decision_assessments",
             "decision_outcomes",
+            "ranking_snapshots",
         }
         assert expected.issubset(tables)
 
@@ -467,4 +468,58 @@ class TestMigration:
         bootstrap_schema(fresh)
         assert get_current_version(fresh) == SCHEMA_VERSION
         fresh.close()
+        conn.close()
+
+    def test_migrate_v14_to_v15_adds_ranking_snapshots(self):
+        conn = get_memory_db()
+        conn.execute(
+            "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)"
+        )
+        conn.execute("INSERT INTO schema_version (version, description) VALUES (14, 'v14')")
+        # ranking_snapshots FK target
+        conn.execute(
+            "CREATE TABLE retrieval_events (id TEXT PRIMARY KEY, session_id TEXT, search_type TEXT, "
+            "created_at TEXT DEFAULT (datetime('now')))"
+        )
+        conn.commit()
+
+        # Verify table does not exist yet
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ranking_snapshots'"
+        ).fetchone()
+        assert row is None
+
+        check_and_migrate(conn)
+
+        # Table exists
+        row = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='ranking_snapshots'"
+        ).fetchone()
+        assert row is not None
+
+        # Columns are correct
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(ranking_snapshots)").fetchall()}
+        expected = {
+            "id", "retrieval_event_id", "input_files", "input_diff_text",
+            "input_commits", "scored_candidates", "effective_limit",
+            "created_at",
+        }
+        assert expected.issubset(cols)
+
+        # retrieval_event_id is nullable
+        col_info = {r[1]: r[3] for r in conn.execute("PRAGMA table_info(ranking_snapshots)").fetchall()}
+        assert col_info["retrieval_event_id"] == 0  # notnull=0 means nullable
+
+        # Verify schema version
+        ver = conn.execute(
+            "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
+        ).fetchone()[0]
+        assert ver == 15
+
+        # FK works: can insert with NULL retrieval_event_id
+        conn.execute(
+            "INSERT INTO ranking_snapshots (id, scored_candidates, effective_limit) VALUES ('s1', '[]', 5)"
+        )
+        row = conn.execute("SELECT * FROM ranking_snapshots WHERE id='s1'").fetchone()
+        assert row is not None
         conn.close()

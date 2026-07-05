@@ -246,25 +246,31 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         max_tokens = int(inject_cfg.get("max_tokens", 800))
         min_confidence = float(inject_cfg.get("min_confidence", 0.4))
 
-        def _rank_and_trim_in_thread() -> list[dict] | None:
+        capture_snapshots = config.get("decisions", {}).get("capture_ranking_snapshots", False)
+
+        def _rank_and_trim_in_thread() -> tuple[list[dict] | None, str | None]:
             from ..core.decision_prompt_surfacing import optimize_for_context_budget, rank_decisions_for_prompt
+            from ..db import check_and_migrate
 
             conn = get_db(repo_path)
             try:
+                check_and_migrate(conn)
                 session_row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
                 if session_row and session_row[0]:
                     try:
                         meta = json.loads(session_row[0])
                         if meta.get("capture_disabled"):
-                            return None
+                            return None, None
                     except (ValueError, TypeError):
                         pass
-                surfaced, _ = rank_decisions_for_prompt(
-                    conn, repo_path=repo_path, prompt_text=prompt_text, config=config
+                surfaced, _, snap_id = rank_decisions_for_prompt(
+                    conn, repo_path=repo_path, prompt_text=prompt_text, config=config,
+                    capture_snapshots=capture_snapshots,
                 )
-                return optimize_for_context_budget(
+                trimmed = optimize_for_context_budget(
                     surfaced, top_k=top_k, max_tokens=max_tokens, min_confidence=min_confidence
                 )
+                return trimmed, snap_id
             finally:
                 conn.close()
 
@@ -293,7 +299,9 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         if not _result or _result[0] is None:
             return 0
 
-        trimmed = _result[0]
+        trimmed, _pdi_snapshot_id = _result[0]
+        if trimmed is None:
+            return 0
 
         # Build decision section (may be empty if no decisions matched)
         md = ""
@@ -339,6 +347,45 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     }
                 )
             )
+
+        if capture_snapshots and _pdi_snapshot_id:
+            try:
+                from ..core.context import transaction
+                from ..core.decisions import backpatch_snapshot_event
+                from ..core.telemetry import record_retrieval_event, record_retrieval_selection
+
+                pdi_conn = get_db(repo_path)
+                try:
+                    with transaction(pdi_conn):
+                        evt = record_retrieval_event(
+                            pdi_conn,
+                            source="hook",
+                            search_type="user_prompt",
+                            target="decision",
+                            query="",
+                            result_count=len(trimmed) if trimmed else 0,
+                            latency_ms=0,
+                            session_id=session_id,
+                        )
+                        backpatch_snapshot_event(pdi_conn, snapshot_id=_pdi_snapshot_id, retrieval_event_id=evt["id"])
+                        if trimmed:
+                            for d in trimmed:
+                                record_retrieval_selection(
+                                    pdi_conn, evt["id"], result_type="decision",
+                                    result_id=d["id"], rank=d.get("rank", 0),
+                                )
+                finally:
+                    pdi_conn.close()
+            except Exception:
+                try:
+                    cleanup_conn = get_db(repo_path)
+                    try:
+                        cleanup_conn.execute("DELETE FROM ranking_snapshots WHERE id = ?", (_pdi_snapshot_id,))
+                        cleanup_conn.commit()
+                    finally:
+                        cleanup_conn.close()
+                except Exception:
+                    pass
     except Exception as e:
         print(f"EntireContext PDI error: {e}", file=sys.stderr)
 

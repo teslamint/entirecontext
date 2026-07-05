@@ -54,6 +54,12 @@ def purge_turns(conn, repo_path: str, turn_ids: list[str], dry_run: bool = True)
         if tc:
             _delete_content_file(repo_path, tc["content_path"])
 
+    conn.execute(
+        f"DELETE FROM ranking_snapshots WHERE retrieval_event_id IN "
+        f"(SELECT id FROM retrieval_events WHERE turn_id IN ({placeholders}))",
+        turn_ids,
+    )
+
     conn.execute(f"DELETE FROM turns WHERE id IN ({placeholders})", turn_ids)
 
     return {"matched_turns": len(rows), "deleted": len(rows), "dry_run": False, "previews": previews}
@@ -85,6 +91,12 @@ def purge_session(conn, repo_path: str, session_id: str, dry_run: bool = True) -
         if tc:
             _delete_content_file(repo_path, tc["content_path"])
 
+    conn.execute(
+        "DELETE FROM ranking_snapshots WHERE retrieval_event_id IN "
+        "(SELECT id FROM retrieval_events WHERE session_id = ?)",
+        (session_id,),
+    )
+
     conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
 
     content_dir = Path(repo_path) / ".entirecontext" / "content" / session_id
@@ -98,6 +110,23 @@ def purge_session(conn, repo_path: str, session_id: str, dry_run: bool = True) -
         "dry_run": False,
         "previews": previews,
     }
+
+
+def purge_ranking_snapshots(conn, retention_days: int = 90, dry_run: bool = True) -> dict[str, Any]:
+    """Purge ranking snapshots older than retention_days."""
+    if retention_days < 1:
+        raise ValueError(f"retention_days must be >= 1, got {retention_days}")
+    cutoff = conn.execute("SELECT datetime('now', ?)", (f"-{retention_days} days",)).fetchone()[0]
+
+    matched = conn.execute(
+        "SELECT COUNT(*) FROM ranking_snapshots WHERE created_at < ?", (cutoff,)
+    ).fetchone()[0]
+
+    if dry_run:
+        return {"matched": matched, "deleted": 0, "dry_run": True}
+
+    conn.execute("DELETE FROM ranking_snapshots WHERE created_at < ?", (cutoff,))
+    return {"matched": matched, "deleted": matched, "dry_run": False}
 
 
 def purge_by_pattern(conn, repo_path: str, pattern: str, dry_run: bool = True) -> dict[str, Any]:
@@ -126,6 +155,13 @@ def purge_by_pattern(conn, repo_path: str, pattern: str, dry_run: bool = True) -
             _delete_content_file(repo_path, tc["content_path"])
 
     placeholders = ",".join("?" for _ in turn_ids)
+
+    conn.execute(
+        f"DELETE FROM ranking_snapshots WHERE retrieval_event_id IN "
+        f"(SELECT id FROM retrieval_events WHERE turn_id IN ({placeholders}))",
+        turn_ids,
+    )
+
     conn.execute(f"DELETE FROM turns WHERE id IN ({placeholders})", turn_ids)
 
     return {"matched_turns": len(matched), "deleted": len(matched), "dry_run": False, "previews": previews}

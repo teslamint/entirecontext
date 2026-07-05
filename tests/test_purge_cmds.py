@@ -81,3 +81,38 @@ class TestPurgeCmds:
         assert len(remaining) == 2
         assert all("password" not in (r["user_message"] or "") for r in remaining)
         conn.close()
+
+    def test_purge_snapshots_dry_run_uses_config_default(self, seeded_repo, monkeypatch):
+        conn = get_db(str(seeded_repo))
+        conn.execute(
+            "INSERT INTO ranking_snapshots (id, scored_candidates, effective_limit, created_at) "
+            "VALUES ('old-snap', '[]', 5, datetime('now', '-100 days'))"
+        )
+        conn.close()
+
+        monkeypatch.chdir(seeded_repo)
+        result = runner.invoke(app, ["purge", "snapshots"])
+        assert result.exit_code == 0
+        assert "DRY RUN" in result.output
+        assert "1 snapshots older than 90d" in result.output
+
+        conn = get_db(str(seeded_repo))
+        assert conn.execute("SELECT * FROM ranking_snapshots WHERE id = 'old-snap'").fetchone() is not None
+        conn.close()
+
+    def test_purge_snapshots_execute(self, seeded_repo, monkeypatch):
+        conn = get_db(str(seeded_repo))
+        conn.execute(
+            "INSERT INTO ranking_snapshots (id, scored_candidates, effective_limit, created_at) "
+            "VALUES ('old-snap', '[]', 5, datetime('now', '-100 days'))"
+        )
+        conn.close()
+
+        monkeypatch.chdir(seeded_repo)
+        result = runner.invoke(app, ["purge", "snapshots", "--retention-days", "90", "--execute"])
+        assert result.exit_code == 0
+        assert "Deleted" in result.output
+
+        conn = get_db(str(seeded_repo))
+        assert conn.execute("SELECT * FROM ranking_snapshots WHERE id = 'old-snap'").fetchone() is None
+        conn.close()

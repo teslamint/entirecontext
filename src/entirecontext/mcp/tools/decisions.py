@@ -60,9 +60,15 @@ async def ec_decision_related(
         return error
     try:
         from ...core.config import load_config
-        from ...core.decisions import _load_quality_weights, _load_ranking_weights, rank_related_decisions
+        from ...core.decisions import (
+            _load_quality_weights,
+            _load_ranking_weights,
+            backpatch_snapshot_event,
+            rank_related_decisions,
+        )
 
         full_config = load_config(repo_path)
+        decisions_cfg = full_config.get("decisions", {})
         ranking_weights = _load_ranking_weights(full_config)
         quality_weights = _load_quality_weights(full_config)
 
@@ -80,6 +86,8 @@ async def ec_decision_related(
             ranking=ranking_weights,
             quality=quality_weights,
             _return_stats=True,
+            _capture_snapshots=decisions_cfg.get("capture_ranking_snapshots", False),
+            _capture_config=full_config,
         )
         tracked_event_id = runtime.record_search_event(
             conn,
@@ -90,6 +98,11 @@ async def ec_decision_related(
             latency_ms=int((time.perf_counter() - started_at) * 1000),
             file_filter=",".join(files or []) or None,
             since=None,
+        )
+        backpatch_snapshot_event(
+            conn,
+            snapshot_id=filter_stats.get("snapshot_id"),
+            retrieval_event_id=tracked_event_id,
         )
         for idx, item in enumerate(decisions, start=1):
             runtime.record_selection(
@@ -158,11 +171,13 @@ async def ec_decision_context(
             _load_quality_weights,
             _load_ranking_weights,
             _normalize_path,
+            backpatch_snapshot_event,
             rank_related_decisions,
         )
         from ...core.telemetry import detect_current_context
 
         full_config = load_config(repo_path)
+        decisions_cfg = full_config.get("decisions", {})
         ranking_weights = _load_ranking_weights(full_config)
         quality_weights = _load_quality_weights(full_config)
 
@@ -313,6 +328,8 @@ async def ec_decision_context(
             ranking=ranking_weights,
             quality=quality_weights,
             _return_stats=True,
+            _capture_snapshots=decisions_cfg.get("capture_ranking_snapshots", False),
+            _capture_config=full_config,
         )
 
         # --- 5. Telemetry: event + per-decision selection ---
@@ -332,6 +349,11 @@ async def ec_decision_context(
             since=None,
             session_id=session_id,
             turn_id=turn_id,
+        )
+        backpatch_snapshot_event(
+            conn,
+            snapshot_id=filter_stats.get("snapshot_id"),
+            retrieval_event_id=tracked_event_id,
         )
         for idx, item in enumerate(decisions, start=1):
             selection_id = runtime.record_selection(
