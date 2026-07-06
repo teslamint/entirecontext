@@ -324,6 +324,8 @@ Most items below were evaluated in the 2026-04-27 ideation session ([docs/ideati
 
 - **Human-in-the-loop correction UX** — fast review of extracted decisions and stale lessons via `ec review` interactive HITL queue (original exploration item)
 
+- **Hypothesis Validation: Automated Block Flip** — cron job runs `scripts/experiments/flip_block.py` every 30 minutes to check qualifying-session count and auto-flip `experiment_block` between ON/OFF when threshold N is reached. No new application code — script is idempotent and already handles counting, flipping, JSONL logging, and config.toml update. Promotion to product feature (`ec experiment` CLI) deferred until multi-user scale per brainstorm posture. _(Shipped)_ Plan reference: `docs/brainstorms/hypothesis-validation-framework.md`.
+
 ## Non-Goals
 
 - Becoming a generic knowledge management system
