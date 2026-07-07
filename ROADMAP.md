@@ -283,7 +283,7 @@ Theme: graduate all 8 v0.11.0 retro carry-forward items. Diagnosis-first approac
 - [x] **C3. Experiment data verification** — plumbing pass: 44 ranking_snapshots, cron active (56 log entries), block=1 (ON), 2/5 qualifying sessions. 7/21 validity analysis → v0.13.0 carry-forward.
 - [x] **C4. ROADMAP sections** — v0.11.0 retroactive + v0.12.0 upfront sections added.
 - [x] **C5. lesson_reuse_rate** — surfacing active (45 lesson_surfacing retrieval events), zero lesson-typed context_applications. Verdict: usage absence, not infra bug. No code change.
-- [ ] **C6. PR #185 skipped P2 validation** — 4 P2 comments identified, skip rationale recorded.
+- [x] **C6. PR #185 skipped P2 validation** — 4 snapshot edge-case P2s reviewed (#3524582056 mixed SessionStart linkage, #3524625342/#3524676787 zero-result snapshot preservation, #3524705407 unauditable samples). All justified: experiment too early (2/5 qualifying) for edge-case data to matter. Revisit when experiment produces analysis-ready data.
 - [ ] **C7. Exploration priority evaluation** — all items re-evaluated against corpus/maturity/experiment state.
 - [x] **C8. Decision corpus assessment** — 122 decisions, 11 with file links (9%), outcomes: accepted=58 contradicted=3 ignored=1 refined=3. 91% without file links limits PDI file-signal effectiveness. Git Archaeology → C7 priority.
 
