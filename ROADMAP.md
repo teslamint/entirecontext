@@ -265,6 +265,33 @@ Close retro carry-forward debt, activate lesson-reuse path for maturity 75, add 
 - [ ] **Maturity ≥ 75** — measurement outcome, requires sufficient session volume with lesson surfacing active
 - Out-of-band: ghost release cleanup (1a), `auto_extract` production verification (1e)
 
+## v0.11.0 — Hypothesis Validation Infrastructure (Shipped 2026-07-07)
+
+Theme: build measurement infrastructure to answer "does decision surfacing actually help?" — ranking snapshots for retrieval auditing and experiment block config for ON/OFF crossover experiments.
+
+- [x] **`ranking_snapshots` table (schema v15)** — records retrieval ranking inputs per `retrieval_events` row for hypothesis validation. Additive migration.
+- [x] **Experiment block config** — `[decisions.injection] experiment_block` atomically suppresses all 4 proactive surfacing channels for ON/OFF crossover experiment.
+- [x] **Automated block flip** — `scripts/experiments/flip_block.py` runs every 30 min via cron, auto-flips when qualifying session threshold reached. Treatment-independent gate (total_turns >= 5).
+- [x] **Audit sampler fixes** — path normalization and content turn selection edge cases.
+
+## v0.12.0 — Carry-Forward Graduation
+
+Theme: graduate all 8 v0.11.0 retro carry-forward items. Diagnosis-first approach — all items pre-diagnosed, results recorded. Zero code changes.
+
+- [ ] **C1. intervene 13→5 diagnosis** — rate dilution confirmed (applied_context_rate=5/66=7.6%, threshold 10%). Won't-fix: formula correct, usage volume is root cause.
+- [ ] **C2. Pre-release checklist** — `docs/RELEASE.md` checklist battle-tested as first live application.
+- [ ] **C3. Experiment data verification** — plumbing pass (44 snapshots, cron active). 7/21 analysis deferred to v0.13.0.
+- [ ] **C4. ROADMAP sections** — v0.11.0 retroactive + v0.12.0 upfront sections added.
+- [ ] **C5. lesson_reuse_rate** — surfacing works (45 events), usage absent. No code change.
+- [ ] **C6. PR #185 skipped P2 validation** — 4 P2 comments identified, skip rationale recorded.
+- [ ] **C7. Exploration priority evaluation** — all items re-evaluated against corpus/maturity/experiment state.
+- [ ] **C8. Decision corpus assessment** — 122 decisions, 9% with file links, 65 outcomes recorded.
+
+Carry-forward to v0.13.0:
+- 7/21 experiment validity analysis
+- File-link coverage gap (91% decisions without file links)
+- Intervene improvement via dogfooding volume
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.
