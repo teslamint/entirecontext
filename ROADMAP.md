@@ -257,7 +257,7 @@ Theme: remove legacy shims, fix version drift, correct ADR-0003 trigger document
 
 Close retro carry-forward debt, activate lesson-reuse path for maturity 75, add layered outcome inference.
 
-- [x] **Carry-forward** — perf threshold 250→300ms, Codex shift-left review gate in RELEASE_RULE.md
+- [x] **Carry-forward** — perf threshold 250→300ms, Codex shift-left review gate in docs/RELEASE.md
 - [x] **Lesson surfacing: SessionStart** — dual-channel surfacing: broad-context lessons from checkpoint `files_snapshot` overlap at session start
 - [x] **Lesson surfacing: PDI** — narrow-context lesson injection into `additionalContext`; decisions priority, lessons fill remaining token budget; timeout-isolated (100ms)
 - [x] **Auto-apply lesson extension** — lesson/assessment file-overlap detection at SessionEnd using checkpoint `files_snapshot`; drives `lesson_reuse_rate` for intervene score

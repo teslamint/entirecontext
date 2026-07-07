@@ -52,7 +52,7 @@ The autonomous decision-memory loop (`capture→distill→retrieve→intervene�
 
 - **Documentation surface refresh** — README/spec aligned with schema v14, CLI groups, 29-tool MCP surface.
 - Performance test threshold: 250ms → 300ms.
-- `.omc/RELEASE_RULE.md`: added Codex review pre-release gate.
+- `docs/RELEASE.md` (formerly `.omc/RELEASE_RULE.md`): added Codex review pre-release gate.
 
 ## [0.9.3] - 2026-06-09
 
