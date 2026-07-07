@@ -157,7 +157,7 @@ def main() -> None:
         entry = init_block(blocks_path)
         update_config_toml(config_path, "on")
         print(f"Initialized block 1 (injection=ON) at {entry['started_at']}")
-        print(f"Config updated: experiment_block = \"on\"")
+        print("Config updated: experiment_block = \"on\"")
         return
 
     if not Path(args.db).exists():
