@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-07-07._
+_Updated 2026-07-07._ <!-- v0.13.0 section added -->
 
 ## Product Thesis
 
@@ -291,6 +291,24 @@ Carry-forward to v0.13.0:
 - 7/21 experiment validity analysis
 - File-link coverage gap (91% decisions without file links)
 - Intervene improvement via dogfooding volume
+
+## v0.13.0 — Git Archaeology + Intervene Graduation
+
+Theme: close the 91% file-link gap via retroactive git archaeology, push intervene past the 10% applied_context_rate threshold, and analyze experiment data.
+
+### Intervene graduation
+- [ ] **applied_context_rate ≥ 10%** — current 8% (5/66 session-based). Requires 2+ additional sessions with `ec context apply` usage. No code change — dogfooding discipline only.
+- [ ] **lesson_reuse_rate progress** — current 2% (1/40). Record lesson-typed applications when past lessons influence current work. Target: steady upward trend, not necessarily 20% threshold.
+
+### Experiment analysis
+- [ ] **7/21 experiment validity analysis** — carry-forward from v0.12.0 C3. Analyze ranking_snapshots (44+) and block flip log to determine if ON/OFF crossover data is sufficient for initial hypothesis testing. Gate: ≥5 qualifying sessions per block state.
+
+### Git Archaeology
+- [ ] **`ec archaeologize` command** — `git log --patch` + merged PR bodies through existing extraction pipeline; `source:inferred` bootstrapped decision corpus. Addresses 91% file-link gap and cold-start adoption barrier. Plan reference: `docs/brainstorms/retroactive-git-archaeology.md`.
+
+Carry-forward conditions:
+- Experiment analysis may carry forward if qualifying session count insufficient
+- Git Archaeology may split into design (v0.13.0) + implementation (v0.14.0) if scope warrants
 
 ## v1.0 — Loop Completes Autonomously
 
