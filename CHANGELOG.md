@@ -7,9 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.12.0] - 2026-07-07
-
-v0.12.0 graduates all 8 carry-forward items from the v0.11.0 retrospective. Zero code changes — all items resolved via diagnosis, documentation, and process establishment.
+Carry-forward graduation: all 8 v0.11.0 retro items diagnosed and recorded. Zero code changes — docs and process only. Will ship as part of the next feature release.
 
 Dogfooding maturity: 61/100 (capture=22, distill=17, retrieve=17, intervene=5).
 
