@@ -50,6 +50,7 @@ Work through in order. Items marked [auto] can be CI-enforced; [manual] require 
 ### 4. Tag & Publish
 - [ ] Ordering: all above green → tag push → CI publish
 - [ ] Never re-tag after PyPI publish — bump version number instead
+- [ ] Docs-only changes (zero code diff) do not warrant a standalone tag — bundle into the next feature release
 
 ### 5. Post-Release
 - [ ] [manual] Retro conducted — findings become carry-forward or won't-fix
