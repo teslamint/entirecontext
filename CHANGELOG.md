@@ -7,10 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-07
+
+Hypothesis validation infrastructure: ranking snapshots for retrieval auditing, experiment block config for ON/OFF crossover experiments, and automated block transition tooling.
+
 ### Added
 
 - **`ranking_snapshots` table (schema v15)** — records retrieval ranking inputs (files, diff text, commits, scored candidates, effective limit) per `retrieval_events` row to support the hypothesis validation framework. Additive migration — no data rewrite.
 - **Experiment block infrastructure** — `[decisions.injection] experiment_block` config key atomically suppresses all 4 proactive decision surfacing channels for ON/OFF crossover experiment. Block transition script (`scripts/experiments/flip_block.py`) with treatment-independent qualifying gate (total_turns >= 5, no checkpoint requirement).
+- **Automated block flip (cron)** — `scripts/experiments/flip_block.py` runs every 30 minutes via cron to auto-flip `experiment_block` when qualifying session threshold is reached. Setup docs in `scripts/experiments/README.md`.
+
+### Fixed
+
+- **Audit sampler path normalization** — file paths and content turn selection in experiment audit sampler now handle edge cases correctly.
+- **`flip_block.py` lint** — removed extraneous f-prefix from string without placeholders.
 
 ## [0.10.0] - 2026-06-29
 

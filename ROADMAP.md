@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-06-07._
+_Updated 2026-07-07._
 
 ## Product Thesis
 
@@ -33,7 +33,7 @@ That foundation is useful, but it is broader than the product wedge. The next ph
 
 **Target users (through v1.0):** individual developers (1) + agent frameworks via MCP (3). Team-scoped features are deferred to v1.x+.
 
-With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61. v0.8.1 corrected measurement infrastructure (codex session auto-close, rate normalization, verdict accuracy baseline). v0.9.0 automates the weakest dimension (intervene=5) with SessionEnd auto-apply inference, backfill tooling, and Signal C activation. v0.10.0 adds dual-channel lesson surfacing (SessionStart + PDI) to activate `lesson_reuse_rate`, and Layer 2 git-evidence outcome inference (refined/replaced) to close the v1.0 autonomous-loop gate.
+With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61. v0.8.1 corrected measurement infrastructure (codex session auto-close, rate normalization, verdict accuracy baseline). v0.9.0 automates the weakest dimension (intervene=5) with SessionEnd auto-apply inference, backfill tooling, and Signal C activation. v0.10.0 adds dual-channel lesson surfacing (SessionStart + PDI) to activate `lesson_reuse_rate`, and Layer 2 git-evidence outcome inference (refined/replaced) to close the v1.0 autonomous-loop gate. v0.11.0 adds hypothesis validation infrastructure — ranking snapshots for retrieval auditing and experiment block config for ON/OFF crossover experiments.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
