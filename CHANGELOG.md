@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-07-07
+
+v0.12.0 graduates all 8 carry-forward items from the v0.11.0 retrospective. Zero code changes — all items resolved via diagnosis, documentation, and process establishment.
+
+Dogfooding maturity: 61/100 (capture=22, distill=17, retrieve=17, intervene=5).
+
+### Changed
+
+- **ROADMAP v0.11.0 section** — retroactively added (was skipped during v0.11.0 release).
+- **ROADMAP v0.12.0 section** — carry-forward graduation scope with diagnostic results.
+- **Exploration priorities** — Git Archaeology promoted to next candidate based on 91% file-link gap finding. Automated Block Flip marked shipped.
+
+### Documented
+
+- **intervene 13→5 diagnosis (C1)** — rate dilution confirmed (applied_context_rate=7.6%). Formula correct; usage volume is root cause. Won't-fix.
+- **Experiment plumbing verification (C3)** — 44 ranking_snapshots, cron active, block=1 (ON). 7/21 validity analysis deferred to v0.13.0.
+- **lesson_reuse_rate (C5)** — surfacing active (45 events), zero lesson-typed applications. Usage absence, not infra bug.
+- **Decision corpus (C8)** — 122 decisions, 9% with file links, 91% gap limits PDI file-signal effectiveness.
+- **PR #185 skipped P2 (C6)** — 4 snapshot edge-case P2s reviewed, all justified skips (experiment too early).
+- **Pre-release checklist (C2)** — first live application of unified checklist from docs/RELEASE.md.
+
 ## [0.11.0] - 2026-07-07
 
 Hypothesis validation infrastructure: ranking snapshots for retrieval auditing, experiment block config for ON/OFF crossover experiments, and automated block transition tooling.

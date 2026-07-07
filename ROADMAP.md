@@ -279,7 +279,7 @@ Theme: build measurement infrastructure to answer "does decision surfacing actua
 Theme: graduate all 8 v0.11.0 retro carry-forward items. Diagnosis-first approach — all items pre-diagnosed, results recorded. Zero code changes.
 
 - [x] **C1. intervene 13→5 diagnosis** — rate dilution confirmed (applied_context_rate=5/66=7.6%, threshold 10%). Won't-fix: formula correct, denominator inflated by lesson surfacing + PDI growth outpacing context_apply usage. Intervene improvement requires dogfooding volume.
-- [ ] **C2. Pre-release checklist** — `docs/RELEASE.md` checklist battle-tested as first live application.
+- [x] **C2. Pre-release checklist** — first live application of `docs/RELEASE.md` unified checklist. All 5 phases followed.
 - [x] **C3. Experiment data verification** — plumbing pass: 44 ranking_snapshots, cron active (56 log entries), block=1 (ON), 2/5 qualifying sessions. 7/21 validity analysis → v0.13.0 carry-forward.
 - [x] **C4. ROADMAP sections** — v0.11.0 retroactive + v0.12.0 upfront sections added.
 - [x] **C5. lesson_reuse_rate** — surfacing active (45 lesson_surfacing retrieval events), zero lesson-typed context_applications. Verdict: usage absence, not infra bug. No code change.
