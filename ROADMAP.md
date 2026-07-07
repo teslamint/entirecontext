@@ -278,14 +278,14 @@ Theme: build measurement infrastructure to answer "does decision surfacing actua
 
 Theme: graduate all 8 v0.11.0 retro carry-forward items. Diagnosis-first approach — all items pre-diagnosed, results recorded. Zero code changes.
 
-- [ ] **C1. intervene 13→5 diagnosis** — rate dilution confirmed (applied_context_rate=5/66=7.6%, threshold 10%). Won't-fix: formula correct, usage volume is root cause.
+- [x] **C1. intervene 13→5 diagnosis** — rate dilution confirmed (applied_context_rate=5/66=7.6%, threshold 10%). Won't-fix: formula correct, denominator inflated by lesson surfacing + PDI growth outpacing context_apply usage. Intervene improvement requires dogfooding volume.
 - [ ] **C2. Pre-release checklist** — `docs/RELEASE.md` checklist battle-tested as first live application.
-- [ ] **C3. Experiment data verification** — plumbing pass (44 snapshots, cron active). 7/21 analysis deferred to v0.13.0.
-- [ ] **C4. ROADMAP sections** — v0.11.0 retroactive + v0.12.0 upfront sections added.
-- [ ] **C5. lesson_reuse_rate** — surfacing works (45 events), usage absent. No code change.
+- [x] **C3. Experiment data verification** — plumbing pass: 44 ranking_snapshots, cron active (56 log entries), block=1 (ON), 2/5 qualifying sessions. 7/21 validity analysis → v0.13.0 carry-forward.
+- [x] **C4. ROADMAP sections** — v0.11.0 retroactive + v0.12.0 upfront sections added.
+- [x] **C5. lesson_reuse_rate** — surfacing active (45 lesson_surfacing retrieval events), zero lesson-typed context_applications. Verdict: usage absence, not infra bug. No code change.
 - [ ] **C6. PR #185 skipped P2 validation** — 4 P2 comments identified, skip rationale recorded.
 - [ ] **C7. Exploration priority evaluation** — all items re-evaluated against corpus/maturity/experiment state.
-- [ ] **C8. Decision corpus assessment** — 122 decisions, 9% with file links, 65 outcomes recorded.
+- [x] **C8. Decision corpus assessment** — 122 decisions, 11 with file links (9%), outcomes: accepted=58 contradicted=3 ignored=1 refined=3. 91% without file links limits PDI file-signal effectiveness. Git Archaeology → C7 priority.
 
 Carry-forward to v0.13.0:
 - 7/21 experiment validity analysis
