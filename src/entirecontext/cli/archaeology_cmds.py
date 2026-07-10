@@ -38,11 +38,16 @@ def archaeologize(
         )
         raise typer.Exit(1)
 
+    if limit <= 0:
+        console.print("[red]--limit must be a positive integer.[/red]")
+        raise typer.Exit(1)
+
     effective_batch_size = batch_size or arch_config.get("batch_size", 10)
 
     conn = get_db(repo_path)
     try:
-        check_and_migrate(conn)
+        if not dry_run:
+            check_and_migrate(conn)
 
         def _progress(msg: str) -> None:
             console.print(msg)

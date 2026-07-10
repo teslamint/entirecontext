@@ -11,6 +11,7 @@ from entirecontext.core.archaeology import (
     _mark_processed,
     _stream_commits,
     _get_github_token,
+    _fetch_pr_body,
     archaeologize,
     ArchaeologyResult,
 )
@@ -58,6 +59,20 @@ class TestExtractFilesFromPatch:
     def test_binary_file(self):
         patch = "diff --git a/img.png b/img.png\nBinary files differ\n"
         assert _extract_files_from_patch(patch) == ["img.png"]
+
+    def test_quoted_non_ascii_path(self):
+        # Git quotes both sides and octal-escapes non-ASCII bytes, e.g.
+        # `diff --git "a/\355\225\234.py" "b/\355\225\234.py"`.
+        patch = (
+            'diff --git "a/\\355\\225\\234.py" "b/\\355\\225\\234.py"\n'
+            '--- "a/\\355\\225\\234.py"\n+++ "b/\\355\\225\\234.py"\n'
+        )
+        files = _extract_files_from_patch(patch)
+        assert files == ["\\355\\225\\234.py"]
+
+    def test_quoted_path_with_spaces(self):
+        patch = 'diff --git "a/my file.py" "b/my file.py"\n--- a/my file.py\n+++ b/my file.py\n'
+        assert _extract_files_from_patch(patch) == ["my file.py"]
 
 
 class TestBuildSignalBundle:
@@ -188,6 +203,63 @@ class TestStreamCommits:
         assert "subject line" in message
         assert "This is the body explaining why the change was made." in message
 
+    def test_until_ref_without_since_is_honored(self, git_repo):
+        """--until as a ref with no --since must scope commits reachable from
+        that ref, not be silently dropped (PR #190 finding #2)."""
+        _make_commits(git_repo, 3)
+        tag_result = subprocess.run(
+            ["git", "rev-parse", "HEAD~1"], cwd=git_repo, capture_output=True, text=True, check=True
+        )
+        until_sha = tag_result.stdout.strip()
+        commits = list(_stream_commits(str(git_repo), since=None, until=until_sha, limit=100))
+        shas = [sha for sha, _, _ in commits]
+        assert until_sha in shas
+        # The most recent commit (HEAD) must not be reachable from HEAD~1.
+        head_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=git_repo, capture_output=True, text=True, check=True
+        )
+        assert head_result.stdout.strip() not in shas
+
+    def test_since_ref_without_until_defaults_to_head(self, git_repo):
+        _make_commits(git_repo, 3)
+        since_result = subprocess.run(
+            ["git", "rev-parse", "HEAD~1"], cwd=git_repo, capture_output=True, text=True, check=True
+        )
+        commits = list(_stream_commits(str(git_repo), since=since_result.stdout.strip(), until=None, limit=100))
+        # HEAD~1..HEAD contains exactly the last commit.
+        assert len(commits) == 1
+
+    def test_both_refs_since_until(self, git_repo):
+        _make_commits(git_repo, 4)
+        log = subprocess.run(
+            ["git", "log", "--format=%H"], cwd=git_repo, capture_output=True, text=True, check=True
+        )
+        shas_newest_first = log.stdout.strip().splitlines()
+        since_sha = shas_newest_first[3]  # oldest commit
+        until_sha = shas_newest_first[1]
+        commits = list(_stream_commits(str(git_repo), since=since_sha, until=until_sha, limit=100))
+        result_shas = {sha for sha, _, _ in commits}
+        assert result_shas == {shas_newest_first[2], shas_newest_first[1]}
+
+    def test_limit_zero_scans_full_history_not_zero_commits(self, git_repo):
+        """--limit 0 must not be treated as falsy (PR #190 finding #4):
+        it should fall through to scanning all history, not silently
+        produce zero results due to `-n 0`."""
+        _make_commits(git_repo, 3)
+        all_commits = list(_stream_commits(str(git_repo), since=None, until=None, limit=100))
+        commits = list(_stream_commits(str(git_repo), since=None, until=None, limit=0))
+        assert len(commits) == len(all_commits)
+        assert len(commits) > 0
+
+    def test_bad_ref_reports_warning_not_silent_empty(self, git_repo):
+        warnings: list[str] = []
+        commits = list(
+            _stream_commits(str(git_repo), since="not-a-real-ref", until=None, limit=10, warnings=warnings)
+        )
+        assert commits == []
+        assert warnings
+        assert "git log failed" in warnings[0]
+
 
 class TestGetGithubToken:
     def test_env_var_priority(self, monkeypatch):
@@ -207,7 +279,69 @@ class TestGetGithubToken:
             assert _get_github_token() is None
 
 
+class TestFetchPrBody:
+    def _mock_remote(self, url):
+        return MagicMock(returncode=0, stdout=f"{url}\n")
+
+    def test_non_github_origin_returns_none(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = self._mock_remote("git@gitlab.com:owner/repo.git")
+            result = _fetch_pr_body("abc123", "/tmp/fake", "token")
+        assert result is None
+        # Must not attempt a `gh api` call for a non-GitHub remote.
+        assert mock_run.call_count == 1
+
+    def test_bitbucket_origin_returns_none(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = self._mock_remote("https://bitbucket.org/owner/repo.git")
+            result = _fetch_pr_body("abc123", "/tmp/fake", "token")
+        assert result is None
+        assert mock_run.call_count == 1
+
+    def test_dotted_repo_name_extracted(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                self._mock_remote("git@github.com:owner/api.server.git"),
+                MagicMock(returncode=0, stdout="PR body text\n"),
+            ]
+            result = _fetch_pr_body("abc123", "/tmp/fake", "token")
+        assert result == "PR body text"
+        gh_call_args = mock_run.call_args_list[1].args[0]
+        assert "repos/owner/api.server/commits/abc123/pulls" in gh_call_args
+
+    def test_github_https_url_extracted(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                self._mock_remote("https://github.com/owner/repo.git"),
+                MagicMock(returncode=0, stdout="body\n"),
+            ]
+            result = _fetch_pr_body("abc123", "/tmp/fake", "token")
+        assert result == "body"
+        gh_call_args = mock_run.call_args_list[1].args[0]
+        assert "repos/owner/repo/commits/abc123/pulls" in gh_call_args
+
+
 class TestArchaeologize:
+    def test_dry_run_without_migrated_db_defaults_to_zero_processed(self, git_repo):
+        """PR #190 finding #5: dry-run against a connection whose DB has
+        never been migrated (no archaeology_processed table) must not
+        raise — it should treat 'already processed' as 0."""
+        _make_commits(git_repo, 2)
+        conn = sqlite3.connect(":memory:")
+        progress = []
+        with patch("entirecontext.core.archaeology.run_extraction") as mock_extract:
+            result = archaeologize(
+                conn,
+                str(git_repo),
+                dry_run=True,
+                progress_callback=progress.append,
+            )
+        mock_extract.assert_not_called()
+        assert result.commits_skipped == 0
+        assert result.commits_scanned >= 2
+        assert progress
+        assert "0 already processed" in progress[0]
+
     def test_dry_run_does_not_process(self, ec_db, ec_repo):
         _make_commits(ec_repo, 3)
         progress = []
@@ -235,6 +369,60 @@ class TestArchaeologize:
         assert result.commits_processed >= 2
         assert result.candidates_generated == result.commits_processed
         assert mock_extract.call_count == result.commits_processed
+
+    def test_failed_extraction_not_marked_processed(self, ec_db, ec_repo):
+        """PR #190 finding #1: a commit whose extraction failed to parse
+        (parsed_ok=False, 0 candidates) must not be marked processed, so a
+        transient LLM/parse failure doesn't become a permanent gap."""
+        _make_commits(ec_repo, 2)
+        with patch(
+            "entirecontext.core.archaeology.run_extraction",
+            return_value=ExtractionOutcome(candidates_inserted=0, parsed_ok=False, warnings=["parse:archaeology:boom"]),
+        ):
+            result = archaeologize(ec_db, str(ec_repo))
+
+        assert result.commits_processed == 0
+        assert any("will retry next run" in w for w in result.warnings)
+
+        processed = ec_db.execute("SELECT COUNT(*) FROM archaeology_processed").fetchone()[0]
+        assert processed == 0
+
+    def test_failed_extraction_retried_on_next_run(self, ec_db, ec_repo):
+        _make_commits(ec_repo, 1)
+        with patch(
+            "entirecontext.core.archaeology.run_extraction",
+            return_value=ExtractionOutcome(candidates_inserted=0, parsed_ok=False),
+        ):
+            first = archaeologize(ec_db, str(ec_repo))
+        assert first.commits_processed == 0
+        scanned = first.commits_scanned
+
+        with patch(
+            "entirecontext.core.archaeology.run_extraction",
+            return_value=ExtractionOutcome(candidates_inserted=1, parsed_ok=True),
+        ) as mock_extract:
+            second = archaeologize(ec_db, str(ec_repo))
+
+        # Retried, not skipped as already-processed: every commit scanned
+        # the first time is reprocessed (none were marked processed).
+        assert second.commits_skipped == 0
+        assert second.commits_processed == scanned
+        assert mock_extract.call_count == scanned
+
+    def test_parsed_ok_zero_candidates_still_marked_processed(self, ec_db, ec_repo):
+        """A clean parse that legitimately found zero decisions (e.g. `[]`
+        from the LLM) is a real result, not a failure — it should still be
+        marked processed so it isn't retried forever."""
+        _make_commits(ec_repo, 1)
+        with patch(
+            "entirecontext.core.archaeology.run_extraction",
+            return_value=ExtractionOutcome(candidates_inserted=0, parsed_ok=True),
+        ):
+            result = archaeologize(ec_db, str(ec_repo))
+
+        assert result.commits_processed == result.commits_scanned
+        processed = ec_db.execute("SELECT COUNT(*) FROM archaeology_processed").fetchone()[0]
+        assert processed == result.commits_scanned
 
     def test_commit_message_reaches_bundle(self, ec_db, ec_repo):
         _make_commits(ec_repo, 1, prefix="msgtest")

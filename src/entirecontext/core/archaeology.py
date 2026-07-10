@@ -25,7 +25,7 @@ class ArchaeologyResult:
     warnings: list[str] = field(default_factory=list)
 
 
-_DIFF_HEADER_RE = re.compile(r"^diff --git a/.+ b/(.+)$", re.MULTILINE)
+_DIFF_HEADER_RE = re.compile(r'^diff --git "?a/.+ "?b/(.+?)"?$', re.MULTILINE)
 
 
 def _extract_files_from_patch(patch_text: str) -> list[str]:
@@ -76,6 +76,7 @@ def _stream_commits(
     since: str | None,
     until: str | None,
     limit: int,
+    warnings: list[str] | None = None,
 ) -> Iterator[tuple[str, str, str]]:
     """Yield (sha, message, patch_text) for commits in the given range.
 
@@ -90,14 +91,25 @@ def _stream_commits(
     # on \x00 with maxsplit=2 to get (sha, message, patch). %B (not %s) is
     # used so the full commit body reaches the bundle, not just the subject.
     cmd = ["git", "log", "--patch", "--reverse", "--format=%x1e%H%x00%B%x00"]
-    if since and _looks_like_date(since):
+
+    since_is_date = bool(since) and _looks_like_date(since)
+    until_is_date = bool(until) and _looks_like_date(until)
+    since_is_ref = bool(since) and not since_is_date
+    until_is_ref = bool(until) and not until_is_date
+
+    if since_is_ref and until_is_ref:
+        cmd.append(f"{since}..{until}")
+    elif since_is_ref:
+        cmd.append(f"{since}..HEAD")
+    elif until_is_ref:
+        cmd.append(until)
+
+    if since_is_date:
         cmd.append(f"--since={since}")
-    elif since:
-        rev_range = f"{since}..{until}" if until and not _looks_like_date(until) else f"{since}..HEAD"
-        cmd.append(rev_range)
-    if until and _looks_like_date(until):
+    if until_is_date:
         cmd.append(f"--until={until}")
-    if limit:
+
+    if limit is not None and limit > 0:
         cmd.extend(["-n", str(limit)])
 
     result = subprocess.run(
@@ -108,6 +120,9 @@ def _stream_commits(
         errors="surrogateescape",
     )
     if result.returncode != 0:
+        msg = f"git log failed (exit {result.returncode}): {result.stderr.strip()}"
+        if warnings is not None:
+            warnings.append(msg)
         return
 
     records = result.stdout.split("\x1e")
@@ -153,7 +168,9 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
     if remote_url.returncode != 0:
         return None
     url = remote_url.stdout.strip()
-    match = re.search(r"[:/]([^/]+/[^/.]+?)(?:\.git)?$", url)
+    if "github.com" not in url:
+        return None
+    match = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
     if not match:
         return None
     owner_repo = match.group(1)
@@ -203,10 +220,15 @@ def archaeologize(
             )
             pr_bodies = False
 
-    commits = list(_stream_commits(repo_path, since, until, limit))
+    commits = list(_stream_commits(repo_path, since, until, limit, warnings=result.warnings))
     result.commits_scanned = len(commits)
 
-    already_processed = sum(1 for sha, _, _ in commits if _is_processed(conn, sha))
+    try:
+        already_processed = sum(1 for sha, _, _ in commits if _is_processed(conn, sha))
+    except sqlite3.OperationalError:
+        # archaeology_processed table doesn't exist yet (e.g. dry-run before
+        # migration has ever run) — nothing has been processed.
+        already_processed = 0
     to_process = result.commits_scanned - already_processed
 
     if dry_run:
@@ -300,9 +322,12 @@ def _process_batch(
                 bundles=[bundle],
                 extraction_weights=extraction_weights,
             )
-            _mark_processed(conn, sha, outcome.candidates_inserted)
-            result.commits_processed += 1
-            result.candidates_generated += outcome.candidates_inserted
+            if outcome.parsed_ok or outcome.candidates_inserted > 0:
+                _mark_processed(conn, sha, outcome.candidates_inserted)
+                result.commits_processed += 1
+                result.candidates_generated += outcome.candidates_inserted
+            else:
+                result.warnings.append(f"commit {sha[:12]}: extraction did not parse; will retry next run")
             if outcome.warnings:
                 result.warnings.extend(outcome.warnings)
         except Exception as exc:
