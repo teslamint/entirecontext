@@ -66,6 +66,11 @@ def archaeologize(
     finally:
         conn.close()
 
+    if result.warnings:
+        console.print(f"[yellow]Warnings: {len(result.warnings)}[/yellow]")
+        for w in result.warnings[:5]:
+            console.print(f"  - {w}")
+
     if dry_run:
         return
 
@@ -75,10 +80,6 @@ def archaeologize(
         f"skipped {result.commits_skipped}, "
         f"candidates {result.candidates_generated}."
     )
-    if result.warnings:
-        console.print(f"[yellow]Warnings: {len(result.warnings)}[/yellow]")
-        for w in result.warnings[:5]:
-            console.print(f"  - {w}")
 
 
 def register(app: typer.Typer) -> None:

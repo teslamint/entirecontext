@@ -312,6 +312,8 @@ def _process_batch(
         pr_body = None
         if pr_bodies and token:
             pr_body = _fetch_pr_body(sha, repo_path, token)
+            if pr_body is None:
+                result.warnings.append(f"commit {sha[:12]}: PR body fetch returned empty (rate limit, permissions, or no associated PR)")
 
         bundle = _build_signal_bundle(sha, message, patch_text, pr_body)
         try:
