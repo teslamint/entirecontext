@@ -34,8 +34,12 @@ def _extract_files_from_patch(patch_text: str) -> list[str]:
     return list(dict.fromkeys(_DIFF_HEADER_RE.findall(patch_text)))
 
 
-def _build_signal_bundle(commit_sha: str, patch_text: str, pr_body: str | None) -> SignalBundle:
+def _build_signal_bundle(
+    commit_sha: str, message: str, patch_text: str, pr_body: str | None
+) -> SignalBundle:
     text_blocks = []
+    if message:
+        text_blocks.append(message)
     if pr_body:
         text_blocks.append(pr_body)
     if patch_text:
@@ -73,10 +77,19 @@ def _stream_commits(
     until: str | None,
     limit: int,
 ) -> Iterator[tuple[str, str, str]]:
+    """Yield (sha, message, patch_text) for commits in the given range.
+
+    Note: `git log -n limit --reverse` selects the *most recent* `limit`
+    commits and then reverses their order for output — it does not walk
+    from the oldest commit forward. Re-running with the same `limit` can
+    never advance into older history; callers must increase `limit` (or
+    narrow `since`/`until`) to reach commits beyond the most recent window.
+    """
     # %x1e (record separator) before each commit disambiguates patch content
     # from the next commit's header. Split on \x1e, then split each record
-    # on \x00 with maxsplit=2 to get (sha, subject, patch).
-    cmd = ["git", "log", "--patch", "--reverse", "--format=%x1e%H%x00%s%x00"]
+    # on \x00 with maxsplit=2 to get (sha, message, patch). %B (not %s) is
+    # used so the full commit body reaches the bundle, not just the subject.
+    cmd = ["git", "log", "--patch", "--reverse", "--format=%x1e%H%x00%B%x00"]
     if since and _looks_like_date(since):
         cmd.append(f"--since={since}")
     elif since:
@@ -106,10 +119,10 @@ def _stream_commits(
         if len(parts) < 2:
             continue
         sha = parts[0].strip()
-        subject = parts[1].strip()
+        message = parts[1].strip()
         patch_text = parts[2] if len(parts) > 2 else ""
         if len(sha) == 40:
-            yield sha, subject, patch_text
+            yield sha, message, patch_text
 
 
 def _get_github_token() -> str | None:
@@ -145,6 +158,7 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
         return None
     owner_repo = match.group(1)
 
+    env = {**os.environ, "GH_TOKEN": token} if token else None
     try:
         result = subprocess.run(
             [
@@ -157,6 +171,7 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
             capture_output=True,
             text=True,
             timeout=10,
+            env=env,
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
@@ -199,21 +214,31 @@ def archaeologize(
         est_tokens_low = to_process * 2500
         est_tokens_high = to_process * 3000
         if progress_callback:
-            progress_callback(
+            msg = (
                 f"Found {result.commits_scanned} commits, "
                 f"{already_processed} already processed, "
                 f"{to_process} to process.\n"
                 f"Estimated token cost: ~{est_tokens_low:,}-{est_tokens_high:,} tokens"
             )
+            # `git log -n limit --reverse` selects the most recent `limit`
+            # commits, not the oldest `limit` — re-runs at the same limit
+            # can never reach older history. Surface this when the scan
+            # looks capped by the limit rather than by actual history size.
+            if limit and result.commits_scanned >= limit:
+                msg += (
+                    f"\nNote: --limit {limit} may be capping results to the most "
+                    "recent commits; increase --limit to reach older history."
+                )
+            progress_callback(msg)
         return result
 
     batch: list[tuple[str, str, str]] = []
     try:
-        for sha, subject, patch_text in commits:
+        for sha, message, patch_text in commits:
             if _is_processed(conn, sha):
                 result.commits_skipped += 1
                 continue
-            batch.append((sha, subject, patch_text))
+            batch.append((sha, message, patch_text))
             if len(batch) >= batch_size:
                 _process_batch(
                     conn,
@@ -261,12 +286,12 @@ def _process_batch(
     extraction_weights: ExtractionWeights | None,
     progress_callback: Callable[[str], None] | None,
 ) -> None:
-    for sha, subject, patch_text in batch:
+    for sha, message, patch_text in batch:
         pr_body = None
         if pr_bodies and token:
             pr_body = _fetch_pr_body(sha, repo_path, token)
 
-        bundle = _build_signal_bundle(sha, patch_text, pr_body)
+        bundle = _build_signal_bundle(sha, message, patch_text, pr_body)
         try:
             outcome = run_extraction(
                 conn,

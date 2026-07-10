@@ -62,16 +62,30 @@ class TestExtractFilesFromPatch:
 
 class TestBuildSignalBundle:
     def test_basic(self):
-        bundle = _build_signal_bundle("abc123", "diff content", None)
+        bundle = _build_signal_bundle("abc123", "commit message", "diff content", None)
         assert bundle.source_type == "archaeology"
         assert bundle.source_id == "abc123"
         assert bundle.session_id is None
         assert "diff content" in bundle.text_blocks
 
     def test_with_pr_body(self):
-        bundle = _build_signal_bundle("abc123", "diff", "PR description")
+        bundle = _build_signal_bundle("abc123", "commit message", "diff", "PR description")
         assert "PR description" in bundle.text_blocks
         assert "diff" in bundle.text_blocks
+
+    def test_message_included_in_text_blocks(self):
+        bundle = _build_signal_bundle(
+            "abc123", "fix: handle edge case\n\nThis explains why.", "diff content", None
+        )
+        assert "fix: handle edge case\n\nThis explains why." in bundle.text_blocks
+
+    def test_message_precedes_pr_body_and_patch(self):
+        bundle = _build_signal_bundle("abc123", "the message", "the patch", "the pr body")
+        assert bundle.text_blocks == ["the message", "the pr body", "the patch"]
+
+    def test_empty_message_omitted(self):
+        bundle = _build_signal_bundle("abc123", "", "diff content", None)
+        assert bundle.text_blocks == ["diff content"]
 
 
 class TestDedup:
@@ -118,9 +132,9 @@ class TestStreamCommits:
             )
         commits = list(_stream_commits(str(git_repo), since=None, until=None, limit=10))
         assert len(commits) >= 3
-        for sha, subject, patch_text in commits:
+        for sha, message, patch_text in commits:
             assert len(sha) == 40
-            assert isinstance(subject, str)
+            assert isinstance(message, str)
             assert isinstance(patch_text, str)
 
     def test_limit(self, git_repo):
@@ -145,6 +159,34 @@ class TestStreamCommits:
     def test_empty_range(self, git_repo):
         commits = list(_stream_commits(str(git_repo), since="HEAD", until="HEAD", limit=10))
         assert len(commits) == 0
+
+    def test_full_multiline_message_captured(self, git_repo):
+        (git_repo / "body.txt").write_text("content")
+        subprocess.run(["git", "add", "."], cwd=git_repo, check=True)
+        subprocess.run(
+            [
+                "git",
+                "commit",
+                "-m",
+                "subject line",
+                "-m",
+                "This is the body explaining why the change was made.",
+            ],
+            cwd=git_repo,
+            check=True,
+            env={
+                "GIT_AUTHOR_NAME": "Test",
+                "GIT_AUTHOR_EMAIL": "test@test.com",
+                "GIT_COMMITTER_NAME": "Test",
+                "GIT_COMMITTER_EMAIL": "test@test.com",
+                "PATH": subprocess.check_output(["bash", "-c", "echo $PATH"]).decode().strip(),
+            },
+        )
+        commits = list(_stream_commits(str(git_repo), since=None, until=None, limit=1))
+        assert len(commits) == 1
+        _, message, _ = commits[0]
+        assert "subject line" in message
+        assert "This is the body explaining why the change was made." in message
 
 
 class TestGetGithubToken:
@@ -193,6 +235,43 @@ class TestArchaeologize:
         assert result.commits_processed >= 2
         assert result.candidates_generated == result.commits_processed
         assert mock_extract.call_count == result.commits_processed
+
+    def test_commit_message_reaches_bundle(self, ec_db, ec_repo):
+        _make_commits(ec_repo, 1, prefix="msgtest")
+        with patch(
+            "entirecontext.core.archaeology.run_extraction",
+            return_value=ExtractionOutcome(candidates_inserted=0),
+        ) as mock_extract:
+            archaeologize(ec_db, str(ec_repo))
+        assert mock_extract.call_count >= 1
+        bundles = mock_extract.call_args.kwargs["bundles"]
+        assert any("msgtest commit 0" in b.text_blocks[0] for b in bundles)
+
+    def test_dry_run_limit_note_when_scanned_meets_limit(self, ec_db, ec_repo):
+        _make_commits(ec_repo, 3)
+        progress = []
+        archaeologize(
+            ec_db,
+            str(ec_repo),
+            limit=2,
+            dry_run=True,
+            progress_callback=progress.append,
+        )
+        assert progress
+        assert "increase --limit" in progress[0]
+
+    def test_dry_run_no_limit_note_when_under_limit(self, ec_db, ec_repo):
+        _make_commits(ec_repo, 2)
+        progress = []
+        archaeologize(
+            ec_db,
+            str(ec_repo),
+            limit=100,
+            dry_run=True,
+            progress_callback=progress.append,
+        )
+        assert progress
+        assert "increase --limit" not in progress[0]
 
     def test_rerun_skips_already_processed(self, ec_db, ec_repo):
         _make_commits(ec_repo, 2)
