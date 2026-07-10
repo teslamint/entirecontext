@@ -6,6 +6,7 @@ import typer
 
 app = typer.Typer(name="ec", help="EntireContext — searchable agent memory anchored to git")
 
+from . import archaeology_cmds  # noqa: E402
 from . import ast_cmds  # noqa: E402
 from . import blame_cmds  # noqa: E402
 from . import checkpoint_cmds  # noqa: E402
@@ -29,6 +30,7 @@ from . import sync_cmds  # noqa: E402
 from . import compact_cmds  # noqa: E402
 
 _MODULES = (
+    archaeology_cmds,
     project_cmds,
     search_cmds,
     session_cmds,

@@ -132,6 +132,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "contradicted_penalty": 0.15,
         },
         "auto_embed": True,
+        "archaeology": {
+            "enabled": True,
+            "batch_size": 10,
+            "pr_body_fetch": False,
+        },
         "injection": {
             "inject_on_user_prompt": True,
             "experiment_block": None,
