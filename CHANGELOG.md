@@ -11,6 +11,10 @@ Carry-forward graduation: all 8 v0.11.0 retro items diagnosed and recorded. Zero
 
 Dogfooding maturity: 61/100 (capture=22, distill=17, retrieve=17, intervene=5).
 
+### Added
+
+- **`archaeology_processed` table + `decision_candidates.source_type` expansion (schema v16)** — foundation for Git Archaeology decision extraction. `archaeology_processed` tracks which commits have been scanned for candidates (`commit_sha`, `candidate_count`, `processed_at`). `decision_candidates.source_type` CHECK now accepts `'archaeology'` alongside the existing `session`/`checkpoint`/`assessment` values. Table rebuild migration (FTS5 triggers dropped/recreated), no data loss.
+
 ### Changed
 
 - **ROADMAP v0.11.0 section** — retroactively added (was skipped during v0.11.0 release).

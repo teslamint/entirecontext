@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -427,7 +427,7 @@ CREATE TABLE IF NOT EXISTS decision_candidates (
     scope TEXT,
     rejected_alternatives TEXT,
     supporting_evidence TEXT,
-    source_type TEXT NOT NULL CHECK(source_type IN ('session','checkpoint','assessment')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('session','checkpoint','assessment','archaeology')),
     source_id TEXT NOT NULL,
     session_id TEXT,
     checkpoint_id TEXT,
@@ -472,6 +472,13 @@ CREATE TABLE IF NOT EXISTS ranking_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_event_id ON ranking_snapshots(retrieval_event_id);
 CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_created_at ON ranking_snapshots(created_at DESC);
+""",
+    "archaeology_processed": """
+CREATE TABLE IF NOT EXISTS archaeology_processed (
+    commit_sha TEXT PRIMARY KEY,
+    candidate_count INTEGER NOT NULL DEFAULT 0,
+    processed_at TEXT DEFAULT (datetime('now'))
+);
 """,
 }
 
