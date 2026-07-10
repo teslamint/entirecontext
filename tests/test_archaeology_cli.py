@@ -1,23 +1,29 @@
 """CLI tests for ec archaeologize."""
 
+import re
 import subprocess
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return _ANSI_RE.sub("", text)
 
 
 def test_help_output():
-    env = {**__import__("os").environ, "NO_COLOR": "1"}
     result = subprocess.run(
         ["uv", "run", "ec", "archaeologize", "--help"],
         capture_output=True,
         text=True,
-        env=env,
     )
     assert result.returncode == 0
-    assert "--since" in result.stdout
-    assert "--until" in result.stdout
-    assert "--limit" in result.stdout
-    assert "--dry-run" in result.stdout
-    assert "--pr-bodies" in result.stdout
-    assert "--batch-size" in result.stdout
+    out = _strip_ansi(result.stdout)
+    assert "--since" in out
+    assert "--until" in out
+    assert "--limit" in out
+    assert "--dry-run" in out
+    assert "--pr-bodies" in out
+    assert "--batch-size" in out
 
 
 def test_dry_run_on_fixture(git_repo):
