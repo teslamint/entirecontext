@@ -1,6 +1,6 @@
 # Retroactive Git Archaeology (`ec archaeologize`)
 
-_Draft brainstorm. Created 2026-04-27. Milestone: v0.8.x+. Confidence: 80%._
+_Draft brainstorm. Created 2026-04-27. Updated 2026-07-11 (v0.13.0 context). Milestone: v0.13.0. Confidence: 80%._
 
 ## Intent
 
@@ -62,7 +62,7 @@ ec archaeologize
 
 ## Proposed Action Items
 
-### v0.8.x+ Core
+### v0.13.0 Core
 
 [ ] Define the `source = "inferred"` tag behavior in `decision_candidates`: verify it does not conflict with existing `source` values (`session`, `manual`, etc.); add if missing.
 
@@ -94,11 +94,33 @@ ec archaeologize
 
 Three unresolved questions that must be answered before implementation starts:
 
-1. **Batching strategy and token cost estimate.** `run_extraction` calls an LLM per commit (or per batch?). For a repo with 2000 commits, the total token cost must be estimated before the feature ships. Is extraction called per-commit or per-batch? What is the expected cost in tokens for a typical 500-commit run?
+1. **Batching strategy and token cost estimate.** ✅ RESOLVED (2026-07-11).
+   - `run_extraction` calls LLM per-bundle (1 bundle = 1 source type per session). For archaeology, this maps to per-commit.
+   - `_MAX_PROMPT_CHARS = 8000` → ~2K input tokens per commit. System prompt ~100 tokens, response ~200-500 tokens.
+   - **Estimated cost per commit**: ~2.5-3K total tokens.
+   - **500-commit run**: ~1.5M tokens. At gpt-4o-mini rates ($0.15/1M in, $0.60/1M out) ≈ $0.30-0.60. At gpt-4o rates ($2.50/1M in, $10/1M out) ≈ $7-15.
+   - **Conclusion**: `--limit 100` is safe as default (~$0.06-1.50). Cost warning in `--dry-run` output is sufficient.
 
-2. **`archaeology_commits` tracking table vs reusing `decision_commits`.** Should processed-but-no-candidate commits (commits that produced zero candidates after extraction) be tracked separately in an `archaeology_commits` table, or should they be silently skipped on every re-run (accepted cost: re-extracting zero-candidate commits)? If not tracked, a re-run over the same range will re-call `run_extraction` on all zero-candidate commits.
+2. **`archaeology_commits` tracking table vs reusing `decision_commits`.** ✅ RESOLVED (2026-07-11): **Option A — new `archaeology_processed` table**.
+   - Schema: `(commit_sha TEXT PRIMARY KEY, candidate_count INTEGER, processed_at TEXT DEFAULT datetime('now'))`.
+   - Migration: schema v15 → v16.
+   - Re-runs skip all previously processed commits regardless of candidate count.
 
-3. **Synchronous vs `launch_worker` execution.** A 500-commit run may take 5–30 minutes. Should `ec archaeologize` be a synchronous blocking command (with progress output) or a `launch_worker` background job (with a status check command)? The synchronous approach is simpler but holds the terminal for the full duration. The background approach requires a status polling command.
+3. **Synchronous vs `launch_worker` execution.** ✅ RESOLVED (2026-07-11): **Option A — synchronous with streaming progress**.
+   - `--limit 100` default keeps runs under 2 minutes.
+   - Ctrl+C flushes partial results; next run resumes via `archaeology_processed` dedup.
+   - Users needing 2000+ commits can run in `tmux`/`screen`.
+
+## v0.13.0 Context (2026-07-11)
+
+Current codebase state relevant to implementation:
+
+- **Schema version**: 15. Adding `archaeology_processed` table = migration to v16.
+- **`source_type` values in use**: `assessment`, `checkpoint`. Adding `inferred` is additive, no conflict.
+- **`decision_commits` schema**: `(decision_id TEXT, commit_sha TEXT, added_at TEXT)` — keyed on confirmed decisions only. Archaeology candidates need a separate tracking path since they aren't decisions yet.
+- **`run_extraction` signature**: `(conn, session_id, repo_path, *, min_confidence, extraction_weights)`. Archaeology bypasses session-based `collect_signals`; instead builds `SignalBundle` directly from commit patch text with `source_type="inferred"`.
+- **Decision corpus**: 122 decisions, 11 with file links (9%). Archaeology's primary value: bootstrap file-linked decisions from commit history where file paths are embedded in patches.
+- **Existing brainstorm quality**: architecture, dedup contract, and action items are still valid. Only the open questions and milestone needed updating.
 
 ## Risks
 
@@ -110,8 +132,8 @@ Three unresolved questions that must be answered before implementation starts:
 
 ## Review Questions
 
-- What is the expected token cost per commit for `run_extraction`? The answer determines whether `--limit 100` is a safe default or dangerously expensive for some repos.
-- Should processed zero-candidate commits be tracked in an `archaeology_commits` table to avoid re-extraction on re-run, or is re-running on zero-candidate commits an acceptable cost?
-- Should `ec archaeologize` block the terminal (synchronous with progress) or run as a detached background job with `ec archaeologize status`?
+- ~~What is the expected token cost per commit for `run_extraction`?~~ ANSWERED: ~2.5-3K tokens/commit, $0.06-1.50 for 100 commits.
+- ~~Should processed zero-candidate commits be tracked?~~ ANSWERED: Yes, `archaeology_processed` table.
+- ~~Should `ec archaeologize` block the terminal?~~ ANSWERED: Yes, synchronous with streaming progress.
 - Should `--pr-bodies` fetch be automatic when `github_token` is set, or always require the explicit `--pr-bodies` flag to prevent unexpected API calls?
 - How should the `ec review` queue display `source: inferred` candidates differently from `source: session` candidates so reviewers know these are bootstrapped from history rather than observed agent behavior?
