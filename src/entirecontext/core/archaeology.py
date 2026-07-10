@@ -92,16 +92,17 @@ def _stream_commits(
     # used so the full commit body reaches the bundle, not just the subject.
     cmd = ["git", "log", "--patch", "--reverse", "--format=%x1e%H%x00%B%x00"]
 
-    since_is_date = bool(since) and _looks_like_date(since)
-    until_is_date = bool(until) and _looks_like_date(until)
-    since_is_ref = bool(since) and not since_is_date
-    until_is_ref = bool(until) and not until_is_date
+    since_is_date = since is not None and _looks_like_date(since)
+    until_is_date = until is not None and _looks_like_date(until)
+    since_is_ref = since is not None and not since_is_date
+    until_is_ref = until is not None and not until_is_date
 
     if since_is_ref and until_is_ref:
         cmd.append(f"{since}..{until}")
     elif since_is_ref:
         cmd.append(f"{since}..HEAD")
     elif until_is_ref:
+        assert until is not None  # narrowing for mypy
         cmd.append(until)
 
     if since_is_date:

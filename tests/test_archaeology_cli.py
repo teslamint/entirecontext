@@ -4,10 +4,12 @@ import subprocess
 
 
 def test_help_output():
+    env = {**__import__("os").environ, "NO_COLOR": "1"}
     result = subprocess.run(
         ["uv", "run", "ec", "archaeologize", "--help"],
         capture_output=True,
         text=True,
+        env=env,
     )
     assert result.returncode == 0
     assert "--since" in result.stdout
