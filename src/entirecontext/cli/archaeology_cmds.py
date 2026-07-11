@@ -44,7 +44,12 @@ def archaeologize(
 
     effective_batch_size = batch_size or arch_config.get("batch_size", 10)
 
-    conn = get_db(repo_path)
+    if dry_run:
+        from ..db import get_memory_db
+
+        conn = get_memory_db()
+    else:
+        conn = get_db(repo_path)
     try:
         if not dry_run:
             check_and_migrate(conn)
