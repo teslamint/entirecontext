@@ -463,7 +463,7 @@ nvtx = [
 
 [[package]]
 name = "entirecontext"
-version = "0.13.0"
+version = "0.11.0"
 source = { editable = "." }
 dependencies = [
     { name = "pygments" },
