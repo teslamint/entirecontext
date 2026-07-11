@@ -116,7 +116,7 @@ def _stream_commits(
     # on \x00 with maxsplit=2 to get (sha, message, patch). %B (not %s) is
     # used so the full commit body reaches the bundle, not just the subject.
     cmd = [
-        "git", "log", "--patch", "--reverse",
+        "git", "log", "--patch", "--reverse", "--no-merges",
         "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
         "--format=%x1e%H%x00%B%x00",
     ]

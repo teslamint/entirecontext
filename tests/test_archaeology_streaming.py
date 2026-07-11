@@ -31,6 +31,30 @@ class TestStreamingPopen:
         next(gen)
         gen.close()
 
+    def test_merge_commits_excluded(self, git_repo):
+        """Merge commits are not yielded by _stream_commits."""
+        repo = str(git_repo)
+        # Detect default branch name (may be main or master depending on git config)
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=repo,
+            capture_output=True, text=True,
+        ).stdout.strip()
+        # Create a branch, commit, merge back with --no-ff
+        subprocess.run(["git", "checkout", "-b", "feature"], cwd=repo, check=True)
+        (git_repo / "feat.py").write_text("f = 1")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-m", "feature commit"], cwd=repo, check=True)
+        subprocess.run(["git", "checkout", branch], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "merge", "feature", "--no-ff", "-m", "Merge branch feature"],
+            cwd=repo, check=True,
+        )
+
+        results = list(_stream_commits(repo, since=None, until=None, limit=100))
+        messages = [msg for _, msg, _ in results]
+        assert not any("Merge branch" in m for m in messages)
+        assert any("feature commit" in m for m in messages)
+
 
 class TestLazyArchaeologize:
     def test_dry_run_counts_without_materialization(self, ec_repo, ec_db):
