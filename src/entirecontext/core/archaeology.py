@@ -150,17 +150,21 @@ def _stream_commits(
         text=True,
         errors="surrogateescape",
     )
+    assert proc.stdout is not None
+    assert proc.stderr is not None
+    stdout = proc.stdout
+    stderr = proc.stderr
 
     stderr_buf = io.StringIO()
     stderr_thread = threading.Thread(
-        target=lambda: stderr_buf.write(proc.stderr.read()),
+        target=lambda: stderr_buf.write(stderr.read()),
         daemon=True,
     )
     stderr_thread.start()
 
     try:
         buf = ""
-        for line in proc.stdout:
+        for line in stdout:
             buf += line
             while "\x1e" in buf:
                 idx = buf.index("\x1e")
