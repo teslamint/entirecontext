@@ -75,6 +75,27 @@ def _seed_candidate(ec_db, ec_repo, *, session_id, checkpoint_id=None, assessmen
     return result.candidate_id
 
 
+def _seed_archaeology_candidate(ec_db, ec_repo, *, session_id, source_id, source_type="archaeology"):
+    _seed_session(ec_db, ec_repo, session_id=session_id)
+    draft = CandidateDraft(
+        title="Archaeology commit-link test decision",
+        rationale="a sufficiently long rationale to pass the heuristic",
+        scope="test",
+        rejected_alternatives=["alt"],
+        supporting_evidence=[],
+        source_type=source_type,
+        source_id=source_id,
+        session_id=None,
+        checkpoint_id=None,
+        assessment_id=None,
+        files=["src/a.py"],
+    )
+    dr = DedupResult(dedup_key=compute_dedup_key(draft.title))
+    score, breakdown = score_confidence(draft, dr)
+    result = persist_candidate(ec_db, draft, score, breakdown, dr)
+    return result.candidate_id
+
+
 class TestConfirmCommitLink:
     def test_confirm_creates_commit_link_from_checkpoint(self, ec_repo, ec_db):
         """INV1: checkpoint exists → decision_commits row with matching commit_sha."""
@@ -174,3 +195,56 @@ class TestConfirmCommitLink:
 
         assert set(result.keys()) == {"candidate_id", "decision_id", "promoted"}
         assert result["promoted"] is True
+
+
+class TestArchaeologyCommitLink:
+    def test_archaeology_candidate_links_source_id_as_commit(self, ec_repo, ec_db):
+        """INV5: archaeology candidate with 40-char hex source_id -> decision_commits row created."""
+        source_id = "a" * 40
+        cid = _seed_archaeology_candidate(
+            ec_db, ec_repo, session_id="inv5-archaeology-hex40", source_id=source_id
+        )
+        result = confirm_candidate(ec_db, cid, reviewer="test")
+
+        assert result["promoted"] is True
+        decision_id = result["decision_id"]
+
+        row = ec_db.execute(
+            "SELECT commit_sha FROM decision_commits WHERE decision_id = ?",
+            (decision_id,),
+        ).fetchone()
+        assert row is not None, "decision_commits row must exist for archaeology hex source_id"
+        assert row["commit_sha"] == source_id
+
+    def test_archaeology_non_hex_source_id_no_link(self, ec_repo, ec_db):
+        """INV6: non-hex source_id -> no link, promotion succeeds."""
+        source_id = "not-a-commit-sha-zzzzzzzzzzzzzzzzzzzzzzzz"
+        cid = _seed_archaeology_candidate(
+            ec_db, ec_repo, session_id="inv6-archaeology-nonhex", source_id=source_id
+        )
+        result = confirm_candidate(ec_db, cid, reviewer="test")
+
+        assert result["promoted"] is True
+        count = ec_db.execute(
+            "SELECT COUNT(*) AS c FROM decision_commits WHERE decision_id = ?",
+            (result["decision_id"],),
+        ).fetchone()["c"]
+        assert count == 0
+
+    def test_archaeology_sha256_source_id_links(self, ec_repo, ec_db):
+        """INV5b: 64-char SHA-256 source_id -> link created."""
+        source_id = "b" * 64
+        cid = _seed_archaeology_candidate(
+            ec_db, ec_repo, session_id="inv5b-archaeology-sha256", source_id=source_id
+        )
+        result = confirm_candidate(ec_db, cid, reviewer="test")
+
+        assert result["promoted"] is True
+        decision_id = result["decision_id"]
+
+        row = ec_db.execute(
+            "SELECT commit_sha FROM decision_commits WHERE decision_id = ?",
+            (decision_id,),
+        ).fetchone()
+        assert row is not None, "decision_commits row must exist for archaeology sha256 source_id"
+        assert row["commit_sha"] == source_id
