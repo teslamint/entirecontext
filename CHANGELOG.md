@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Carry-forward graduation: all 8 v0.11.0 retro items diagnosed and recorded. Zero code changes — docs and process only. Will ship as part of the next feature release.
+## [0.13.0] - 2026-07-12
+
+Git Archaeology: retroactive decision extraction from git history. Carry-forward graduation: all 8 v0.11.0 retro items diagnosed and recorded.
 
 Dogfooding maturity: 61/100 (capture=22, distill=17, retrieve=17, intervene=5).
 
