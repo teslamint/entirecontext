@@ -284,6 +284,7 @@ def archaeologize(
         return result
 
     batch: list[tuple[str, str, str]] = []
+    pr_fail_count = 0
     try:
         for sha, message, patch_text in commits:
             if _is_processed(conn, sha):
@@ -291,7 +292,7 @@ def archaeologize(
                 continue
             batch.append((sha, message, patch_text))
             if len(batch) >= batch_size:
-                _process_batch(
+                pr_fail_count = _process_batch(
                     conn,
                     repo_path,
                     batch,
@@ -301,6 +302,7 @@ def archaeologize(
                     min_confidence=min_confidence,
                     extraction_weights=extraction_weights,
                     progress_callback=progress_callback,
+                    consecutive_pr_failures=pr_fail_count,
                 )
                 batch = []
 
@@ -315,6 +317,7 @@ def archaeologize(
                 min_confidence=min_confidence,
                 extraction_weights=extraction_weights,
                 progress_callback=progress_callback,
+                consecutive_pr_failures=pr_fail_count,
             )
     except KeyboardInterrupt:
         # Commits already marked processed (via _mark_processed, autocommit)
@@ -342,8 +345,9 @@ def _process_batch(
     min_confidence: float,
     extraction_weights: ExtractionWeights | None,
     progress_callback: Callable[[str], None] | None,
-) -> None:
-    consecutive_pr_failures = 0
+    consecutive_pr_failures: int = 0,
+) -> int:
+    """Returns updated consecutive_pr_failures count."""
     for sha, message, patch_text in batch:
         pr_body = None
         if pr_bodies and token and consecutive_pr_failures < _PR_BODY_FAIL_THRESHOLD:
@@ -384,3 +388,4 @@ def _process_batch(
             f"Processed {result.commits_processed}/{result.commits_scanned - result.commits_skipped} commits, "
             f"{result.candidates_generated} candidates"
         )
+    return consecutive_pr_failures
