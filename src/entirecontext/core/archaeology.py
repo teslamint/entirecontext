@@ -113,7 +113,11 @@ def _stream_commits(
     # from the next commit's header. Split on \x1e, then split each record
     # on \x00 with maxsplit=2 to get (sha, message, patch). %B (not %s) is
     # used so the full commit body reaches the bundle, not just the subject.
-    cmd = ["git", "log", "--patch", "--reverse", "--format=%x1e%H%x00%B%x00"]
+    cmd = [
+        "git", "log", "--patch", "--reverse",
+        "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
+        "--format=%x1e%H%x00%B%x00",
+    ]
 
     since_is_date = since is not None and _looks_like_date(since)
     until_is_date = until is not None and _looks_like_date(until)
@@ -214,11 +218,11 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
             timeout=10,
             env=env,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
+        if result.returncode == 0:
+            return result.stdout.strip() or ""
+        return None
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    return None
+        return None
 
 
 def archaeologize(
@@ -231,6 +235,7 @@ def archaeologize(
     pr_bodies: bool = False,
     dry_run: bool = False,
     batch_size: int = 10,
+    min_confidence: float = 0.35,
     extraction_weights: ExtractionWeights | None = None,
     progress_callback: Callable[[str], None] | None = None,
 ) -> ArchaeologyResult:
@@ -293,6 +298,7 @@ def archaeologize(
                     result,
                     pr_bodies=pr_bodies,
                     token=token,
+                    min_confidence=min_confidence,
                     extraction_weights=extraction_weights,
                     progress_callback=progress_callback,
                 )
@@ -306,6 +312,7 @@ def archaeologize(
                 result,
                 pr_bodies=pr_bodies,
                 token=token,
+                min_confidence=min_confidence,
                 extraction_weights=extraction_weights,
                 progress_callback=progress_callback,
             )
@@ -332,6 +339,7 @@ def _process_batch(
     *,
     pr_bodies: bool,
     token: str | None,
+    min_confidence: float,
     extraction_weights: ExtractionWeights | None,
     progress_callback: Callable[[str], None] | None,
 ) -> None:
@@ -339,8 +347,8 @@ def _process_batch(
     for sha, message, patch_text in batch:
         pr_body = None
         if pr_bodies and token and consecutive_pr_failures < _PR_BODY_FAIL_THRESHOLD:
-            pr_body = _fetch_pr_body(sha, repo_path, token)
-            if pr_body is None:
+            raw_pr = _fetch_pr_body(sha, repo_path, token)
+            if raw_pr is None:
                 consecutive_pr_failures += 1
                 if consecutive_pr_failures >= _PR_BODY_FAIL_THRESHOLD:
                     result.warnings.append(
@@ -348,6 +356,7 @@ def _process_batch(
                     )
             else:
                 consecutive_pr_failures = 0
+                pr_body = raw_pr or None
 
         bundle = _build_signal_bundle(sha, message, patch_text, pr_body)
         try:
@@ -356,6 +365,7 @@ def _process_batch(
                 session_id=None,
                 repo_path=repo_path,
                 bundles=[bundle],
+                min_confidence=min_confidence,
                 extraction_weights=extraction_weights,
             )
             if outcome.parsed_ok or outcome.candidates_inserted > 0:

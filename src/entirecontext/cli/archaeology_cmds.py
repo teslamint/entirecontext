@@ -43,11 +43,22 @@ def archaeologize(
         raise typer.Exit(1)
 
     effective_batch_size = batch_size or arch_config.get("batch_size", 10)
+    decisions_config = config.get("decisions", {})
+    min_confidence = float(decisions_config.get("candidate_min_confidence", arch_config.get("min_confidence", 0.35)))
 
     if dry_run:
-        from ..db import get_memory_db
+        from pathlib import Path
 
-        conn = get_memory_db()
+        db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
+        if db_path.exists():
+            import sqlite3
+
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+        else:
+            from ..db import get_memory_db
+
+            conn = get_memory_db()
     else:
         conn = get_db(repo_path)
     try:
@@ -66,6 +77,7 @@ def archaeologize(
             pr_bodies=pr_bodies,
             dry_run=dry_run,
             batch_size=effective_batch_size,
+            min_confidence=min_confidence,
             progress_callback=_progress,
         )
     finally:
