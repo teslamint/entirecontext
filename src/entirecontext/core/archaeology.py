@@ -91,7 +91,7 @@ def _mark_processed(conn: sqlite3.Connection, commit_sha: str, candidate_count: 
 
 
 def _looks_like_date(ref: str) -> bool:
-    return bool(re.match(r"^\d{4}-\d{2}-\d{2}", ref))
+    return bool(re.match(r"^\d{4}-\d{2}-\d{2}$", ref))
 
 
 def _stream_commits(
@@ -160,7 +160,7 @@ def _stream_commits(
         sha = parts[0].strip()
         message = parts[1].strip()
         patch_text = parts[2] if len(parts) > 2 else ""
-        if len(sha) == 40:
+        if len(sha) in (40, 64):
             yield sha, message, patch_text
 
 
@@ -321,6 +321,9 @@ def archaeologize(
     return result
 
 
+_PR_BODY_FAIL_THRESHOLD = 3
+
+
 def _process_batch(
     conn: sqlite3.Connection,
     repo_path: str,
@@ -332,12 +335,19 @@ def _process_batch(
     extraction_weights: ExtractionWeights | None,
     progress_callback: Callable[[str], None] | None,
 ) -> None:
+    consecutive_pr_failures = 0
     for sha, message, patch_text in batch:
         pr_body = None
-        if pr_bodies and token:
+        if pr_bodies and token and consecutive_pr_failures < _PR_BODY_FAIL_THRESHOLD:
             pr_body = _fetch_pr_body(sha, repo_path, token)
             if pr_body is None:
-                result.warnings.append(f"commit {sha[:12]}: PR body fetch returned empty (rate limit, permissions, or no associated PR)")
+                consecutive_pr_failures += 1
+                if consecutive_pr_failures >= _PR_BODY_FAIL_THRESHOLD:
+                    result.warnings.append(
+                        f"PR body fetch failed {_PR_BODY_FAIL_THRESHOLD} times consecutively — disabling for remaining commits"
+                    )
+            else:
+                consecutive_pr_failures = 0
 
         bundle = _build_signal_bundle(sha, message, patch_text, pr_body)
         try:
