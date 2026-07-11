@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.13.1 — Archaeology Hardening (in progress)
+## v0.13.1 — Archaeology Hardening
 
 - [x] `decision_commits` linkage on archaeology candidate promotion
 - [x] Streaming Popen for large repos

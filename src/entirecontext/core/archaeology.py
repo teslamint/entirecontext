@@ -190,16 +190,16 @@ def _stream_commits(
     finally:
         if proc.stdout:
             proc.stdout.close()
-        proc.terminate()
+        if proc.poll() is None:
+            proc.terminate()
         proc.wait()
         stderr_thread.join(timeout=5)
 
-    if proc.returncode and proc.returncode != 0:
+    if proc.returncode not in (0, None):
         stderr_text = stderr_buf.getvalue().strip()
-        if stderr_text:
-            msg = f"git log failed (exit {proc.returncode}): {stderr_text}"
-            if warnings is not None:
-                warnings.append(msg)
+        msg = f"git log failed (exit {proc.returncode}): {stderr_text}"
+        if warnings is not None:
+            warnings.append(msg)
 
 
 def _get_github_token() -> str | None:
