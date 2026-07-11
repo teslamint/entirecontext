@@ -702,7 +702,7 @@ def candidates_list(
     session_id: Optional[str] = typer.Option(None, "--session", help="Filter by session id"),
     status: Optional[str] = typer.Option(None, "--status", help="pending|confirmed|rejected"),
     min_confidence: float = typer.Option(0.0, "--min-confidence", help="Minimum confidence"),
-    source: Optional[str] = typer.Option(None, "--source", help="session|checkpoint|assessment"),
+    source: Optional[str] = typer.Option(None, "--source", help="session|checkpoint|assessment|archaeology"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
 ):
     from ..core.decision_candidates import list_candidates
