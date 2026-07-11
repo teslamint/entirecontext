@@ -26,12 +26,35 @@ class ArchaeologyResult:
 
 
 _DIFF_HEADER_RE = re.compile(r'^diff --git "?a/.+ "?b/(.+?)"?$', re.MULTILINE)
+_GIT_OCTAL_RE = re.compile(r"\\([0-7]{3})")
+
+
+def _decode_git_quoted_path(path: str) -> str:
+    if "\\" not in path:
+        return path
+    decoded = _GIT_OCTAL_RE.sub(lambda m: chr(int(m.group(1), 8)), path)
+    try:
+        return decoded.encode("latin-1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return decoded
+
+
+def _is_github_remote(url: str) -> bool:
+    if url.startswith("git@"):
+        host = url.split("@", 1)[1].split(":", 1)[0]
+        return host == "github.com"
+    for prefix in ("https://", "http://", "ssh://"):
+        if url.startswith(prefix):
+            host = url[len(prefix):].split("/", 1)[0].split("@")[-1].split(":")[0]
+            return host == "github.com"
+    return False
 
 
 def _extract_files_from_patch(patch_text: str) -> list[str]:
     if not patch_text:
         return []
-    return list(dict.fromkeys(_DIFF_HEADER_RE.findall(patch_text)))
+    raw = _DIFF_HEADER_RE.findall(patch_text)
+    return list(dict.fromkeys(_decode_git_quoted_path(p) for p in raw))
 
 
 def _build_signal_bundle(
@@ -169,7 +192,7 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
     if remote_url.returncode != 0:
         return None
     url = remote_url.stdout.strip()
-    if "github.com" not in url:
+    if not _is_github_remote(url):
         return None
     match = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
     if not match:

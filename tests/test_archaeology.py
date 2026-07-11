@@ -12,6 +12,8 @@ from entirecontext.core.archaeology import (
     _stream_commits,
     _get_github_token,
     _fetch_pr_body,
+    _is_github_remote,
+    _decode_git_quoted_path,
     archaeologize,
     ArchaeologyResult,
 )
@@ -63,12 +65,13 @@ class TestExtractFilesFromPatch:
     def test_quoted_non_ascii_path(self):
         # Git quotes both sides and octal-escapes non-ASCII bytes, e.g.
         # `diff --git "a/\355\225\234.py" "b/\355\225\234.py"`.
+        # \355\225\234 is UTF-8 for '한' (U+D55C).
         patch = (
             'diff --git "a/\\355\\225\\234.py" "b/\\355\\225\\234.py"\n'
             '--- "a/\\355\\225\\234.py"\n+++ "b/\\355\\225\\234.py"\n'
         )
         files = _extract_files_from_patch(patch)
-        assert files == ["\\355\\225\\234.py"]
+        assert files == ["한.py"]
 
     def test_quoted_path_with_spaces(self):
         patch = 'diff --git "a/my file.py" "b/my file.py"\n--- a/my file.py\n+++ b/my file.py\n'
@@ -319,6 +322,40 @@ class TestFetchPrBody:
         assert result == "body"
         gh_call_args = mock_run.call_args_list[1].args[0]
         assert "repos/owner/repo/commits/abc123/pulls" in gh_call_args
+
+
+class TestIsGithubRemote:
+    def test_ssh_github(self):
+        assert _is_github_remote("git@github.com:owner/repo.git") is True
+
+    def test_https_github(self):
+        assert _is_github_remote("https://github.com/owner/repo.git") is True
+
+    def test_ssh_gitlab(self):
+        assert _is_github_remote("git@gitlab.com:owner/repo.git") is False
+
+    def test_https_bitbucket(self):
+        assert _is_github_remote("https://bitbucket.org/owner/repo.git") is False
+
+    def test_notgithub_com(self):
+        assert _is_github_remote("git@notgithub.com:owner/repo.git") is False
+
+    def test_github_com_evil(self):
+        assert _is_github_remote("https://github.com.evil/owner/repo.git") is False
+
+    def test_subdomain_github(self):
+        assert _is_github_remote("https://api.github.com/owner/repo.git") is False
+
+
+class TestDecodeGitQuotedPath:
+    def test_no_escapes(self):
+        assert _decode_git_quoted_path("src/foo.py") == "src/foo.py"
+
+    def test_korean_octal(self):
+        assert _decode_git_quoted_path("\\355\\225\\234.py") == "한.py"
+
+    def test_mixed_ascii_and_octal(self):
+        assert _decode_git_quoted_path("src/\\355\\225\\234/bar.py") == "src/한/bar.py"
 
 
 class TestArchaeologize:
