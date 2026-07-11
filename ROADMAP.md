@@ -304,7 +304,7 @@ Theme: close the 91% file-link gap via retroactive git archaeology, push interve
 - [x] **7/21 experiment validity analysis** — VERDICT: insufficient data for hypothesis testing. Block 1 (ON) started 7/5, 6 days elapsed, only 2/5 qualifying sessions reached. Zero crossover (no flip to OFF ever occurred). 64 ranking_snapshots accumulated, cron active (625 log entries), infra healthy. Root cause: low session frequency post-v0.11.0 (63 total qualifying sessions, but only 2 since experiment start). Options: (a) lower N from 5→3, (b) wait for natural session accumulation, (c) pause experiment and revisit when session volume recovers. Carry-forward: experiment remains active but deprioritized — focus shifts to Git Archaeology which has immediate impact.
 
 ### Git Archaeology
-- [ ] **`ec archaeologize` command** — `git log --patch` + merged PR bodies through existing extraction pipeline; `source:inferred` bootstrapped decision corpus. Addresses 91% file-link gap and cold-start adoption barrier. Plan reference: `docs/brainstorms/retroactive-git-archaeology.md`.
+- [x] **`ec archaeologize` command** — `git log --patch` + merged PR bodies through existing extraction pipeline; `source:archaeology` bootstrapped decision corpus. Addresses 91% file-link gap and cold-start adoption barrier. Plan reference: `docs/brainstorms/retroactive-git-archaeology.md`.
 
 Carry-forward conditions:
 - Experiment analysis may carry forward if qualifying session count insufficient

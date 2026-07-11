@@ -11,6 +11,13 @@ Carry-forward graduation: all 8 v0.11.0 retro items diagnosed and recorded. Zero
 
 Dogfooding maturity: 61/100 (capture=22, distill=17, retrieve=17, intervene=5).
 
+### Added
+
+- **`archaeology_processed` table + `decision_candidates.source_type` expansion (schema v16)** — foundation for Git Archaeology decision extraction. `archaeology_processed` tracks which commits have been scanned for candidates (`commit_sha`, `candidate_count`, `processed_at`). `decision_candidates.source_type` CHECK now accepts `'archaeology'` alongside the existing `session`/`checkpoint`/`assessment` values. Table rebuild migration (FTS5 triggers dropped/recreated), no data loss.
+- **`ec archaeologize` command** — retroactive decision extraction from `git log --patch`. Streams commit history through the existing extraction pipeline to produce `source:archaeology` candidates. Supports `--since`, `--until`, `--limit` (default 100), `--pr-bodies` (GitHub API), `--dry-run` (cost estimate), `--batch-size`. Implicit resume via dedup. Addresses the 91% file-link gap and cold-start adoption barrier.
+- **`[decisions.archaeology]` config section** — `enabled`, `batch_size`, `pr_body_fetch` settings.
+- **`run_extraction` bundles injection** — optional `bundles` parameter allows external callers to bypass `collect_signals` while sharing the full extraction pipeline.
+
 ### Changed
 
 - **ROADMAP v0.11.0 section** — retroactively added (was skipped during v0.11.0 release).

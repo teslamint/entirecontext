@@ -34,6 +34,7 @@ cli/             business    SQLite     Claude Code   shadow branch
   import_cmds    async_worker
   compact_cmds   compact
   mcp_cmds
+  archaeology_cmds
 ```
 
 `mcp/server.py` — MCP server interface (optional dependency).
@@ -42,9 +43,9 @@ cli/             business    SQLite     Claude Code   shadow branch
 
 **Per-repo DB**: `.entirecontext/db/local.db`
 **Global DB**: `~/.entirecontext/db/ec.db`
-**Schema version**: 15
+**Schema version**: 16
 
-Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments`, `decision_outcomes`, `ranking_snapshots`
+Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments`, `decision_outcomes`, `ranking_snapshots`, `archaeology_processed`
 
 FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates` (auto-synced via triggers)
 
@@ -62,7 +63,7 @@ Return codes: 0=success, 2=block.
 
 TOML deep merge: defaults ← `~/.entirecontext/config.toml` (global) ← `.entirecontext/config.toml` (per-repo)
 
-Sections: `capture`, `capture.exclusions`, `search`, `sync`, `display`, `security`, `filtering.query_redaction`, `index`, `futures`, `decisions`, `decisions.ranking`, `decisions.quality`, `decisions.extraction`, `decisions.injection`
+Sections: `capture`, `capture.exclusions`, `search`, `sync`, `display`, `security`, `filtering.query_redaction`, `index`, `futures`, `decisions`, `decisions.ranking`, `decisions.quality`, `decisions.extraction`, `decisions.injection`, `decisions.archaeology`
 
 ## Code Review Principles
 

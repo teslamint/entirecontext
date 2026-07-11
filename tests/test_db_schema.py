@@ -241,6 +241,9 @@ class TestMigration:
         )
         conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
         conn.execute("CREATE TABLE turns (id TEXT PRIMARY KEY)")
+        # FK targets for decision_candidates, created later in the migration chain (v013, widened in v016).
+        conn.execute("CREATE TABLE IF NOT EXISTS checkpoints (id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE IF NOT EXISTS assessments (id TEXT PRIMARY KEY)")
         conn.commit()
 
         check_and_migrate(conn)
@@ -272,6 +275,10 @@ class TestMigration:
             )
             """
         )
+        # FK targets for decision_candidates, created later in the migration chain (v013, widened in v016).
+        conn.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE IF NOT EXISTS checkpoints (id TEXT PRIMARY KEY)")
+        conn.execute("CREATE TABLE IF NOT EXISTS assessments (id TEXT PRIMARY KEY)")
         conn.commit()
 
         check_and_migrate(conn)
@@ -514,7 +521,7 @@ class TestMigration:
         ver = conn.execute(
             "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
         ).fetchone()[0]
-        assert ver == 15
+        assert ver == SCHEMA_VERSION
 
         # FK works: can insert with NULL retrieval_event_id
         conn.execute(

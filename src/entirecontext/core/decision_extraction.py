@@ -54,12 +54,13 @@ _CODE_STOPWORDS_TITLE: frozenset[str] = frozenset(
 )
 
 
-_VALID_SOURCE_TYPES = frozenset({"session", "checkpoint", "assessment"})
+_VALID_SOURCE_TYPES = frozenset({"session", "checkpoint", "assessment", "archaeology"})
 
 _BASE_CONFIDENCE_WEIGHTS: dict[str, float] = {
     "assessment": 0.55,
     "checkpoint": 0.40,
     "session": 0.30,
+    "archaeology": 0.25,
 }
 
 _DEFAULT_EXTRACT_KEYWORDS: list[str] = [
@@ -85,7 +86,7 @@ _MAX_PROMPT_CHARS = 8000
 class SignalBundle:
     source_type: str
     source_id: str
-    session_id: str
+    session_id: str | None
     checkpoint_id: str | None
     assessment_id: str | None
     text_blocks: list[str]
@@ -101,7 +102,7 @@ class CandidateDraft:
     supporting_evidence: list[Any]
     source_type: str
     source_id: str
-    session_id: str
+    session_id: str | None
     checkpoint_id: str | None
     assessment_id: str | None
     files: list[str]
@@ -554,6 +555,19 @@ _SYSTEM_PROMPT_BY_SOURCE: dict[str, str] = {
         "Return [] if the assessment is a neutral observation. "
         "For each rejected alternative, provide the reason it was not chosen — "
         "only if the reason is explicit in the source text. "
+        'If no reason is stated, omit the "reason" key entirely (do not invent one).'
+    ),
+    "archaeology": (
+        "You are reviewing a git commit patch for architectural or technical decisions. "
+        "The patch shows what was changed and the commit message explains why. "
+        "Extract decisions where the developer chose one approach over another. "
+        "Return a JSON array: "
+        '[{"title": str, "rationale": str, "scope": str, '
+        '"rejected_alternatives": [{"alternative": str, "reason": str}]}]. '
+        "Return [] if the commit is a routine refactor, dependency bump, formatting, "
+        "or test-only change with no architectural choice. "
+        "For each rejected alternative, provide the reason it was not chosen — "
+        "only if the reason is explicit in the commit message or code comments. "
         'If no reason is stated, omit the "reason" key entirely (do not invent one).'
     ),
 }
@@ -1108,17 +1122,23 @@ class ExtractionOutcome:
 
 def run_extraction(
     conn,
-    session_id: str,
+    session_id: str | None,
     repo_path: str,
     *,
+    bundles: list[SignalBundle] | None = None,
     min_confidence: float = 0.35,
     extraction_weights: ExtractionWeights | None = None,
 ) -> ExtractionOutcome:
     outcome = ExtractionOutcome()
-    if is_session_extracted(conn, session_id):
+
+    if session_id is not None and is_session_extracted(conn, session_id):
         return outcome
 
-    bundles = collect_signals(conn, session_id, repo_path)
+    if bundles is None:
+        if session_id is None:
+            return outcome
+        bundles = collect_signals(conn, session_id, repo_path)
+
     outcome.bundles_collected = len(bundles)
     if not bundles:
         return outcome
@@ -1185,7 +1205,7 @@ def run_extraction(
             f"no_drafts: {outcome.bundles_collected} bundles collected but 0 drafts parsed"
         )
 
-    if outcome.parsed_ok:
+    if outcome.parsed_ok and session_id is not None:
         mark_session_extracted(conn, session_id)
         outcome.marked = True
 
