@@ -4,7 +4,7 @@ _Created 2026-07-12._
 
 ## Overview
 
-Add `--at`, `--until`, and broadened `--since` temporal filters to EntireContext's core retrieval commands so queries evaluate against memory state at a specific git commit or time range. EC's unique moat is git-anchored time travel; TQL exposes it as a first-class CLI and MCP interface.
+Add `--until` and broadened `--since` temporal filters to EntireContext's core retrieval commands so queries evaluate against memory state at a specific git commit or time range. Both flags accept git refs and ISO dates. EC's unique moat is git-anchored time travel; TQL exposes it as a first-class CLI and MCP interface.
 
 No inline query tokens (`since:`, `between:`) — CLI flags and MCP structured parameters only. This eliminates the FTS5 column-filter collision risk entirely.
 
@@ -15,7 +15,7 @@ No inline query tokens (`since:`, `between:`) — CLI flags and MCP structured p
 Find auth-related decisions **recorded** before the v0.8.0 release:
 
 ```bash
-ec decision search "auth" --at v0.8.0
+ec decision search "auth" --until v0.8.0
 ```
 
 Returns only decisions whose `created_at` is before the v0.8.0 commit timestamp. Decisions recorded later are excluded, even if they describe older code.
@@ -33,7 +33,7 @@ ec decision list --since 2026-06-01 --until 2026-06-14
 Find search-related decisions **recorded** between the v0.10.0 and v0.13.0 release timestamps:
 
 ```bash
-ec decision search "search" --since v0.10.0 --at v0.13.0
+ec decision search "search" --since v0.10.0 --until v0.13.0
 ```
 
 Filters by `created_at` (recording time), not by the code era a decision describes. See [Semantics & Limitations](#semantics--limitations).
@@ -43,7 +43,7 @@ Filters by `created_at` (recording time), not by the code era a decision describ
 An agent queries only decisions whose `created_at` is before v0.10.0 when preparing to modify `src/core/search.py`:
 
 ```python
-ec_decision_related(file_paths=["src/core/search.py"], at_ref="v0.10.0")
+ec_decision_related(file_paths=["src/core/search.py"], until="v0.10.0")
 ```
 
 Decisions recorded after v0.10.0 are excluded from the candidate set before ranking.
@@ -69,13 +69,12 @@ ec search "migration" --since 2026-07-05 --until 2026-07-10
 ### In
 
 - `core/tql.py` module: `TQLContext` dataclass, git ref resolution, ISO date parsing, temporal filter injection
-- `--at <ref|date>` flag: resolves git ref or ISO date to upper-bound timestamp filter
-- `--until <ref|date>` flag: explicit upper-bound (conflicts with `--at`)
-- `--since` broadening: add to `ec decision list` and `ec decision related` (currently missing)
+- `--until <ref|date>` flag: upper-bound timestamp filter (accepts git refs and ISO dates)
+- `--since` broadening: add to `ec decision list` and `ec decision related` (currently missing); both `--since` and `--until` accept git refs and ISO dates
 - CLI commands: `ec search`, `ec decision search`, `ec decision list`, `ec decision related`
-- MCP tools: `ec_search`, `ec_decision_search`, `ec_decision_list`, `ec_decision_related` — add `until`, `at_ref` structured parameters
+- MCP tools: `ec_search`, `ec_decision_search`, `ec_decision_list`, `ec_decision_related` — add `until` structured parameter
 - Timestamp normalization via SQLite `datetime()` for mixed-format comparison
-- Date-only `--until`/`--at` inclusive expansion (end-of-day)
+- Date-only `--until` inclusive expansion (end-of-day)
 - `rank_related_decisions()` pre-filter by temporal bounds
 
 ### Out
@@ -84,7 +83,7 @@ ec search "migration" --since 2026-07-05 --until 2026-07-10
 - Schema changes — all filtering uses existing indexed `created_at`/`timestamp`/`started_at` columns
 - Session, event, checkpoint, graph, dashboard temporal broadening (v2)
 - MCP-only TQL features beyond the 4 target tools
-- `--at` for write operations (TQL is read-only)
+- `--until` for write operations (TQL is read-only)
 - PDI ranking temporal override (PDI uses live signal, not point-in-time)
 
 ## Architecture
@@ -119,7 +118,7 @@ def resolve_temporal_ref(ref: str, *, repo_path: str | None = None) -> str:
 
 ### Date-Only Upper Bound Expansion
 
-When `--until` or `--at` receives a date-only value (no time component):
+When `--until` receives a date-only value (no time component):
 
 - `--until 2026-04-01` → `until = "2026-04-02 00:00:00"` with `<` operator (half-open: includes all of April 1st)
 - `--until 2026-04-01T15:00:00` → `until = "2026-04-01 15:00:00"` with `<=` operator (exact)
@@ -158,20 +157,20 @@ Injects:
 |------|---------|-----------|
 | `--since <ref\|date>` | git ref, ISO date, date-only | Lower bound (inclusive) |
 | `--until <ref\|date>` | git ref, ISO date, date-only | Upper bound (inclusive for datetime, half-open for date-only) |
-| `--at <ref\|date>` | git ref, ISO date, date-only | Alias for `--until` — "show me state at this point" |
+
+Both flags accept the same input types. Git refs are resolved to their commit timestamp via `resolve_temporal_ref()`.
 
 **Validation rules:**
-- `--at` + `--until` → error: "Cannot use --at and --until together (both set upper bound)"
 - `--since` > `--until` → error: "Empty time range: --since is after --until"
 - Invalid git ref → error: "Cannot resolve temporal reference '<ref>': not a valid git ref or date"
 
 **Examples:**
 ```bash
-ec search "auth refactor" --at HEAD~20
+ec search "auth refactor" --until HEAD~20
 ec search "auth" --since 2026-01-01 --until 2026-04-01
-ec decision search "caching" --at v0.8.0
+ec decision search "caching" --until v0.8.0
 ec decision list --since 2026-03-01
-ec decision related --file src/core/search.py --at v0.10.0
+ec decision related --file src/core/search.py --until v0.10.0
 ```
 
 ### MCP Structured Parameters
@@ -180,12 +179,9 @@ Each of the 4 target MCP tools gains:
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `until` | `str \| None` | Upper-bound timestamp (ISO date or datetime) |
-| `at_ref` | `str \| None` | Git ref or date — resolved to upper-bound timestamp |
+| `until` | `str \| None` | Upper-bound filter — accepts git refs or ISO dates |
 
-Existing `since` parameter remains unchanged. `at_ref` + `until` conflict → error.
-
-The `until`/`at_ref` split is for API clarity: `until` accepts ISO dates/datetimes (explicit time value), while `at_ref` accepts git refs or dates (requires resolution via subprocess). Both parameters can resolve in MCP context — the split is semantic, not a subprocess limitation.
+Existing `since` parameter remains unchanged and is broadened to also accept git refs (currently ISO dates only). Both `since` and `until` resolve git refs via `resolve_temporal_ref()` using the project's `repo_path`.
 
 ## Data Model
 
@@ -231,21 +227,21 @@ All target columns already have descending indexes:
 ### CLI Commands
 
 **`cli/search_cmds.py`:**
-- Add `--until` and `--at` options to `search` command
-- Resolve `--at` via `resolve_temporal_ref()`, reject `--at` + `--until` conflict
+- Add `--until` option to `search` command
+- Resolve both `--since` and `--until` via `resolve_temporal_ref()` when they contain git refs
 - Pass resolved values to core search functions
 
 **`cli/decisions_cmds.py`:**
-- `decision search` — add `--until`, `--at`
-- `decision list` — add `--since`, `--until`, `--at` (all new)
-- `decision related` — add `--since`, `--until`, `--at` (all new, requires `rank_related_decisions` extension)
+- `decision search` — add `--until`
+- `decision list` — add `--since`, `--until` (both new)
+- `decision related` — add `--since`, `--until` (both new, requires `rank_related_decisions` extension)
 
 ### MCP Tools
 
-**`mcp/tools/search.py`:** `ec_search` — add `until`, `at_ref` parameters
-**`mcp/tools/decisions.py`:** `ec_decision_search`, `ec_decision_list`, `ec_decision_related` — add `until`, `at_ref` parameters
+**`mcp/tools/search.py`:** `ec_search` — add `until` parameter
+**`mcp/tools/decisions.py`:** `ec_decision_search`, `ec_decision_list`, `ec_decision_related` — add `until` parameter
 
-`at_ref` resolution happens in the MCP tool function before calling core. MCP tools must pass `repo_path` from the project context for git ref resolution.
+Git ref resolution happens in the MCP tool function before calling core. MCP tools must pass `repo_path` from the project context for `resolve_temporal_ref()`.
 
 ## Testing
 
@@ -254,13 +250,13 @@ All target columns already have descending indexes:
 1. **Ref resolution:** git ref → UTC timestamp (mock subprocess), ISO date parsing, date-only detection
 2. **Date-only expansion:** `2026-04-01` → `< 2026-04-02 00:00:00`; `2026-04-01T15:00:00` → `<= 2026-04-01 15:00:00`
 3. **Filter injection:** `apply_temporal_filters()` generates correct WHERE fragments and params
-4. **Validation:** `--at` + `--until` conflict, `--since` > `--until` empty range, invalid ref
+4. **Validation:** `--since` > `--until` empty range, invalid ref, non-existent git ref
 5. **Timezone normalization:** `+09:00` offset → UTC conversion via `datetime()`
 6. **Mixed timestamp format comparison:** seed both `T+00:00` and space-format rows, verify filters match correctly
 
 ### Integration Tests (`tests/test_tql_integration.py`)
 
-1. **Decision search with `--at`:** create decisions at known timestamps, verify `--at <old-sha>` excludes newer decisions
+1. **Decision search with `--until`:** create decisions at known timestamps, verify `--until <old-sha>` excludes newer decisions
 2. **Decision list with time range:** `--since A --until B` returns correct subset
 3. **Decision related with pre-filter:** verify temporal bounds exclude decisions from candidate set before ranking
 4. **`ec search` with `--until`:** verify turns/sessions/events filtered by upper bound
@@ -277,7 +273,7 @@ All target columns already have descending indexes:
 
 TQL filters by **recording time** (`created_at`), not by the historical era a decision describes. For naturally recorded decisions (created during the session that made the choice), these coincide. For archaeology-bootstrapped decisions (`source:archaeology`), `created_at` is the batch extraction timestamp — all archaeologized decisions cluster within seconds of each other regardless of the code era they describe.
 
-Consequence: `--at <old-ref>` on an archaeology-bootstrapped corpus may exclude every archaeologized decision (all recorded after the archaeology run). This is coherent with the "records that existed at commit X" semantics but does not provide "decisions about the repo state at commit X." True historical-era querying would require a separate `decision_era` column anchored to the decision's source commit, which is out of scope for TQL v1.
+Consequence: `--until <old-ref>` on an archaeology-bootstrapped corpus may exclude every archaeologized decision (all recorded after the archaeology run). This is coherent with the "records that existed at commit X" semantics but does not provide "decisions about the repo state at commit X." True historical-era querying would require a separate `decision_era` column anchored to the decision's source commit, which is out of scope for TQL v1.
 
 **Resolution order note:** `resolve_temporal_ref()` tries ISO date parsing before git ref resolution. A git tag that looks like a date (e.g., tag named `2026-04-01`) will be interpreted as a date, not resolved as a ref. This is acceptable — date-shaped tags are extremely rare in practice.
 
@@ -289,7 +285,7 @@ Consequence: `--at <old-ref>` on an archaeology-bootstrapped corpus may exclude 
 | Git subprocess latency for ref resolution | Low | 5s timeout; cache within single CLI invocation |
 | `updated_at` → `created_at` breaking change on existing `--since` | Low | Document in CHANGELOG; no users rely on `updated_at` recency filtering in automation |
 | Mixed timestamp format causing off-by-one | Medium | `datetime()` normalization + boundary tests with both formats seeded |
-| Date-only vs datetime ambiguity in `--at` | Low | Detection heuristic: no `T`/time separator → date-only expansion |
+| Date-only vs datetime ambiguity in `--until` | Low | Detection heuristic: no `T`/time separator → date-only expansion |
 
 ## Open Decisions
 
