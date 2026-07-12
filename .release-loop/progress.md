@@ -1,11 +1,11 @@
 # Release Loop Progress
 Phase: design
-CurrentTask: scope-check
-Feature: Temporal Query Language (TQL) — --at, since:, between: temporal filters for all retrieval commands
+CurrentTask: user-gate
+Feature: Temporal Query Language (TQL) — --since/--until/--at temporal filters for retrieval commands
 Branch: feature/temporal-query-language
 Base: c514dd9
 BaseBranch: main
-Spec:
+Spec: docs/superpowers/specs/2026-07-12-temporal-query-language-design.md
 Plan:
 PR:
 Tasks: 0/0 complete
