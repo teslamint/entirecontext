@@ -9,6 +9,7 @@ import re
 import subprocess
 import sqlite3
 import threading
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Iterator
@@ -357,9 +358,21 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> _PrBodyFetch:
                 pulls = json.loads(result.stdout)
             except (json.JSONDecodeError, TypeError):
                 return _PrBodyFetch(_PrBodyStatus.FAILURE, warning="Invalid gh API response")
-            if not pulls or not (pulls[0].get("body") or "").strip():
+            if not isinstance(pulls, list):
+                return _PrBodyFetch(_PrBodyStatus.FAILURE, warning="Unexpected gh API payload")
+            if not pulls:
                 return _PrBodyFetch(_PrBodyStatus.EMPTY)
-            return _PrBodyFetch(_PrBodyStatus.FOUND, body=pulls[0]["body"].strip())
+            first = pulls[0]
+            if not isinstance(first, Mapping) or "body" not in first:
+                return _PrBodyFetch(_PrBodyStatus.FAILURE, warning="Unexpected gh API payload")
+            body = first["body"]
+            if body is None or body == "":
+                return _PrBodyFetch(_PrBodyStatus.EMPTY)
+            if not isinstance(body, str):
+                return _PrBodyFetch(_PrBodyStatus.FAILURE, warning="Unexpected PR body payload")
+            if not body.strip():
+                return _PrBodyFetch(_PrBodyStatus.EMPTY)
+            return _PrBodyFetch(_PrBodyStatus.FOUND, body=body.strip())
         return _PrBodyFetch(_PrBodyStatus.FAILURE, warning=result.stderr.strip() or "gh API failed")
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         return _PrBodyFetch(_PrBodyStatus.FAILURE, warning=str(exc))
@@ -401,14 +414,12 @@ def archaeologize(
                     already_processed += 1
                 else:
                     result.patch_pending += 1
-                if pr_bodies and not state.pr_body_processed:
+                if pr_bodies and state.patch_processed and not state.pr_body_processed:
                     result.pr_enrichment_pending += 1
             except sqlite3.OperationalError:
                 # archaeology_processed table doesn't exist yet (e.g. dry-run
                 # before migration has ever run) — nothing has been processed.
                 result.patch_pending += 1
-                if pr_bodies:
-                    result.pr_enrichment_pending += 1
         result.commits_scanned = commits_scanned
         result.commits_skipped = already_processed
         est_tokens_low = result.patch_pending * 2500 + result.pr_enrichment_pending * 500
