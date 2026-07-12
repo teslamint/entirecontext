@@ -8,6 +8,60 @@ Add `--at`, `--until`, and broadened `--since` temporal filters to EntireContext
 
 No inline query tokens (`since:`, `between:`) — CLI flags and MCP structured parameters only. This eliminates the FTS5 column-filter collision risk entirely.
 
+## User Scenarios
+
+### 1. 과거 시점 결정 추적 — "이 코드 왜 이렇게 됐지?"
+
+v0.8.0 태그 시점에 auth 관련으로 어떤 결정이 있었는지 확인:
+
+```bash
+ec decision search "auth" --at v0.8.0
+```
+
+v0.8.0 커밋 타임스탬프 이전에 기록된 auth 관련 결정만 반환. 이후 결정은 제외.
+
+### 2. 시간 범위 리스트업 — "지난 스프린트 결정 모아보기"
+
+6월 첫 2주간 내린 결정을 retro용으로 리스트업:
+
+```bash
+ec decision list --since 2026-06-01 --until 2026-06-14
+```
+
+### 3. 릴리스 간 결정 비교 — "태그 간 범위 검색"
+
+v0.10.0과 v0.13.0 사이에 search 관련 결정 변화 추적:
+
+```bash
+ec decision search "search" --since v0.10.0 --at v0.13.0
+```
+
+### 4. 에이전트 MCP 맥락 조회 — "특정 시점 이전 결정만 참조"
+
+에이전트가 `src/core/search.py` 수정 전에, v0.10.0 시점까지의 관련 결정만 조회:
+
+```python
+ec_decision_related(file_paths=["src/core/search.py"], at_ref="v0.10.0")
+```
+
+v0.10.0 이전 기록된 결정만 후보로 들어가서 랭킹. 이후 결정은 pre-filter에서 제외.
+
+### 5. 초기 아키텍처 결정 확인 — "상한 필터 단독 사용"
+
+프로젝트 초기(4월 중순 이전) 아키텍처 결정만 확인:
+
+```bash
+ec decision search "architecture" --until 2026-04-15
+```
+
+### 6. 일반 검색 시간 범위 — "기존 --since에 상한 추가"
+
+최근 1주일 범위의 migration 관련 턴/세션 검색:
+
+```bash
+ec search "migration" --since 2026-07-05 --until 2026-07-10
+```
+
 ## Scope
 
 ### In
