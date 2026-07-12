@@ -44,22 +44,25 @@ def decision_list(
     ),
 ):
     from ..core.decisions import list_decisions
-    from ..core.tql import TQLError, resolve_temporal_ref
+    from ..core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
     conn, repo_path = get_repo_connection()
     try:
         resolved_since: str | None = None
         resolved_until: str | None = None
+        until_exclusive: bool = False
         if since:
             resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
         if until:
-            resolved_until, _ = resolve_temporal_ref(until, repo_path=repo_path)
+            resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+        TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         decisions = list_decisions(
             conn,
             staleness_status=status,
             file_path=file,
             since=resolved_since,
             until=resolved_until,
+            until_exclusive=until_exclusive,
             limit=limit,
             include_contradicted=include_contradicted,
         )
@@ -377,22 +380,25 @@ def decision_search(
         raise typer.Exit(1)
 
     from ..core.decisions import fts_search_decisions, hybrid_search_decisions
-    from ..core.tql import TQLError, resolve_temporal_ref
+    from ..core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
     conn, repo_path = get_repo_connection()
     try:
         resolved_since: str | None = None
         resolved_until: str | None = None
+        until_exclusive: bool = False
         if since:
             resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
         if until:
-            resolved_until, _ = resolve_temporal_ref(until, repo_path=repo_path)
+            resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+        TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         if search_type == "hybrid":
             decisions = hybrid_search_decisions(
                 conn,
                 query,
                 since=resolved_since,
                 until=resolved_until,
+                until_exclusive=until_exclusive,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,
@@ -404,6 +410,7 @@ def decision_search(
                 query,
                 since=resolved_since,
                 until=resolved_until,
+                until_exclusive=until_exclusive,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,

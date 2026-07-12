@@ -115,6 +115,19 @@ class TestSearchUntil:
         results = regex_search(conn, "auth", until="2026-01-01 00:00:00")
         assert len(results) == 0
 
+    def test_until_exclusive_date_only(self, conn_with_turns):
+        """Date-only --until with exclusive=True includes all of that day."""
+        conn, turns, _ = conn_with_turns
+        # Turn at 2026-03-20 14:00:00 should be included with < 2026-03-21 00:00:00
+        results = regex_search(conn, "auth", until="2026-03-21 00:00:00", until_exclusive=True)
+        assert len(results) == 2  # Jan 15 + Mar 20
+
+    def test_until_inclusive_datetime(self, conn_with_turns):
+        """Datetime --until with exclusive=False uses <=."""
+        conn, turns, _ = conn_with_turns
+        results = regex_search(conn, "auth", until="2026-03-20 14:00:00", until_exclusive=False)
+        assert len(results) == 2  # Jan 15 + Mar 20 (inclusive)
+
 
 class TestDecisionsTemporalFilter:
     @pytest.fixture

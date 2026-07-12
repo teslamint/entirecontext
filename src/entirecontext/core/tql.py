@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 
 class TQLError(Exception):
@@ -40,6 +40,20 @@ def resolve_temporal_ref(ref: str, *, repo_path: str | None = None) -> tuple[str
             return ts, False
 
     raise TQLError(f"Cannot resolve temporal reference '{ref}': not a valid git ref or date")
+
+
+def resolve_until(ref: str, *, repo_path: str | None = None) -> tuple[str, bool]:
+    """Resolve an --until ref with date-only expansion.
+
+    For date-only inputs (e.g. "2026-04-01"), expands to next day midnight
+    with exclusive semantics so that the entire target day is included.
+    Returns (timestamp, until_exclusive).
+    """
+    ts, is_date_only = resolve_temporal_ref(ref, repo_path=repo_path)
+    if is_date_only:
+        dt = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") + timedelta(days=1)
+        return dt.strftime("%Y-%m-%d %H:%M:%S"), True
+    return ts, False
 
 
 def _try_parse_iso(ref: str) -> tuple[str | None, bool]:

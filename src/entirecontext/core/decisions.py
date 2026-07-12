@@ -438,6 +438,7 @@ def list_decisions(
     file_path: str | None = None,
     since: str | None = None,
     until: str | None = None,
+    until_exclusive: bool = False,
     limit: int = 20,
     include_contradicted: bool = False,
 ) -> list[dict]:
@@ -470,7 +471,7 @@ def list_decisions(
     elif not include_contradicted:
         conditions.append("d.staleness_status != 'contradicted'")
 
-    tql = TQLContext(since=since, until=until) if (since or until) else None
+    tql = TQLContext.validated(since=since, until=until, until_exclusive=until_exclusive) if (since or until) else None
     apply_temporal_filters(conditions, params, tql, "d.created_at")
 
     if conditions:
@@ -1339,6 +1340,7 @@ def rank_related_decisions(
     commit_shas: list[str] | None = None,
     since: str | None = None,
     until: str | None = None,
+    until_exclusive: bool = False,
     limit: int = 10,
     include_stale: bool = True,
     include_superseded: bool = False,
@@ -1793,6 +1795,7 @@ def fts_search_decisions(
     *,
     since: str | None = None,
     until: str | None = None,
+    until_exclusive: bool = False,
     limit: int = 20,
     include_stale: bool = True,
     include_superseded: bool = False,
@@ -1818,7 +1821,7 @@ def fts_search_decisions(
     where_clauses: list[str] = ["fts_decisions MATCH ?"]
     params: list[Any] = [query]
 
-    tql = TQLContext(since=since, until=until) if (since or until) else None
+    tql = TQLContext.validated(since=since, until=until, until_exclusive=until_exclusive) if (since or until) else None
     apply_temporal_filters(where_clauses, params, tql, "d.created_at")
 
     if staleness_predicate:
@@ -1850,6 +1853,7 @@ def hybrid_search_decisions(
     *,
     since: str | None = None,
     until: str | None = None,
+    until_exclusive: bool = False,
     limit: int = 20,
     k: int = 60,
     include_stale: bool = True,
@@ -1869,6 +1873,7 @@ def hybrid_search_decisions(
         query,
         since=since,
         until=until,
+        until_exclusive=until_exclusive,
         limit=limit * 3,
         include_stale=include_stale,
         include_superseded=include_superseded,

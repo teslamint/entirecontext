@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from entirecontext.core.tql import TQLContext, TQLError, apply_temporal_filters, resolve_temporal_ref
+from entirecontext.core.tql import TQLContext, TQLError, apply_temporal_filters, resolve_temporal_ref, resolve_until
 
 
 class TestResolveTemporalRef:
@@ -60,6 +60,27 @@ class TestResolveTemporalRef:
     def test_resolve_git_ref_no_repo_path(self):
         with pytest.raises(TQLError):
             resolve_temporal_ref("v1.0.0")
+
+
+class TestResolveUntil:
+    def test_date_only_expands_to_next_day(self):
+        ts, exclusive = resolve_until("2026-04-01")
+        assert ts == "2026-04-02 00:00:00"
+        assert exclusive is True
+
+    def test_datetime_stays_inclusive(self):
+        ts, exclusive = resolve_until("2026-04-01T15:30:00+09:00")
+        assert ts == "2026-04-01 06:30:00"
+        assert exclusive is False
+
+    def test_git_ref_stays_inclusive(self):
+        fake_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="2026-03-15T10:30:00+00:00\n", stderr=""
+        )
+        with patch("subprocess.run", return_value=fake_result):
+            ts, exclusive = resolve_until("v0.8.0", repo_path="/tmp/repo")
+        assert ts == "2026-03-15 10:30:00"
+        assert exclusive is False
 
 
 class TestTQLContext:

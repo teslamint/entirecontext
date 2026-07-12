@@ -72,7 +72,7 @@ async def ec_decision_related(
             backpatch_snapshot_event,
             rank_related_decisions,
         )
-        from ...core.tql import TQLError, resolve_temporal_ref
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
         full_config = load_config(repo_path)
         decisions_cfg = full_config.get("decisions", {})
@@ -81,11 +81,13 @@ async def ec_decision_related(
 
         resolved_since: str | None = None
         resolved_until: str | None = None
+        until_exclusive: bool = False
         try:
             if since:
                 resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
             if until:
-                resolved_until, _ = resolve_temporal_ref(until, repo_path=repo_path)
+                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+            TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         except TQLError as exc:
             return runtime.error_payload(str(exc))
 
@@ -98,6 +100,7 @@ async def ec_decision_related(
             commit_shas=commit_shas or [],
             since=resolved_since,
             until=resolved_until,
+            until_exclusive=until_exclusive,
             limit=limit,
             include_stale=include_stale,
             include_superseded=include_superseded,
@@ -513,15 +516,17 @@ async def ec_decision_list(
         return error
     try:
         from ...core.decisions import list_decisions
-        from ...core.tql import TQLError, resolve_temporal_ref
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
         resolved_since: str | None = None
         resolved_until: str | None = None
+        until_exclusive: bool = False
         try:
             if since:
                 resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
             if until:
-                resolved_until, _ = resolve_temporal_ref(until, repo_path=repo_path)
+                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+            TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         except TQLError as exc:
             return runtime.error_payload(str(exc))
 
@@ -531,6 +536,7 @@ async def ec_decision_list(
             file_path=file_path,
             since=resolved_since,
             until=resolved_until,
+            until_exclusive=until_exclusive,
             limit=limit,
             include_contradicted=include_contradicted,
         )
@@ -600,14 +606,30 @@ async def ec_decision_search(
     if is_cross_repo:
         from ...core.cross_repo import _for_each_repo
         from ...core.decisions import fts_search_decisions, hybrid_search_decisions
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
+
+        # Resolve temporal refs against current repo (best-effort for cross-repo)
+        (_, current_repo_path), err = runtime.resolve_repo()
+        cross_since: str | None = None
+        cross_until: str | None = None
+        cross_until_exclusive: bool = False
+        try:
+            if since:
+                cross_since, _ = resolve_temporal_ref(since, repo_path=current_repo_path)
+            if until:
+                cross_until, cross_until_exclusive = resolve_until(until, repo_path=current_repo_path)
+            TQLContext.validated(since=cross_since, until=cross_until, until_exclusive=cross_until_exclusive)
+        except TQLError as exc:
+            return runtime.error_payload(str(exc))
 
         def _query(conn, _repo):
             if search_type == "hybrid":
                 return hybrid_search_decisions(
                     conn,
                     query,
-                    since=since,
-                    until=until,
+                    since=cross_since,
+                    until=cross_until,
+                    until_exclusive=cross_until_exclusive,
                     limit=limit,
                     include_stale=include_stale,
                     include_superseded=include_superseded,
@@ -616,8 +638,9 @@ async def ec_decision_search(
             return fts_search_decisions(
                 conn,
                 query,
-                since=since,
-                until=until,
+                since=cross_since,
+                until=cross_until,
+                until_exclusive=cross_until_exclusive,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,
@@ -637,15 +660,17 @@ async def ec_decision_search(
         return error
     try:
         from ...core.decisions import fts_search_decisions, hybrid_search_decisions
-        from ...core.tql import TQLError, resolve_temporal_ref
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
         resolved_since: str | None = None
         resolved_until: str | None = None
+        until_exclusive: bool = False
         try:
             if since:
                 resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
             if until:
-                resolved_until, _ = resolve_temporal_ref(until, repo_path=repo_path)
+                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+            TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         except TQLError as exc:
             return runtime.error_payload(str(exc))
 
@@ -656,6 +681,7 @@ async def ec_decision_search(
                 query,
                 since=resolved_since,
                 until=resolved_until,
+                until_exclusive=until_exclusive,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,
@@ -667,6 +693,7 @@ async def ec_decision_search(
                 query,
                 since=resolved_since,
                 until=resolved_until,
+                until_exclusive=until_exclusive,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,

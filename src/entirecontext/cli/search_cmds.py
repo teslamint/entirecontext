@@ -34,17 +34,18 @@ def search(
         raise typer.Exit(1)
 
     from ..core.project import find_git_root
-    from ..core.tql import TQLError, resolve_temporal_ref
+    from ..core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
     _repo_path = find_git_root()
     resolved_since: str | None = None
     resolved_until: str | None = None
+    until_exclusive: bool = False
     try:
         if since:
             resolved_since, _ = resolve_temporal_ref(since, repo_path=_repo_path)
         if until:
-            ts, is_date = resolve_temporal_ref(until, repo_path=_repo_path)
-            resolved_until = ts
+            resolved_until, until_exclusive = resolve_until(until, repo_path=_repo_path)
+        TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
     except TQLError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
@@ -120,6 +121,7 @@ def search(
                     agent_filter=agent,
                     since=resolved_since,
                     until=resolved_until,
+                    until_exclusive=until_exclusive,
                     limit=limit,
                 )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -136,6 +138,7 @@ def search(
                     agent_filter=agent,
                     since=resolved_since,
                     until=resolved_until,
+                    until_exclusive=until_exclusive,
                     limit=limit,
                 )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -152,6 +155,7 @@ def search(
                     agent_filter=agent,
                     since=resolved_since,
                     until=resolved_until,
+                    until_exclusive=until_exclusive,
                     limit=limit,
                 )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)
