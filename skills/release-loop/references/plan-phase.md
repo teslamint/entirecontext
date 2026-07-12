@@ -61,6 +61,7 @@ Break the work into tasks. Each task is the smallest unit that:
 - Fold setup/scaffolding into the task that needs it
 - Split only where a reviewer could meaningfully reject one task while approving its neighbor
 - Each task ends with a commit
+- **Version bump and CHANGELOG finalization do NOT belong in the PR** — they are post-merge Ship phase work (release commit + tag). Do not create a "version bump" task in the plan.
 
 **Task count guidance:**
 - 3-7 tasks is typical for a medium feature

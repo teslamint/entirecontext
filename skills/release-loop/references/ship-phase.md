@@ -161,7 +161,34 @@ Auto-merge when:
 gh pr merge <number> --squash --delete-branch --auto
 ```
 
-### Step 7: Update Progress
+### Step 7: Release Commit + Tag
+
+After merge, create a separate release commit on the base branch:
+
+```bash
+git checkout $BASE_BRANCH
+git pull origin $BASE_BRANCH
+
+# Version bump
+# - pyproject.toml: version = "X.Y.Z"
+# - src/<pkg>/__init__.py: __version__ = "X.Y.Z"
+# - CHANGELOG.md: rename [Unreleased] section to [X.Y.Z] - YYYY-MM-DD
+# - uv.lock (regenerate if needed)
+
+git add pyproject.toml src/<pkg>/__init__.py CHANGELOG.md uv.lock
+git commit -m "chore(release): vX.Y.Z — <theme>
+
+Assisted-By: Claude Code <noreply@anthropic.com>"
+
+git tag vX.Y.Z
+git push origin $BASE_BRANCH vX.Y.Z
+```
+
+**Why separate:** keeps feature work revertable independently from release ceremony; tag always points to a clean release commit; matches PyPI immutability (v0.9.3 lesson).
+
+**From v0.13.1 retro:** including version bump in the feature PR created git history ambiguity and rebase noise. Separate release commit is the project standard since v0.13.0.
+
+### Step 8: Update Progress
 
 ```
 Phase: ship
@@ -171,6 +198,7 @@ ReviewRounds: M
 CommentsFixed: X
 CommentsDeferred: Y
 Merged: true
+Tag: vX.Y.Z
 ```
 
 ## Anti-Patterns
