@@ -7,6 +7,8 @@ from unittest.mock import patch, MagicMock
 from entirecontext.core.archaeology import (
     _extract_files_from_patch,
     _build_signal_bundle,
+    _ProcessingState,
+    _get_processing_state,
     _is_processed,
     _mark_processed,
     _stream_commits,
@@ -115,6 +117,7 @@ class TestDedup:
         conn.execute(
             "CREATE TABLE archaeology_processed "
             "(commit_sha TEXT PRIMARY KEY, candidate_count INTEGER NOT NULL DEFAULT 0, "
+            "pr_body_processed INTEGER NOT NULL DEFAULT 0, "
             "processed_at TEXT DEFAULT (datetime('now')))"
         )
         return conn
@@ -129,6 +132,12 @@ class TestDedup:
     def test_mark_zero_candidates(self, arch_db):
         _mark_processed(arch_db, "abc123", 0)
         assert _is_processed(arch_db, "abc123") is True
+
+    def test_mark_processed_monotonically_advances_pr_state(self, arch_db):
+        _mark_processed(arch_db, "abc", 2, pr_body_processed=True)
+        _mark_processed(arch_db, "abc", 1, pr_body_processed=False)
+        state = _get_processing_state(arch_db, "abc")
+        assert state == _ProcessingState(True, True, 3)
 
 
 class TestStreamCommits:

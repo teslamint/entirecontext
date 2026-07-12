@@ -80,15 +80,55 @@ def _build_signal_bundle(
     )
 
 
+@dataclass(frozen=True)
+class _ProcessingState:
+    patch_processed: bool = False
+    pr_body_processed: bool = False
+    candidate_count: int = 0
+
+
+def _get_processing_state(conn: sqlite3.Connection, commit_sha: str) -> _ProcessingState:
+    try:
+        row = conn.execute(
+            "SELECT candidate_count, pr_body_processed "
+            "FROM archaeology_processed WHERE commit_sha = ?",
+            (commit_sha,),
+        ).fetchone()
+    except sqlite3.OperationalError as exc:
+        if "no such column: pr_body_processed" not in str(exc):
+            raise
+        row = conn.execute(
+            "SELECT candidate_count FROM archaeology_processed WHERE commit_sha = ?",
+            (commit_sha,),
+        ).fetchone()
+        return _ProcessingState(bool(row), False, row[0] if row else 0)
+    return _ProcessingState(bool(row), bool(row[1]) if row else False, row[0] if row else 0)
+
+
 def _is_processed(conn: sqlite3.Connection, commit_sha: str) -> bool:
-    row = conn.execute("SELECT 1 FROM archaeology_processed WHERE commit_sha = ?", (commit_sha,)).fetchone()
-    return row is not None
+    return _get_processing_state(conn, commit_sha).patch_processed
 
 
-def _mark_processed(conn: sqlite3.Connection, commit_sha: str, candidate_count: int) -> None:
+def _mark_processed(
+    conn: sqlite3.Connection,
+    commit_sha: str,
+    candidate_count: int,
+    *,
+    pr_body_processed: bool = False,
+) -> None:
     conn.execute(
-        "INSERT OR IGNORE INTO archaeology_processed (commit_sha, candidate_count) VALUES (?, ?)",
-        (commit_sha, candidate_count),
+        """
+        INSERT INTO archaeology_processed
+            (commit_sha, candidate_count, pr_body_processed)
+        VALUES (?, ?, ?)
+        ON CONFLICT(commit_sha) DO UPDATE SET
+            candidate_count = archaeology_processed.candidate_count + excluded.candidate_count,
+            pr_body_processed = MAX(
+                archaeology_processed.pr_body_processed,
+                excluded.pr_body_processed
+            )
+        """,
+        (commit_sha, candidate_count, int(pr_body_processed)),
     )
 
 

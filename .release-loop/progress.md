@@ -1,5 +1,6 @@
 # Release Loop Progress
-Phase: plan
+Phase: implement
+CurrentTask: 1 (implementation complete; review pending)
 Feature: v0.14.0 archaeology carry-forward completion
 Branch: feat/v0.14.0-archaeology-carry-forward
 Base: 955fb0df46510f7715f64fa47d5958c5eafc8187
