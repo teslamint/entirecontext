@@ -176,9 +176,7 @@ git pull origin $BASE_BRANCH
 # - uv.lock (regenerate if needed)
 
 git add pyproject.toml src/<pkg>/__init__.py CHANGELOG.md uv.lock
-git commit -m "chore(release): vX.Y.Z — <theme>
-
-Assisted-By: Claude Code <noreply@anthropic.com>"
+git commit -m "chore(release): vX.Y.Z — <theme>"
 
 git tag vX.Y.Z
 git push origin $BASE_BRANCH vX.Y.Z

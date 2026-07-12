@@ -7,11 +7,15 @@ from unittest.mock import patch, MagicMock
 from entirecontext.core.archaeology import (
     _extract_files_from_patch,
     _build_signal_bundle,
+    _ProcessingState,
+    _get_processing_state,
     _is_processed,
     _mark_processed,
     _stream_commits,
     _get_github_token,
     _fetch_pr_body,
+    _PrBodyStatus,
+    _PrBodyFetch,
     _is_github_remote,
     _decode_git_quoted_path,
     archaeologize,
@@ -77,6 +81,49 @@ class TestExtractFilesFromPatch:
         patch = 'diff --git "a/my file.py" "b/my file.py"\n--- a/my file.py\n+++ b/my file.py\n'
         assert _extract_files_from_patch(patch) == ["my file.py"]
 
+    def test_path_containing_separator_text(self):
+        patch = (
+            "diff --git a/dir b/name b/dir b/name\n"
+            "--- a/dir b/name\n+++ b/dir b/name\n"
+        )
+        assert _extract_files_from_patch(patch) == ["dir b/name"]
+
+    def test_deleted_path_uses_source_header(self):
+        patch = "diff --git a/old b/old\n--- a/old\n+++ /dev/null\n"
+        assert _extract_files_from_patch(patch) == ["old"]
+
+    def test_binary_header_only_same_path_fallback(self):
+        patch = "diff --git a/dir b/name b/dir b/name\nBinary files differ\n"
+        assert _extract_files_from_patch(patch) == ["dir b/name"]
+
+    def test_header_only_rename_is_ignored_as_ambiguous(self):
+        patch = "diff --git a/old name.py b/new name.py\nBinary files differ\n"
+        assert _extract_files_from_patch(patch) == []
+
+    def test_rename_uses_destination_path(self):
+        patch = (
+            "diff --git a/old name.py b/new name.py\n"
+            "similarity index 100%\n"
+            "rename from old name.py\n"
+            "rename to new name.py\n"
+        )
+        assert _extract_files_from_patch(patch) == ["new name.py"]
+
+    def test_duplicate_headers_are_deduplicated_in_first_seen_order(self):
+        patch = (
+            "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n"
+            "diff --git a/b.py b/b.py\n--- a/b.py\n+++ b/b.py\n"
+            "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n"
+        )
+        assert _extract_files_from_patch(patch) == ["a.py", "b.py"]
+
+    def test_octal_quoted_destination_path(self):
+        patch = (
+            'diff --git "a/old.py" "b/\\355\\225\\234.py"\n'
+            '--- a/old.py\n+++ "b/\\355\\225\\234.py"\n'
+        )
+        assert _extract_files_from_patch(patch) == ["한.py"]
+
 
 class TestBuildSignalBundle:
     def test_basic(self):
@@ -115,6 +162,7 @@ class TestDedup:
         conn.execute(
             "CREATE TABLE archaeology_processed "
             "(commit_sha TEXT PRIMARY KEY, candidate_count INTEGER NOT NULL DEFAULT 0, "
+            "pr_body_processed INTEGER NOT NULL DEFAULT 0, "
             "processed_at TEXT DEFAULT (datetime('now')))"
         )
         return conn
@@ -129,6 +177,12 @@ class TestDedup:
     def test_mark_zero_candidates(self, arch_db):
         _mark_processed(arch_db, "abc123", 0)
         assert _is_processed(arch_db, "abc123") is True
+
+    def test_mark_processed_monotonically_advances_pr_state(self, arch_db):
+        _mark_processed(arch_db, "abc", 2, pr_body_processed=True)
+        _mark_processed(arch_db, "abc", 1, pr_body_processed=False)
+        state = _get_processing_state(arch_db, "abc")
+        assert state == _ProcessingState(True, True, 3)
 
 
 class TestStreamCommits:
@@ -286,29 +340,30 @@ class TestFetchPrBody:
     def _mock_remote(self, url):
         return MagicMock(returncode=0, stdout=f"{url}\n")
 
-    def test_non_github_origin_returns_none(self):
+    def test_non_github_origin_is_retryable_failure(self):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = self._mock_remote("git@gitlab.com:owner/repo.git")
             result = _fetch_pr_body("abc123", "/tmp/fake", "token")
-        assert result is None
+        assert result.status is _PrBodyStatus.FAILURE
         # Must not attempt a `gh api` call for a non-GitHub remote.
         assert mock_run.call_count == 1
 
-    def test_bitbucket_origin_returns_none(self):
+    def test_bitbucket_origin_is_retryable_failure(self):
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = self._mock_remote("https://bitbucket.org/owner/repo.git")
             result = _fetch_pr_body("abc123", "/tmp/fake", "token")
-        assert result is None
+        assert result.status is _PrBodyStatus.FAILURE
         assert mock_run.call_count == 1
 
     def test_dotted_repo_name_extracted(self):
         with patch("subprocess.run") as mock_run:
             mock_run.side_effect = [
                 self._mock_remote("git@github.com:owner/api.server.git"),
-                MagicMock(returncode=0, stdout="PR body text\n"),
+                MagicMock(returncode=0, stdout='[{"body": "PR body text"}]\n'),
             ]
             result = _fetch_pr_body("abc123", "/tmp/fake", "token")
-        assert result == "PR body text"
+        assert result.status is _PrBodyStatus.FOUND
+        assert result.body == "PR body text"
         gh_call_args = mock_run.call_args_list[1].args[0]
         assert "repos/owner/api.server/commits/abc123/pulls" in gh_call_args
 
@@ -316,12 +371,45 @@ class TestFetchPrBody:
         with patch("subprocess.run") as mock_run:
             mock_run.side_effect = [
                 self._mock_remote("https://github.com/owner/repo.git"),
-                MagicMock(returncode=0, stdout="body\n"),
+                MagicMock(returncode=0, stdout='[{"body": "body"}]\n'),
             ]
             result = _fetch_pr_body("abc123", "/tmp/fake", "token")
-        assert result == "body"
+        assert result.status is _PrBodyStatus.FOUND
+        assert result.body == "body"
         gh_call_args = mock_run.call_args_list[1].args[0]
         assert "repos/owner/repo/commits/abc123/pulls" in gh_call_args
+
+    def test_successful_empty_pr_list_is_conclusive(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                self._mock_remote("https://github.com/owner/repo.git"),
+                MagicMock(returncode=0, stdout="[]"),
+            ]
+            result = _fetch_pr_body("abc123", "/tmp/fake", "token")
+        assert result.status is _PrBodyStatus.EMPTY
+
+    def test_nonzero_gh_response_is_retryable_failure(self):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                self._mock_remote("https://github.com/owner/repo.git"),
+                MagicMock(returncode=1, stdout="", stderr="boom"),
+            ]
+            result = _fetch_pr_body("abc123", "/tmp/fake", "token")
+        assert result.status is _PrBodyStatus.FAILURE
+
+    @pytest.mark.parametrize(
+        "payload",
+        ["{}", "null", "[null]", '"scalar"', "[1]", "[{}]", '[{"body": 1}]'],
+    )
+    def test_unexpected_valid_json_is_retryable_failure(self, payload):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                self._mock_remote("https://github.com/owner/repo.git"),
+                MagicMock(returncode=0, stdout=payload),
+            ]
+            result = _fetch_pr_body("abc123", "/tmp/fake", "token")
+        assert result.status is _PrBodyStatus.FAILURE
+        assert result.warning
 
 
 class TestIsGithubRemote:
@@ -359,6 +447,248 @@ class TestDecodeGitQuotedPath:
 
 
 class TestArchaeologize:
+    def test_dry_run_reports_patch_and_pr_queues(self, ec_db):
+        commits = [
+            ("a" * 40, "one", "patch"),
+            ("b" * 40, "two", "patch"),
+            ("c" * 40, "three", "patch"),
+        ]
+        _mark_processed(ec_db, "a" * 40, 0)
+        _mark_processed(ec_db, "c" * 40, 0, pr_body_processed=True)
+        progress = []
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value=None),
+            patch("entirecontext.core.archaeology._fetch_pr_body") as fetch,
+        ):
+            result = archaeologize(
+                ec_db, "/repo", pr_bodies=True, dry_run=True,
+                progress_callback=progress.append,
+            )
+        assert result.patch_pending == 1
+        assert result.pr_enrichment_pending == 1
+        assert "1 patch extractions pending" in progress[0]
+        assert "1 PR enrichments pending" in progress[0]
+        fetch.assert_not_called()
+
+    def test_tokenless_then_credentialed_retry_uses_pr_only_bundle(self, ec_db):
+        sha = "a" * 40
+        commits = [(sha, "commit message", "patch text")]
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value=None),
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=1, parsed_ok=True),
+            ),
+        ):
+            archaeologize(ec_db, "/repo", pr_bodies=True)
+
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch(
+                "entirecontext.core.archaeology._fetch_pr_body",
+                return_value=_PrBodyFetch(_PrBodyStatus.FOUND, body="PR rationale"),
+            ),
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=0, parsed_ok=True),
+            ) as extract,
+        ):
+            result = archaeologize(ec_db, "/repo", pr_bodies=True)
+        assert result.commits_processed == 1
+        assert extract.call_args.kwargs["bundles"][0].text_blocks == ["PR rationale"]
+        row = ec_db.execute(
+            "SELECT candidate_count, pr_body_processed FROM archaeology_processed WHERE commit_sha = ?",
+            (sha,),
+        ).fetchone()
+        assert tuple(row) == (1, 1)
+
+    def test_empty_pr_completes_without_extraction(self, ec_db):
+        sha = "a" * 40
+        _mark_processed(ec_db, sha, 2)
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter([(sha, "m", "p")])),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch(
+                "entirecontext.core.archaeology._fetch_pr_body",
+                return_value=_PrBodyFetch(_PrBodyStatus.EMPTY),
+            ),
+            patch("entirecontext.core.archaeology.run_extraction") as extract,
+        ):
+            result = archaeologize(ec_db, "/repo", pr_bodies=True)
+        extract.assert_not_called()
+        assert result.commits_processed == 1
+        assert _get_processing_state(ec_db, sha).pr_body_processed is True
+
+    def test_tokenless_pr_only_row_is_counted_as_deferred(self, ec_db):
+        sha = "a" * 40
+        _mark_processed(ec_db, sha, 2)
+        progress = []
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter([(sha, "m", "p")])),
+            patch("entirecontext.core.archaeology._get_github_token", return_value=None),
+            patch("entirecontext.core.archaeology._fetch_pr_body") as fetch,
+            patch("entirecontext.core.archaeology.run_extraction") as extract,
+        ):
+            result = archaeologize(
+                ec_db,
+                "/repo",
+                pr_bodies=True,
+                progress_callback=progress.append,
+            )
+        assert result.commits_scanned == 1
+        assert result.commits_processed == 0
+        assert result.commits_skipped == 1
+        assert any("No GitHub token" in warning for warning in result.warnings)
+        assert progress == ["Processed 0/0 commits, 0 candidates"]
+        assert _get_processing_state(ec_db, sha) == _ProcessingState(True, False, 2)
+        fetch.assert_not_called()
+        extract.assert_not_called()
+
+    def test_tokenless_mixed_buffered_patch_and_deferred_pr_progress_is_coherent(self, ec_db):
+        patch_sha = "a" * 40
+        pr_sha = "b" * 40
+        _mark_processed(ec_db, pr_sha, 2)
+        commits = [
+            (patch_sha, "new patch", "patch"),
+            (pr_sha, "existing patch", "patch"),
+        ]
+        progress = []
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value=None),
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=1, parsed_ok=True),
+            ),
+        ):
+            result = archaeologize(
+                ec_db,
+                "/repo",
+                pr_bodies=True,
+                batch_size=10,
+                progress_callback=progress.append,
+            )
+        assert result.commits_scanned == 2
+        assert result.commits_processed == 1
+        assert result.commits_skipped == 1
+        assert progress == [
+            "Processed 0/1 commits, 0 candidates",
+            "Processed 1/1 commits, 1 candidates",
+        ]
+        assert all("/-" not in message for message in progress)
+        assert _get_processing_state(ec_db, patch_sha) == _ProcessingState(True, False, 1)
+        assert _get_processing_state(ec_db, pr_sha) == _ProcessingState(True, False, 2)
+
+    def test_empty_pr_completes_after_durable_patch_even_if_parse_flag_is_false(self, ec_db):
+        sha = "a" * 40
+        commits = [(sha, "message", "patch")]
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch(
+                "entirecontext.core.archaeology._fetch_pr_body",
+                return_value=_PrBodyFetch(_PrBodyStatus.EMPTY),
+            ) as fetch,
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=1, parsed_ok=False),
+            ),
+        ):
+            first = archaeologize(ec_db, "/repo", pr_bodies=True)
+        assert first.commits_processed == 1
+        assert _get_processing_state(ec_db, sha) == _ProcessingState(True, True, 1)
+        assert fetch.call_count == 1
+
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch("entirecontext.core.archaeology._fetch_pr_body") as refetch,
+            patch("entirecontext.core.archaeology.run_extraction") as reextract,
+        ):
+            second = archaeologize(ec_db, "/repo", pr_bodies=True)
+        assert second.commits_skipped == 1
+        refetch.assert_not_called()
+        reextract.assert_not_called()
+
+    def test_found_parse_failure_remains_retryable_and_candidates_accumulate(self, ec_db):
+        sha = "a" * 40
+        _mark_processed(ec_db, sha, 2)
+        commits = [(sha, "m", "p")]
+        fetch = _PrBodyFetch(_PrBodyStatus.FOUND, body="rationale")
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch("entirecontext.core.archaeology._fetch_pr_body", return_value=fetch),
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=0, parsed_ok=False),
+            ),
+        ):
+            first = archaeologize(ec_db, "/repo", pr_bodies=True)
+        assert first.commits_processed == 0
+        assert _get_processing_state(ec_db, sha).pr_body_processed is False
+
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch("entirecontext.core.archaeology._fetch_pr_body", return_value=fetch),
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=3, parsed_ok=True),
+            ),
+        ):
+            second = archaeologize(ec_db, "/repo", pr_bodies=True)
+        assert second.commits_processed == 1
+        assert _get_processing_state(ec_db, sha) == _ProcessingState(True, True, 5)
+
+    def test_pr_complete_row_skips_fetch_and_extraction(self, ec_db):
+        sha = "a" * 40
+        _mark_processed(ec_db, sha, 1, pr_body_processed=True)
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter([(sha, "m", "p")])),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch("entirecontext.core.archaeology._fetch_pr_body") as fetch,
+            patch("entirecontext.core.archaeology.run_extraction") as extract,
+        ):
+            result = archaeologize(ec_db, "/repo", pr_bodies=True)
+        assert result.commits_skipped == 1
+        fetch.assert_not_called()
+        extract.assert_not_called()
+
+    def test_circuit_skipped_rows_remain_retryable_across_batches(self, ec_db):
+        commits = [(str(i) * 40, f"m{i}", f"p{i}") for i in range(1, 7)]
+        failure = _PrBodyFetch(_PrBodyStatus.FAILURE, warning="provider failed")
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch("entirecontext.core.archaeology._fetch_pr_body", return_value=failure) as fetch,
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=0, parsed_ok=True),
+            ) as extract,
+        ):
+            archaeologize(ec_db, "/repo", pr_bodies=True, batch_size=2)
+        assert fetch.call_count == 3
+        assert extract.call_count == len(commits)
+        assert all(not _get_processing_state(ec_db, sha).pr_body_processed for sha, _, _ in commits)
+
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch(
+                "entirecontext.core.archaeology._fetch_pr_body",
+                return_value=_PrBodyFetch(_PrBodyStatus.EMPTY),
+            ) as retry_fetch,
+            patch("entirecontext.core.archaeology.run_extraction") as retry_extract,
+        ):
+            archaeologize(ec_db, "/repo", pr_bodies=True, batch_size=2)
+        assert retry_fetch.call_count == len(commits)
+        retry_extract.assert_not_called()
+        assert all(_get_processing_state(ec_db, sha).pr_body_processed for sha, _, _ in commits)
+
     def test_dry_run_without_migrated_db_defaults_to_zero_processed(self, git_repo):
         """PR #190 finding #5: dry-run against a connection whose DB has
         never been migrated (no archaeology_processed table) must not

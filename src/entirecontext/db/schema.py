@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -477,6 +477,7 @@ CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_created_at ON ranking_snapshots
 CREATE TABLE IF NOT EXISTS archaeology_processed (
     commit_sha TEXT PRIMARY KEY,
     candidate_count INTEGER NOT NULL DEFAULT 0,
+    pr_body_processed INTEGER NOT NULL DEFAULT 0,
     processed_at TEXT DEFAULT (datetime('now'))
 );
 """,
