@@ -310,6 +310,19 @@ Carry-forward conditions:
 - Experiment analysis may carry forward if qualifying session count insufficient
 - Git Archaeology may split into design (v0.13.0) + implementation (v0.14.0) if scope warrants
 
+## v0.13.1 — Archaeology Hardening
+
+Theme: harden `ec archaeologize` for production-scale repos and close linkage gaps surfaced during dogfooding.
+
+- [x] **`decision_commits` linkage on archaeology candidate promotion** — `confirm_candidate()` now links archaeology candidate `source_id` (commit SHA) to `decision_commits` on promotion
+- [x] **Streaming Popen for large repos** — `_stream_commits()` uses `subprocess.Popen` streaming instead of `subprocess.run()` buffering; memory stays constant regardless of repo size
+- [x] **Merge commit exclusion** — `--no-merges` flag added to skip merge boilerplate messages from extraction pipeline
+- [x] **CLI/MCP `--source` help text update** — documents `archaeology` as a valid value
+
+Carry-forward to v0.14.0:
+- Tokenless `--pr-bodies` re-run support (P3)
+- `dir b/name` path parsing (P4)
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.

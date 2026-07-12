@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-07-12
+
+Archaeology hardening: fixes and performance improvements for the Git Archaeology feature shipped in v0.13.0.
+
+### Added
+
+- **Streaming Popen for `_stream_commits()`** — replaces `subprocess.run()` + full stdout buffering with `subprocess.Popen` streaming. Memory usage stays constant regardless of repo size. Stderr drained via daemon thread to prevent pipe deadlock. Generator cleanup via `try/finally` prevents orphaned git processes.
+- **Lazy `archaeologize()` consumption** — `archaeologize()` no longer materializes all commits with `list()`. Counts and processes commits incrementally in a single pass.
+
+### Fixed
+
+- **`decision_commits` linkage on archaeology candidate promotion** — `confirm_candidate()` now links the archaeology candidate's `source_id` (commit SHA) to `decision_commits` when `source_type='archaeology'`. Previously skipped because the linkage path required `checkpoint_id`, which archaeology candidates lack. Hex-length validation (40/64 chars) guards against non-SHA values.
+- **`--source` CLI help text** — `ec decision candidates list --source` now documents `archaeology` as a valid value. MCP tool description updated to match.
+
+### Changed
+
+- **Merge commit exclusion** — `_stream_commits()` now passes `--no-merges` to `git log`, skipping merge commit messages (e.g., "Merge pull request #NNN") from the extraction pipeline. Merge commit diffs were already suppressed by git's default `--diff-merges=off`.
+
 ## [0.13.0] - 2026-07-12
 
 Git Archaeology: retroactive decision extraction from git history. Carry-forward graduation: all 8 v0.11.0 retro items diagnosed and recorded.

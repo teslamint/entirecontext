@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import io
 import os
 import re
 import subprocess
 import sqlite3
+import threading
 from dataclasses import dataclass, field
 from typing import Callable, Iterator
 
@@ -114,7 +116,7 @@ def _stream_commits(
     # on \x00 with maxsplit=2 to get (sha, message, patch). %B (not %s) is
     # used so the full commit body reaches the bundle, not just the subject.
     cmd = [
-        "git", "log", "--patch", "--reverse",
+        "git", "log", "--patch", "--reverse", "--no-merges",
         "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
         "--format=%x1e%H%x00%B%x00",
     ]
@@ -140,32 +142,68 @@ def _stream_commits(
     if limit is not None and limit > 0:
         cmd.extend(["-n", str(limit)])
 
-    result = subprocess.run(
+    proc = subprocess.Popen(
         cmd,
         cwd=repo_path,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         errors="surrogateescape",
     )
-    if result.returncode != 0:
-        msg = f"git log failed (exit {result.returncode}): {result.stderr.strip()}"
+    assert proc.stdout is not None
+    assert proc.stderr is not None
+    stdout = proc.stdout
+    stderr = proc.stderr
+
+    stderr_buf = io.StringIO()
+    stderr_thread = threading.Thread(
+        target=lambda: stderr_buf.write(stderr.read()),
+        daemon=True,
+    )
+    stderr_thread.start()
+
+    try:
+        buf = ""
+        for line in stdout:
+            buf += line
+            while "\x1e" in buf:
+                idx = buf.index("\x1e")
+                record = buf[:idx].strip()
+                buf = buf[idx + 1:]
+                if not record:
+                    continue
+                parts = record.split("\x00", maxsplit=2)
+                if len(parts) < 2:
+                    continue
+                sha = parts[0].strip()
+                message = parts[1].strip()
+                patch_text = parts[2] if len(parts) > 2 else ""
+                if len(sha) in (40, 64):
+                    yield sha, message, patch_text
+
+        # Process trailing buffer after EOF
+        record = buf.strip()
+        if record:
+            parts = record.split("\x00", maxsplit=2)
+            if len(parts) >= 2:
+                sha = parts[0].strip()
+                message = parts[1].strip()
+                patch_text = parts[2] if len(parts) > 2 else ""
+                if len(sha) in (40, 64):
+                    yield sha, message, patch_text
+    finally:
+        if proc.stdout:
+            proc.stdout.close()
+        if proc.poll() is None:
+            proc.terminate()
+        proc.wait()
+        stderr_thread.join(timeout=5)
+
+    if proc.returncode not in (0, None):
+        stderr_text = stderr_buf.getvalue().strip()
+        msg = f"git log failed (exit {proc.returncode}): {stderr_text}"
         if warnings is not None:
             warnings.append(msg)
-        return
-
-    records = result.stdout.split("\x1e")
-    for record in records:
-        record = record.strip()
-        if not record:
-            continue
-        parts = record.split("\x00", maxsplit=2)
-        if len(parts) < 2:
-            continue
-        sha = parts[0].strip()
-        message = parts[1].strip()
-        patch_text = parts[2] if len(parts) > 2 else ""
-        if len(sha) in (40, 64):
-            yield sha, message, patch_text
 
 
 def _get_github_token() -> str | None:
@@ -249,24 +287,28 @@ def archaeologize(
             )
             pr_bodies = False
 
-    commits = list(_stream_commits(repo_path, since, until, limit, warnings=result.warnings))
-    result.commits_scanned = len(commits)
-
-    try:
-        already_processed = sum(1 for sha, _, _ in commits if _is_processed(conn, sha))
-    except sqlite3.OperationalError:
-        # archaeology_processed table doesn't exist yet (e.g. dry-run before
-        # migration has ever run) — nothing has been processed.
-        already_processed = 0
-    to_process = result.commits_scanned - already_processed
+    commits_scanned = 0
+    already_processed = 0
+    commit_iter = _stream_commits(repo_path, since, until, limit, warnings=result.warnings)
 
     if dry_run:
+        for sha, _, _ in commit_iter:
+            commits_scanned += 1
+            try:
+                if _is_processed(conn, sha):
+                    already_processed += 1
+            except sqlite3.OperationalError:
+                # archaeology_processed table doesn't exist yet (e.g. dry-run
+                # before migration has ever run) — nothing has been processed.
+                pass
+        result.commits_scanned = commits_scanned
         result.commits_skipped = already_processed
+        to_process = commits_scanned - already_processed
         est_tokens_low = to_process * 2500
         est_tokens_high = to_process * 3000
         if progress_callback:
             msg = (
-                f"Found {result.commits_scanned} commits, "
+                f"Found {commits_scanned} commits, "
                 f"{already_processed} already processed, "
                 f"{to_process} to process.\n"
                 f"Estimated token cost: ~{est_tokens_low:,}-{est_tokens_high:,} tokens"
@@ -275,7 +317,7 @@ def archaeologize(
             # commits, not the oldest `limit` — re-runs at the same limit
             # can never reach older history. Surface this when the scan
             # looks capped by the limit rather than by actual history size.
-            if limit and result.commits_scanned >= limit:
+            if limit and commits_scanned >= limit:
                 msg += (
                     f"\nNote: --limit {limit} may be capping results to the most "
                     "recent commits; increase --limit to reach older history."
@@ -286,7 +328,8 @@ def archaeologize(
     batch: list[tuple[str, str, str]] = []
     pr_fail_count = 0
     try:
-        for sha, message, patch_text in commits:
+        for sha, message, patch_text in commit_iter:
+            commits_scanned += 1
             if _is_processed(conn, sha):
                 result.commits_skipped += 1
                 continue
@@ -328,6 +371,7 @@ def archaeologize(
             f"Interrupted by user after {result.commits_processed} commits. Progress saved — re-run to resume."
         )
 
+    result.commits_scanned = commits_scanned
     return result
 
 

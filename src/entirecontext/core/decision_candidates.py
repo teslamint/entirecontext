@@ -199,6 +199,15 @@ def confirm_candidate(
                         link_decision_to_commit(conn, decision_id, cp_row["git_commit_hash"])
                 except Exception:
                     pass
+            elif candidate.get("source_type") == "archaeology" and candidate.get("source_id"):
+                source_id = candidate["source_id"]
+                if len(source_id) in (40, 64) and all(
+                    c in "0123456789abcdef" for c in source_id.lower()
+                ):
+                    try:
+                        link_decision_to_commit(conn, decision_id, source_id)
+                    except Exception:
+                        pass
 
             if candidate.get("assessment_id"):
                 try:

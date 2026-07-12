@@ -14,7 +14,7 @@ async def ec_decision_candidate_list(
     source_type: str | None = None,
     limit: int = 50,
 ) -> str:
-    """List candidate decisions. Filter by session, status, confidence, source type."""
+    """List candidate decisions. Filter by session, status, confidence, source type (session|checkpoint|assessment|archaeology)."""
     (conn, _), error = runtime.resolve_repo()
     if error:
         return error
