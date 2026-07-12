@@ -1,8 +1,14 @@
 # Lessons Learned
 
-_Generated from 22 assessed changes._
+_Generated from 23 assessed changes._
 
 ## 🟢 Expand (increases future options)
+
+### ✅ chore(release): v0.14.0 — Archaeology carry-forward completion
+
+**Feedback:** agree — v0.14.0 expands future options by making PR enrichment independently retryable and preserving exact archaeology file linkage; CI and final branch review confirmed the state model and regression coverage.
+
+_Assessment: 94a3104d | 2026-07-12T03:48:37.904488+00:00_
 
 ### ✅ chore(deps): bump sentence-transformers from 5.5.0 to 5.5.1
 
@@ -173,4 +179,3 @@ _Assessment: 4ac6facf | 2026-06-06T14:40:01.154162+00:00_
 **Feedback:** agree — Release scripts + CI harden the deployment pipeline; enabling trust and auditability for the git-grounded memory model
 
 _Assessment: e5d01a13 | 2026-04-27T05:09:05.329211+00:00_ 
-

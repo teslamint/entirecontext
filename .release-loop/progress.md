@@ -1,8 +1,8 @@
 # Release Loop Progress
-Phase: ship
-CurrentTask: monitoring CI and review comments
+Phase: done
+CurrentTask: complete
 Feature: v0.14.0 archaeology carry-forward completion
-Branch: feat/v0.14.0-archaeology-carry-forward
+Branch: release/v0.14.0
 Base: 955fb0df46510f7715f64fa47d5958c5eafc8187
 BaseBranch: main
 Spec: docs/superpowers/specs/2026-07-12-v0.14.0-archaeology-carry-forward-design.md
@@ -18,4 +18,11 @@ Task 4: complete (commits 20b1766..ca441a4, spec PASS, quality APPROVED after 1 
 Final branch review: complete (commits 1bece3b..08e642b, 3 rounds, clean)
 ReviewRounds: 3
 FindingsFixed: 3 Important
-FindingsDeferred: 0
+FindingsDeferred: 1 P3 architecture follow-up
+CIAttempts: 0
+PRReviewRounds: 1
+CommentsFixed: 0
+CommentsDeferred: 1
+Merged: true
+Tag: v0.14.0
+Retro: docs/retros/2026-07-12-v0.14.0-archaeology-carry-forward-retro.md

@@ -332,6 +332,11 @@ Theme: close every concrete v0.13.1 archaeology carry-forward and lock productio
 - [x] **Streaming lifecycle proof** — record boundaries, clean exit, early generator close, and lazy consumption are covered by deterministic tests.
 - [x] **Source-filter and compatibility proof** — `--source archaeology`, read-only v16 dry-runs, circuit recovery, and live counter conservation are covered.
 
+Carry-forward after v0.14.0:
+- [ ] **Maturity 75 dogfooding** — use `ec context apply` when retrieved decisions or lessons materially influence work, then remeasure `applied_context_rate` and `lesson_reuse_rate`. _(measurement, ongoing)_
+- [ ] **Consolidate PR enrichment state transitions** — when archaeology is next modified, centralize repeated PR fetch-result and processing-state branches to reduce future divergence. _(architecture, P3)_
+- [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.
