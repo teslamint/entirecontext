@@ -547,6 +547,41 @@ class TestArchaeologize:
         fetch.assert_not_called()
         extract.assert_not_called()
 
+    def test_tokenless_mixed_buffered_patch_and_deferred_pr_progress_is_coherent(self, ec_db):
+        patch_sha = "a" * 40
+        pr_sha = "b" * 40
+        _mark_processed(ec_db, pr_sha, 2)
+        commits = [
+            (patch_sha, "new patch", "patch"),
+            (pr_sha, "existing patch", "patch"),
+        ]
+        progress = []
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value=None),
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=1, parsed_ok=True),
+            ),
+        ):
+            result = archaeologize(
+                ec_db,
+                "/repo",
+                pr_bodies=True,
+                batch_size=10,
+                progress_callback=progress.append,
+            )
+        assert result.commits_scanned == 2
+        assert result.commits_processed == 1
+        assert result.commits_skipped == 1
+        assert progress == [
+            "Processed 0/1 commits, 0 candidates",
+            "Processed 1/1 commits, 1 candidates",
+        ]
+        assert all("/-" not in message for message in progress)
+        assert _get_processing_state(ec_db, patch_sha) == _ProcessingState(True, False, 1)
+        assert _get_processing_state(ec_db, pr_sha) == _ProcessingState(True, False, 2)
+
     def test_empty_pr_completes_after_durable_patch_even_if_parse_flag_is_false(self, ec_db):
         sha = "a" * 40
         commits = [(sha, "message", "patch")]

@@ -449,6 +449,7 @@ def archaeologize(
     try:
         for sha, message, patch_text in commit_iter:
             commits_scanned += 1
+            result.commits_scanned = commits_scanned
             state = _get_processing_state(conn, sha)
             needs_patch = not state.patch_processed
             needs_pr = pr_bodies and not state.pr_body_processed
