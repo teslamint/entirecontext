@@ -34,6 +34,8 @@ def decision_create(
 def decision_list(
     status: Optional[str] = typer.Option(None, "--status", help="fresh|stale|superseded|contradicted"),
     file: Optional[str] = typer.Option(None, "--file", help="Filter by linked file path"),
+    since: Optional[str] = typer.Option(None, "--since", help="Lower-bound filter (git ref or ISO date)"),
+    until: Optional[str] = typer.Option(None, "--until", help="Upper-bound filter (git ref or ISO date)"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
     include_contradicted: bool = typer.Option(
         False,
@@ -42,17 +44,26 @@ def decision_list(
     ),
 ):
     from ..core.decisions import list_decisions
+    from ..core.tql import TQLError, resolve_temporal_ref
 
-    conn, _ = get_repo_connection()
+    conn, repo_path = get_repo_connection()
     try:
+        resolved_since: str | None = None
+        resolved_until: str | None = None
+        if since:
+            resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+        if until:
+            resolved_until, _ = resolve_temporal_ref(until, repo_path=repo_path)
         decisions = list_decisions(
             conn,
             staleness_status=status,
             file_path=file,
+            since=resolved_since,
+            until=resolved_until,
             limit=limit,
             include_contradicted=include_contradicted,
         )
-    except ValueError as exc:
+    except (ValueError, TQLError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
     finally:
@@ -347,7 +358,8 @@ def decision_unlink(
 def decision_search(
     query: str = typer.Argument(..., help='FTS5 search query (supports AND, OR, NOT, prefix*, "phrase")'),
     search_type: str = typer.Option("fts", "--search-type", "-t", help="fts|hybrid"),
-    since: Optional[str] = typer.Option(None, "--since", help="Only decisions updated after this ISO date"),
+    since: Optional[str] = typer.Option(None, "--since", help="Lower-bound filter (git ref or ISO date)"),
+    until: Optional[str] = typer.Option(None, "--until", help="Upper-bound filter (git ref or ISO date)"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
     include_stale: bool = typer.Option(True, "--include-stale/--no-include-stale", help="Include stale decisions"),
     include_superseded: bool = typer.Option(
@@ -365,14 +377,22 @@ def decision_search(
         raise typer.Exit(1)
 
     from ..core.decisions import fts_search_decisions, hybrid_search_decisions
+    from ..core.tql import TQLError, resolve_temporal_ref
 
-    conn, _ = get_repo_connection()
+    conn, repo_path = get_repo_connection()
     try:
+        resolved_since: str | None = None
+        resolved_until: str | None = None
+        if since:
+            resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+        if until:
+            resolved_until, _ = resolve_temporal_ref(until, repo_path=repo_path)
         if search_type == "hybrid":
             decisions = hybrid_search_decisions(
                 conn,
                 query,
-                since=since,
+                since=resolved_since,
+                until=resolved_until,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,
@@ -382,13 +402,14 @@ def decision_search(
             decisions = fts_search_decisions(
                 conn,
                 query,
-                since=since,
+                since=resolved_since,
+                until=resolved_until,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,
                 include_contradicted=include_contradicted,
             )
-    except ValueError as exc:
+    except (ValueError, TQLError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
     finally:

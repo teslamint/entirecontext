@@ -104,30 +104,30 @@ class TestFtsQueryErrorHandling:
         from entirecontext.core.search import _fts_search_turns
 
         with pytest.raises(ValueError, match="Invalid FTS query"):
-            _fts_search_turns(db, "AND OR NOT", None, None, None, None, 10)
+            _fts_search_turns(db, "AND OR NOT", None, None, None, None, None, 10)
 
     def test_fts_sessions_bad_syntax_raises_valueerror(self, db):
         from entirecontext.core.search import _fts_search_sessions
 
         with pytest.raises(ValueError, match="Invalid FTS query"):
-            _fts_search_sessions(db, "AND OR NOT", None, 10)
+            _fts_search_sessions(db, "AND OR NOT", None, None, 10)
 
     def test_fts_events_bad_syntax_raises_valueerror(self, db):
         from entirecontext.core.search import _fts_search_events
 
         with pytest.raises(ValueError, match="Invalid FTS query"):
-            _fts_search_events(db, "AND OR NOT", None, 10)
+            _fts_search_events(db, "AND OR NOT", None, None, 10)
 
     def test_fts_colon_punctuation_raises_valueerror(self, db):
         from entirecontext.core.search import _fts_search_turns
 
         with pytest.raises(ValueError, match="Invalid FTS query"):
-            _fts_search_turns(db, "foo:bar", None, None, None, None, 10)
+            _fts_search_turns(db, "foo:bar", None, None, None, None, None, 10)
 
     def test_fts_valid_query_still_works(self, db):
         from entirecontext.core.search import _fts_search_turns
 
-        results = _fts_search_turns(db, "auth", None, None, None, None, 10)
+        results = _fts_search_turns(db, "auth", None, None, None, None, None, 10)
         assert isinstance(results, list)
 
     def test_ec_search_fts_bad_syntax_returns_error_payload(self, mock_repo_db):

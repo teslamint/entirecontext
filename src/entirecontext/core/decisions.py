@@ -436,6 +436,8 @@ def list_decisions(
     conn,
     staleness_status: str | None = None,
     file_path: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     include_contradicted: bool = False,
 ) -> list[dict]:
@@ -446,6 +448,8 @@ def list_decisions(
     results behind a wall of contradicted rows that hit the row-count limit.
     The flag is ignored when `staleness_status` explicitly selects one status.
     """
+    from .tql import TQLContext, apply_temporal_filters
+
     if staleness_status and staleness_status not in VALID_STALENESS:
         raise ValueError(
             f"Invalid staleness_status '{staleness_status}'. Must be one of: {_format_allowed(VALID_STALENESS)}"
@@ -465,6 +469,9 @@ def list_decisions(
         params.append(staleness_status)
     elif not include_contradicted:
         conditions.append("d.staleness_status != 'contradicted'")
+
+    tql = TQLContext(since=since, until=until) if (since or until) else None
+    apply_temporal_filters(conditions, params, tql, "d.created_at")
 
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
@@ -1330,6 +1337,8 @@ def rank_related_decisions(
     assessment_ids: list[str] | None = None,
     diff_text: str | None = None,
     commit_shas: list[str] | None = None,
+    since: str | None = None,
+    until: str | None = None,
     limit: int = 10,
     include_stale: bool = True,
     include_superseded: bool = False,
@@ -1415,16 +1424,20 @@ def rank_related_decisions(
     if not candidate_ids:
         return ([], filter_stats) if _return_stats else []
 
-    # --- 2. Bulk-fetch decision data ---
+    # --- 2. Bulk-fetch decision data (with temporal pre-filter) ---
     id_list = list(candidate_ids)
     placeholders = ",".join("?" for _ in id_list)
-    decisions_raw = [
-        dict(r)
-        for r in conn.execute(
-            f"SELECT * FROM decisions WHERE id IN ({placeholders})",  # noqa: S608
-            id_list,
-        ).fetchall()
-    ]
+    fetch_sql = f"SELECT * FROM decisions WHERE id IN ({placeholders})"  # noqa: S608
+    fetch_params: list[Any] = list(id_list)
+    if since or until:
+        from .tql import TQLContext, apply_temporal_filters
+
+        temporal_conditions: list[str] = []
+        tql = TQLContext(since=since, until=until)
+        apply_temporal_filters(temporal_conditions, fetch_params, tql, "created_at")
+        for cond in temporal_conditions:
+            fetch_sql += f" AND {cond}"
+    decisions_raw = [dict(r) for r in conn.execute(fetch_sql, fetch_params).fetchall()]
     if not decisions_raw:
         return ([], filter_stats) if _return_stats else []
 
@@ -1779,6 +1792,7 @@ def fts_search_decisions(
     query: str,
     *,
     since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     include_stale: bool = True,
     include_superseded: bool = False,
@@ -1786,20 +1800,30 @@ def fts_search_decisions(
 ) -> list[dict]:
     """FTS5 full-text search over decision title and rationale.
 
+    Filters on created_at (point-in-time existence semantics).
+
     Staleness policy (issue #39):
     - Superseded is excluded by default; set include_superseded=True to include.
     - Contradicted is excluded by default; set include_contradicted=True to include.
     - Stale decisions are included by default.
     """
+    from .tql import TQLContext, apply_temporal_filters
+
     staleness_predicate, staleness_params = _staleness_sql_predicate(
         include_stale=include_stale,
         include_superseded=include_superseded,
         include_contradicted=include_contradicted,
         column="d.staleness_status",
     )
-    where_clauses = ["fts_decisions MATCH ?", "(? IS NULL OR d.updated_at >= ?)"]
+    where_clauses: list[str] = ["fts_decisions MATCH ?"]
+    params: list[Any] = [query]
+
+    tql = TQLContext(since=since, until=until) if (since or until) else None
+    apply_temporal_filters(where_clauses, params, tql, "d.created_at")
+
     if staleness_predicate:
         where_clauses.append(staleness_predicate)
+        params.extend(staleness_params)
     where_sql = " AND ".join(where_clauses)
     sql = (
         "SELECT d.id, d.title, d.rationale, d.scope, d.staleness_status, "
@@ -1807,7 +1831,7 @@ def fts_search_decisions(
         "FROM fts_decisions fd JOIN decisions d ON fd.rowid = d.rowid "
         f"WHERE {where_sql} ORDER BY rank LIMIT ?"  # noqa: S608
     )
-    params: list[Any] = [query, since, since, *staleness_params, limit]
+    params.append(limit)
 
     try:
         rows = conn.execute(sql, params).fetchall()
@@ -1825,6 +1849,7 @@ def hybrid_search_decisions(
     query: str,
     *,
     since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     k: int = 60,
     include_stale: bool = True,
@@ -1843,6 +1868,7 @@ def hybrid_search_decisions(
         conn,
         query,
         since=since,
+        until=until,
         limit=limit * 3,
         include_stale=include_stale,
         include_superseded=include_superseded,

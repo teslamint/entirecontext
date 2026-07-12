@@ -21,7 +21,8 @@ def search(
     file: Optional[str] = typer.Option(None, "--file", help="Filter by file path"),
     commit: Optional[str] = typer.Option(None, "--commit", help="Filter by commit hash"),
     agent: Optional[str] = typer.Option(None, "--agent", help="Filter by agent type"),
-    since: Optional[str] = typer.Option(None, "--since", help="Filter by date (ISO8601)"),
+    since: Optional[str] = typer.Option(None, "--since", help="Lower-bound filter (git ref or ISO date)"),
+    until: Optional[str] = typer.Option(None, "--until", help="Upper-bound filter (git ref or ISO date)"),
     target: str = typer.Option("turn", "-t", help="Search target: turn|session|event|content"),
     limit: int = typer.Option(20, "--limit", "-n", help="Max results"),
     global_search: bool = typer.Option(False, "--global", "-g", help="Search across all registered repos"),
@@ -30,6 +31,22 @@ def search(
     """Search across sessions, turns, and events."""
     if sum([bool(semantic), bool(hybrid), bool(fts)]) > 1:
         console.print("[red]--semantic, --hybrid, and --fts are mutually exclusive.[/red]")
+        raise typer.Exit(1)
+
+    from ..core.project import find_git_root
+    from ..core.tql import TQLError, resolve_temporal_ref
+
+    _repo_path = find_git_root()
+    resolved_since: str | None = None
+    resolved_until: str | None = None
+    try:
+        if since:
+            resolved_since, _ = resolve_temporal_ref(since, repo_path=_repo_path)
+        if until:
+            ts, is_date = resolve_temporal_ref(until, repo_path=_repo_path)
+            resolved_until = ts
+    except TQLError as exc:
+        console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
 
     is_cross_repo = global_search or repo
@@ -50,18 +67,17 @@ def search(
                 file_filter=file,
                 commit_filter=commit,
                 agent_filter=agent,
-                since=since,
+                since=resolved_since,
                 limit=limit,
             )
         except ValueError as exc:
             console.print(f"[red]{exc}[/red]")
             raise typer.Exit(1)
     else:
-        from ..core.project import find_git_root
         from ..core.telemetry import detect_current_context, record_retrieval_event
         from ..db import check_and_migrate, get_db
 
-        repo_path = find_git_root()
+        repo_path = _repo_path
         if not repo_path:
             console.print("[red]Not in a git repository.[/red]")
             raise typer.Exit(1)
@@ -81,7 +97,7 @@ def search(
                         file_filter=file,
                         commit_filter=commit,
                         agent_filter=agent,
-                        since=since,
+                        since=resolved_since,
                         limit=limit,
                     )
                     latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -102,7 +118,8 @@ def search(
                     file_filter=file,
                     commit_filter=commit,
                     agent_filter=agent,
-                    since=since,
+                    since=resolved_since,
+                    until=resolved_until,
                     limit=limit,
                 )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -117,7 +134,8 @@ def search(
                     file_filter=file,
                     commit_filter=commit,
                     agent_filter=agent,
-                    since=since,
+                    since=resolved_since,
+                    until=resolved_until,
                     limit=limit,
                 )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)
@@ -132,7 +150,8 @@ def search(
                     file_filter=file,
                     commit_filter=commit,
                     agent_filter=agent,
-                    since=since,
+                    since=resolved_since,
+                    until=resolved_until,
                     limit=limit,
                 )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)

@@ -43,16 +43,17 @@ def regex_search(
     commit_filter: str | None = None,
     agent_filter: str | None = None,
     since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     config: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Regex search across turns/sessions/events."""
     if target == "turn":
-        results = _regex_search_turns(conn, pattern, file_filter, commit_filter, agent_filter, since, limit)
+        results = _regex_search_turns(conn, pattern, file_filter, commit_filter, agent_filter, since, until, limit)
     elif target == "session":
-        results = _regex_search_sessions(conn, pattern, since, limit)
+        results = _regex_search_sessions(conn, pattern, since, until, limit)
     elif target == "event":
-        results = _regex_search_events(conn, pattern, since, limit)
+        results = _regex_search_events(conn, pattern, since, until, limit)
     elif target == "content":
         results = _regex_search_content(conn, pattern, limit)
     else:
@@ -60,7 +61,9 @@ def regex_search(
     return _apply_query_redaction(results, config)
 
 
-def _regex_search_turns(conn, pattern: str, file_filter, commit_filter, agent_filter, since, limit) -> list[dict]:
+def _regex_search_turns(conn, pattern: str, file_filter, commit_filter, agent_filter, since, until, limit) -> list[dict]:
+    from .tql import TQLContext, apply_temporal_filters
+
     query = """
         SELECT t.id, t.session_id, t.user_message, t.assistant_summary,
                t.timestamp, t.files_touched, t.git_commit_hash
@@ -69,10 +72,12 @@ def _regex_search_turns(conn, pattern: str, file_filter, commit_filter, agent_fi
         WHERE 1=1
     """
     params: list[Any] = []
+    conditions: list[str] = []
 
-    if since:
-        query += " AND t.timestamp >= ?"
-        params.append(since)
+    tql = TQLContext(since=since, until=until) if (since or until) else None
+    apply_temporal_filters(conditions, params, tql, "t.timestamp")
+    for cond in conditions:
+        query += f" AND {cond}"
     if commit_filter:
         query += " AND t.git_commit_hash = ?"
         params.append(commit_filter)
@@ -104,12 +109,16 @@ def _regex_search_turns(conn, pattern: str, file_filter, commit_filter, agent_fi
     return results
 
 
-def _regex_search_sessions(conn, pattern: str, since, limit) -> list[dict]:
+def _regex_search_sessions(conn, pattern: str, since, until, limit) -> list[dict]:
+    from .tql import TQLContext, apply_temporal_filters
+
     query = "SELECT * FROM sessions WHERE 1=1"
     params: list[Any] = []
-    if since:
-        query += " AND started_at >= ?"
-        params.append(since)
+    conditions: list[str] = []
+    tql = TQLContext(since=since, until=until) if (since or until) else None
+    apply_temporal_filters(conditions, params, tql, "started_at")
+    for cond in conditions:
+        query += f" AND {cond}"
     query += " ORDER BY last_activity_at DESC LIMIT ?"
     params.append(limit * 3)
 
@@ -126,12 +135,16 @@ def _regex_search_sessions(conn, pattern: str, since, limit) -> list[dict]:
     return results
 
 
-def _regex_search_events(conn, pattern: str, since, limit) -> list[dict]:
+def _regex_search_events(conn, pattern: str, since, until, limit) -> list[dict]:
+    from .tql import TQLContext, apply_temporal_filters
+
     query = "SELECT * FROM events WHERE 1=1"
     params: list[Any] = []
-    if since:
-        query += " AND created_at >= ?"
-        params.append(since)
+    conditions: list[str] = []
+    tql = TQLContext(since=since, until=until) if (since or until) else None
+    apply_temporal_filters(conditions, params, tql, "created_at")
+    for cond in conditions:
+        query += f" AND {cond}"
     query += " ORDER BY created_at DESC LIMIT ?"
     params.append(limit * 3)
 
@@ -208,22 +221,25 @@ def fts_search(
     commit_filter: str | None = None,
     agent_filter: str | None = None,
     since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     config: dict[str, Any] | None = None,
 ) -> list[dict]:
     """FTS5 full-text search."""
     if target == "turn":
-        results = _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit)
+        results = _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, until, limit)
     elif target == "session":
-        results = _fts_search_sessions(conn, query, since, limit)
+        results = _fts_search_sessions(conn, query, since, until, limit)
     elif target == "event":
-        results = _fts_search_events(conn, query, since, limit)
+        results = _fts_search_events(conn, query, since, until, limit)
     else:
         results = []
     return _apply_query_redaction(results, config)
 
 
-def _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit) -> list[dict]:
+def _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, until, limit) -> list[dict]:
+    from .tql import TQLContext, apply_temporal_filters
+
     sql = """
         SELECT t.id, t.session_id, t.user_message, t.assistant_summary,
                t.timestamp, t.files_touched, t.git_commit_hash,
@@ -235,9 +251,11 @@ def _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, sin
     """
     params: list[Any] = [query]
 
-    if since:
-        sql += " AND t.timestamp >= ?"
-        params.append(since)
+    tql = TQLContext(since=since, until=until) if (since or until) else None
+    conditions: list[str] = []
+    apply_temporal_filters(conditions, params, tql, "t.timestamp")
+    for cond in conditions:
+        sql += f" AND {cond}"
     if commit_filter:
         sql += " AND t.git_commit_hash = ?"
         params.append(commit_filter)
@@ -261,12 +279,16 @@ def _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, sin
     return results
 
 
-def _fts_search_sessions(conn, query, since, limit) -> list[dict]:
+def _fts_search_sessions(conn, query, since, until, limit) -> list[dict]:
+    from .tql import TQLContext, apply_temporal_filters
+
     sql = "SELECT s.*, rank FROM fts_sessions fs JOIN sessions s ON fs.rowid = s.rowid WHERE fts_sessions MATCH ?"
     params: list[Any] = [query]
-    if since:
-        sql += " AND s.started_at >= ?"
-        params.append(since)
+    tql = TQLContext(since=since, until=until) if (since or until) else None
+    conditions: list[str] = []
+    apply_temporal_filters(conditions, params, tql, "s.started_at")
+    for cond in conditions:
+        sql += f" AND {cond}"
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
     try:
@@ -277,12 +299,16 @@ def _fts_search_sessions(conn, query, since, limit) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _fts_search_events(conn, query, since, limit) -> list[dict]:
+def _fts_search_events(conn, query, since, until, limit) -> list[dict]:
+    from .tql import TQLContext, apply_temporal_filters
+
     sql = "SELECT e.*, rank FROM fts_events fe JOIN events e ON fe.rowid = e.rowid WHERE fts_events MATCH ?"
     params: list[Any] = [query]
-    if since:
-        sql += " AND e.created_at >= ?"
-        params.append(since)
+    tql = TQLContext(since=since, until=until) if (since or until) else None
+    conditions: list[str] = []
+    apply_temporal_filters(conditions, params, tql, "e.created_at")
+    for cond in conditions:
+        sql += f" AND {cond}"
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
     try:
@@ -326,17 +352,18 @@ def hybrid_search(
     commit_filter: str | None = None,
     agent_filter: str | None = None,
     since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     k: int = 60,
     config: dict[str, Any] | None = None,
 ) -> list[dict]:
     """Hybrid search combining FTS5 relevance and recency via RRF."""
     if target == "turn":
-        results = _hybrid_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit, k)
+        results = _hybrid_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, until, limit, k)
     elif target == "session":
-        results = _hybrid_search_sessions(conn, query, since, limit, k)
+        results = _hybrid_search_sessions(conn, query, since, until, limit, k)
     elif target == "event":
-        results = _hybrid_search_events(conn, query, since, limit, k)
+        results = _hybrid_search_events(conn, query, since, until, limit, k)
     else:
         results = []
     return _apply_query_redaction(results, config)
@@ -361,25 +388,25 @@ def _fuse_and_rank(fts_results: list[dict], ts_key: str, limit: int, k: int) -> 
     return results
 
 
-def _hybrid_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, limit, k) -> list[dict]:
+def _hybrid_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, until, limit, k) -> list[dict]:
     fetch_multiplier = 10 if file_filter else 3
     fts_results = _fts_search_turns(
-        conn, query, file_filter, commit_filter, agent_filter, since, limit * fetch_multiplier
+        conn, query, file_filter, commit_filter, agent_filter, since, until, limit * fetch_multiplier
     )
     if not fts_results:
         return []
     return _fuse_and_rank(fts_results, ts_key="timestamp", limit=limit, k=k)
 
 
-def _hybrid_search_sessions(conn, query, since, limit, k) -> list[dict]:
-    fts_results = _fts_search_sessions(conn, query, since, limit * 3)
+def _hybrid_search_sessions(conn, query, since, until, limit, k) -> list[dict]:
+    fts_results = _fts_search_sessions(conn, query, since, until, limit * 3)
     if not fts_results:
         return []
     return _fuse_and_rank(fts_results, ts_key="last_activity_at", limit=limit, k=k)
 
 
-def _hybrid_search_events(conn, query, since, limit, k) -> list[dict]:
-    fts_results = _fts_search_events(conn, query, since, limit * 3)
+def _hybrid_search_events(conn, query, since, until, limit, k) -> list[dict]:
+    fts_results = _fts_search_events(conn, query, since, until, limit * 3)
     if not fts_results:
         return []
     return _fuse_and_rank(fts_results, ts_key="created_at", limit=limit, k=k)
