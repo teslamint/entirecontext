@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from entirecontext.core.search import fts_search, hybrid_search, regex_search
-from entirecontext.core.tql import TQLContext, resolve_temporal_ref
+from entirecontext.core.tql import resolve_temporal_ref
 
 
 @pytest.fixture

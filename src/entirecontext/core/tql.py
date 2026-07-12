@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 
 class TQLError(Exception):
@@ -102,7 +103,7 @@ def _resolve_git_ref(ref: str, repo_path: str) -> str | None:
 
 
 def apply_temporal_filters(
-    conditions: list[str], params: list, tql: TQLContext | None, column: str
+    conditions: list[str], params: list[Any], tql: TQLContext | None, column: str
 ) -> None:
     """Append datetime()-normalized WHERE clauses for since/until bounds."""
     if not tql:
