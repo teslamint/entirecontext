@@ -79,6 +79,49 @@ class TestExtractFilesFromPatch:
         patch = 'diff --git "a/my file.py" "b/my file.py"\n--- a/my file.py\n+++ b/my file.py\n'
         assert _extract_files_from_patch(patch) == ["my file.py"]
 
+    def test_path_containing_separator_text(self):
+        patch = (
+            "diff --git a/dir b/name b/dir b/name\n"
+            "--- a/dir b/name\n+++ b/dir b/name\n"
+        )
+        assert _extract_files_from_patch(patch) == ["dir b/name"]
+
+    def test_deleted_path_uses_source_header(self):
+        patch = "diff --git a/old b/old\n--- a/old\n+++ /dev/null\n"
+        assert _extract_files_from_patch(patch) == ["old"]
+
+    def test_binary_header_only_same_path_fallback(self):
+        patch = "diff --git a/dir b/name b/dir b/name\nBinary files differ\n"
+        assert _extract_files_from_patch(patch) == ["dir b/name"]
+
+    def test_header_only_rename_is_ignored_as_ambiguous(self):
+        patch = "diff --git a/old name.py b/new name.py\nBinary files differ\n"
+        assert _extract_files_from_patch(patch) == []
+
+    def test_rename_uses_destination_path(self):
+        patch = (
+            "diff --git a/old name.py b/new name.py\n"
+            "similarity index 100%\n"
+            "rename from old name.py\n"
+            "rename to new name.py\n"
+        )
+        assert _extract_files_from_patch(patch) == ["new name.py"]
+
+    def test_duplicate_headers_are_deduplicated_in_first_seen_order(self):
+        patch = (
+            "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n"
+            "diff --git a/b.py b/b.py\n--- a/b.py\n+++ b/b.py\n"
+            "diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n"
+        )
+        assert _extract_files_from_patch(patch) == ["a.py", "b.py"]
+
+    def test_octal_quoted_destination_path(self):
+        patch = (
+            'diff --git "a/old.py" "b/\\355\\225\\234.py"\n'
+            '--- a/old.py\n+++ "b/\\355\\225\\234.py"\n'
+        )
+        assert _extract_files_from_patch(patch) == ["한.py"]
+
 
 class TestBuildSignalBundle:
     def test_basic(self):

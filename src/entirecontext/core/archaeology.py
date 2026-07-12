@@ -27,7 +27,6 @@ class ArchaeologyResult:
     warnings: list[str] = field(default_factory=list)
 
 
-_DIFF_HEADER_RE = re.compile(r'^diff --git "?a/.+ "?b/(.+?)"?$', re.MULTILINE)
 _GIT_OCTAL_RE = re.compile(r"\\([0-7]{3})")
 
 
@@ -55,8 +54,50 @@ def _is_github_remote(url: str) -> bool:
 def _extract_files_from_patch(patch_text: str) -> list[str]:
     if not patch_text:
         return []
-    raw = _DIFF_HEADER_RE.findall(patch_text)
-    return list(dict.fromkeys(_decode_git_quoted_path(p) for p in raw))
+
+    def normalize(path: str, prefix: str | None = None) -> str | None:
+        path = path.strip()
+        if len(path) >= 2 and path[0] == path[-1] == '"':
+            path = path[1:-1]
+        if prefix is not None:
+            marker = f"{prefix}/"
+            if not path.startswith(marker):
+                return None
+            path = path[len(marker):]
+        return _decode_git_quoted_path(path)
+
+    def header_fallback(payload: str) -> str | None:
+        for separator in re.finditer(r' (?="?b/)', payload):
+            source = normalize(payload[:separator.start()], "a")
+            destination = normalize(payload[separator.end():], "b")
+            if source is not None and source == destination:
+                return destination
+        return None
+
+    files: list[str] = []
+    records = re.split(r"(?m)^diff --git ", patch_text)[1:]
+    for record in records:
+        header, _, body = record.partition("\n")
+        path: str | None = None
+
+        rename = re.search(r"(?m)^rename to (.+)$", body)
+        if rename:
+            path = normalize(rename.group(1))
+        else:
+            destination = re.search(r"(?m)^\+\+\+ (.+)$", body)
+            if destination and destination.group(1).strip() != "/dev/null":
+                path = normalize(destination.group(1), "b")
+            else:
+                source = re.search(r"(?m)^--- (.+)$", body)
+                if source and source.group(1).strip() != "/dev/null":
+                    path = normalize(source.group(1), "a")
+
+        if path is None:
+            path = header_fallback(header)
+        if path is not None and path not in files:
+            files.append(path)
+
+    return files
 
 
 def _build_signal_bundle(
