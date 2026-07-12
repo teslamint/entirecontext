@@ -1,24 +1,31 @@
 ---
 name: release-loop
-description: "Drive a feature from idea to merged PR to retrospective. Six phases: Design → Plan → Implement → Review → Ship → Retro. Use /release-loop <feature> to start, /release-loop resume to continue."
+description: "Drive a feature from idea to merged PR to retrospective. Six phases: Design → Plan → Implement → Review → Ship → Retro. Use $release-loop <feature> in Codex or /release-loop <feature> in Claude Code; append resume to continue."
 ---
 
 # Release Loop
 
-Drive a feature through six phases — from idea to merged PR to retrospective — in a single orchestrated loop. Self-contained: works with vanilla Claude Code + git. No external skill dependencies.
+Drive a feature through six phases — from idea to merged PR to retrospective — in a single orchestrated loop. Self-contained: works with Codex or Claude Code plus git. No external skill dependencies.
 
 ## Install
 
-The skill lives in `skills/release-loop/`. To make it invocable via `/release-loop`:
+The skill lives in `skills/release-loop/`. Install or link it in the skill directory for your agent:
 
 ```bash
+# Codex (user-wide)
+ln -s "$(pwd)/skills/release-loop" ~/.codex/skills/release-loop
+
+# Claude Code (repository-local)
 ln -s ../../skills/release-loop .claude/skills/release-loop
 ```
 
+When the repository or plugin already discovers `skills/release-loop/`, no link is needed.
+
 ## Trigger
 
-- `/release-loop <feature description>` — start a new loop
-- `/release-loop resume` — continue from saved state
+- Codex: `$release-loop <feature description>` — start a new loop
+- Codex: `$release-loop resume` — continue from saved state
+- Claude Code: `/release-loop <feature description>` or `/release-loop resume`
 - `release-loop` keyword in conversation
 
 ## Flags
@@ -151,7 +158,7 @@ Use the least capable model that handles each role:
 | Task review (small diff) | standard |
 | Task review (complex/risky diff) | most capable |
 
-Always specify the model explicitly when dispatching subagents.
+Choose the most specific available agent role. In Codex/OMX, set `agent_type` and inherit the configured model unless the task has a concrete reason to override it; in other harnesses, select an equivalent role and model tier explicitly when supported.
 
 ## Non-Goals
 

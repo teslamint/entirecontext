@@ -196,7 +196,7 @@ git diff $(git merge-base $BASE_BRANCH HEAD)..HEAD > .release-loop/reviews/branc
 | Final branch review | most capable (always) |
 | Fix subagent | same tier as the original implementer |
 
-**Always specify the model explicitly** when dispatching subagents. Omitting it inherits the session's model — often the most expensive — defeating cost optimization.
+Use the most specific agent role the harness provides. In Codex/OMX, always set `agent_type` and normally inherit the configured role model; override the model only for a concrete task-specific reason. In other harnesses, select the equivalent role and model tier explicitly when supported.
 
 **Turn count beats token price.** Cheapest models often take 2-3× the turns on multi-step work, costing more overall. Use standard as the floor for reviewers and for implementers working from prose descriptions. Use cheapest only when the plan contains the complete code to write (transcription + testing).
 

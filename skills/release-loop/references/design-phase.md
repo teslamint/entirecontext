@@ -4,7 +4,7 @@ Turn a feature idea into an approved, committed spec through collaborative dialo
 
 ## Entry Condition
 
-User provides a feature requirement (via `/release-loop <feature>` or `--skip-design` is NOT set).
+User provides a feature requirement (via `$release-loop <feature>` in Codex, `/release-loop <feature>` in Claude Code, or `--skip-design` is NOT set).
 
 ## Exit Condition
 
@@ -22,7 +22,7 @@ Before asking any questions, build situational awareness:
 
 ```
 1. git log --oneline -20           # recent work
-2. Read CLAUDE.md, ROADMAP.md      # project conventions + direction
+2. Read AGENTS.md/CLAUDE.md and ROADMAP.md  # agent instructions + direction
 3. Check related files/modules     # existing patterns to follow
 4. Check previous retro files      # carry-forward items that may apply
 ```

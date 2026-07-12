@@ -43,7 +43,7 @@ Use the **most capable model available**. Provide:
 - The spec file path
 - The plan file path
 - Any Minor findings accumulated during Implement phase
-- Project-specific review guidelines (from CLAUDE.md or equivalent)
+- Project-specific review guidelines (from AGENTS.md, CLAUDE.md, or equivalent)
 
 **Reviewer focus areas:**
 
