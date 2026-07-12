@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.14.0] - 2026-07-12
+
+Archaeology carry-forward completion: retryable PR-body enrichment, exact path parsing, and production-scale regression proof.
+
+### Added
+
+- **Retryable PR-body enrichment (schema v17)** — separately tracks durable patch extraction and PR-body completion. A tokenless `--pr-bodies` run preserves useful patch results while a later credentialed run extracts only the missing PR rationale.
+- **Explicit PR fetch outcomes** — distinguishes found bodies, conclusive empty/no-PR results, and retryable provider/API failures. Circuit-breaker state persists across batches without marking skipped work complete.
+- **Archaeology regression proof** — covers streamed record boundaries, subprocess cleanup, lazy iterator consumption, read-only v16 dry-run compatibility, and `--source archaeology` CLI filtering.
+
+### Fixed
+
+- **Paths containing ` b/`** — semantic patch-header parsing preserves exact paths such as `dir b/name` instead of truncating them at a separator-like substring.
+- **Live archaeology progress accounting** — mixed processed, deferred, and skipped work now keeps coherent non-negative counters throughout streaming execution.
 
 ### Changed
 

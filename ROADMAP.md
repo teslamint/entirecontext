@@ -320,8 +320,17 @@ Theme: harden `ec archaeologize` for production-scale repos and close linkage ga
 - [x] **CLI/MCP `--source` help text update** — documents `archaeology` as a valid value
 
 Carry-forward to v0.14.0:
-- Tokenless `--pr-bodies` re-run support (P3)
-- `dir b/name` path parsing (P4)
+- [x] Tokenless `--pr-bodies` re-run support (P3)
+- [x] `dir b/name` path parsing (P4)
+
+## v0.14.0 — Archaeology Carry-Forward Completion
+
+Theme: close every concrete v0.13.1 archaeology carry-forward and lock production-scale behavior with regression evidence.
+
+- [x] **Retryable PR-body enrichment (schema v17)** — patch completion and PR-body completion are tracked independently; tokenless partial work can be enriched later without replaying commit evidence.
+- [x] **Exact patch path parsing** — paths containing separator-like ` b/` text, deletes, renames, binary changes, spaces, and octal-quoted UTF-8 paths retain correct file linkage.
+- [x] **Streaming lifecycle proof** — record boundaries, clean exit, early generator close, and lazy consumption are covered by deterministic tests.
+- [x] **Source-filter and compatibility proof** — `--source archaeology`, read-only v16 dry-runs, circuit recovery, and live counter conservation are covered.
 
 ## v1.0 — Loop Completes Autonomously
 
