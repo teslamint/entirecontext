@@ -188,10 +188,11 @@ git push origin $BASE_BRANCH vX.Y.Z
 
 **From v0.13.1 retro:** including version bump in the feature PR created git history ambiguity and rebase noise. Separate release commit is the project standard since v0.13.0.
 
-### Step 8: Update Progress
+### Step 8: Update Progress and Advance to Retro
 
+Update `.release-loop/progress.md`:
 ```
-Phase: ship
+Phase: retro
 PR: <number>
 CIAttempts: N
 ReviewRounds: M
@@ -200,6 +201,8 @@ CommentsDeferred: Y
 Merged: true
 Tag: vX.Y.Z
 ```
+
+**IMPORTANT: Do NOT stop here or report completion.** The release loop is NOT done until Retro phase completes. Immediately proceed to read `references/retro-phase.md` and execute it. Ship without Retro is an incomplete release — carry-forward items get lost, lessons are not captured, and process regressions accumulate silently.
 
 ## Anti-Patterns
 

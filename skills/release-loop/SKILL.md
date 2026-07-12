@@ -83,6 +83,10 @@ For each phase:
 5. If gate is AUTO: verify exit condition, advance immediately
 6. Update `.release-loop/progress.md` with new phase
 
+### Completion Rule
+
+The release loop is complete ONLY when Retro phase finishes and the retro document is committed. Ship phase (merge + tag) is NOT the end — always advance to Retro immediately. Never report "release done" or "release loop complete" before Retro is committed.
+
 ### Failure Handling
 
 - Any phase can be interrupted — state is saved to `progress.md`
