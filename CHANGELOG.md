@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Archaeology retry state (schema v17)** — separately tracks durable patch extraction and PR-body enrichment completion so retryable PR lookups do not replay commit evidence.
+
 ## [0.13.1] - 2026-07-12
 
 Archaeology hardening: fixes and performance improvements for the Git Archaeology feature shipped in v0.13.0.

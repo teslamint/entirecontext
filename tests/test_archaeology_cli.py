@@ -4,6 +4,11 @@ import re
 import sqlite3
 import subprocess
 
+from typer.testing import CliRunner
+
+from entirecontext.cli import app
+from entirecontext.cli import decisions_cmds
+
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
@@ -154,3 +159,33 @@ def test_limit_negative_is_rejected(git_repo):
         cwd=git_repo,
     )
     assert result.returncode != 0
+
+
+def test_candidates_list_filters_archaeology_source(ec_repo, ec_db, monkeypatch):
+    ec_db.executemany(
+        "INSERT INTO decision_candidates "
+        "(id, title, source_type, source_id, confidence, dedup_key) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            ("arch-1", "archaeology candidate", "archaeology", "commit-1", 0.8, "arch-dedup"),
+            ("session-1", "session candidate", "session", "session-1", 0.9, "session-dedup"),
+        ],
+    )
+    ec_db.commit()
+    db_path = ec_db.execute("PRAGMA database_list").fetchone()[2]
+
+    def fixture_connection():
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn, str(ec_repo)
+
+    monkeypatch.setattr(decisions_cmds, "get_repo_connection", fixture_connection)
+
+    result = CliRunner().invoke(
+        app,
+        ["decision", "candidates", "list", "--source", "archaeology"],
+    )
+
+    assert result.exit_code == 0
+    assert "archaeology candidate" in result.stdout
+    assert "session candidate" not in result.stdout

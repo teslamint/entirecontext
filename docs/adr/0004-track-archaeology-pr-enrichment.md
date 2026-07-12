@@ -1,6 +1,6 @@
 # 0004. Track Archaeology PR Enrichment Separately
 
-**Status:** proposed
+**Status:** accepted
 **Date:** 2026-07-12
 **EC Decision:** none (no relevant stored decision found)
 
