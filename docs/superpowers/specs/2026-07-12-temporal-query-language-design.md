@@ -12,13 +12,13 @@ No inline query tokens (`since:`, `between:`) — CLI flags and MCP structured p
 
 ### 1. Point-in-time decision lookup — "Why is this code like this?"
 
-Find auth-related decisions that existed at the v0.8.0 tag:
+Find auth-related decisions **recorded** before the v0.8.0 release:
 
 ```bash
 ec decision search "auth" --at v0.8.0
 ```
 
-Returns only decisions recorded before the v0.8.0 commit timestamp. Later decisions are excluded.
+Returns only decisions whose `created_at` is before the v0.8.0 commit timestamp. Decisions recorded later are excluded, even if they describe older code.
 
 ### 2. Sprint decision roundup — time-range listing
 
@@ -30,15 +30,17 @@ ec decision list --since 2026-06-01 --until 2026-06-14
 
 ### 3. Cross-release decision comparison — tag-to-tag range search
 
-Track search-related decision changes between v0.10.0 and v0.13.0:
+Find search-related decisions **recorded** between the v0.10.0 and v0.13.0 release timestamps:
 
 ```bash
 ec decision search "search" --since v0.10.0 --at v0.13.0
 ```
 
-### 4. Agent MCP context lookup — decisions before a specific point
+Filters by `created_at` (recording time), not by the code era a decision describes. See [Semantics & Limitations](#semantics--limitations).
 
-An agent queries only decisions recorded up to v0.10.0 before modifying `src/core/search.py`:
+### 4. Agent MCP context lookup — decisions recorded before a specific point
+
+An agent queries only decisions whose `created_at` is before v0.10.0 when preparing to modify `src/core/search.py`:
 
 ```python
 ec_decision_related(file_paths=["src/core/search.py"], at_ref="v0.10.0")
@@ -48,7 +50,7 @@ Decisions recorded after v0.10.0 are excluded from the candidate set before rank
 
 ### 5. Early architecture decisions — upper-bound filter only
 
-Review architecture decisions made before mid-April (project early phase):
+Review architecture decisions **recorded** before mid-April (project early phase):
 
 ```bash
 ec decision search "architecture" --until 2026-04-15
