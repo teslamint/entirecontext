@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import subprocess
 import sqlite3
 import threading
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Callable, Iterator
 
 from .decision_extraction import (
@@ -24,6 +26,8 @@ class ArchaeologyResult:
     commits_processed: int = 0
     commits_skipped: int = 0
     candidates_generated: int = 0
+    patch_pending: int = 0
+    pr_enrichment_pending: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -305,7 +309,20 @@ def _get_github_token() -> str | None:
     return None
 
 
-def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
+class _PrBodyStatus(Enum):
+    FOUND = "found"
+    EMPTY = "empty"
+    FAILURE = "failure"
+
+
+@dataclass(frozen=True)
+class _PrBodyFetch:
+    status: _PrBodyStatus
+    body: str | None = None
+    warning: str | None = None
+
+
+def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> _PrBodyFetch:
     remote_url = subprocess.run(
         ["git", "remote", "get-url", "origin"],
         cwd=repo_path,
@@ -313,13 +330,13 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
         text=True,
     )
     if remote_url.returncode != 0:
-        return None
+        return _PrBodyFetch(_PrBodyStatus.FAILURE, warning="Could not read origin remote")
     url = remote_url.stdout.strip()
     if not _is_github_remote(url):
-        return None
+        return _PrBodyFetch(_PrBodyStatus.FAILURE, warning="Origin is not a GitHub remote")
     match = re.search(r"[:/]([^/]+/[^/]+?)(?:\.git)?$", url)
     if not match:
-        return None
+        return _PrBodyFetch(_PrBodyStatus.FAILURE, warning="Could not parse GitHub repository")
     owner_repo = match.group(1)
 
     env = {**os.environ, "GH_TOKEN": token} if token else None
@@ -329,8 +346,6 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
                 "gh",
                 "api",
                 f"repos/{owner_repo}/commits/{commit_sha}/pulls",
-                "--jq",
-                ".[0].body // empty",
             ],
             capture_output=True,
             text=True,
@@ -338,10 +353,16 @@ def _fetch_pr_body(commit_sha: str, repo_path: str, token: str) -> str | None:
             env=env,
         )
         if result.returncode == 0:
-            return result.stdout.strip() or ""
-        return None
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
+            try:
+                pulls = json.loads(result.stdout)
+            except (json.JSONDecodeError, TypeError):
+                return _PrBodyFetch(_PrBodyStatus.FAILURE, warning="Invalid gh API response")
+            if not pulls or not (pulls[0].get("body") or "").strip():
+                return _PrBodyFetch(_PrBodyStatus.EMPTY)
+            return _PrBodyFetch(_PrBodyStatus.FOUND, body=pulls[0]["body"].strip())
+        return _PrBodyFetch(_PrBodyStatus.FAILURE, warning=result.stderr.strip() or "gh API failed")
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return _PrBodyFetch(_PrBodyStatus.FAILURE, warning=str(exc))
 
 
 def archaeologize(
@@ -366,7 +387,6 @@ def archaeologize(
             result.warnings.append(
                 "No GitHub token found. Set EC_GITHUB_TOKEN or install gh CLI. Proceeding without PR bodies."
             )
-            pr_bodies = False
 
     commits_scanned = 0
     already_processed = 0
@@ -376,22 +396,29 @@ def archaeologize(
         for sha, _, _ in commit_iter:
             commits_scanned += 1
             try:
-                if _is_processed(conn, sha):
+                state = _get_processing_state(conn, sha)
+                if state.patch_processed:
                     already_processed += 1
+                else:
+                    result.patch_pending += 1
+                if pr_bodies and not state.pr_body_processed:
+                    result.pr_enrichment_pending += 1
             except sqlite3.OperationalError:
                 # archaeology_processed table doesn't exist yet (e.g. dry-run
                 # before migration has ever run) — nothing has been processed.
-                pass
+                result.patch_pending += 1
+                if pr_bodies:
+                    result.pr_enrichment_pending += 1
         result.commits_scanned = commits_scanned
         result.commits_skipped = already_processed
-        to_process = commits_scanned - already_processed
-        est_tokens_low = to_process * 2500
-        est_tokens_high = to_process * 3000
+        est_tokens_low = result.patch_pending * 2500 + result.pr_enrichment_pending * 500
+        est_tokens_high = result.patch_pending * 3000 + result.pr_enrichment_pending * 1000
         if progress_callback:
             msg = (
                 f"Found {commits_scanned} commits, "
                 f"{already_processed} already processed, "
-                f"{to_process} to process.\n"
+                f"{result.patch_pending} patch extractions pending, "
+                f"{result.pr_enrichment_pending} PR enrichments pending.\n"
                 f"Estimated token cost: ~{est_tokens_low:,}-{est_tokens_high:,} tokens"
             )
             # `git log -n limit --reverse` selects the most recent `limit`
@@ -406,15 +433,18 @@ def archaeologize(
             progress_callback(msg)
         return result
 
-    batch: list[tuple[str, str, str]] = []
+    batch: list[tuple[str, str, str, _ProcessingState]] = []
     pr_fail_count = 0
     try:
         for sha, message, patch_text in commit_iter:
             commits_scanned += 1
-            if _is_processed(conn, sha):
+            state = _get_processing_state(conn, sha)
+            needs_patch = not state.patch_processed
+            needs_pr = pr_bodies and not state.pr_body_processed
+            if not needs_patch and not needs_pr:
                 result.commits_skipped += 1
                 continue
-            batch.append((sha, message, patch_text))
+            batch.append((sha, message, patch_text, state))
             if len(batch) >= batch_size:
                 pr_fail_count = _process_batch(
                     conn,
@@ -462,7 +492,7 @@ _PR_BODY_FAIL_THRESHOLD = 3
 def _process_batch(
     conn: sqlite3.Connection,
     repo_path: str,
-    batch: list[tuple[str, str, str]],
+    batch: list[tuple[str, str, str, _ProcessingState]],
     result: ArchaeologyResult,
     *,
     pr_bodies: bool,
@@ -473,21 +503,37 @@ def _process_batch(
     consecutive_pr_failures: int = 0,
 ) -> int:
     """Returns updated consecutive_pr_failures count."""
-    for sha, message, patch_text in batch:
-        pr_body = None
-        if pr_bodies and token and consecutive_pr_failures < _PR_BODY_FAIL_THRESHOLD:
-            raw_pr = _fetch_pr_body(sha, repo_path, token)
-            if raw_pr is None:
+    for sha, message, patch_text, state in batch:
+        needs_patch = not state.patch_processed
+        needs_pr = pr_bodies and not state.pr_body_processed
+        pr_fetch: _PrBodyFetch | None = None
+        if needs_pr and token and consecutive_pr_failures < _PR_BODY_FAIL_THRESHOLD:
+            pr_fetch = _fetch_pr_body(sha, repo_path, token)
+            if pr_fetch.status is _PrBodyStatus.FAILURE:
                 consecutive_pr_failures += 1
+                if pr_fetch.warning:
+                    result.warnings.append(f"commit {sha[:12]}: {pr_fetch.warning}")
                 if consecutive_pr_failures >= _PR_BODY_FAIL_THRESHOLD:
                     result.warnings.append(
                         f"PR body fetch failed {_PR_BODY_FAIL_THRESHOLD} times consecutively — disabling for remaining commits"
                     )
             else:
                 consecutive_pr_failures = 0
-                pr_body = raw_pr or None
+        if not needs_patch and pr_fetch is not None and pr_fetch.status is _PrBodyStatus.EMPTY:
+            _mark_processed(conn, sha, 0, pr_body_processed=True)
+            result.commits_processed += 1
+            continue
 
-        bundle = _build_signal_bundle(sha, message, patch_text, pr_body)
+        pr_body = pr_fetch.body if pr_fetch and pr_fetch.status is _PrBodyStatus.FOUND else None
+        if not needs_patch and not pr_body:
+            continue
+
+        bundle = _build_signal_bundle(
+            sha,
+            message if needs_patch else "",
+            patch_text if needs_patch else "",
+            pr_body,
+        )
         try:
             outcome = run_extraction(
                 conn,
@@ -498,7 +544,18 @@ def _process_batch(
                 extraction_weights=extraction_weights,
             )
             if outcome.parsed_ok or outcome.candidates_inserted > 0:
-                _mark_processed(conn, sha, outcome.candidates_inserted)
+                pr_complete = bool(
+                    needs_pr
+                    and pr_fetch is not None
+                    and pr_fetch.status in (_PrBodyStatus.FOUND, _PrBodyStatus.EMPTY)
+                    and outcome.parsed_ok
+                )
+                _mark_processed(
+                    conn,
+                    sha,
+                    outcome.candidates_inserted,
+                    pr_body_processed=pr_complete,
+                )
                 result.commits_processed += 1
                 result.candidates_generated += outcome.candidates_inserted
             else:
