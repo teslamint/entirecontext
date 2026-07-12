@@ -1,0 +1,12 @@
+{
+  "id": "6511c773-0fe0-4d76-937a-44227a577bc9",
+  "session_id": "b79e5ecb-a7d2-44f6-8fa3-1875bab0f62f",
+  "git_commit_hash": "1f5dd09407573f4efe627630426ef46014a8f20a",
+  "git_branch": "fix/codex-reentrance-guard",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/hooks/codex_ingest.py | 3 +--\n tests/test_codex_ingest.py              | 6 ++----\n 2 files changed, 3 insertions(+), 6 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-24 03:10:41",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

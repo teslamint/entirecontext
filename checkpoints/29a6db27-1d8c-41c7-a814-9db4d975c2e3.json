@@ -1,0 +1,12 @@
+{
+  "id": "29a6db27-1d8c-41c7-a814-9db4d975c2e3",
+  "session_id": "b79e5ecb-a7d2-44f6-8fa3-1875bab0f62f",
+  "git_commit_hash": "1f792101a727f0a6f0ed4e220a2468b0d8186836",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "tests/test_decision_hooks.py      | 2 +-\n tests/test_e2e_autonomous_loop.py | 3 ---\n tests/test_llm_backend.py         | 2 --\n tests/test_session_lifecycle.py   | 2 --\n 4 files changed, 1 insertion(+), 8 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-29 04:20:24",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

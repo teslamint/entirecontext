@@ -1,0 +1,12 @@
+{
+  "id": "7112961f-6c96-4bd6-ad03-0efc03091113",
+  "session_id": "7705ec53-3949-4509-a983-e72892be8b7f",
+  "git_commit_hash": "2877ffb250a75b6822388b3557dad2296d47e0fd",
+  "git_branch": "feat/hypothesis-validation-framework",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/cli/purge_cmds.py  | 32 ++++++++++++++++++++++++\n src/entirecontext/core/purge.py      | 15 ++++++++++++\n tests/test_purge_cmds.py             | 35 +++++++++++++++++++++++++++\n tests/test_ranking_snapshot_purge.py | 47 ++++++++++++++++++++++++++++++++++++\n 4 files changed, 129 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-07-04 15:36:35",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "80bcd26d-073d-4918-8c72-812bd63c749c",
+  "session_id": "7d8b2a4c-2bb1-442a-a78e-54b3ea3a0949",
+  "git_commit_hash": "4fa3343a276201927bafd80b08f2ddbb3a577ede",
+  "git_branch": "feat/ec-compact",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "docs/research/index.md                         |   2 +\n docs/research/redesign-direction-2026-06-21.md | 185 +++++++++++++++++++++++++\n 2 files changed, 187 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-06-21 15:34:35",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

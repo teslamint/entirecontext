@@ -1,0 +1,12 @@
+{
+  "id": "5036da08-8c6a-4b15-95f0-b710c1e49cc9",
+  "session_id": "019ee362-cae0-7932-82ab-e9ec7685d301",
+  "git_commit_hash": "4c27474372475588ca454c3b5da0678d5a0d9265",
+  "git_branch": "feat/ec-compact",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "docs: refresh documentation surface for v0.9.3/schema v14",
+  "agent_state": null,
+  "created_at": "2026-06-20 05:12:55",
+  "metadata": null
+}

@@ -1,0 +1,12 @@
+{
+  "id": "2c446cac-a370-4b8b-91eb-515ab2ecc2cf",
+  "session_id": "7705ec53-3949-4509-a983-e72892be8b7f",
+  "git_commit_hash": "fee8840a323142240a396494b45a6cc5d7517a45",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "scripts/experiments/sample_outcome_audit.py        | 72 +++++++++++++++++++---\n src/entirecontext/core/config.py                   |  1 +\n .../core/decision_prompt_surfacing.py              |  3 +-\n src/entirecontext/hooks/handler.py                 |  2 +\n tests/test_pdi_handler.py                          |  6 ++\n 5 files changed, 76 insertions(+), 8 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-05 15:58:24",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

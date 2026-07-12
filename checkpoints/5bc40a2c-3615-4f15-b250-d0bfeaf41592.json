@@ -1,0 +1,12 @@
+{
+  "id": "5bc40a2c-3615-4f15-b250-d0bfeaf41592",
+  "session_id": "61411e59-30f9-4a43-83d3-75056134a6d0",
+  "git_commit_hash": "375a9952e944456239cca60c1503b9bc4dd06cc9",
+  "git_branch": "feat/v0.13.1-archaeology-hardening",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/archaeology.py |  2 +-\n tests/test_archaeology_streaming.py   | 24 ++++++++++++++++++++++++\n 2 files changed, 25 insertions(+), 1 deletion(-)",
+  "agent_state": null,
+  "created_at": "2026-07-11 15:31:34",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

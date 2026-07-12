@@ -1,0 +1,12 @@
+{
+  "id": "e731625d-951f-4f4b-8f3a-4d06ddca5f8e",
+  "session_id": "01150b56-45f8-41ca-954c-fe998e299c76",
+  "git_commit_hash": "9842dcffba1ef93f6be57c6455d71de03865c775",
+  "git_branch": "docs/v0.13.0-design",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/archaeology.py | 18 ++++++++++++++----\n 1 file changed, 14 insertions(+), 4 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-11 00:56:55",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

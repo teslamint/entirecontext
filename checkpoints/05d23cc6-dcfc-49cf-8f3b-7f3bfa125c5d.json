@@ -1,0 +1,12 @@
+{
+  "id": "05d23cc6-dcfc-49cf-8f3b-7f3bfa125c5d",
+  "session_id": "7d8b2a4c-2bb1-442a-a78e-54b3ea3a0949",
+  "git_commit_hash": "fad4f101a346e91b14c9a939130ba70fa060b221",
+  "git_branch": "feat/ec-compact",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                          |   1 +\n LESSONS.md                            |  62 +++++---\n README.md                             | 194 ++++++++++++++++--------\n docs/documentation_in_prs_proposal.md |   1 +\n docs/spec-ec-sync-no-filter.md        |   3 +-\n docs/spec.md                          | 274 +++++++++++++++++++++-------------\n docs/tiered_review_policy_proposal.md |   1 +\n 7 files changed, 353 insertions(+), 183 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-21 15:34:45",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

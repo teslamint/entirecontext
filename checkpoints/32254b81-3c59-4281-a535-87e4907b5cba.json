@@ -1,0 +1,12 @@
+{
+  "id": "32254b81-3c59-4281-a535-87e4907b5cba",
+  "session_id": "7705ec53-3949-4509-a983-e72892be8b7f",
+  "git_commit_hash": "957fc960e43aa5a3b683fbd89aa3905f851ea24e",
+  "git_branch": "feat/hypothesis-validation-framework",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                                |  4 +++\n CLAUDE.md                                   |  4 +--\n src/entirecontext/db/migrations/__init__.py |  2 +-\n src/entirecontext/db/migrations/v015.py     | 41 +++++++++++++++++++++\n src/entirecontext/db/schema.py              | 17 ++++++++-\n tests/test_db_schema.py                     | 55 +++++++++++++++++++++++++++++\n 6 files changed, 119 insertions(+), 4 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-04 14:34:32",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

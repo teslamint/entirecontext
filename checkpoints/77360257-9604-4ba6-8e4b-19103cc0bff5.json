@@ -1,0 +1,12 @@
+{
+  "id": "77360257-9604-4ba6-8e4b-19103cc0bff5",
+  "session_id": "019eaaf7-d9de-7c03-be25-2ef563fa2192",
+  "git_commit_hash": "4fb81cbde4035a11c56d81bdc9c8fb5f4908bbf5",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".../superpowers/specs/2026-06-10-v0.10.0-design.md | 181 +++++++++++++++++++++\n 1 file changed, 181 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-06-10 06:02:12",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

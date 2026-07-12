@@ -1,0 +1,12 @@
+{
+  "id": "965a5134-2f36-42d5-8c68-1ab9447bde6d",
+  "session_id": "019ea5ae-9f3a-7162-b2af-d312a29f1899",
+  "git_commit_hash": "d0cd9fad9c9512465177dfd91a64343afd9cf3f2",
+  "git_branch": "fix/applied-context-rate-session-based",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/dashboard.py | 16 +++++++++-------\n 1 file changed, 9 insertions(+), 7 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-09 04:48:43",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "5a1656e2-a62f-4e46-8302-46b7be0b6850",
+  "session_id": "82df149b-ec84-4714-9fa7-a26c60dc5053",
+  "git_commit_hash": "0435b3306a9d20c1034ca04f39aa6d56cb283eb1",
+  "git_branch": null,
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".release-loop/progress.md                          |  16 +-\n docs/adr/0004-track-archaeology-pr-enrichment.md   |  23 +++\n ...-12-v0.14.0-archaeology-carry-forward-design.md | 196 +++++++++++++++++++++\n 3 files changed, 228 insertions(+), 7 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-12 01:35:37",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

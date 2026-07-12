@@ -1,0 +1,12 @@
+{
+  "id": "61fad903-5ab9-4ede-8a1c-66ffe6ca3162",
+  "session_id": "7519d146-9d33-4320-ae51-8e0e2b6a932b",
+  "git_commit_hash": "7c5baea30401ead84e0b4e3116558d25a7deec58",
+  "git_branch": "docs/backfill-plan-docs-and-lessons",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".../plans/2026-06-08-intervene-automation.md       | 1070 ++++++++++++++++++++\n 1 file changed, 1070 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-06-10 15:19:32",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

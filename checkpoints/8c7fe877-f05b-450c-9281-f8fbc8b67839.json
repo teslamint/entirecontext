@@ -1,0 +1,12 @@
+{
+  "id": "8c7fe877-f05b-450c-9281-f8fbc8b67839",
+  "session_id": "61411e59-30f9-4a43-83d3-75056134a6d0",
+  "git_commit_hash": "0cbdf0dd0ac6732b2ce7eb6d9f845cca59e084fb",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                  |    4 +-\n pyproject.toml                |    2 +-\n src/entirecontext/__init__.py |    2 +-\n uv.lock                       | 2316 +++++++++++++++++++++--------------------\n 4 files changed, 1167 insertions(+), 1157 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-11 15:08:52",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

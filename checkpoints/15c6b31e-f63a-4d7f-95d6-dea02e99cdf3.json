@@ -1,0 +1,12 @@
+{
+  "id": "15c6b31e-f63a-4d7f-95d6-dea02e99cdf3",
+  "session_id": "01150b56-45f8-41ca-954c-fe998e299c76",
+  "git_commit_hash": "86248665a5e971e021e53129e7a2913afdb8fc50",
+  "git_branch": "docs/v0.13.0-design",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CLAUDE.md                             |  2 +-\n src/entirecontext/core/archaeology.py | 11 ++++++++---\n 2 files changed, 9 insertions(+), 4 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-11 02:47:01",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

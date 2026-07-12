@@ -1,0 +1,12 @@
+{
+  "id": "6c175965-7813-4c60-86db-06bb0fcd20be",
+  "session_id": "7d8b2a4c-2bb1-442a-a78e-54b3ea3a0949",
+  "git_commit_hash": "f3c88556d1c4bfb25ae9700ae5d95a750db09f3c",
+  "git_branch": null,
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/cli/compact_cmds.py | 7 +++++--\n tests/test_compact.py                 | 7 +++++++\n 2 files changed, 12 insertions(+), 2 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-21 20:35:50",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

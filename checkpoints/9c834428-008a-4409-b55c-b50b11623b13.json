@@ -1,0 +1,12 @@
+{
+  "id": "9c834428-008a-4409-b55c-b50b11623b13",
+  "session_id": "7705ec53-3949-4509-a983-e72892be8b7f",
+  "git_commit_hash": "f21e77fdf6bd34f6f02a6bcea40c0c9411191de0",
+  "git_branch": "feat/hypothesis-validation-framework",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "scripts/experiments/analyze_blocks.py     |  2 +-\n src/entirecontext/core/decisions.py       | 12 +++++++-----\n src/entirecontext/hooks/decision_hooks.py |  9 +++++++++\n 3 files changed, 17 insertions(+), 6 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-05 09:40:47",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

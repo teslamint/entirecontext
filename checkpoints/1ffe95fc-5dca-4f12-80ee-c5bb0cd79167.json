@@ -1,0 +1,12 @@
+{
+  "id": "1ffe95fc-5dca-4f12-80ee-c5bb0cd79167",
+  "session_id": "b79e5ecb-a7d2-44f6-8fa3-1875bab0f62f",
+  "git_commit_hash": "5cc1d08195d00aadceec4e6e5435ebbac5979dab",
+  "git_branch": "fix/extraction-retry-cap",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/config.py             |   1 +\n src/entirecontext/hooks/decision_hooks.py    |  21 +++-\n src/entirecontext/hooks/session_lifecycle.py |   6 +-\n tests/test_decision_hooks.py                 | 139 ++++++++++++++++++++++++++-\n tests/test_session_lifecycle.py              |   8 +-\n 5 files changed, 167 insertions(+), 8 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-29 04:47:43",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

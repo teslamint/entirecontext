@@ -1,0 +1,12 @@
+{
+  "id": "3839ebb2-ef2e-4d7e-9ed9-44c4c650a2e3",
+  "session_id": "1bd74c65-fb35-42e9-b59f-042cf57326f4",
+  "git_commit_hash": "5b4c75a83328c2cde6bdf5215945ac349021a78a",
+  "git_branch": "chore/release-checklist-and-retro-v0.11.0",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".omc/RELEASE_RULE.md | 35 -------------------------------\n CHANGELOG.md         |  2 +-\n ROADMAP.md           |  2 +-\n docs/RELEASE.md      | 59 ++++++++++++++++++++++++++++++++++++++++++++++++++++\n 4 files changed, 61 insertions(+), 37 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-07 11:15:19",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "ec250cad-a9a8-44d0-ad90-4afb258265d3",
+  "project_id": "df50aa1f-994c-4261-a8e4-0a7b6dee3498",
+  "session_type": "claude",
+  "started_at": "2026-06-29T02:58:38.637316+00:00",
+  "ended_at": "2026-06-29T02:59:10.437081+00:00",
+  "session_title": "You are reviewing an assessment of a code change (verdict, impact summary, roadmap alignment, tidy s",
+  "session_summary": null,
+  "total_turns": 1
+}

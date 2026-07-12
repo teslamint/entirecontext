@@ -1,0 +1,12 @@
+{
+  "id": "5536a7a8-9f9c-495a-b639-c0fb9c9330db",
+  "session_id": "b79e5ecb-a7d2-44f6-8fa3-1875bab0f62f",
+  "git_commit_hash": "024e2b29fb8cf5e7ceb9d9c67200b9cf4596d2b8",
+  "git_branch": "fix/stop-hook-extraction-fallback",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/hooks/session_lifecycle.py | 20 ++++++++++\n src/entirecontext/hooks/turn_capture.py      |  4 ++\n tests/test_session_lifecycle.py              | 57 ++++++++++++++++++++++++++++\n 3 files changed, 81 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-06-29 03:50:21",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

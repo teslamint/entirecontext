@@ -1,0 +1,12 @@
+{
+  "id": "c7fd707c-ea61-4297-94f1-d88eab75019e",
+  "session_id": "019ee362-cae0-7932-82ab-e9ec7685d301",
+  "git_commit_hash": "b5410f9c299b0c3b254b4a0f090d20a80f3dd5d3",
+  "git_branch": "feat/ec-compact",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "README.md                            |   2 +\n docs/entirecontext-project-manual.md | 834 +++++++++++++++++++++++++++++++++++\n 2 files changed, 836 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-06-21 15:28:59",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

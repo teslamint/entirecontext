@@ -1,0 +1,12 @@
+{
+  "id": "cafc4157-5ee4-475f-975a-44262cf3bcf0",
+  "session_id": "b79e5ecb-a7d2-44f6-8fa3-1875bab0f62f",
+  "git_commit_hash": "395879a014111c492a575796f8daf668a7223c1f",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/hooks/decision_hooks.py    | 10 +++++++++-\n src/entirecontext/hooks/session_lifecycle.py |  9 +++++++++\n 2 files changed, 18 insertions(+), 1 deletion(-)",
+  "agent_state": null,
+  "created_at": "2026-06-29 04:51:52",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

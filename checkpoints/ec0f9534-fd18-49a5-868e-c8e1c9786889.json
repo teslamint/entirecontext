@@ -1,0 +1,12 @@
+{
+  "id": "ec0f9534-fd18-49a5-868e-c8e1c9786889",
+  "session_id": "7519d146-9d33-4320-ae51-8e0e2b6a932b",
+  "git_commit_hash": "7bd942fdc2112c83cd837f69e699053b4889dc82",
+  "git_branch": "docs/backfill-plan-docs-and-lessons",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".../plans/2026-06-07-measurement-accuracy.md       | 857 +++++++++++++++++++++\n 1 file changed, 857 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-06-10 15:19:24",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

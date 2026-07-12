@@ -1,0 +1,12 @@
+{
+  "id": "62e13ac3-5824-4ec8-b176-8737a7e1e079",
+  "session_id": "019eeaa8-3c9d-7c33-a791-b62333f25a17",
+  "git_commit_hash": "4c27474372475588ca454c3b5da0678d5a0d9265",
+  "git_branch": "feat/ec-compact",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "docs: add comprehensive project manual",
+  "agent_state": null,
+  "created_at": "2026-06-21 15:07:26",
+  "metadata": null
+}

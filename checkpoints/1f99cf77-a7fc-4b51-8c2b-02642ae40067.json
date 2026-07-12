@@ -1,0 +1,12 @@
+{
+  "id": "1f99cf77-a7fc-4b51-8c2b-02642ae40067",
+  "session_id": "61411e59-30f9-4a43-83d3-75056134a6d0",
+  "git_commit_hash": "27e2c19e890a0ccb397f58d3608fe851cb0da310",
+  "git_branch": "feat/v0.13.1-archaeology-hardening",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".release-loop/.gitignore      |  3 +++\n .release-loop/progress.md     | 10 ++++++++++\n CHANGELOG.md                  | 18 ++++++++++++++++++\n docs/ROADMAP.md               | 15 +++++++++++++++\n pyproject.toml                |  2 +-\n src/entirecontext/__init__.py |  2 +-\n 6 files changed, 48 insertions(+), 2 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-11 15:35:07",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

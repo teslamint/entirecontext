@@ -1,0 +1,12 @@
+{
+  "id": "c32499cc-0c46-4a9c-9684-c0a96c07b6be",
+  "session_id": "01150b56-45f8-41ca-954c-fe998e299c76",
+  "git_commit_hash": "eccd70b8cf762dabaddc1f555226d3f34f533b00",
+  "git_branch": "docs/v0.13.0-design",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".../plans/2026-07-11-v0.13.0-git-archaeology.md    | 1450 ++++++++++++++++++++\n 1 file changed, 1450 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-07-10 15:48:13",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

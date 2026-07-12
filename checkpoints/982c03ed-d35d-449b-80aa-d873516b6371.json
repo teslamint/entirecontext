@@ -1,0 +1,12 @@
+{
+  "id": "982c03ed-d35d-449b-80aa-d873516b6371",
+  "session_id": "7d8b2a4c-2bb1-442a-a78e-54b3ea3a0949",
+  "git_commit_hash": "8945ec23371a664c2a9e864f785dff0ac9dfb2a4",
+  "git_branch": null,
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "docs/research/index.md                         |   2 +\n docs/research/redesign-direction-2026-06-21.md | 185 +++++++++++++++++++++++++\n 2 files changed, 187 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-06-21 20:35:50",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

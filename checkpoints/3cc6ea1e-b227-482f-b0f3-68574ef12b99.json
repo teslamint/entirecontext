@@ -1,0 +1,12 @@
+{
+  "id": "3cc6ea1e-b227-482f-b0f3-68574ef12b99",
+  "session_id": "01150b56-45f8-41ca-954c-fe998e299c76",
+  "git_commit_hash": "1d811b378acf9c00dc461549fd85c080e8c4763a",
+  "git_branch": "docs/v0.13.0-design",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                                |   4 +\n src/entirecontext/db/migrations/__init__.py |   2 +-\n src/entirecontext/db/migrations/v016.py     | 160 ++++++++++++++++++++++++\n src/entirecontext/db/schema.py              |  11 +-\n tests/test_db_schema.py                     |   9 +-\n tests/test_migration_v016.py                | 181 ++++++++++++++++++++++++++++\n 6 files changed, 363 insertions(+), 4 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-10 16:05:44",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

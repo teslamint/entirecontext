@@ -1,0 +1,12 @@
+{
+  "id": "98f9bf89-470c-4bd8-800f-6b3d471296ea",
+  "session_id": "61411e59-30f9-4a43-83d3-75056134a6d0",
+  "git_commit_hash": "bb7bb7bc30c6c78ee82cfcb79b40edcb71b485d8",
+  "git_branch": "feat/v0.13.1-archaeology-hardening",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "docs/ROADMAP.md                       |  2 +-\n src/entirecontext/core/archaeology.py | 12 ++++++------\n 2 files changed, 7 insertions(+), 7 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-11 15:40:20",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

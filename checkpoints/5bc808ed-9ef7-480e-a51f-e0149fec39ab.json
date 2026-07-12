@@ -1,0 +1,12 @@
+{
+  "id": "5bc808ed-9ef7-480e-a51f-e0149fec39ab",
+  "session_id": "dd587c94-addc-470b-9fd6-faa4f6443c8b",
+  "git_commit_hash": "4c27474372475588ca454c3b5da0678d5a0d9265",
+  "git_branch": "feat/ec-compact",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": null,
+  "agent_state": null,
+  "created_at": "2026-06-15 09:51:33",
+  "metadata": "{\"source\": \"auto_session_end\"}"
+}

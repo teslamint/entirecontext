@@ -1,0 +1,12 @@
+{
+  "id": "8909d5dc-9596-47c7-91d2-68eb34fe5566",
+  "session_id": "d06cb986-5e83-459e-bbb0-1b3a8023c757",
+  "git_commit_hash": "2037ceb460079c8a62d016dc5cbfaf3526275332",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "CHANGELOG.md                  | 15 ++++++++++++++-\n ROADMAP.md                    | 13 +++++++++++--\n pyproject.toml                |  2 +-\n src/entirecontext/__init__.py |  2 +-\n uv.lock                       | 38 +++++++++++++++++++-------------------\n 5 files changed, 46 insertions(+), 24 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-12 03:48:37",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

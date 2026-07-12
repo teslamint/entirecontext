@@ -1,0 +1,12 @@
+{
+  "id": "f26853da-7d9a-4c3e-b64e-f9892ac894b3",
+  "session_id": "7705ec53-3949-4509-a983-e72892be8b7f",
+  "git_commit_hash": "1eef84a774334220339e0371bb84f41d5438a145",
+  "git_branch": "feat/hypothesis-validation-framework",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/decisions.py |  4 +---\n tests/test_ranking_snapshots.py     | 39 +++++++++++++++++++++++++++++++++----\n 2 files changed, 36 insertions(+), 7 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-04 14:57:11",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

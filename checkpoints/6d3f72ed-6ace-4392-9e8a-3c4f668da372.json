@@ -1,0 +1,12 @@
+{
+  "id": "6d3f72ed-6ace-4392-9e8a-3c4f668da372",
+  "session_id": "01150b56-45f8-41ca-954c-fe998e299c76",
+  "git_commit_hash": "4487b07b8bbc2f1a1c3e7956992255fa282db721",
+  "git_branch": "docs/v0.13.0-design",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/cli/__init__.py         |  2 +\n src/entirecontext/cli/archaeology_cmds.py | 80 +++++++++++++++++++++++++++++++\n src/entirecontext/core/config.py          |  5 ++\n tests/test_archaeology_cli.py             | 46 ++++++++++++++++++\n 4 files changed, 133 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-07-10 16:49:46",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

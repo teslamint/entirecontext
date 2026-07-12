@@ -1,0 +1,12 @@
+{
+  "id": "aee60dde-c31d-4afe-956c-d49de15118cf",
+  "session_id": "019eaaf7-d9de-7c03-be25-2ef563fa2192",
+  "git_commit_hash": "a27eb64e752fc3ef256e60d9e9c95a3a56781ec5",
+  "git_branch": "chore/v0.9.2-prep",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "docs/adr/0003-sessions-ended-non-monotonic.md | 12 ++++++++----\n src/entirecontext/__init__.py                 |  2 +-\n 2 files changed, 9 insertions(+), 5 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-09 09:33:55",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

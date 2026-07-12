@@ -1,0 +1,12 @@
+{
+  "id": "4e99220d-8e4c-4815-ac90-9ad6b5b46b5b",
+  "session_id": "01150b56-45f8-41ca-954c-fe998e299c76",
+  "git_commit_hash": "a5dacf44007a03c92736df28418970d8830aa485",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".../specs/2026-07-11-release-loop-skill-design.md  | 82 ++++++++++++++++------\n 1 file changed, 59 insertions(+), 23 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-11 11:27:15",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "08309ba3-8a9e-4316-8388-afe36b294d0e",
+  "session_id": "b79e5ecb-a7d2-44f6-8fa3-1875bab0f62f",
+  "git_commit_hash": "d0a60a1efac426d7f09ecfbda7cdf3207733a4d8",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": ".../specs/2026-06-29-decidelog-rebrand-design.md   | 155 +++++++++++++--------\n 1 file changed, 96 insertions(+), 59 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-29 02:26:42",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

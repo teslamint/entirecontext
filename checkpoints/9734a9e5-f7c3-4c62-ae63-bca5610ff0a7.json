@@ -1,0 +1,12 @@
+{
+  "id": "9734a9e5-f7c3-4c62-ae63-bca5610ff0a7",
+  "session_id": "7d8b2a4c-2bb1-442a-a78e-54b3ea3a0949",
+  "git_commit_hash": "898173c36c9ff26c965dbe18044757841a3363b6",
+  "git_branch": "feat/ec-compact",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/compact.py | 8 ++++++--\n 1 file changed, 6 insertions(+), 2 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-21 21:07:51",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

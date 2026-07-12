@@ -1,0 +1,12 @@
+{
+  "id": "c16f3f5a-acd1-41c1-ac59-024aac8414f0",
+  "session_id": "019eaaf7-d9de-7c03-be25-2ef563fa2192",
+  "git_commit_hash": "c2eca4ae48f96ed9af1bc4477156d178cc8065a4",
+  "git_branch": "chore/v0.9.2-prep",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/cli/import_cmds.py    |  2 +-\n src/entirecontext/cli/index_cmds.py     |  4 ++--\n src/entirecontext/cli/search_cmds.py    |  2 +-\n src/entirecontext/core/cross_repo.py    |  2 +-\n src/entirecontext/core/hybrid_search.py | 14 --------------\n src/entirecontext/core/indexing.py      | 14 --------------\n src/entirecontext/mcp/tools/search.py   |  2 +-\n tests/test_hybrid_search.py             | 12 ++++++------\n tests/test_import_cmds.py               |  6 +++---\n tests/test_index_cmds.py                | 18 +++++++++---------\n tests/test_indexing.py                  |  4 ++--\n 11 files changed, 26 insertions(+), 54 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-06-09 09:45:21",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

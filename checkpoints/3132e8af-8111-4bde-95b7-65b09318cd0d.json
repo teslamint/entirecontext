@@ -1,0 +1,12 @@
+{
+  "id": "3132e8af-8111-4bde-95b7-65b09318cd0d",
+  "session_id": "61411e59-30f9-4a43-83d3-75056134a6d0",
+  "git_commit_hash": "11c3acad63c77e06d64f8828871832ce9fc7e643",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "ROADMAP.md                                         |   13 +\n docs/ROADMAP.md                                    |   15 -\n ...26-07-12-v0.13.1-archaeology-hardening-retro.md |   86 +\n src/entirecontext/core/archaeology.py              |    8 +-\n uv.lock                                            | 2316 ++++++++++----------\n 5 files changed, 1259 insertions(+), 1179 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-12 00:09:02",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

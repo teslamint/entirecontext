@@ -1,0 +1,10 @@
+{
+  "id": "def2b123-8d7b-471c-9b14-d165f58c42df",
+  "project_id": "df50aa1f-994c-4261-a8e4-0a7b6dee3498",
+  "session_type": "claude",
+  "started_at": "2026-06-08T10:36:31.396466+00:00",
+  "ended_at": "2026-06-08T10:36:35.957970+00:00",
+  "session_title": "Summarize the user's intent and goals from this coding session in 1-2 sentences. Be specific about w",
+  "session_summary": null,
+  "total_turns": 1
+}

@@ -1,0 +1,12 @@
+{
+  "id": "5c845916-f4ce-4e5b-b726-6b8029b3083d",
+  "session_id": "7705ec53-3949-4509-a983-e72892be8b7f",
+  "git_commit_hash": "1fb13312ca0ad9207abebf0c03c21f8d6f41e9e0",
+  "git_branch": "feat/hypothesis-validation-framework",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/decisions.py | 2 ++\n 1 file changed, 2 insertions(+)",
+  "agent_state": null,
+  "created_at": "2026-07-04 16:00:47",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "6669614f-f2a6-41a5-8310-68f0832dc731",
+  "session_id": "7705ec53-3949-4509-a983-e72892be8b7f",
+  "git_commit_hash": "9cfff390064d98071f22d25112a5fe79ccc6886c",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "src/entirecontext/core/config.py          |   6 ++\n src/entirecontext/hooks/decision_hooks.py |   6 ++\n src/entirecontext/hooks/handler.py        |   5 +-\n src/entirecontext/hooks/turn_capture.py   |   3 +-\n tests/test_experiment_block.py            | 166 ++++++++++++++++++++++++++++++\n 5 files changed, 184 insertions(+), 2 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-05 16:58:03",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

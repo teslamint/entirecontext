@@ -1,0 +1,12 @@
+{
+  "id": "7ae83e9e-cb43-4089-8fbd-7c2907202f27",
+  "session_id": "7705ec53-3949-4509-a983-e72892be8b7f",
+  "git_commit_hash": "7c58d8fae10a589aeaa6da6ee4de0f81ec098bea",
+  "git_branch": "feat/hypothesis-validation-framework",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "scripts/experiments/analyze_blocks.py              | 21 +++++++-----\n .../core/decision_prompt_surfacing.py              |  5 +++\n src/entirecontext/hooks/handler.py                 | 40 ++++++++++++++++++----\n tests/test_ranking_snapshot_backpatch.py           | 15 ++------\n 4 files changed, 55 insertions(+), 26 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-05 09:59:38",
+  "metadata": "{\"source\": \"post_commit\"}"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "af5bf74a-fab1-4c70-9534-bec537fa7cfa",
+  "session_id": "61411e59-30f9-4a43-83d3-75056134a6d0",
+  "git_commit_hash": "900a160297a7e24ba7b44ee00de5e91c2d7abaa4",
+  "git_branch": "main",
+  "parent_checkpoint_id": null,
+  "files_snapshot": null,
+  "diff_summary": "LESSONS.md                                         |  44 ++++----\n ...6-07-12-v0.13.1-archaeology-hardening-design.md | 121 +++++++++++++++++++++\n uv.lock                                            |   2 +-\n 3 files changed, 144 insertions(+), 23 deletions(-)",
+  "agent_state": null,
+  "created_at": "2026-07-11 15:18:57",
+  "metadata": "{\"source\": \"post_commit\"}"
+}
