@@ -6,7 +6,7 @@ Implementation complete; review pending.
 
 ## Changes
 
-- Added deterministic fake-`Popen` coverage for record separators split at iterator boundaries.
+- Added deterministic fake-`Popen` coverage faithful to text-mode line iteration, where one line ends before the next record separator and the following line begins with it.
 - Proved clean completion does not terminate the subprocess or emit warnings.
 - Proved closing a live generator terminates and waits for its subprocess.
 - Added a sentinel iterator proving `batch_size=1` starts extraction before requesting the next commit.

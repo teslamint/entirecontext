@@ -25,8 +25,7 @@ class TestStreamingPopen:
         proc = _fake_popen(
             [
                 f"\x1e{first_sha}\x00first message\x00first patch\n",
-                "\x1e",
-                f"{second_sha}\x00second message\x00second patch\n",
+                f"\x1e{second_sha}\x00second message\x00second patch\n",
             ]
         )
         monkeypatch.setattr("entirecontext.core.archaeology.subprocess.Popen", lambda *a, **kw: proc)
