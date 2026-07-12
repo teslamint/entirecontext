@@ -522,6 +522,62 @@ class TestArchaeologize:
         assert result.commits_processed == 1
         assert _get_processing_state(ec_db, sha).pr_body_processed is True
 
+    def test_tokenless_pr_only_row_is_counted_as_deferred(self, ec_db):
+        sha = "a" * 40
+        _mark_processed(ec_db, sha, 2)
+        progress = []
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter([(sha, "m", "p")])),
+            patch("entirecontext.core.archaeology._get_github_token", return_value=None),
+            patch("entirecontext.core.archaeology._fetch_pr_body") as fetch,
+            patch("entirecontext.core.archaeology.run_extraction") as extract,
+        ):
+            result = archaeologize(
+                ec_db,
+                "/repo",
+                pr_bodies=True,
+                progress_callback=progress.append,
+            )
+        assert result.commits_scanned == 1
+        assert result.commits_processed == 0
+        assert result.commits_skipped == 1
+        assert any("No GitHub token" in warning for warning in result.warnings)
+        assert progress == ["Processed 0/0 commits, 0 candidates"]
+        assert _get_processing_state(ec_db, sha) == _ProcessingState(True, False, 2)
+        fetch.assert_not_called()
+        extract.assert_not_called()
+
+    def test_empty_pr_completes_after_durable_patch_even_if_parse_flag_is_false(self, ec_db):
+        sha = "a" * 40
+        commits = [(sha, "message", "patch")]
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch(
+                "entirecontext.core.archaeology._fetch_pr_body",
+                return_value=_PrBodyFetch(_PrBodyStatus.EMPTY),
+            ) as fetch,
+            patch(
+                "entirecontext.core.archaeology.run_extraction",
+                return_value=ExtractionOutcome(candidates_inserted=1, parsed_ok=False),
+            ),
+        ):
+            first = archaeologize(ec_db, "/repo", pr_bodies=True)
+        assert first.commits_processed == 1
+        assert _get_processing_state(ec_db, sha) == _ProcessingState(True, True, 1)
+        assert fetch.call_count == 1
+
+        with (
+            patch("entirecontext.core.archaeology._stream_commits", return_value=iter(commits)),
+            patch("entirecontext.core.archaeology._get_github_token", return_value="token"),
+            patch("entirecontext.core.archaeology._fetch_pr_body") as refetch,
+            patch("entirecontext.core.archaeology.run_extraction") as reextract,
+        ):
+            second = archaeologize(ec_db, "/repo", pr_bodies=True)
+        assert second.commits_skipped == 1
+        refetch.assert_not_called()
+        reextract.assert_not_called()
+
     def test_found_parse_failure_remains_retryable_and_candidates_accumulate(self, ec_db):
         sha = "a" * 40
         _mark_processed(ec_db, sha, 2)

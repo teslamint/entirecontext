@@ -455,6 +455,15 @@ def archaeologize(
             if not needs_patch and not needs_pr:
                 result.commits_skipped += 1
                 continue
+            if not needs_patch and needs_pr and not token:
+                result.commits_skipped += 1
+                if progress_callback:
+                    progress_callback(
+                        f"Processed {result.commits_processed}/"
+                        f"{commits_scanned - result.commits_skipped} commits, "
+                        f"{result.candidates_generated} candidates"
+                    )
+                continue
             batch.append((sha, message, patch_text, state))
             if len(batch) >= batch_size:
                 pr_fail_count = _process_batch(
@@ -558,8 +567,13 @@ def _process_batch(
                 pr_complete = bool(
                     needs_pr
                     and pr_fetch is not None
-                    and pr_fetch.status in (_PrBodyStatus.FOUND, _PrBodyStatus.EMPTY)
-                    and outcome.parsed_ok
+                    and (
+                        pr_fetch.status is _PrBodyStatus.EMPTY
+                        or (
+                            pr_fetch.status is _PrBodyStatus.FOUND
+                            and outcome.parsed_ok
+                        )
+                    )
                 )
                 _mark_processed(
                     conn,
