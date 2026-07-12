@@ -6,7 +6,7 @@ Branch: feature/temporal-query-language
 Base: c514dd9
 BaseBranch: main
 Spec: docs/superpowers/specs/2026-07-12-temporal-query-language-design.md
-Plan: (inline — user provided in conversation)
+Plan: docs/superpowers/plans/2026-07-12-tql-implementation-plan.md
 PR: 193
 Tasks: 5/5 complete
 DeliverableType: code
