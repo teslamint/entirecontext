@@ -1435,7 +1435,7 @@ def rank_related_decisions(
         from .tql import TQLContext, apply_temporal_filters
 
         temporal_conditions: list[str] = []
-        tql = TQLContext(since=since, until=until)
+        tql = TQLContext(since=since, until=until, until_exclusive=until_exclusive)
         apply_temporal_filters(temporal_conditions, fetch_params, tql, "created_at")
         for cond in temporal_conditions:
             fetch_sql += f" AND {cond}"

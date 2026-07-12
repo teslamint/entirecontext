@@ -83,6 +83,8 @@ def _try_parse_iso(ref: str) -> tuple[str | None, bool]:
 
 def _resolve_git_ref(ref: str, repo_path: str) -> str | None:
     """git log -1 --format=%cI <ref> → normalized UTC timestamp."""
+    if ref.startswith("-"):
+        return None
     try:
         result = subprocess.run(
             ["git", "log", "-1", "--format=%cI", ref],
