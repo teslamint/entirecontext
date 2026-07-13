@@ -88,12 +88,13 @@ Once the approach is chosen, present the design in sections scaled to complexity
 
 Cover these areas (skip any that don't apply):
 
-1. **Architecture** — module structure, data flow, key abstractions
-2. **Interface** — public API, CLI flags, config options
-3. **Data model** — schema changes, storage format
-4. **Integration** — how it connects to existing code
-5. **Testing** — what to test, testing strategy
-6. **Risks** — what could go wrong, mitigations
+1. **User Scenarios** — 3-6 concrete scenarios showing who uses this, why, and how (CLI/MCP examples). Present before architecture so the reader understands the motivation before the mechanism.
+2. **Architecture** — module structure, data flow, key abstractions
+3. **Interface** — public API, CLI flags, config options
+4. **Data model** — schema changes, storage format
+5. **Integration** — how it connects to existing code
+6. **Testing** — what to test, testing strategy
+7. **Risks** — what could go wrong, mitigations
 
 ### Step 6: Get Independent Review
 
@@ -120,6 +121,9 @@ _Created YYYY-MM-DD._
 
 ## Overview
 [1-3 sentences: what this builds and why]
+
+## User Scenarios
+[3-6 concrete scenarios: who, why, and how (with CLI/MCP examples)]
 
 ## Scope
 ### In
@@ -177,6 +181,7 @@ Wait for the user's response. Changes requested → revise and re-commit. Approv
 
 A good spec:
 - Can be handed to someone with zero conversation context
+- Has concrete user scenarios with CLI/MCP examples showing who uses it and why
 - Has explicit scope boundaries (In/Out)
 - Names concrete files, tables, functions — not just concepts
 - Addresses risks and mitigations
@@ -184,6 +189,7 @@ A good spec:
 
 A bad spec:
 - References "the discussion above"
+- Jumps straight to architecture without motivating the feature through scenarios
 - Uses vague language ("appropriate error handling", "proper validation")
 - Omits scope boundaries
 - Has sections marked TBD

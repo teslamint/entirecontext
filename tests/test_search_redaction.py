@@ -66,7 +66,7 @@ def test_regex_search_events_with_since_filter(conn):
     )
     conn.commit()
 
-    results = _regex_search_events(conn, "deploy", since="2025-01-01T00:00:00", limit=10)
+    results = _regex_search_events(conn, "deploy", since="2025-01-01T00:00:00", until=None, until_exclusive=False, limit=10)
     assert len(results) == 1
     assert results[0]["id"] == new_event_id
 

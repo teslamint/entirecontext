@@ -15,6 +15,7 @@ async def ec_search(
     commit_filter: str | None = None,
     agent_filter: str | None = None,
     since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     repos: str | list[str] | None = None,
 ) -> str:
@@ -45,8 +46,22 @@ async def ec_search(
 
         try:
             from ...core.config import load_config
+            from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
             config = load_config(repo_path)
+
+            resolved_since: str | None = None
+            resolved_until: str | None = None
+            until_exclusive: bool = False
+            try:
+                if since:
+                    resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+                if until:
+                    resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+                TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
+            except TQLError as exc:
+                return runtime.error_payload(str(exc))
+
             started_at = time.perf_counter()
 
             if search_type == "semantic":
@@ -60,7 +75,7 @@ async def ec_search(
                         file_filter=file_filter,
                         commit_filter=commit_filter,
                         agent_filter=agent_filter,
-                        since=since,
+                        since=resolved_since,
                         limit=limit,
                     )
                     results = _apply_query_redaction(results, config)
@@ -75,7 +90,9 @@ async def ec_search(
                     file_filter=file_filter,
                     commit_filter=commit_filter,
                     agent_filter=agent_filter,
-                    since=since,
+                    since=resolved_since,
+                    until=resolved_until,
+                    until_exclusive=until_exclusive,
                     limit=limit,
                     config=config,
                 )
@@ -88,7 +105,9 @@ async def ec_search(
                     file_filter=file_filter,
                     commit_filter=commit_filter,
                     agent_filter=agent_filter,
-                    since=since,
+                    since=resolved_since,
+                    until=resolved_until,
+                    until_exclusive=until_exclusive,
                     limit=limit,
                     config=config,
                 )
@@ -101,7 +120,9 @@ async def ec_search(
                     file_filter=file_filter,
                     commit_filter=commit_filter,
                     agent_filter=agent_filter,
-                    since=since,
+                    since=resolved_since,
+                    until=resolved_until,
+                    until_exclusive=until_exclusive,
                     limit=limit,
                     config=config,
                 )

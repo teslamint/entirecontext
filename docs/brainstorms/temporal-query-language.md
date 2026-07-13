@@ -1,6 +1,6 @@
 # Temporal Query Language (TQL)
 
-_Draft brainstorm. Created 2026-04-27. Milestone: v0.8.0. Confidence: 88%._
+_Shipped. Created 2026-04-27. Shipped 2026-07-12 (--since/--until surface via `core/tql.py`)._
 
 ## Intent
 

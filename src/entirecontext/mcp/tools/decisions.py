@@ -41,6 +41,8 @@ async def ec_decision_related(
     assessment_ids: list[str] | None = None,
     diff_text: str | None = None,
     commit_shas: list[str] | None = None,
+    since: str | None = None,
+    until: str | None = None,
     limit: int = 10,
     retrieval_event_id: str | None = None,
     include_stale: bool = True,
@@ -54,6 +56,10 @@ async def ec_decision_related(
     - Superseded and contradicted decisions are excluded by default.
     - Superseded candidates collapse to their terminal successor when it passes the filter.
     - Set include_filter_stats=True to receive a breakdown of what was filtered.
+
+    Args:
+        since: Lower-bound filter — only return decisions created after this date (git ref or ISO date)
+        until: Upper-bound filter — only return decisions created before this date (git ref or ISO date)
     """
     (conn, repo_path), error = runtime.resolve_repo()
     if error:
@@ -66,11 +72,24 @@ async def ec_decision_related(
             backpatch_snapshot_event,
             rank_related_decisions,
         )
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
         full_config = load_config(repo_path)
         decisions_cfg = full_config.get("decisions", {})
         ranking_weights = _load_ranking_weights(full_config)
         quality_weights = _load_quality_weights(full_config)
+
+        resolved_since: str | None = None
+        resolved_until: str | None = None
+        until_exclusive: bool = False
+        try:
+            if since:
+                resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+            if until:
+                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+            TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
+        except TQLError as exc:
+            return runtime.error_payload(str(exc))
 
         started_at = time.perf_counter()
         decisions, filter_stats = rank_related_decisions(
@@ -79,6 +98,9 @@ async def ec_decision_related(
             assessment_ids=assessment_ids or [],
             diff_text=diff_text,
             commit_shas=commit_shas or [],
+            since=resolved_since,
+            until=resolved_until,
+            until_exclusive=until_exclusive,
             limit=limit,
             include_stale=include_stale,
             include_superseded=include_superseded,
@@ -474,6 +496,8 @@ async def ec_decision_create(
 async def ec_decision_list(
     staleness_status: str | None = None,
     file_path: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     include_contradicted: bool = False,
 ) -> str:
@@ -482,19 +506,37 @@ async def ec_decision_list(
     Args:
         staleness_status: Filter by status (fresh/stale/superseded/contradicted)
         file_path: Filter by linked file path
+        since: Lower-bound filter — only return decisions created after this date (git ref or ISO date)
+        until: Upper-bound filter — only return decisions created before this date (git ref or ISO date)
         limit: Maximum results (default 20)
         include_contradicted: Include contradicted decisions (default False)
     """
-    (conn, _), error = runtime.resolve_repo()
+    (conn, repo_path), error = runtime.resolve_repo()
     if error:
         return error
     try:
         from ...core.decisions import list_decisions
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
+
+        resolved_since: str | None = None
+        resolved_until: str | None = None
+        until_exclusive: bool = False
+        try:
+            if since:
+                resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+            if until:
+                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+            TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
+        except TQLError as exc:
+            return runtime.error_payload(str(exc))
 
         decisions = list_decisions(
             conn,
             staleness_status=staleness_status,
             file_path=file_path,
+            since=resolved_since,
+            until=resolved_until,
+            until_exclusive=until_exclusive,
             limit=limit,
             include_contradicted=include_contradicted,
         )
@@ -532,6 +574,7 @@ async def ec_decision_search(
     query: str,
     search_type: str = "fts",
     since: str | None = None,
+    until: str | None = None,
     limit: int = 20,
     repos: str | list[str] | None = None,
     include_stale: bool = True,
@@ -546,7 +589,8 @@ async def ec_decision_search(
     Args:
         query: FTS5 search query (supports AND, OR, NOT, prefix*, "phrase")
         search_type: "fts" for relevance-ranked or "hybrid" for relevance+recency
-        since: ISO date filter — only return decisions updated after this date
+        since: Lower-bound filter — only return decisions created after this date (git ref or ISO date)
+        until: Upper-bound filter — only return decisions created before this date (git ref or ISO date)
         limit: Maximum results (default 20)
         repos: Repo filter — null for current repo, "*" or ["*"] for all repos,
                or a plain repo name string (coerced to a single-element list)
@@ -562,13 +606,30 @@ async def ec_decision_search(
     if is_cross_repo:
         from ...core.cross_repo import _for_each_repo
         from ...core.decisions import fts_search_decisions, hybrid_search_decisions
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
+
+        # Resolve temporal refs against current repo (best-effort for cross-repo)
+        (_, current_repo_path), err = runtime.resolve_repo()
+        cross_since: str | None = None
+        cross_until: str | None = None
+        cross_until_exclusive: bool = False
+        try:
+            if since:
+                cross_since, _ = resolve_temporal_ref(since, repo_path=current_repo_path)
+            if until:
+                cross_until, cross_until_exclusive = resolve_until(until, repo_path=current_repo_path)
+            TQLContext.validated(since=cross_since, until=cross_until, until_exclusive=cross_until_exclusive)
+        except TQLError as exc:
+            return runtime.error_payload(str(exc))
 
         def _query(conn, _repo):
             if search_type == "hybrid":
                 return hybrid_search_decisions(
                     conn,
                     query,
-                    since=since,
+                    since=cross_since,
+                    until=cross_until,
+                    until_exclusive=cross_until_exclusive,
                     limit=limit,
                     include_stale=include_stale,
                     include_superseded=include_superseded,
@@ -577,7 +638,9 @@ async def ec_decision_search(
             return fts_search_decisions(
                 conn,
                 query,
-                since=since,
+                since=cross_since,
+                until=cross_until,
+                until_exclusive=cross_until_exclusive,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,
@@ -592,18 +655,33 @@ async def ec_decision_search(
         formatted = _format_decision_results(all_results)
         return json.dumps({"decisions": formatted, "count": len(formatted), "retrieval_event_id": None})
 
-    (conn, _), error = runtime.resolve_repo()
+    (conn, repo_path), error = runtime.resolve_repo()
     if error:
         return error
     try:
         from ...core.decisions import fts_search_decisions, hybrid_search_decisions
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
+
+        resolved_since: str | None = None
+        resolved_until: str | None = None
+        until_exclusive: bool = False
+        try:
+            if since:
+                resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+            if until:
+                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+            TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
+        except TQLError as exc:
+            return runtime.error_payload(str(exc))
 
         started_at = time.perf_counter()
         if search_type == "hybrid":
             results = hybrid_search_decisions(
                 conn,
                 query,
-                since=since,
+                since=resolved_since,
+                until=resolved_until,
+                until_exclusive=until_exclusive,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,
@@ -613,7 +691,9 @@ async def ec_decision_search(
             results = fts_search_decisions(
                 conn,
                 query,
-                since=since,
+                since=resolved_since,
+                until=resolved_until,
+                until_exclusive=until_exclusive,
                 limit=limit,
                 include_stale=include_stale,
                 include_superseded=include_superseded,
@@ -627,7 +707,7 @@ async def ec_decision_search(
             target="decision",
             result_count=len(results),
             latency_ms=int((time.perf_counter() - started_at) * 1000),
-            since=since,
+            since=resolved_since,
         )
         for idx, item in enumerate(results, start=1):
             runtime.record_selection(
