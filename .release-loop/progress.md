@@ -1,6 +1,5 @@
 # Release Loop Progress
-Phase: ship
-CurrentTask: create-pr
+Phase: done
 Feature: Temporal Query Language (TQL) — --since/--until temporal filters for retrieval commands
 Branch: feature/temporal-query-language
 Base: c514dd9
