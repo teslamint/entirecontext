@@ -269,6 +269,100 @@ def confirm_candidate(
     }
 
 
+def _pending_where(source_type: str | None) -> tuple[str, list[Any]]:
+    clauses = ["review_status='pending'"]
+    params: list[Any] = []
+    if source_type:
+        clauses.append("source_type = ?")
+        params.append(source_type)
+    return " AND ".join(clauses), params
+
+
+def _confidence_bucket(confidence: float) -> str:
+    clamped = max(0.0, min(1.0, float(confidence)))
+    idx = min(int(clamped * 10), 9)
+    return f"{idx / 10:.1f}-{(idx + 1) / 10:.1f}"
+
+
+def confirm_candidates_batch(
+    conn,
+    *,
+    source_type: str | None = None,
+    min_confidence: float = 0.0,
+    dry_run: bool = False,
+    reviewer: str = "cli",
+    repo_path: str | None = None,
+    page_size: int = 200,
+) -> dict[str, Any]:
+    """Promote all pending candidates matching a source/confidence filter.
+
+    Loops the existing `confirm_candidate` per row rather than reimplementing
+    its atomicity ceremony (CAS claim + BEGIN IMMEDIATE promotion).
+    """
+    where, params = _pending_where(source_type)
+    # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
+    rows = conn.execute(f"SELECT confidence FROM decision_candidates WHERE {where}", params).fetchall()
+    total_pending = len(rows)
+    eligible = sum(1 for r in rows if r["confidence"] >= min_confidence)
+
+    if dry_run:
+        distribution: dict[str, int] = {}
+        for r in rows:
+            bucket = _confidence_bucket(r["confidence"])
+            distribution[bucket] = distribution.get(bucket, 0) + 1
+        return {
+            "dry_run": True,
+            "total_pending": total_pending,
+            "eligible": eligible,
+            "distribution": distribution,
+        }
+
+    skipped_below_threshold = total_pending - eligible
+
+    confirmed: list[str] = []
+    failed: list[str] = []
+    # confirm_candidate's failure path rolls a failed candidate back to
+    # 'pending' (outer except at :230-243), so a failing candidate would
+    # reappear in the next page forever without this guard.
+    attempted: set[str] = set()
+    while True:
+        page = list_candidates(
+            conn,
+            status="pending",
+            source_type=source_type,
+            min_confidence=min_confidence,
+            limit=page_size,
+        )
+        unattempted = [c for c in page if c["id"] not in attempted]
+        if not unattempted:
+            break
+        for candidate in unattempted:
+            attempted.add(candidate["id"])
+            try:
+                result = confirm_candidate(conn, candidate["id"], reviewer=reviewer, repo_path=None)
+                confirmed.append(result["decision_id"])
+            except Exception:
+                failed.append(candidate["id"])
+
+    if confirmed and repo_path:
+        try:
+            from .config import load_config
+
+            config = load_config(repo_path)
+            if config.get("decisions", {}).get("auto_embed", False):
+                from .embedding import generate_embeddings
+
+                generate_embeddings(conn, repo_path, decisions_only=True)
+        except Exception:
+            pass
+
+    return {
+        "confirmed": confirmed,
+        "failed": failed,
+        "skipped_below_threshold": skipped_below_threshold,
+    }
+
+
 def reject_candidate(
     conn,
     candidate_id: str,
