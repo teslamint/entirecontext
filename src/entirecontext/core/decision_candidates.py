@@ -243,16 +243,7 @@ def confirm_candidate(
         raise
 
     if repo_path:
-        try:
-            from .config import load_config
-
-            config = load_config(repo_path)
-            if config.get("decisions", {}).get("auto_embed", False):
-                from .embedding import generate_embeddings
-
-                generate_embeddings(conn, repo_path, decisions_only=True)
-        except Exception:
-            pass
+        _maybe_generate_embeddings(conn, repo_path)
 
     _record_event(
         conn,
@@ -353,22 +344,26 @@ def confirm_candidates_batch(
                 failed.append(candidate["id"])
 
     if confirmed and repo_path:
-        try:
-            from .config import load_config
-
-            config = load_config(repo_path)
-            if config.get("decisions", {}).get("auto_embed", False):
-                from .embedding import generate_embeddings
-
-                generate_embeddings(conn, repo_path, decisions_only=True)
-        except Exception:
-            pass
+        _maybe_generate_embeddings(conn, repo_path)
 
     return {
         "confirmed": confirmed,
         "failed": failed,
         "skipped_below_threshold": skipped_below_threshold,
     }
+
+
+def _maybe_generate_embeddings(conn, repo_path: str) -> None:
+    try:
+        from .config import load_config
+
+        config = load_config(repo_path)
+        if config.get("decisions", {}).get("auto_embed", False):
+            from .embedding import generate_embeddings
+
+            generate_embeddings(conn, repo_path, decisions_only=True)
+    except Exception:
+        pass
 
 
 def reject_candidate(
