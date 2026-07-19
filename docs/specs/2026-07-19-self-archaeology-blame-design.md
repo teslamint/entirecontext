@@ -1,6 +1,6 @@
 ---
 title: Self-Archaeology + Decision-Annotated Blame
-status: draft
+status: approved
 date: 2026-07-19
 schema: spec/v1
 ---
