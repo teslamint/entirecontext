@@ -323,7 +323,15 @@ def confirm_candidates_batch(
     failed: list[str] = []
     # confirm_candidate's failure path rolls a failed candidate back to
     # 'pending' (outer except at :230-243), so a failing candidate would
-    # reappear in the next page forever without this guard.
+    # reappear at the top of every confidence-ordered page forever without
+    # this guard. Growing the limit by len(attempted) each iteration
+    # guarantees the fetch can't be entirely made up of already-attempted
+    # rows while an eligible unattempted one still exists further down —
+    # at most len(attempted) of the returned rows can be attempted ones, so
+    # a fetch of page_size + len(attempted) always surfaces the next
+    # unattempted candidate if one remains. Without this, a small page_size
+    # combined with several failing high-confidence candidates would starve
+    # lower-confidence eligible candidates out of both confirmed and failed.
     attempted: set[str] = set()
     while True:
         page = list_candidates(
@@ -331,7 +339,7 @@ def confirm_candidates_batch(
             status="pending",
             source_type=source_type,
             min_confidence=min_confidence,
-            limit=page_size,
+            limit=page_size + len(attempted),
         )
         unattempted = [c for c in page if c["id"] not in attempted]
         if not unattempted:

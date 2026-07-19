@@ -193,6 +193,97 @@ class TestErrorHandling:
         other_row = get_candidate(ec_db, other_id)
         assert other_row["review_status"] == "confirmed"
 
+    def test_small_page_size_with_failures_does_not_starve_low_confidence_candidate(
+        self, ec_repo, ec_db, monkeypatch
+    ):
+        fail_ids = [
+            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
+            for i in (1, 2, 3)
+        ]
+        fail_titles = {get_candidate(ec_db, cid)["title"] for cid in fail_ids}
+        low_id = _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(4), confidence=0.5)
+
+        from entirecontext.core import decisions as decisions_module
+
+        original_create_decision = decisions_module.create_decision
+
+        def flaky_create_decision(conn, **kwargs):
+            if kwargs.get("title") in fail_titles:
+                raise RuntimeError("simulated create_decision failure")
+            return original_create_decision(conn, **kwargs)
+
+        monkeypatch.setattr(decisions_module, "create_decision", flaky_create_decision)
+
+        result = confirm_candidates_batch(
+            ec_db, source_type="archaeology", min_confidence=0.5, page_size=2
+        )
+
+        assert sorted(result["failed"]) == sorted(fail_ids)
+        assert len(result["confirmed"]) == 1
+        assert len(result["confirmed"]) + len(result["failed"]) == 4
+
+        low_row = get_candidate(ec_db, low_id)
+        assert low_row["review_status"] == "confirmed"
+        assert low_row["promoted_decision_id"] in result["confirmed"]
+
+        for cid in fail_ids:
+            row = get_candidate(ec_db, cid)
+            assert row["review_status"] == "pending"
+            assert row["promoted_decision_id"] is None
+
+
+class TestRerunSemantics:
+    def test_second_batch_call_promotes_previously_failed_candidate_without_touching_confirmed(
+        self, ec_repo, ec_db, monkeypatch
+    ):
+        ids = [
+            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
+            for i in (1, 2, 3)
+        ]
+        fail_id = ids[1]
+        fail_title = get_candidate(ec_db, fail_id)["title"]
+
+        from entirecontext.core import decisions as decisions_module
+
+        original_create_decision = decisions_module.create_decision
+
+        def flaky_create_decision(conn, **kwargs):
+            if kwargs.get("title") == fail_title:
+                raise RuntimeError("simulated create_decision failure")
+            return original_create_decision(conn, **kwargs)
+
+        monkeypatch.setattr(decisions_module, "create_decision", flaky_create_decision)
+
+        result1 = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5)
+        assert result1["failed"] == [fail_id]
+        assert len(result1["confirmed"]) == 2
+
+        stable_ids = [ids[0], ids[2]]
+        promoted_before = {
+            cid: (
+                get_candidate(ec_db, cid)["promoted_decision_id"],
+                get_candidate(ec_db, cid)["reviewed_at"],
+            )
+            for cid in stable_ids
+        }
+
+        monkeypatch.setattr(decisions_module, "create_decision", original_create_decision)
+
+        result2 = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5)
+
+        assert result2["failed"] == []
+        assert len(result2["confirmed"]) == 1
+
+        fail_row_after = get_candidate(ec_db, fail_id)
+        assert fail_row_after["review_status"] == "confirmed"
+        assert fail_row_after["promoted_decision_id"] in result2["confirmed"]
+
+        for cid in stable_ids:
+            row_after = get_candidate(ec_db, cid)
+            decision_id_before, reviewed_at_before = promoted_before[cid]
+            assert row_after["promoted_decision_id"] == decision_id_before
+            assert row_after["reviewed_at"] == reviewed_at_before
+
 
 class TestEmbeddingIntegration:
     def test_embedding_called_once_for_batch_when_auto_embed_and_repo_path(
@@ -261,3 +352,49 @@ class TestEmbeddingIntegration:
         )
 
         assert calls == []
+
+    def test_embedding_failure_during_batch_is_swallowed(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda path=None: {"decisions": {"auto_embed": True}},
+        )
+
+        def boom(conn, repo_path, **kwargs):
+            raise RuntimeError("simulated embedding failure")
+
+        monkeypatch.setattr("entirecontext.core.embedding.generate_embeddings", boom)
+
+        for i in (1, 2, 3):
+            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
+
+        result = confirm_candidates_batch(
+            ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo)
+        )
+
+        assert len(result["confirmed"]) == 3
+        assert result["failed"] == []
+
+    def test_embedding_called_once_per_confirming_batch_invocation(self, ec_repo, ec_db, monkeypatch):
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda path=None: {"decisions": {"auto_embed": True}},
+        )
+        calls = []
+        monkeypatch.setattr(
+            "entirecontext.core.embedding.generate_embeddings",
+            lambda conn, repo_path, **kwargs: calls.append(1) or 0,
+        )
+
+        _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(1), confidence=0.9)
+        result1 = confirm_candidates_batch(
+            ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo)
+        )
+        assert len(result1["confirmed"]) == 1
+        assert len(calls) == 1
+
+        _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(2), confidence=0.9)
+        result2 = confirm_candidates_batch(
+            ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo)
+        )
+        assert len(result2["confirmed"]) == 1
+        assert len(calls) == 2
