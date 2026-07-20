@@ -2,6 +2,14 @@
 
 _Created 2026-07-11. Updated 2026-07-11 (advisor review: fidelity tier, non-TDD path, resume durability, dogfood target)._
 
+> **Status (2026-07-20): Migrated.** The implementation described below was
+> moved to the `compound-loop` project and removed from this repository. The
+> paths and slash commands in this document describe the historical
+> EntireContext implementation; fresh checkouts should install or invoke the
+> canonical `release-loop` skill from `compound-loop`. Existing
+> `.release-loop/progress.md` files remain durable handoff artifacts that the
+> migrated orchestrator can resume.
+
 ## Overview
 
 A self-contained orchestrator skill that drives a feature from idea to merged PR to retrospective. No external skill dependencies — works in any Claude Code project with git.
