@@ -108,11 +108,12 @@ def blame_cmd(
 
 def _render_decision_annotations(file: str, decision_result: dict) -> None:
     annotations = decision_result["annotations"]
+    unlinked_ranges = decision_result.get("unlinked_ranges", [])
     uncommitted_ranges = decision_result["uncommitted_ranges"]
 
     console.print(f"\n[bold]Decision annotations: {file}[/bold]")
 
-    if not annotations and not uncommitted_ranges:
+    if not annotations and not unlinked_ranges and not uncommitted_ranges:
         console.print(
             "[dim]No recorded decisions for this file's commits — "
             "absence of links, not evidence that no decisions were made.[/dim]"
@@ -128,6 +129,12 @@ def _render_decision_annotations(file: str, decision_result: dict) -> None:
             console.print(f"    ({a.rejected_count} rejected alternatives)")
         if a.staleness_status != "fresh":
             console.print(f"    ↳ re-verify: ec decision get {a.decision_id}")
+
+    for s, e in unlinked_ranges:
+        console.print(
+            f"  lines {s}-{e}: no recorded decision "
+            "(absence of links, not evidence that no decisions were made)"
+        )
 
     for s, e in uncommitted_ranges:
         console.print(f"  lines {s}-{e}: uncommitted (no blame history yet)")

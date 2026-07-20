@@ -135,9 +135,10 @@ class TestBlameDecisionsFlag:
         )
         annotate_result = {
             "annotations": [annotation],
+            "unlinked_ranges": [(6, 9)],
             "uncommitted_ranges": [],
             "annotated_sha_count": 1,
-            "total_sha_count": 1,
+            "total_sha_count": 2,
         }
         with (
             patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
@@ -150,6 +151,9 @@ class TestBlameDecisionsFlag:
             assert "a" * 8 in result.output
             assert "Use SQLite WAL mode" in result.output
             assert "lines 1-5" in result.output
+            assert "lines 6-9: no recorded decision" in result.output
+            assert "absence of links" in result.output
+            assert "decisions were made" in result.output
 
     def test_stale_annotation_shows_reverify(self):
         mock_conn = MagicMock()

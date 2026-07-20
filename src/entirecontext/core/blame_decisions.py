@@ -73,7 +73,15 @@ def annotate_file(
     cmd += ["--", file]
 
     try:
-        result = subprocess.run(cmd, cwd=repo_path, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(
+            cmd,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
         raise ValueError(str(exc)) from exc
 
@@ -118,8 +126,16 @@ def annotate_file(
                 )
             )
 
+    unlinked_lines = [
+        line_number
+        for sha, line_numbers in sha_to_lines.items()
+        if sha not in annotated_shas
+        for line_number in line_numbers
+    ]
+
     return {
         "annotations": annotations,
+        "unlinked_ranges": _collapse_ranges(unlinked_lines),
         "uncommitted_ranges": _collapse_ranges(uncommitted_lines),
         "annotated_sha_count": len(annotated_shas),
         "total_sha_count": len(sha_to_lines),

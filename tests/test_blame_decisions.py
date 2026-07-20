@@ -17,6 +17,21 @@ def _commit(git_repo, filename: str, content: str, message: str) -> str:
 
 
 class TestAnnotateFile:
+    def test_non_utf8_file_is_parsed_without_decode_error(self, ec_repo, ec_db):
+        (ec_repo / "binary.dat").write_bytes(b"\xff\n")
+        subprocess.run(["git", "add", "binary.dat"], cwd=ec_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "add non-utf8 file"],
+            cwd=ec_repo,
+            check=True,
+            capture_output=True,
+        )
+
+        result = annotate_file(ec_db, str(ec_repo), "binary.dat")
+
+        assert result["total_sha_count"] == 1
+        assert result["annotations"] == []
+
     def test_sha256_porcelain_header_is_annotated(self, ec_repo, ec_db, monkeypatch):
         sha256 = "a" * 64
         decision = create_decision(ec_db, title="SHA-256 decision")
@@ -63,6 +78,7 @@ class TestAnnotateFile:
 
         assert result["total_sha_count"] == 2
         assert result["annotated_sha_count"] == 1
+        assert result["unlinked_ranges"] == [(3, 4)]
         assert len(result["annotations"]) == 1
         ann = result["annotations"][0]
         assert ann.commit_sha == sha1
