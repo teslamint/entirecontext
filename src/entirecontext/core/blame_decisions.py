@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import subprocess
 from dataclasses import dataclass
 from typing import Any
@@ -50,15 +51,17 @@ def _collapse_ranges(line_numbers: list[int]) -> list[tuple[int, int]]:
 
 
 def _rejected_count(raw: str | None) -> int:
+    if raw is None:
+        return 0
     try:
         parsed = json.loads(raw)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError:
         return 0
     return len(parsed) if isinstance(parsed, list) else 0
 
 
 def annotate_file(
-    conn,
+    conn: sqlite3.Connection,
     repo_path: str,
     file: str,
     start_line: int | None = None,
