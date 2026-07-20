@@ -78,6 +78,29 @@ class TestAnnotateFile:
         assert result["annotations"][0].commit_sha == full_sha
         assert result["annotations"][0].decision_id == decision["id"]
 
+    def test_uppercase_abbreviated_commit_link_is_normalized(self, ec_repo, ec_db):
+        full_sha = _commit(ec_repo, "uppercase.py", "line1\n", "commit with uppercase link")
+        decision = create_decision(ec_db, title="Uppercase SHA decision")
+        link_decision_to_commit(ec_db, decision["id"], full_sha[:8].upper())
+
+        result = annotate_file(ec_db, str(ec_repo), "uppercase.py")
+
+        assert result["annotated_sha_count"] == 1
+        assert result["annotations"][0].commit_sha == full_sha
+        assert result["annotations"][0].decision_id == decision["id"]
+
+    def test_equivalent_full_and_abbreviated_links_are_deduplicated(self, ec_repo, ec_db):
+        full_sha = _commit(ec_repo, "duplicate.py", "line1\n", "commit with duplicate links")
+        decision = create_decision(ec_db, title="One decision, two link forms")
+        link_decision_to_commit(ec_db, decision["id"], full_sha)
+        link_decision_to_commit(ec_db, decision["id"], full_sha[:8])
+
+        result = annotate_file(ec_db, str(ec_repo), "duplicate.py")
+
+        assert result["annotated_sha_count"] == 1
+        assert len(result["annotations"]) == 1
+        assert result["annotations"][0].decision_id == decision["id"]
+
     def test_happy_single_decision(self, ec_repo, ec_db):
         sha1 = _commit(ec_repo, "foo.py", "line1\nline2\n", "commit 1")
         _commit(ec_repo, "foo.py", "line1\nline2\nline3\nline4\n", "commit 2")

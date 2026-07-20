@@ -61,14 +61,15 @@ def _rejected_count(raw: str | None) -> int:
 
 
 def _resolve_blamed_sha(repo_path: str, stored_sha: str, blamed_shas: set[str]) -> str | None:
-    if stored_sha in blamed_shas:
-        return stored_sha
-    if not re.fullmatch(r"[0-9a-f]{4,63}", stored_sha):
+    normalized_sha = stored_sha.lower()
+    if normalized_sha in blamed_shas:
+        return normalized_sha
+    if not re.fullmatch(r"[0-9a-f]{4,63}", normalized_sha):
         return None
 
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--verify", f"{stored_sha}^{{commit}}"],
+            ["git", "rev-parse", "--verify", f"{normalized_sha}^{{commit}}"],
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -139,6 +140,7 @@ def annotate_file(
         ).fetchall()
         blamed_sha_set = set(shas)
         resolved_links: dict[str, str | None] = {}
+        annotation_keys: set[tuple[str, str]] = set()
         for row in rows:
             stored_sha = row["commit_sha"]
             if stored_sha not in resolved_links:
@@ -147,6 +149,10 @@ def annotate_file(
             if resolved_sha is None:
                 continue
             annotated_shas.add(resolved_sha)
+            annotation_key = (resolved_sha, row["id"])
+            if annotation_key in annotation_keys:
+                continue
+            annotation_keys.add(annotation_key)
             rationale = row["rationale"]
             annotations.append(
                 BlameAnnotation(
