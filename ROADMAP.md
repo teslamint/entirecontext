@@ -337,6 +337,25 @@ Carry-forward after v0.14.0:
 - [ ] **Consolidate PR enrichment state transitions** — when archaeology is next modified, centralize repeated PR fetch-result and processing-state branches to reduce future divergence. _(architecture, P3)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
+## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Shipped 2026-07-20)
+
+Theme: bootstrap the repository's own decision history, promote archaeology candidates safely in batches, and answer why a line exists from `ec blame`.
+
+- [x] **Full feature-branch history archaeologized** — 334/334 eligible non-merge commits processed before merge; 138 archaeology candidates promoted.
+- [x] **Decision linkage coverage** — commit-linked decisions increased 0→138 and file-linked coverage increased 8.6%→56.0%.
+- [x] **Batch candidate confirmation** — source-filtered thresholding, dry-run distribution, finite-value validation, atomic per-candidate promotion, and once-per-batch embedding.
+- [x] **Decision-annotated blame** — mixed linked/unlinked ranges, binary-safe porcelain parsing, SHA-1/SHA-256 headers, abbreviated-link resolution, migration-before-query, and canonical annotation deduplication.
+- [x] **Release-loop migration cleanup** — repository-local skill implementation removed after migration to `compound-loop`; historical specs and runtime evidence retained.
+
+Carry-forward after v0.15.0:
+- [ ] **Bound abbreviated-SHA blame lookup complexity** — replace the single OR-prefix predicate with chunked or non-expression-tree lookup so files spanning roughly 999+ distinct commits cannot exceed SQLite's expression-depth limit; add a regression fixture. _(edge case, P2; accepted residual from PR #197)_
+- [ ] **Post-squash archaeology convergence** — with explicit repository-content export authorization, process squash commit `11fb9ad`; measure completion by intersecting reachable non-merge SHAs with `archaeology_processed` rather than comparing raw counts. _(process/measurement, P3)_
+- [ ] **TQL `--until` for semantic search** — stop silently ignoring the upper bound in the local semantic path. _(feature gap, P3; carried from the TQL retro)_
+- [ ] **TQL `--until` for global search** — propagate the upper bound through cross-repo search. _(feature gap, P3; carried from the TQL retro)_
+- [ ] **Maturity 75 dogfooding** — continue explicit `ec context apply` usage; post-release telemetry remains `applied_context_rate=1%`, `lesson_reuse_rate=5%`, maturity 64. _(measurement, ongoing)_
+- [ ] **Consolidate PR enrichment state transitions** — centralize repeated archaeology PR fetch-result and processing-state branches when that code is next modified. _(architecture, P3)_
+- [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.
