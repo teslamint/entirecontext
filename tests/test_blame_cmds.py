@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
@@ -122,6 +123,31 @@ class TestBlameCommand:
 
 
 class TestBlameDecisionsFlag:
+    @pytest.fixture(autouse=True)
+    def _mock_migration(self):
+        with patch("entirecontext.db.check_and_migrate") as mock_migrate:
+            yield mock_migrate
+
+    def test_decisions_migrates_database_before_annotation(self, _mock_migration):
+        mock_conn = MagicMock()
+        annotate_result = {
+            "annotations": [],
+            "unlinked_ranges": [],
+            "uncommitted_ranges": [],
+            "annotated_sha_count": 0,
+            "total_sha_count": 0,
+        }
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.core.attribution.get_file_attributions", return_value=[]),
+            patch("entirecontext.core.blame_decisions.annotate_file", return_value=annotate_result),
+        ):
+            result = runner.invoke(app, ["blame", "somefile.py", "--decisions"])
+
+        assert result.exit_code == 0
+        _mock_migration.assert_called_once_with(mock_conn)
+
     def test_happy_single_annotation(self):
         mock_conn = MagicMock()
         annotation = BlameAnnotation(

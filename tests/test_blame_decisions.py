@@ -67,6 +67,17 @@ class TestAnnotateFile:
         assert result["annotated_sha_count"] == 0
         assert result["uncommitted_ranges"] == [(7, 7)]
 
+    def test_abbreviated_commit_link_resolves_to_full_blame_sha(self, ec_repo, ec_db):
+        full_sha = _commit(ec_repo, "abbrev.py", "line1\n", "commit with abbreviated link")
+        decision = create_decision(ec_db, title="Abbreviated SHA decision")
+        link_decision_to_commit(ec_db, decision["id"], full_sha[:8])
+
+        result = annotate_file(ec_db, str(ec_repo), "abbrev.py")
+
+        assert result["annotated_sha_count"] == 1
+        assert result["annotations"][0].commit_sha == full_sha
+        assert result["annotations"][0].decision_id == decision["id"]
+
     def test_happy_single_decision(self, ec_repo, ec_db):
         sha1 = _commit(ec_repo, "foo.py", "line1\nline2\n", "commit 1")
         _commit(ec_repo, "foo.py", "line1\nline2\nline3\nline4\n", "commit 2")

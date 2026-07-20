@@ -60,6 +60,31 @@ def _rejected_count(raw: str | None) -> int:
     return len(parsed) if isinstance(parsed, list) else 0
 
 
+def _resolve_blamed_sha(repo_path: str, stored_sha: str, blamed_shas: set[str]) -> str | None:
+    if stored_sha in blamed_shas:
+        return stored_sha
+    if not re.fullmatch(r"[0-9a-f]{4,63}", stored_sha):
+        return None
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", f"{stored_sha}^{{commit}}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if result.returncode != 0:
+        return None
+
+    resolved_sha = result.stdout.strip()
+    return resolved_sha if resolved_sha in blamed_shas else None
+
+
 def annotate_file(
     conn: sqlite3.Connection,
     repo_path: str,
@@ -104,20 +129,29 @@ def annotate_file(
 
     if shas:
         placeholders = ",".join("?" * len(shas))
+        prefix_conditions = " OR ".join("? LIKE dc.commit_sha || '%'" for _ in shas)
         rows = conn.execute(
             f"""SELECT dc.commit_sha, d.id, d.title, d.rationale, d.rejected_alternatives, d.staleness_status
             FROM decision_commits dc JOIN decisions d ON d.id = dc.decision_id
-            WHERE dc.commit_sha IN ({placeholders})""",  # noqa: S608
-            shas,
+            WHERE dc.commit_sha IN ({placeholders})
+               OR (length(dc.commit_sha) >= 4 AND ({prefix_conditions}))""",  # noqa: S608
+            [*shas, *shas],
         ).fetchall()
+        blamed_sha_set = set(shas)
+        resolved_links: dict[str, str | None] = {}
         for row in rows:
-            sha = row["commit_sha"]
-            annotated_shas.add(sha)
+            stored_sha = row["commit_sha"]
+            if stored_sha not in resolved_links:
+                resolved_links[stored_sha] = _resolve_blamed_sha(repo_path, stored_sha, blamed_sha_set)
+            resolved_sha = resolved_links[stored_sha]
+            if resolved_sha is None:
+                continue
+            annotated_shas.add(resolved_sha)
             rationale = row["rationale"]
             annotations.append(
                 BlameAnnotation(
-                    commit_sha=sha,
-                    line_ranges=_collapse_ranges(sha_to_lines[sha]),
+                    commit_sha=resolved_sha,
+                    line_ranges=_collapse_ranges(sha_to_lines[resolved_sha]),
                     decision_id=row["id"],
                     title=row["title"],
                     rationale_excerpt=rationale[:200] if rationale else "",

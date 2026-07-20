@@ -19,7 +19,7 @@ def blame_cmd(
 ):
     """Show per-line human/agent attribution for a file."""
     from ..core.project import find_git_root
-    from ..db import get_db
+    from ..db import check_and_migrate, get_db
 
     if decisions and summary:
         console.print("[red]--summary and --decisions are mutually exclusive.[/red]")
@@ -32,6 +32,9 @@ def blame_cmd(
 
     conn = get_db(repo_path)
     try:
+        if decisions:
+            check_and_migrate(conn)
+
         start_line = None
         end_line = None
         if lines:
