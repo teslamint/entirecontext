@@ -1,5 +1,5 @@
-Found 100 commits, 0 already processed, 100 patch extractions pending, 0 PR 
+Found 100 commits, 0 already processed, 100 patch extractions pending, 0 PR
 enrichments pending.
 Estimated token cost: ~250,000-300,000 tokens
-Note: --limit 100 may be capping results to the most recent commits; increase 
+Note: --limit 100 may be capping results to the most recent commits; increase
 --limit to reach older history.

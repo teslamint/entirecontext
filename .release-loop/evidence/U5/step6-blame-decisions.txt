@@ -1,9 +1,9 @@
 No attribution data for src/entirecontext/core/async_worker.py
 
 Decision annotations: src/entirecontext/core/async_worker.py
-  3773f581 lines 1-21, 23-23, 25-26, 28-30 — Tri-state stop_worker return 
+  3773f581 lines 1-21, 23-23, 25-26, 28-30 — Tri-state stop_worker return
 (killed/stale/none) instead of boolean
-    stop_worker() returns "killed", "stale", or "none" so callers can 
-distinguish an actual SIGTERM sent to a live worker from cleanup of a stale PID 
+    stop_worker() returns "killed", "stale", or "none" so callers can
+distinguish an actual SIGTERM sent to a live worker from cleanup of a stale PID
 file and from no worker at all, giving accurate status
     (1 rejected alternatives)

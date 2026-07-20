@@ -26,11 +26,11 @@ Processed 55/240 commits, 36 candidates
 Processed 55/243 commits, 36 candidates
 Warnings: 557
   - commit 1b001965a320: extraction did not parse; will retry next run
-  - parse:archaeology:llm output is not valid JSON: Expecting value: line 1 
+  - parse:archaeology:llm output is not valid JSON: Expecting value: line 1
 column 1 (char 0)
   - no_drafts: 1 bundles collected but 0 drafts parsed
   - commit feb31ffb452e: extraction did not parse; will retry next run
-  - parse:archaeology:llm output is not valid JSON: Expecting value: line 1 
+  - parse:archaeology:llm output is not valid JSON: Expecting value: line 1
 column 1 (char 0)
 
 Done. Scanned 334, processed 55, skipped 91, candidates 36.
@@ -56,13 +56,13 @@ Processed 0/180 commits, 0 candidates
 Processed 0/188 commits, 0 candidates
 Warnings: 541
   - commit 1b001965a320: extraction did not parse; will retry next run
-  - llm_call:archaeology:llm call failed: claude failed (exit 1): 
+  - llm_call:archaeology:llm call failed: claude failed (exit 1):
   - no_drafts: 1 bundles collected but 0 drafts parsed
   - commit feb31ffb452e: extraction did not parse; will retry next run
-  - llm_call:archaeology:llm call failed: claude failed (exit 1): 
+  - llm_call:archaeology:llm call failed: claude failed (exit 1):
 
 Done. Scanned 334, processed 0, skipped 146, candidates 0.
 === final dry-run ===
-Found 334 commits, 155 already processed, 179 patch extractions pending, 0 PR 
+Found 334 commits, 155 already processed, 179 patch extractions pending, 0 PR
 enrichments pending.
 Estimated token cost: ~447,500-537,000 tokens

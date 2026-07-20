@@ -14,10 +14,10 @@ Processed 0/42 commits, 0 candidates
 Processed 0/42 commits, 0 candidates
 Processed 0/42 commits, 0 candidates
 Warnings: 127
-  - No GitHub token found. Set EC_GITHUB_TOKEN or install gh CLI. Proceeding 
+  - No GitHub token found. Set EC_GITHUB_TOKEN or install gh CLI. Proceeding
 without PR bodies.
   - commit 1b001965a320: extraction did not parse; will retry next run
-  - llm_call:archaeology:llm call failed: claude failed (exit 1): 
+  - llm_call:archaeology:llm call failed: claude failed (exit 1):
   - no_drafts: 1 bundles collected but 0 drafts parsed
   - commit af853d867e1b: extraction did not parse; will retry next run
 
