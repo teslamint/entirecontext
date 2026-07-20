@@ -106,3 +106,27 @@ class TestConfirmBatchCLI:
         result = runner.invoke(app, ["decision", "candidates", "confirm-batch"])
 
         assert result.exit_code == 2
+
+    def test_nan_min_confidence_is_rejected_without_mutation(self, ec_repo, monkeypatch):
+        monkeypatch.chdir(ec_repo)
+        conn = get_db(str(ec_repo))
+        candidate_id = _seed_candidate(
+            conn,
+            source_type="archaeology",
+            source_id=_hex_sha(99),
+            confidence=0.9,
+        )
+        conn.close()
+
+        result = runner.invoke(
+            app,
+            ["decision", "candidates", "confirm-batch", "--min-confidence", "nan"],
+        )
+
+        assert result.exit_code == 1
+        assert "finite" in result.stdout
+        conn = get_db(str(ec_repo))
+        try:
+            assert get_candidate(conn, candidate_id)["review_status"] == "pending"
+        finally:
+            conn.close()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from entirecontext.core.decision_candidates import (
     confirm_candidate,
     confirm_candidates_batch,
@@ -87,6 +89,26 @@ class TestHappyPath:
 
 
 class TestEdgeCases:
+    @pytest.mark.parametrize("threshold", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_min_confidence_is_rejected_without_mutation(
+        self, ec_repo, ec_db, threshold
+    ):
+        candidate_id = _seed_candidate(
+            ec_db,
+            source_type="archaeology",
+            source_id=_hex_sha(99),
+            confidence=0.9,
+        )
+
+        with pytest.raises(ValueError, match="finite"):
+            confirm_candidates_batch(
+                ec_db,
+                source_type="archaeology",
+                min_confidence=threshold,
+            )
+
+        assert get_candidate(ec_db, candidate_id)["review_status"] == "pending"
+
     def test_confidence_equal_to_min_confidence_is_confirmed(self, ec_repo, ec_db):
         cid = _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(1), confidence=0.5)
 

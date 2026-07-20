@@ -870,6 +870,9 @@ def candidates_confirm_batch(
             reviewer="cli",
             repo_path=repo_path,
         )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
     finally:
         conn.close()
 

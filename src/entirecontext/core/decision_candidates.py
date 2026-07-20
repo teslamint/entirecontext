@@ -8,6 +8,7 @@ decision_* join tables via existing helpers in core/decisions.py.
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -290,6 +291,9 @@ def confirm_candidates_batch(
     Loops the existing `confirm_candidate` per row rather than reimplementing
     its atomicity ceremony (CAS claim + BEGIN IMMEDIATE promotion).
     """
+    if not math.isfinite(min_confidence):
+        raise ValueError("min_confidence must be finite")
+
     where, params = _pending_where(source_type)
     # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query
     rows = conn.execute(f"SELECT confidence FROM decision_candidates WHERE {where}", params).fetchall()
