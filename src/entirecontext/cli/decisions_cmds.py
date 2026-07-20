@@ -852,6 +852,61 @@ def candidates_reject(
     console.print(f"[yellow]Rejected[/yellow] candidate {result['candidate_id'][:12]}")
 
 
+@candidates_app.command("confirm-batch")
+def candidates_confirm_batch(
+    source: Optional[str] = typer.Option("archaeology", "--source", help="Filter by source type"),
+    min_confidence: float = typer.Option(..., "--min-confidence", help="Confidence threshold (required)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show distribution only; no mutation"),
+):
+    from ..core.decision_candidates import confirm_candidates_batch
+
+    conn, repo_path = get_repo_connection()
+    try:
+        result = confirm_candidates_batch(
+            conn,
+            source_type=source,
+            min_confidence=min_confidence,
+            dry_run=dry_run,
+            reviewer="cli",
+            repo_path=repo_path,
+        )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    finally:
+        conn.close()
+
+    if dry_run:
+        if result["total_pending"] == 0:
+            console.print("[dim]No pending candidates match.[/dim]")
+            return
+        table = Table(title="Candidate Confidence Distribution")
+        table.add_column("Confidence")
+        table.add_column("Count", justify="right")
+        for bucket in sorted(result["distribution"]):
+            table.add_row(bucket, str(result["distribution"][bucket]))
+        console.print(table)
+        console.print(
+            f"Total pending: {result['total_pending']} — eligible at >= {min_confidence}: {result['eligible']}"
+        )
+        return
+
+    confirmed = result["confirmed"]
+    failed = result["failed"]
+    skipped = result["skipped_below_threshold"]
+
+    if not confirmed and not failed and skipped == 0:
+        console.print("[dim]No pending candidates match.[/dim]")
+        return
+
+    console.print(f"[green]Confirmed[/green] {len(confirmed)} candidates → decisions")
+    if failed:
+        shown = ", ".join(failed[:5])
+        suffix = ", ..." if len(failed) > 5 else ""
+        console.print(f"[red]Failed[/red] {len(failed)}: {shown}{suffix}")
+    console.print(f"Skipped below threshold: {skipped}")
+
+
 decision_app.add_typer(candidates_app, name="candidates")
 
 

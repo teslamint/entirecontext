@@ -1,0 +1,33 @@
+=== retry pass 10:58:48 ===
+Processed 9/10 commits, 1 candidates
+Processed 17/20 commits, 7 candidates
+Processed 27/30 commits, 9 candidates
+Processed 33/40 commits, 9 candidates
+Processed 43/50 commits, 17 candidates
+Processed 53/60 commits, 25 candidates
+Processed 61/70 commits, 28 candidates
+Processed 70/80 commits, 30 candidates
+Processed 79/90 commits, 31 candidates
+Processed 87/100 commits, 31 candidates
+Processed 95/110 commits, 37 candidates
+Processed 105/120 commits, 43 candidates
+Processed 114/130 commits, 49 candidates
+Processed 123/140 commits, 49 candidates
+Processed 131/150 commits, 49 candidates
+Processed 137/160 commits, 49 candidates
+Processed 137/170 commits, 49 candidates
+Processed 137/180 commits, 49 candidates
+Processed 137/188 commits, 49 candidates
+Warnings: 178
+  - commit 1b001965a320: extraction did not parse; will retry next run
+  - parse:archaeology:llm output is not valid JSON: Expecting value: line 1
+column 1 (char 0)
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+
+Done. Scanned 334, processed 137, skipped 146, candidates 49.
+=== dry-run ===
+Found 334 commits, 292 already processed, 42 patch extractions pending, 0 PR
+enrichments pending.
+Estimated token cost: ~105,000-126,000 tokens

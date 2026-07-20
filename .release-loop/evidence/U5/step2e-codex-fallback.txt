@@ -1,0 +1,15 @@
+=== codex fallback pass 2026-07-20 15:34:38 +0900 ===
+reason: claude CLI authentication_failed; user-approved temporary ephemeral codex backend
+Processed 10/10 commits, 0 candidates
+Processed 20/20 commits, 2 candidates
+Processed 30/30 commits, 8 candidates
+Processed 40/40 commits, 15 candidates
+Processed 42/42 commits, 15 candidates
+Warnings: 17
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+
+Done. Scanned 334, processed 42, skipped 292, candidates 15.

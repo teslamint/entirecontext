@@ -1,0 +1,6 @@
+=== pre-confirm metrics ===
+processed|334
+pending_archaeology_candidates|138
+commit_linked_decisions|0
+all_decisions|128
+file_linked_decisions|11
