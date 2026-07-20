@@ -6,7 +6,7 @@ Base: c925e49
 BaseBranch: main
 Spec: docs/specs/2026-07-19-self-archaeology-blame-design.md
 Plan: docs/superpowers/plans/2026-07-19-v0.15.0-self-archaeology-blame-plan.md
-PR: (none yet)
+PR: #197
 Tasks: 5/5 complete
 DeliverableType: code
 MinorFindings: (none)
