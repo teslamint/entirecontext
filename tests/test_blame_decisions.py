@@ -17,6 +17,41 @@ def _commit(git_repo, filename: str, content: str, message: str) -> str:
 
 
 class TestAnnotateFile:
+    def test_sha256_porcelain_header_is_annotated(self, ec_repo, ec_db, monkeypatch):
+        sha256 = "a" * 64
+        decision = create_decision(ec_db, title="SHA-256 decision")
+        link_decision_to_commit(ec_db, decision["id"], sha256)
+        blame_output = f"{sha256} 1 1 1\n\tline1\n"
+
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, blame_output, ""),
+        )
+
+        result = annotate_file(ec_db, str(ec_repo), "sha256.py")
+
+        assert result["total_sha_count"] == 1
+        assert result["annotated_sha_count"] == 1
+        assert result["annotations"][0].commit_sha == sha256
+        assert result["annotations"][0].decision_id == decision["id"]
+
+    def test_sha256_zero_header_is_uncommitted(self, ec_repo, ec_db, monkeypatch):
+        zero_sha256 = "0" * 64
+        blame_output = f"{zero_sha256} 1 7 1\n\tline7\n"
+
+        monkeypatch.setattr(
+            subprocess,
+            "run",
+            lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, blame_output, ""),
+        )
+
+        result = annotate_file(ec_db, str(ec_repo), "sha256.py")
+
+        assert result["total_sha_count"] == 0
+        assert result["annotated_sha_count"] == 0
+        assert result["uncommitted_ranges"] == [(7, 7)]
+
     def test_happy_single_decision(self, ec_repo, ec_db):
         sha1 = _commit(ec_repo, "foo.py", "line1\nline2\n", "commit 1")
         _commit(ec_repo, "foo.py", "line1\nline2\nline3\nline4\n", "commit 2")

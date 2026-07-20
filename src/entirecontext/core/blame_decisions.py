@@ -9,8 +9,8 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
-_ZERO_SHA = "0" * 40
-_HEADER_RE = re.compile(r"^([0-9a-f]{40}) (\d+) (\d+)(?: (\d+))?$")
+_ZERO_SHAS = {"0" * 40, "0" * 64}
+_HEADER_RE = re.compile(r"^([0-9a-f]{40}|[0-9a-f]{64}) (\d+) (\d+)(?: (\d+))?$")
 
 
 @dataclass
@@ -85,7 +85,7 @@ def annotate_file(
     sha_to_lines: dict[str, list[int]] = {}
     uncommitted_lines: list[int] = []
     for final_line, sha in final_line_to_sha.items():
-        if sha == _ZERO_SHA:
+        if sha in _ZERO_SHAS:
             uncommitted_lines.append(final_line)
         else:
             sha_to_lines.setdefault(sha, []).append(final_line)
