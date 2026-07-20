@@ -4,6 +4,8 @@ Time-travel searchable agent memory anchored to git state. Python 3.12+, uv, SQL
 
 After `uv sync` that touches `mcp/` or `core/decisions.py`, restart Claude Code — the stdio MCP server does not auto-reload.
 
+Durable guidance from solved problems lives under `docs/solutions/`; check the relevant category before repeating a diagnosis.
+
 ## Test
 
 Tests use real git repos via fixtures (`git_repo`, `ec_repo`, `ec_db`, `isolated_global_db`). External deps are isolated with `monkeypatch`. See `tests/conftest.py`.
