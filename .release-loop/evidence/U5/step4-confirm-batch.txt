@@ -1,0 +1,4 @@
+'[Errno 8] nodename nor servname provided, or not known' thrown while requesting HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/adapter_config.json
+Retrying in 1s [Retry 1/5].
+Confirmed 138 candidates → decisions
+Skipped below threshold: 0

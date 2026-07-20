@@ -1,0 +1,27 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.12, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/teslamint/workspace/entirecontext
+configfile: pyproject.toml
+plugins: cov-7.1.0, hypothesis-6.155.7, anyio-4.13.0
+collected 2083 items / 1919 deselected / 164 selected
+
+tests/test_archaeology.py .............................................. [ 28%]
+................................                                         [ 47%]
+tests/test_archaeology_cli.py .......                                    [ 51%]
+tests/test_archaeology_integration.py ....                               [ 54%]
+tests/test_archaeology_streaming.py ........                             [ 59%]
+tests/test_auto_assess.py .                                              [ 59%]
+tests/test_blame_cmds.py .............                                   [ 67%]
+tests/test_blame_decisions.py ........                                   [ 72%]
+tests/test_confirm_commit_link.py ...                                    [ 74%]
+tests/test_consolidation.py ...                                          [ 76%]
+tests/test_decision_candidates_batch.py ..............                   [ 84%]
+tests/test_decision_candidates_batch_cli.py ....                         [ 87%]
+tests/test_decision_extraction.py ...                                    [ 89%]
+tests/test_decision_hooks.py .....                                       [ 92%]
+tests/test_decisions_core.py ..                                          [ 93%]
+tests/test_extraction_archaeology_seam.py ......                         [ 96%]
+tests/test_migration_v016.py ....                                        [ 99%]
+tests/test_ranking_snapshot_security.py .                                [100%]
+
+==================== 164 passed, 1919 deselected in 15.04s =====================

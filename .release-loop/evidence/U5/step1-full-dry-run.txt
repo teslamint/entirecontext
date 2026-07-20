@@ -1,0 +1,3 @@
+Found 334 commits, 0 already processed, 334 patch extractions pending, 0 PR 
+enrichments pending.
+Estimated token cost: ~835,000-1,002,000 tokens

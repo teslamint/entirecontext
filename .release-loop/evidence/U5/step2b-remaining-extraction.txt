@@ -1,0 +1,68 @@
+=== full-window pass 1 00:55:24 ===
+Processed 8/10 commits, 2 candidates
+Processed 16/20 commits, 3 candidates
+Processed 24/30 commits, 4 candidates
+Processed 34/40 commits, 24 candidates
+Processed 43/50 commits, 26 candidates
+Processed 51/60 commits, 30 candidates
+Processed 55/70 commits, 36 candidates
+Processed 55/80 commits, 36 candidates
+Processed 55/90 commits, 36 candidates
+Processed 55/100 commits, 36 candidates
+Processed 55/110 commits, 36 candidates
+Processed 55/120 commits, 36 candidates
+Processed 55/130 commits, 36 candidates
+Processed 55/140 commits, 36 candidates
+Processed 55/150 commits, 36 candidates
+Processed 55/160 commits, 36 candidates
+Processed 55/170 commits, 36 candidates
+Processed 55/180 commits, 36 candidates
+Processed 55/190 commits, 36 candidates
+Processed 55/200 commits, 36 candidates
+Processed 55/210 commits, 36 candidates
+Processed 55/220 commits, 36 candidates
+Processed 55/230 commits, 36 candidates
+Processed 55/240 commits, 36 candidates
+Processed 55/243 commits, 36 candidates
+Warnings: 557
+  - commit 1b001965a320: extraction did not parse; will retry next run
+  - parse:archaeology:llm output is not valid JSON: Expecting value: line 1 
+column 1 (char 0)
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - commit feb31ffb452e: extraction did not parse; will retry next run
+  - parse:archaeology:llm output is not valid JSON: Expecting value: line 1 
+column 1 (char 0)
+
+Done. Scanned 334, processed 55, skipped 91, candidates 36.
+=== full-window pass 2 01:26:09 ===
+Processed 0/10 commits, 0 candidates
+Processed 0/20 commits, 0 candidates
+Processed 0/30 commits, 0 candidates
+Processed 0/40 commits, 0 candidates
+Processed 0/50 commits, 0 candidates
+Processed 0/60 commits, 0 candidates
+Processed 0/70 commits, 0 candidates
+Processed 0/80 commits, 0 candidates
+Processed 0/90 commits, 0 candidates
+Processed 0/100 commits, 0 candidates
+Processed 0/110 commits, 0 candidates
+Processed 0/120 commits, 0 candidates
+Processed 0/130 commits, 0 candidates
+Processed 0/140 commits, 0 candidates
+Processed 0/150 commits, 0 candidates
+Processed 0/160 commits, 0 candidates
+Processed 0/170 commits, 0 candidates
+Processed 0/180 commits, 0 candidates
+Processed 0/188 commits, 0 candidates
+Warnings: 541
+  - commit 1b001965a320: extraction did not parse; will retry next run
+  - llm_call:archaeology:llm call failed: claude failed (exit 1): 
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - commit feb31ffb452e: extraction did not parse; will retry next run
+  - llm_call:archaeology:llm call failed: claude failed (exit 1): 
+
+Done. Scanned 334, processed 0, skipped 146, candidates 0.
+=== final dry-run ===
+Found 334 commits, 155 already processed, 179 patch extractions pending, 0 PR 
+enrichments pending.
+Estimated token cost: ~447,500-537,000 tokens

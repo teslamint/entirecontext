@@ -1,0 +1,13 @@
+processed|334
+eligible_non_merge_commits|334
+pending_patch_extractions|0
+pending_pr_enrichments|0
+pending_archaeology_candidates|0
+commit_linked_decisions_before|0
+commit_linked_decisions_after|138
+all_decisions_before|128
+all_decisions_after|266
+file_linked_decisions_before|11
+file_linked_decisions_after|149
+file_link_coverage_before_pct|8.6
+file_link_coverage_after_pct|56.0

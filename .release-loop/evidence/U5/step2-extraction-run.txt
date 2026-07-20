@@ -1,0 +1,61 @@
+=== batch 1 00:17:20 ===
+Processed 9/10 commits, 2 candidates
+Processed 17/20 commits, 5 candidates
+Processed 24/30 commits, 6 candidates
+Processed 34/40 commits, 9 candidates
+Processed 44/50 commits, 15 candidates
+Processed 54/60 commits, 19 candidates
+Processed 63/70 commits, 33 candidates
+Processed 72/80 commits, 36 candidates
+Processed 78/90 commits, 36 candidates
+Processed 88/100 commits, 36 candidates
+Warnings: 64
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - commit 89baaa7d0310: extraction did not parse; will retry next run
+
+Done. Scanned 100, processed 88, skipped 0, candidates 36.
+=== batch 2 00:51:25 ===
+Processed 9/10 commits, 1 candidates
+Processed 11/20 commits, 1 candidates
+Processed 11/22 commits, 1 candidates
+Warnings: 18
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+
+Done. Scanned 100, processed 11, skipped 78, candidates 1.
+=== batch 3 00:54:03 ===
+Processed 2/10 commits, 1 candidates
+Processed 2/11 commits, 1 candidates
+Warnings: 5
+  - no_drafts: 1 bundles collected but 0 drafts parsed
+  - commit 7e448db2dd42: gh: No commit found for SHA: 
+7e448db2dd420be9a0b7f2da6a96cdf2a536ddb7 (HTTP 422)
+  - commit b6eb24c3b170: gh: No commit found for SHA: 
+b6eb24c3b170a2ca6ffb592a96d1c1cbeb1449a9 (HTTP 422)
+  - commit c925e49df964: gh: No commit found for SHA: 
+c925e49df964701794e57816b435c555d0848cc9 (HTTP 422)
+  - PR body fetch failed 3 times consecutively — disabling for remaining commits
+
+Done. Scanned 100, processed 2, skipped 89, candidates 1.
+=== batch 4 00:54:44 ===
+Processed 0/9 commits, 0 candidates
+Warnings: 4
+  - commit 7e448db2dd42: gh: No commit found for SHA: 
+7e448db2dd420be9a0b7f2da6a96cdf2a536ddb7 (HTTP 422)
+  - commit b6eb24c3b170: gh: No commit found for SHA: 
+b6eb24c3b170a2ca6ffb592a96d1c1cbeb1449a9 (HTTP 422)
+  - commit c925e49df964: gh: No commit found for SHA: 
+c925e49df964701794e57816b435c555d0848cc9 (HTTP 422)
+  - PR body fetch failed 3 times consecutively — disabling for remaining commits
+
+Done. Scanned 100, processed 0, skipped 91, candidates 0.
+=== final dry-run ===
+Found 334 commits, 100 already processed, 234 patch extractions pending, 0 PR 
+enrichments pending.
+Estimated token cost: ~585,000-702,000 tokens
