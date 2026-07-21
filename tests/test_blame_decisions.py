@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import subprocess
+from itertools import product
 
 from entirecontext.core.blame_decisions import annotate_file
 from entirecontext.core.decisions import create_decision, link_decision_to_commit
@@ -117,6 +118,40 @@ class TestAnnotateFile:
         monkeypatch.setattr(subprocess, "run", fake_run)
 
         result = annotate_file(ec_db, str(ec_repo), "abbreviated-candidates.py")
+
+        assert result["annotated_sha_count"] == 1
+        assert resolved_arguments == [f"{relevant_abbreviation}^{{commit}}"]
+
+    def test_case_variant_abbreviations_share_git_resolution(self, ec_repo, ec_db, monkeypatch):
+        full_sha = "abcdef0123" * 4
+        relevant_abbreviation = full_sha[:8]
+        case_variants = [
+            "".join(characters)
+            for characters in product(
+                *((character.lower(), character.upper()) if character.isalpha() else (character,)
+                  for character in relevant_abbreviation)
+            )
+        ]
+        decision = create_decision(ec_db, title="Case-variant abbreviated SHA decision")
+        ec_db.executemany(
+            "INSERT INTO decision_commits (decision_id, commit_sha) VALUES (?, ?)",
+            ((decision["id"], commit_sha) for commit_sha in case_variants),
+        )
+        ec_db.commit()
+        blame_output = f"{full_sha} 1 1 1\n\tline1\n"
+        resolved_arguments = []
+
+        def fake_run(command, **kwargs):
+            if command[:3] == ["git", "blame", "--porcelain"]:
+                return subprocess.CompletedProcess(command, 0, blame_output, "")
+            if command[:3] == ["git", "rev-parse", "--verify"]:
+                resolved_arguments.append(command[3])
+                return subprocess.CompletedProcess(command, 0, f"{full_sha}\n", "")
+            raise AssertionError(f"Unexpected subprocess command: {command}")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = annotate_file(ec_db, str(ec_repo), "case-variant-abbreviations.py")
 
         assert result["annotated_sha_count"] == 1
         assert resolved_arguments == [f"{relevant_abbreviation}^{{commit}}"]

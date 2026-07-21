@@ -174,11 +174,14 @@ def annotate_file(
         annotation_keys: set[tuple[str, str]] = set()
         for row in rows:
             stored_sha = row["commit_sha"]
-            if stored_sha.lower() not in blamed_sha_candidates:
+            normalized_stored_sha = stored_sha.lower()
+            if normalized_stored_sha not in blamed_sha_candidates:
                 continue
-            if stored_sha not in resolved_links:
-                resolved_links[stored_sha] = _resolve_blamed_sha(repo_path, stored_sha, blamed_sha_set)
-            resolved_sha = resolved_links[stored_sha]
+            if normalized_stored_sha not in resolved_links:
+                resolved_links[normalized_stored_sha] = _resolve_blamed_sha(
+                    repo_path, stored_sha, blamed_sha_set
+                )
+            resolved_sha = resolved_links[normalized_stored_sha]
             if resolved_sha is None:
                 continue
             annotated_shas.add(resolved_sha)
