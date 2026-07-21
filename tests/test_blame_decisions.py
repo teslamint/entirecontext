@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import sqlite3
 import subprocess
 
 from entirecontext.core.blame_decisions import annotate_file
@@ -16,7 +18,77 @@ def _commit(git_repo, filename: str, content: str, message: str) -> str:
     return result.stdout.strip()
 
 
+def _annotate_high_distinct_sha_file(ec_repo, ec_db, monkeypatch, traced_statements=None):
+    shas = [f"{index:08x}{index:032x}" for index in range(1, 1201)]
+    exact_decision = create_decision(ec_db, title="Exact SHA decision")
+    abbreviated_decision = create_decision(ec_db, title="Abbreviated SHA decision")
+    link_decision_to_commit(ec_db, exact_decision["id"], shas[0])
+    link_decision_to_commit(ec_db, abbreviated_decision["id"], shas[-1][:8])
+    blame_output = "".join(
+        f"{sha} {line_number} {line_number} 1\n\tline {line_number}\n"
+        for line_number, sha in enumerate(shas, start=1)
+    )
+
+    def fake_run(command, **kwargs):
+        if command[:3] == ["git", "blame", "--porcelain"]:
+            return subprocess.CompletedProcess(command, 0, blame_output, "")
+        if command[:3] == ["git", "rev-parse", "--verify"]:
+            assert command[3] == f"{shas[-1][:8]}^{{commit}}"
+            return subprocess.CompletedProcess(command, 0, f"{shas[-1]}\n", "")
+        raise AssertionError(f"Unexpected subprocess command: {command}")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    previous_limit = ec_db.setlimit(sqlite3.SQLITE_LIMIT_EXPR_DEPTH, 1000)
+    if traced_statements is not None:
+        ec_db.set_trace_callback(traced_statements.append)
+    try:
+        result = annotate_file(ec_db, str(ec_repo), "large-history.py")
+    finally:
+        ec_db.set_trace_callback(None)
+        ec_db.setlimit(sqlite3.SQLITE_LIMIT_EXPR_DEPTH, previous_limit)
+
+    return result, shas, exact_decision, abbreviated_decision
+
+
 class TestAnnotateFile:
+    def test_high_distinct_sha_count_survives_expression_depth_limit(
+        self, ec_repo, ec_db, monkeypatch
+    ):
+        result, shas, exact_decision, abbreviated_decision = _annotate_high_distinct_sha_file(
+            ec_repo, ec_db, monkeypatch
+        )
+
+        assert result["total_sha_count"] == 1200
+        assert result["annotated_sha_count"] == 2
+        assert {(annotation.commit_sha, annotation.decision_id) for annotation in result["annotations"]} == {
+            (shas[0], exact_decision["id"]),
+            (shas[-1], abbreviated_decision["id"]),
+        }
+
+    def test_high_distinct_sha_query_count_is_bounded(self, ec_repo, ec_db, monkeypatch):
+        traced_statements = []
+
+        _annotate_high_distinct_sha_file(ec_repo, ec_db, monkeypatch, traced_statements)
+
+        candidate_queries = [
+            statement
+            for statement in traced_statements
+            if "FROM decision_commits dc JOIN decisions d" in statement
+        ]
+        exact_queries = [
+            statement for statement in candidate_queries if "WHERE dc.commit_sha IN (" in statement
+        ]
+        abbreviated_queries = [
+            statement for statement in candidate_queries if "length(dc.commit_sha) >= 4" in statement
+        ]
+
+        assert len(exact_queries) == 3
+        assert len(abbreviated_queries) == 1
+        for statement in exact_queries:
+            match = re.search(r"WHERE dc\.commit_sha IN \((.*?)\)", statement, re.DOTALL)
+            assert match is not None
+            assert len(match.group(1).split(",")) <= 400
+
     def test_non_utf8_file_is_parsed_without_decode_error(self, ec_repo, ec_db):
         (ec_repo / "binary.dat").write_bytes(b"\xff\n")
         subprocess.run(["git", "add", "binary.dat"], cwd=ec_repo, check=True, capture_output=True)

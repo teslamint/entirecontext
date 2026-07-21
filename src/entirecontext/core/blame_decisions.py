@@ -11,6 +11,7 @@ from typing import Any
 
 _ZERO_SHAS = {"0" * 40, "0" * 64}
 _HEADER_RE = re.compile(r"^([0-9a-f]{40}|[0-9a-f]{64}) (\d+) (\d+)(?: (\d+))?$")
+_SHA_QUERY_BATCH_SIZE = 400
 
 
 @dataclass
@@ -86,6 +87,37 @@ def _resolve_blamed_sha(repo_path: str, stored_sha: str, blamed_shas: set[str]) 
     return resolved_sha if resolved_sha in blamed_shas else None
 
 
+def _query_decision_links(
+    conn: sqlite3.Connection, blamed_shas: list[str]
+) -> list[sqlite3.Row]:
+    rows: list[sqlite3.Row] = []
+    select = """SELECT dc.commit_sha, d.id, d.title, d.rationale,
+        d.rejected_alternatives, d.staleness_status
+        FROM decision_commits dc JOIN decisions d ON d.id = dc.decision_id"""
+
+    for batch_start in range(0, len(blamed_shas), _SHA_QUERY_BATCH_SIZE):
+        batch = blamed_shas[batch_start : batch_start + _SHA_QUERY_BATCH_SIZE]
+        placeholders = ",".join("?" * len(batch))
+        rows.extend(
+            conn.execute(  # noqa: S608
+                f"{select} WHERE dc.commit_sha IN ({placeholders})",
+                batch,
+            ).fetchall()
+        )
+
+    for sha_width in sorted({len(sha) for sha in blamed_shas}):
+        rows.extend(
+            conn.execute(
+                f"""{select}
+                WHERE length(dc.commit_sha) >= 4
+                  AND length(dc.commit_sha) < ?""",
+                (sha_width,),
+            ).fetchall()
+        )
+
+    return rows
+
+
 def annotate_file(
     conn: sqlite3.Connection,
     repo_path: str,
@@ -129,15 +161,7 @@ def annotate_file(
     annotated_shas: set[str] = set()
 
     if shas:
-        placeholders = ",".join("?" * len(shas))
-        prefix_conditions = " OR ".join("? LIKE dc.commit_sha || '%'" for _ in shas)
-        rows = conn.execute(
-            f"""SELECT dc.commit_sha, d.id, d.title, d.rationale, d.rejected_alternatives, d.staleness_status
-            FROM decision_commits dc JOIN decisions d ON d.id = dc.decision_id
-            WHERE dc.commit_sha IN ({placeholders})
-               OR (length(dc.commit_sha) >= 4 AND ({prefix_conditions}))""",  # noqa: S608
-            [*shas, *shas],
-        ).fetchall()
+        rows = _query_decision_links(conn, shas)
         blamed_sha_set = set(shas)
         resolved_links: dict[str, str | None] = {}
         annotation_keys: set[tuple[str, str]] = set()
