@@ -100,8 +100,10 @@ def _query_decision_links(
         placeholders = ",".join("?" * len(batch))
         rows.extend(
             conn.execute(  # noqa: S608
-                f"{select} WHERE dc.commit_sha IN ({placeholders})",
-                batch,
+                f"""{select}
+                WHERE dc.commit_sha IN ({placeholders})
+                   OR dc.commit_sha IN ({placeholders})""",
+                [*batch, *(sha.upper() for sha in batch)],
             ).fetchall()
         )
 

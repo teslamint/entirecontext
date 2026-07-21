@@ -161,6 +161,17 @@ class TestAnnotateFile:
         assert result["annotations"][0].commit_sha == full_sha
         assert result["annotations"][0].decision_id == decision["id"]
 
+    def test_uppercase_full_commit_link_is_normalized(self, ec_repo, ec_db):
+        full_sha = _commit(ec_repo, "uppercase-full.py", "line1\n", "commit with uppercase full link")
+        decision = create_decision(ec_db, title="Uppercase full SHA decision")
+        link_decision_to_commit(ec_db, decision["id"], full_sha.upper())
+
+        result = annotate_file(ec_db, str(ec_repo), "uppercase-full.py")
+
+        assert result["annotated_sha_count"] == 1
+        assert result["annotations"][0].commit_sha == full_sha
+        assert result["annotations"][0].decision_id == decision["id"]
+
     def test_equivalent_full_and_abbreviated_links_are_deduplicated(self, ec_repo, ec_db):
         full_sha = _commit(ec_repo, "duplicate.py", "line1\n", "commit with duplicate links")
         decision = create_decision(ec_db, title="One decision, two link forms")
