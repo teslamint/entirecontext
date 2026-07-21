@@ -4,7 +4,7 @@ feature: Bound abbreviated-SHA blame lookup complexity
 phase: ship
 phase_status: in-progress
 started: 2026-07-21T04:10:21Z
-updated: 2026-07-21T07:05:26Z
+updated: 2026-07-21T07:08:25Z
 branch: fix/blame-sha-lookup-complexity
 base_branch: main
 flags: []
@@ -41,3 +41,4 @@ blocked_reason: null
 - 2026-07-21T07:01:48Z implement→review: final branch review at `eff84ec` returned Spec PASS / Quality PASS with no findings; S1–S4, 32 blame tests, Ruff, mypy, query bounds, and index use were verified.
 - 2026-07-21T07:01:48Z review→ship: phase-gate verified the reviewed HEAD and `git diff --check main...HEAD` passed; waiting at the required first-hand Ship approval gate before outward operations.
 - 2026-07-21T07:05:26Z ship: user approved push and PR creation; capability preflight found `gh 2.96.0`, authenticated ADMIN access, and reachable `origin`; unrelated local-base commits were removed by rebasing `8d2332a` onto `origin/main`, producing clean-scope HEAD `76b09da` with 11 feature-only commits.
+- 2026-07-21T07:08:25Z ship: fresh post-rebase verification gate — `PATH="$PWD/.venv/bin:$PATH" UV_CACHE_DIR=/tmp/uv-cache PYTHONPATH=src .venv/bin/pytest -q` → `2097 passed, 1 skipped, 1 pre-existing warning`.
