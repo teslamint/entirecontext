@@ -100,10 +100,8 @@ def _query_decision_links(
         placeholders = ",".join("?" * len(batch))
         rows.extend(
             conn.execute(  # noqa: S608
-                f"""{select}
-                WHERE dc.commit_sha IN ({placeholders})
-                   OR dc.commit_sha IN ({placeholders})""",
-                [*batch, *(sha.upper() for sha in batch)],
+                f"{select} WHERE dc.commit_sha IN ({placeholders})",
+                batch,
             ).fetchall()
         )
 
@@ -112,8 +110,10 @@ def _query_decision_links(
             conn.execute(
                 f"""{select}
                 WHERE length(dc.commit_sha) >= 4
-                  AND length(dc.commit_sha) < ?""",
-                (sha_width,),
+                  AND (length(dc.commit_sha) < ?
+                       OR (length(dc.commit_sha) = ?
+                           AND dc.commit_sha != lower(dc.commit_sha)))""",
+                (sha_width, sha_width),
             ).fetchall()
         )
 
