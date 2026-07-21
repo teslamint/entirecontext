@@ -89,6 +89,38 @@ class TestAnnotateFile:
             assert match is not None
             assert len(match.group(1).split(",")) <= 400
 
+    def test_unrelated_abbreviated_links_do_not_invoke_git_resolution(
+        self, ec_repo, ec_db, monkeypatch
+    ):
+        full_sha = "abcdef0123" * 4
+        relevant_abbreviation = full_sha[:8]
+        decision = create_decision(ec_db, title="Relevant abbreviated SHA decision")
+        commit_links = [relevant_abbreviation, *(f"b{index:07x}" for index in range(1000))]
+        ec_db.executemany(
+            "INSERT INTO decision_commits (decision_id, commit_sha) VALUES (?, ?)",
+            ((decision["id"], commit_sha) for commit_sha in commit_links),
+        )
+        ec_db.commit()
+        blame_output = f"{full_sha} 1 1 1\n\tline1\n"
+        resolved_arguments = []
+
+        def fake_run(command, **kwargs):
+            if command[:3] == ["git", "blame", "--porcelain"]:
+                return subprocess.CompletedProcess(command, 0, blame_output, "")
+            if command[:3] == ["git", "rev-parse", "--verify"]:
+                resolved_arguments.append(command[3])
+                if command[3] == f"{relevant_abbreviation}^{{commit}}":
+                    return subprocess.CompletedProcess(command, 0, f"{full_sha}\n", "")
+                return subprocess.CompletedProcess(command, 1, "", "unknown revision")
+            raise AssertionError(f"Unexpected subprocess command: {command}")
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        result = annotate_file(ec_db, str(ec_repo), "abbreviated-candidates.py")
+
+        assert result["annotated_sha_count"] == 1
+        assert resolved_arguments == [f"{relevant_abbreviation}^{{commit}}"]
+
     def test_non_utf8_file_is_parsed_without_decode_error(self, ec_repo, ec_db):
         (ec_repo / "binary.dat").write_bytes(b"\xff\n")
         subprocess.run(["git", "add", "binary.dat"], cwd=ec_repo, check=True, capture_output=True)

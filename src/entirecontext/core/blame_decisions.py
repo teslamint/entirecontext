@@ -165,10 +165,17 @@ def annotate_file(
     if shas:
         rows = _query_decision_links(conn, shas)
         blamed_sha_set = set(shas)
+        blamed_sha_candidates = blamed_sha_set | {
+            sha[:prefix_length]
+            for sha in blamed_sha_set
+            for prefix_length in range(4, len(sha))
+        }
         resolved_links: dict[str, str | None] = {}
         annotation_keys: set[tuple[str, str]] = set()
         for row in rows:
             stored_sha = row["commit_sha"]
+            if stored_sha.lower() not in blamed_sha_candidates:
+                continue
             if stored_sha not in resolved_links:
                 resolved_links[stored_sha] = _resolve_blamed_sha(repo_path, stored_sha, blamed_sha_set)
             resolved_sha = resolved_links[stored_sha]
