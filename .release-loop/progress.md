@@ -2,9 +2,9 @@
 schema: release-loop/v1
 feature: Bound abbreviated-SHA blame lookup complexity
 phase: ship
-phase_status: waiting-user
+phase_status: in-progress
 started: 2026-07-21T04:10:21Z
-updated: 2026-07-21T07:01:48Z
+updated: 2026-07-21T07:05:26Z
 branch: fix/blame-sha-lookup-complexity
 base_branch: main
 flags: []
@@ -12,7 +12,7 @@ spec: docs/specs/2026-07-21-blame-sha-lookup-complexity-design.md
 plan: docs/plans/2026-07-21-001-fix-blame-sha-lookup-complexity-plan.md
 retro: null
 design_approved: {by: user, at: 2026-07-21T04:31:29Z}
-ship_approved: null
+ship_approved: {by: user, at: 2026-07-21T07:05:26Z, conditions: "push and PR approved; merge requires final approval"}
 current_unit: null
 ci_attempts: 0
 review_rounds: 3
@@ -40,3 +40,4 @@ blocked_reason: null
 - 2026-07-21T06:59:28Z implement/U1 review round 3: Spec PASS / Quality PASS with no findings; mixed SHA-1/SHA-256 boundary check passed; no observable-behavior deviation artifact required. Unit 1: complete (commits `a3da957..8bdb0da`, review clean).
 - 2026-07-21T07:01:48Z implement→review: final branch review at `eff84ec` returned Spec PASS / Quality PASS with no findings; S1–S4, 32 blame tests, Ruff, mypy, query bounds, and index use were verified.
 - 2026-07-21T07:01:48Z review→ship: phase-gate verified the reviewed HEAD and `git diff --check main...HEAD` passed; waiting at the required first-hand Ship approval gate before outward operations.
+- 2026-07-21T07:05:26Z ship: user approved push and PR creation; capability preflight found `gh 2.96.0`, authenticated ADMIN access, and reachable `origin`; unrelated local-base commits were removed by rebasing `8d2332a` onto `origin/main`, producing clean-scope HEAD `76b09da` with 11 feature-only commits.
