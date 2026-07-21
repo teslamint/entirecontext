@@ -2,7 +2,7 @@
 schema: plan/v1
 title: Bound abbreviated-SHA blame lookup complexity
 type: fix
-status: draft
+status: approved
 date: 2026-07-21
 execution: code
 origin: docs/specs/2026-07-21-blame-sha-lookup-complexity-design.md
