@@ -1,21 +1,31 @@
-# Release Loop Progress
-Phase: done
-Feature: v0.15.0 Self-Archaeology + Decision-Annotated Blame
-Branch: feature/self-archaeology-blame
-Base: c925e49
-BaseBranch: main
-Spec: docs/specs/2026-07-19-self-archaeology-blame-design.md
-Plan: docs/superpowers/plans/2026-07-19-v0.15.0-self-archaeology-blame-plan.md
-PR: #197
-Tasks: 5/5 complete
-DeliverableType: code
-MinorFindings: (none)
-ReviewRounds: 4
-ReviewComments: 9 fixed, 1 accepted residual
-Unit 1: complete (commits 94d48d4..de72884, review clean round 2)
-Unit 2: complete (commit dc056ff, review clean round 1)
-Unit 3: complete (commit 3f5fe2b, review clean round 1)
-Unit 4: complete (commit 4c80e47, review clean round 1)
-Unit 5: complete (334/334 non-merge commits archaeologized; 138 decisions commit-linked; file-link coverage 56.0%; blame evidence recorded)
-Merged: PR #197 as 11fb9ad2effa1328e9417f54f6277df297e6dbe4
-Retro: docs/retros/2026-07-20-v0.15.0-self-archaeology-blame-retro.md
+---
+schema: release-loop/v1
+feature: Bound abbreviated-SHA blame lookup complexity
+phase: design
+phase_status: in-progress
+started: 2026-07-21T04:10:21Z
+updated: 2026-07-21T04:26:43Z
+branch: fix/blame-sha-lookup-complexity
+base_branch: main
+flags: []
+spec: docs/specs/2026-07-21-blame-sha-lookup-complexity-design.md
+plan: null
+retro: null
+design_approved: null
+ship_approved: null
+current_unit: null
+ci_attempts: 0
+review_rounds: 0
+feedback_rounds: 0
+comments_fixed: 0
+comments_deferred: 0
+pr: null
+merged: false
+blocked_reason: null
+---
+
+## Log
+
+- 2026-07-21T04:10:21Z init: selected `ROADMAP.md:351` P2 carry-forward; isolated branch created from `412288f`; prior completed v0.15.0 ledger archived.
+- 2026-07-21T04:18:29Z design: clean baseline verified with `PATH="$PWD/.venv/bin:$PATH" UV_CACHE_DIR=/tmp/uv-cache PYTHONPATH=src .venv/bin/pytest -q` → 2093 passed, 1 skipped, 1 warning.
+- 2026-07-21T04:26:43Z design: independent review found 2 Important query-plan/measurement gaps; both corrected; final re-review verdict `clean`; placeholder, consistency, scope, and empirical-evidence checks passed.
