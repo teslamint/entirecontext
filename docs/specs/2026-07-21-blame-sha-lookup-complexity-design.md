@@ -1,6 +1,6 @@
 ---
 title: Bounded Abbreviated-SHA Blame Lookup
-status: draft
+status: approved
 date: 2026-07-21
 schema: spec/v1
 ---
