@@ -4,12 +4,12 @@ feature: Bound abbreviated-SHA blame lookup complexity
 phase: plan
 phase_status: in-progress
 started: 2026-07-21T04:10:21Z
-updated: 2026-07-21T04:31:29Z
+updated: 2026-07-21T04:36:35Z
 branch: fix/blame-sha-lookup-complexity
 base_branch: main
 flags: []
 spec: docs/specs/2026-07-21-blame-sha-lookup-complexity-design.md
-plan: null
+plan: docs/plans/2026-07-21-001-fix-blame-sha-lookup-complexity-plan.md
 retro: null
 design_approved: {by: user, at: 2026-07-21T04:31:29Z}
 ship_approved: null
@@ -31,3 +31,4 @@ blocked_reason: null
 - 2026-07-21T04:26:43Z design: independent review found 2 Important query-plan/measurement gaps; both corrected; final re-review verdict `clean`; placeholder, consistency, scope, and empirical-evidence checks passed.
 - 2026-07-21T04:27:36Z design: draft spec committed; `git show --quiet --format=%H HEAD` → `1f861c016f7cd904a5582a2bdcd1b6747c9e282b`; waiting for the required user approval gate.
 - 2026-07-21T04:31:29Z design→plan: user approved the committed spec through the blocking Design gate; spec status changed to `approved`; Plan phase started.
+- 2026-07-21T04:36:35Z plan: all five retained assumptions rechecked as `match`; S1–S4 map to U1; stateless fallback present; placeholder/type/caller/scope checks passed; deepening skipped because no trigger scored.
