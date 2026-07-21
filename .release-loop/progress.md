@@ -2,9 +2,9 @@
 schema: release-loop/v1
 feature: Bound abbreviated-SHA blame lookup complexity
 phase: plan
-phase_status: in-progress
+phase_status: waiting-user
 started: 2026-07-21T04:10:21Z
-updated: 2026-07-21T04:36:35Z
+updated: 2026-07-21T04:37:08Z
 branch: fix/blame-sha-lookup-complexity
 base_branch: main
 flags: []
@@ -32,3 +32,4 @@ blocked_reason: null
 - 2026-07-21T04:27:36Z design: draft spec committed; `git show --quiet --format=%H HEAD` → `1f861c016f7cd904a5582a2bdcd1b6747c9e282b`; waiting for the required user approval gate.
 - 2026-07-21T04:31:29Z design→plan: user approved the committed spec through the blocking Design gate; spec status changed to `approved`; Plan phase started.
 - 2026-07-21T04:36:35Z plan: all five retained assumptions rechecked as `match`; S1–S4 map to U1; stateless fallback present; placeholder/type/caller/scope checks passed; deepening skipped because no trigger scored.
+- 2026-07-21T04:37:08Z plan: draft committed; `git show --quiet --format=%H HEAD` → `6a5198beb90b92dc91f5719491ff8202eafdd4ec`; waiting for the required plan approval gate.
