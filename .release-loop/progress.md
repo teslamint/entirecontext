@@ -4,7 +4,7 @@ feature: Bound abbreviated-SHA blame lookup complexity
 phase: ship
 phase_status: in-progress
 started: 2026-07-21T04:10:21Z
-updated: 2026-07-21T07:09:44Z
+updated: 2026-07-21T07:25:47Z
 branch: fix/blame-sha-lookup-complexity
 base_branch: main
 flags: []
@@ -14,10 +14,10 @@ retro: null
 design_approved: {by: user, at: 2026-07-21T04:31:29Z}
 ship_approved: {by: user, at: 2026-07-21T07:05:26Z, conditions: "push and PR approved; merge requires final approval"}
 current_unit: null
-ci_attempts: 0
+ci_attempts: 1
 review_rounds: 3
-feedback_rounds: 0
-comments_fixed: 0
+feedback_rounds: 1
+comments_fixed: 1
 comments_deferred: 0
 pr: 199
 merged: false
@@ -43,3 +43,5 @@ blocked_reason: null
 - 2026-07-21T07:05:26Z ship: user approved push and PR creation; capability preflight found `gh 2.96.0`, authenticated ADMIN access, and reachable `origin`; unrelated local-base commits were removed by rebasing `8d2332a` onto `origin/main`, producing clean-scope HEAD `76b09da` with 11 feature-only commits.
 - 2026-07-21T07:08:25Z ship: fresh post-rebase verification gate — `PATH="$PWD/.venv/bin:$PATH" UV_CACHE_DIR=/tmp/uv-cache PYTHONPATH=src .venv/bin/pytest -q` → `2097 passed, 1 skipped, 1 pre-existing warning`.
 - 2026-07-21T07:09:44Z ship: pushed `fix/blame-sha-lookup-complexity` and opened PR #199 with ROADMAP/spec/plan traceability and fresh verification evidence.
+- 2026-07-21T07:14:03Z ship/CI attempt 1: all checks passed; complete feedback fetch found one open P2 thread (`PRRT_kwDORPUqAs6SfR1i`, comment `3620137548`) showing unrelated abbreviated links can trigger unbounded `git rev-parse` calls; feedback round 1 started with a test-first fix.
+- 2026-07-21T07:25:47Z ship/feedback round 1: RED proved 1,000 unrelated links caused 1,000 extra Git calls; `2c1e6ab` added blamed-prefix filtering; independent review then found case-variant cache misses, and `609e93a` normalized cache keys with a 64-variant regression; 34 blame tests, Ruff, mypy, full suite (`2099 passed, 1 skipped`), and clean re-review passed; thread `PRRT_kwDORPUqAs6SfR1i` was replied to and re-fetched as resolved.
