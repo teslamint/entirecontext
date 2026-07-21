@@ -1,10 +1,10 @@
 ---
 schema: release-loop/v1
 feature: Bound abbreviated-SHA blame lookup complexity
-phase: implement
-phase_status: in-progress
+phase: ship
+phase_status: waiting-user
 started: 2026-07-21T04:10:21Z
-updated: 2026-07-21T06:59:28Z
+updated: 2026-07-21T07:01:48Z
 branch: fix/blame-sha-lookup-complexity
 base_branch: main
 flags: []
@@ -38,3 +38,5 @@ blocked_reason: null
 - 2026-07-21T04:51:01Z implement/U1 review round 1: Spec FAIL / Quality FAIL on uppercase full-SHA regression; added a RED→GREEN regression and bounded dual-case indexed exact lookup in `33eb341`; revalidated 31 blame tests, Ruff, mypy, `EXPLAIN QUERY PLAN`, and full suite (`2096 passed, 1 skipped, 1 warning`).
 - 2026-07-21T06:58:17Z implement/U1 review round 2: Spec FAIL / Quality FAIL on mixed-case full-SHA regression; user chose complete unchanged behavior over the narrower shorter-only candidate detail; added a RED→GREEN regression and same-width non-lowercase candidate fallback in `8bdb0da`; revalidated 32 blame tests, Ruff, mypy, exact-query index use, and full suite (`2097 passed, 1 skipped, 1 warning`).
 - 2026-07-21T06:59:28Z implement/U1 review round 3: Spec PASS / Quality PASS with no findings; mixed SHA-1/SHA-256 boundary check passed; no observable-behavior deviation artifact required. Unit 1: complete (commits `a3da957..8bdb0da`, review clean).
+- 2026-07-21T07:01:48Z implement→review: final branch review at `eff84ec` returned Spec PASS / Quality PASS with no findings; S1–S4, 32 blame tests, Ruff, mypy, query bounds, and index use were verified.
+- 2026-07-21T07:01:48Z review→ship: phase-gate verified the reviewed HEAD and `git diff --check main...HEAD` passed; waiting at the required first-hand Ship approval gate before outward operations.
