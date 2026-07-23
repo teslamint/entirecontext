@@ -4,7 +4,7 @@ feature: Complete TQL until propagation for semantic and cross-repo search
 phase: implement
 phase_status: in-progress
 started: 2026-07-23T08:33:41Z
-updated: 2026-07-23T08:33:41Z
+updated: 2026-07-23T08:38:00Z
 branch: fix/tql-until-search
 base_branch: main
 flags: []
@@ -29,3 +29,4 @@ blocked_reason: null
 
 - 2026-07-23T08:33:41Z init: user approved `docs/plans/2026-07-23-001-fix-tql-until-search-plan.md`; isolated branch created from `029de60`; prior blame lookup ledger archived.
 - 2026-07-23T08:33:41Z implement: contradiction scan clean; selected serial subagents because U3 depends on the U1 and U2 interfaces; stateless fallback applies, so no mutation evidence is required.
+- 2026-07-23T08:38:00Z baseline: full suite reached `2098 passed, 1 skipped` with one environment-only `uv run` failure because the worktree lacked the repository virtualenv; rerunning that test with `UV_PROJECT_ENVIRONMENT=/Users/teslamint/workspace/entirecontext/.venv` passed.
