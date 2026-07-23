@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import struct
+
+import pytest
 
 from entirecontext.core.cross_repo import (
     cross_repo_search,
@@ -46,6 +49,99 @@ class TestListRepos:
 
 
 class TestCrossRepoSearch:
+    def _seed_bounded_turns(self, multi_ec_repos):
+        from entirecontext.db import get_db
+
+        for repo in multi_ec_repos.values():
+            conn = get_db(str(repo))
+            turns = conn.execute("SELECT id FROM turns ORDER BY turn_number").fetchall()
+            conn.execute(
+                "UPDATE turns SET user_message = ?, timestamp = ? WHERE id = ?",
+                ("auth in range", "2026-01-01 00:00:00", turns[0]["id"]),
+            )
+            conn.execute(
+                "UPDATE turns SET user_message = ?, timestamp = ? WHERE id = ?",
+                ("auth out of range", "2026-03-01 00:00:00", turns[1]["id"]),
+            )
+            conn.commit()
+            conn.close()
+
+    @pytest.mark.parametrize("search_type", ["regex", "fts", "hybrid"])
+    def test_until_filters_each_repo(self, multi_ec_repos, search_type):
+        self._seed_bounded_turns(multi_ec_repos)
+
+        results = cross_repo_search(
+            "auth",
+            search_type=search_type,
+            until="2026-02-01 00:00:00",
+        )
+
+        assert len(results) == 2
+        assert {result["repo_name"] for result in results} == {"frontend", "backend"}
+        assert {result["repo_path"] for result in results} == {
+            str(multi_ec_repos["frontend"]),
+            str(multi_ec_repos["backend"]),
+        }
+        assert all(result["timestamp"] == "2026-01-01 00:00:00" for result in results)
+
+    def test_exclusive_until_reaches_semantic_search(self, multi_ec_repos, monkeypatch):
+        from entirecontext.core import embedding
+        from entirecontext.db import get_db
+
+        vector = struct.pack("2f", 1.0, 0.0)
+        for repo in multi_ec_repos.values():
+            conn = get_db(str(repo))
+            turns = conn.execute("SELECT id FROM turns ORDER BY turn_number").fetchall()
+            for index, turn in enumerate(turns):
+                timestamp = "2026-02-01 00:00:00" if index == 0 else "2026-01-01 00:00:00"
+                conn.execute("UPDATE turns SET timestamp = ? WHERE id = ?", (timestamp, turn["id"]))
+                conn.execute(
+                    "INSERT INTO embeddings "
+                    "(id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+                    "VALUES (?, 'turn', ?, 'all-MiniLM-L6-v2', ?, 2, ?)",
+                    (f"embedding-{index}", turn["id"], vector, f"hash-{index}"),
+                )
+            conn.commit()
+            conn.close()
+        monkeypatch.setattr(embedding, "embed_text", lambda *_args, **_kwargs: vector)
+
+        results = cross_repo_search(
+            "auth",
+            search_type="semantic",
+            until="2026-02-01 00:00:00",
+            until_exclusive=True,
+        )
+
+        assert len(results) == 2
+        assert {result["repo_name"] for result in results} == {"frontend", "backend"}
+        assert all(result["timestamp"] == "2026-01-01 00:00:00" for result in results)
+
+    def test_temporal_filter_preserves_repo_fault_isolation(self, multi_ec_repos, tmp_path):
+        from entirecontext.db import get_global_db
+        from entirecontext.db.global_schema import init_global_schema
+
+        self._seed_bounded_turns(multi_ec_repos)
+        bad_db = tmp_path / "bad.db"
+        bad_db.write_text("not a sqlite db")
+        gconn = get_global_db()
+        init_global_schema(gconn)
+        gconn.execute(
+            "INSERT OR REPLACE INTO repo_index (repo_path, repo_name, db_path) VALUES (?, ?, ?)",
+            ("/bad/repo", "broken", str(bad_db)),
+        )
+        gconn.commit()
+        gconn.close()
+
+        results, warnings = cross_repo_search(
+            "auth",
+            until="2026-02-01 00:00:00",
+            include_warnings=True,
+        )
+
+        assert len(results) == 2
+        assert {result["repo_name"] for result in results} == {"frontend", "backend"}
+        assert warnings == [{"repo_name": "broken", "phase": "query", "error": "file is not a database"}]
+
     def test_regex_merges_results(self, multi_ec_repos):
         results = cross_repo_search("auth", search_type="regex")
         assert len(results) >= 2
