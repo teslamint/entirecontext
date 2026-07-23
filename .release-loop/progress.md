@@ -2,9 +2,9 @@
 schema: release-loop/v1
 feature: Complete TQL until propagation for semantic and cross-repo search
 phase: review
-phase_status: in-progress
+phase_status: complete
 started: 2026-07-23T08:33:41Z
-updated: 2026-07-23T09:12:00Z
+updated: 2026-07-23T09:20:00Z
 branch: fix/tql-until-search
 base_branch: main
 flags: []
@@ -34,6 +34,7 @@ blocked_reason: null
 - 2026-07-23T08:56:00Z implement/U2: RED reproduced five missing-`until` failures; GREEN and acceptance passed 33 tests plus Ruff, mypy, compileall, and diff check; Spec PASS / Quality PASS with no findings. Unit 2: complete (commits `c30831e..a5ad64d`, review clean).
 - 2026-07-23T09:12:00Z implement/U3: RED reproduced six dropped-bound failures while one pre-existing short-circuit test already passed; GREEN passed 7 contract tests, 221 acceptance tests, Ruff, mypy, and full suite (`2114 passed, 1 skipped`); Spec PASS / Quality PASS with no findings. Unit 3: complete (commits `d40817a..1bdfe5c`, review clean).
 - 2026-07-23T09:12:00Z implement→review: all units complete; branch-wide scenario and integration review started.
+- 2026-07-23T09:20:00Z review: final branch review at `5e403f3` returned Spec PASS / Quality PASS; all three regression scenarios delivered; 221 acceptance tests, 15 explicit scenario tests, Ruff, mypy, compileall, public-boundary probes, and diff check passed. One non-blocking session-fixture coverage Minor remains.
 
 ## MinorFindings
 
