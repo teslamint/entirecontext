@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-07-11._ <!-- experiment analysis completed -->
+_Updated 2026-07-23._
 
 ## Product Thesis
 
@@ -228,7 +228,7 @@ Theme: automate the weakest maturity dimension (intervene=5), activate deferred 
 - [x] **Signal C default ON** — `[decisions] auto_embed` flipped to `true` by default. Graceful no-op without `entirecontext[semantic]`.
 - [x] **Codex stale cleanup trigger expansion** — `close_stale_sessions()` now also triggered on SessionEnd, not just codex notify ingestion.
 - [x] **Duplicate notify regression test** — guards 150faab auto-close accuracy invariant.
-- [ ] **Rule-based verdict mapping tuning** — deferred to n≥30 enriched assessments (current: n=10).
+- [ ] **Rule-based verdict mapping tuning** — deferred until `ec checkpoint assess-accuracy` reports n≥30 enriched assessments with feedback (latest check 2026-07-23: n=0).
 
 ## v0.9.1 — Measurement Calibration
 
@@ -337,7 +337,9 @@ Carry-forward after v0.14.0:
 - [ ] **Consolidate PR enrichment state transitions** — when archaeology is next modified, centralize repeated PR fetch-result and processing-state branches to reduce future divergence. _(architecture, P3)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
-## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Shipped 2026-07-20)
+## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Feature merged 2026-07-20)
+
+The feature scope is merged, but release artifacts remain at v0.14.0 (`v0.14.0` tag, `CHANGELOG.md`, `pyproject.toml`, and `src/entirecontext/__init__.py`). This section does not claim a published or tagged v0.15.0 release.
 
 Theme: bootstrap the repository's own decision history, promote archaeology candidates safely in batches, and answer why a line exists from `ec blame`.
 
@@ -348,7 +350,7 @@ Theme: bootstrap the repository's own decision history, promote archaeology cand
 - [x] **Release-loop migration cleanup** — repository-local skill implementation removed after migration to `compound-loop`; historical specs and runtime evidence retained.
 
 Carry-forward after v0.15.0:
-- [ ] **Bound abbreviated-SHA blame lookup complexity** — replace the single OR-prefix predicate with chunked or non-expression-tree lookup so files spanning roughly 999+ distinct commits cannot exceed SQLite's expression-depth limit; add a regression fixture. _(edge case, P2; accepted residual from PR #197)_
+- [x] **Bound abbreviated-SHA blame lookup complexity** — exact SHA queries are batched, abbreviated candidates are scanned once per width and filtered before Git resolution, and the 1,200-SHA regression passes. _(completed by `5a24ebf`, PR #199)_
 - [ ] **Post-squash archaeology convergence** — with explicit repository-content export authorization, process squash commit `11fb9ad`; measure completion by intersecting reachable non-merge SHAs with `archaeology_processed` rather than comparing raw counts. _(process/measurement, P3)_
 - [ ] **TQL `--until` for semantic search** — stop silently ignoring the upper bound in the local semantic path. _(feature gap, P3; carried from the TQL retro)_
 - [ ] **TQL `--until` for global search** — propagate the upper bound through cross-repo search. _(feature gap, P3; carried from the TQL retro)_
