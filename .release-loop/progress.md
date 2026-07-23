@@ -4,7 +4,7 @@ feature: Complete TQL until propagation for semantic and cross-repo search
 phase: implement
 phase_status: in-progress
 started: 2026-07-23T08:33:41Z
-updated: 2026-07-23T08:47:00Z
+updated: 2026-07-23T08:56:00Z
 branch: fix/tql-until-search
 base_branch: main
 flags: []
@@ -14,9 +14,9 @@ retro: null
 design_approved: null
 plan_approved: {by: user, at: 2026-07-23T08:30:00Z}
 ship_approved: null
-current_unit: U2
+current_unit: U3
 ci_attempts: 0
-review_rounds: 1
+review_rounds: 2
 feedback_rounds: 0
 comments_fixed: 0
 comments_deferred: 0
@@ -31,6 +31,7 @@ blocked_reason: null
 - 2026-07-23T08:33:41Z implement: contradiction scan clean; selected serial subagents because U3 depends on the U1 and U2 interfaces; stateless fallback applies, so no mutation evidence is required.
 - 2026-07-23T08:38:00Z baseline: full suite reached `2098 passed, 1 skipped` with one environment-only `uv run` failure because the worktree lacked the repository virtualenv; rerunning that test with `UV_PROJECT_ENVIRONMENT=/Users/teslamint/workspace/entirecontext/.venv` passed.
 - 2026-07-23T08:47:00Z implement/U1: RED reproduced three missing-`until` failures; GREEN and acceptance passed 56 tests plus Ruff, mypy, compileall, and diff check; Spec PASS / Quality PASS. Unit 1: complete (commits `f1d9440..7b74b84`, review clean).
+- 2026-07-23T08:56:00Z implement/U2: RED reproduced five missing-`until` failures; GREEN and acceptance passed 33 tests plus Ruff, mypy, compileall, and diff check; Spec PASS / Quality PASS with no findings. Unit 2: complete (commits `c30831e..a5ad64d`, review clean).
 
 ## MinorFindings
 
