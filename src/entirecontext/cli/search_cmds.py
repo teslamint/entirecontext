@@ -69,6 +69,8 @@ def search(
                 commit_filter=commit,
                 agent_filter=agent,
                 since=resolved_since,
+                until=resolved_until,
+                until_exclusive=until_exclusive,
                 limit=limit,
             )
         except ValueError as exc:
@@ -99,6 +101,8 @@ def search(
                         commit_filter=commit,
                         agent_filter=agent,
                         since=resolved_since,
+                        until=resolved_until,
+                        until_exclusive=until_exclusive,
                         limit=limit,
                     )
                     latency_ms = int((time.perf_counter() - started_at) * 1000)
