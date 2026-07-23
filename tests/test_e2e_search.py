@@ -199,6 +199,60 @@ class TestSemanticSearch:
         conn.close()
         assert len(results) == 0
 
+    def test_semantic_search_with_until_filter(self, seeded_with_embeddings):
+        import struct
+        from unittest.mock import patch
+
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        conn = get_db(str(seeded_with_embeddings))
+        turns = conn.execute("SELECT id FROM turns ORDER BY turn_number").fetchall()
+        conn.execute("UPDATE turns SET timestamp = ? WHERE id = ?", ("2026-04-01 12:00:00", turns[0]["id"]))
+        conn.execute("UPDATE turns SET timestamp = ? WHERE id = ?", ("2026-04-01 12:00:01", turns[1]["id"]))
+        conn.commit()
+        with patch("entirecontext.core.embedding.embed_text", return_value=fake_vec):
+            from entirecontext.core.embedding import semantic_search
+
+            results = semantic_search(conn, "auth", until="2026-04-01 12:00:00")
+        conn.close()
+        assert [result["id"] for result in results] == [turns[0]["id"]]
+
+    def test_semantic_search_with_exclusive_until_and_mixed_formats(self, seeded_with_embeddings):
+        import struct
+        from unittest.mock import patch
+
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        conn = get_db(str(seeded_with_embeddings))
+        turns = conn.execute("SELECT id FROM turns ORDER BY turn_number").fetchall()
+        conn.execute("UPDATE turns SET timestamp = ? WHERE id = ?", ("2026-04-01T23:30:00+00:00", turns[0]["id"]))
+        conn.execute("UPDATE turns SET timestamp = ? WHERE id = ?", ("2026-04-02 00:00:00", turns[1]["id"]))
+        conn.commit()
+        with patch("entirecontext.core.embedding.embed_text", return_value=fake_vec):
+            from entirecontext.core.embedding import semantic_search
+
+            results = semantic_search(
+                conn,
+                "auth",
+                until="2026-04-02 00:00:00",
+                until_exclusive=True,
+            )
+        conn.close()
+        assert [result["id"] for result in results] == [turns[0]["id"]]
+
+    def test_semantic_search_excludes_unparseable_timestamp_when_bounded(self, seeded_with_embeddings):
+        import struct
+        from unittest.mock import patch
+
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        conn = get_db(str(seeded_with_embeddings))
+        conn.execute("UPDATE turns SET timestamp = 'not-a-timestamp'")
+        conn.commit()
+        with patch("entirecontext.core.embedding.embed_text", return_value=fake_vec):
+            from entirecontext.core.embedding import semantic_search
+
+            results = semantic_search(conn, "auth", until="2026-04-02 00:00:00")
+        conn.close()
+        assert results == []
+
     def test_semantic_search_import_error(self, seeded_with_embeddings):
         from unittest.mock import patch
 

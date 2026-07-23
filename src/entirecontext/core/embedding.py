@@ -53,12 +53,17 @@ def semantic_search(
     commit_filter: str | None = None,
     agent_filter: str | None = None,
     since: str | None = None,
+    until: str | None = None,
+    until_exclusive: bool = False,
 ) -> list[dict]:
     """Embed query and compare against stored embeddings.
 
     Returns ranked results with similarity scores.
-    Supports post-filters: file_filter, commit_filter, agent_filter, since.
+    Supports post-filters: file_filter, commit_filter, agent_filter, since, until.
     """
+    from .tql import TQLContext
+
+    tql = TQLContext.validated(since=since, until=until, until_exclusive=until_exclusive) if (since or until) else None
     query_embedding = embed_text(query, model_name)
 
     rows = conn.execute(
@@ -79,7 +84,7 @@ def semantic_search(
         )
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-    fetch_limit = limit * 5 if any([file_filter, commit_filter, agent_filter, since]) else limit
+    fetch_limit = limit * 5 if any([file_filter, commit_filter, agent_filter, since, until]) else limit
     top = scored[:fetch_limit]
 
     results = []
@@ -94,7 +99,8 @@ def semantic_search(
         if item["source_type"] == "turn":
             turn = conn.execute(
                 "SELECT id, session_id, user_message, assistant_summary, timestamp, "
-                "files_touched, git_commit_hash FROM turns WHERE id = ?",
+                "files_touched, git_commit_hash, datetime(timestamp) AS normalized_timestamp "
+                "FROM turns WHERE id = ?",
                 (item["source_id"],),
             ).fetchone()
             if turn:
@@ -104,19 +110,24 @@ def semantic_search(
                 result["timestamp"] = turn["timestamp"]
                 result["files_touched"] = turn["files_touched"]
                 result["git_commit_hash"] = turn["git_commit_hash"]
+                normalized_timestamp = turn["normalized_timestamp"]
             else:
                 continue
         elif item["source_type"] == "session":
             session = conn.execute(
-                "SELECT id, session_title, session_summary, started_at FROM sessions WHERE id = ?",
+                "SELECT id, session_title, session_summary, started_at, "
+                "datetime(started_at) AS normalized_timestamp FROM sessions WHERE id = ?",
                 (item["source_id"],),
             ).fetchone()
             if session:
                 result["session_title"] = session["session_title"]
                 result["session_summary"] = session["session_summary"]
                 result["started_at"] = session["started_at"]
+                normalized_timestamp = session["normalized_timestamp"]
             else:
                 continue
+        else:
+            normalized_timestamp = None
 
         if file_filter and result.get("source_type") == "turn":
             ft = result.get("files_touched")
@@ -135,9 +146,15 @@ def semantic_search(
             if not session_row or session_row["session_type"] != agent_filter:
                 continue
 
-        if since:
-            ts = result.get("timestamp") or result.get("started_at") or ""
-            if ts < since:
+        if tql:
+            if not normalized_timestamp:
+                continue
+            if tql.since and normalized_timestamp < tql.since:
+                continue
+            if tql.until and (
+                normalized_timestamp > tql.until
+                or (tql.until_exclusive and normalized_timestamp == tql.until)
+            ):
                 continue
 
         results.append(result)
