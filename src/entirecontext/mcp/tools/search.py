@@ -24,6 +24,31 @@ async def ec_search(
 
     if is_cross_repo:
         from ...core.cross_repo import cross_repo_search
+        from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
+
+        resolved_since: str | None = None
+        resolved_until: str | None = None
+        until_exclusive: bool = False
+        bound_conn = None
+        try:
+            if since or until:
+                (bound_conn, current_repo_path), _ = runtime.resolve_repo()
+            else:
+                current_repo_path = None
+            if since:
+                resolved_since, _ = resolve_temporal_ref(since, repo_path=current_repo_path)
+            if until:
+                resolved_until, until_exclusive = resolve_until(until, repo_path=current_repo_path)
+            TQLContext.validated(
+                since=resolved_since,
+                until=resolved_until,
+                until_exclusive=until_exclusive,
+            )
+        except TQLError as exc:
+            return runtime.error_payload(str(exc))
+        finally:
+            if bound_conn is not None:
+                bound_conn.close()
 
         try:
             results = cross_repo_search(
@@ -33,7 +58,9 @@ async def ec_search(
                 file_filter=file_filter,
                 commit_filter=commit_filter,
                 agent_filter=agent_filter,
-                since=since,
+                since=resolved_since,
+                until=resolved_until,
+                until_exclusive=until_exclusive,
                 limit=limit,
             )
         except ValueError as exc:
@@ -76,6 +103,8 @@ async def ec_search(
                         commit_filter=commit_filter,
                         agent_filter=agent_filter,
                         since=resolved_since,
+                        until=resolved_until,
+                        until_exclusive=until_exclusive,
                         limit=limit,
                     )
                     results = _apply_query_redaction(results, config)

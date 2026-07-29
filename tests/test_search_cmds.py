@@ -91,6 +91,22 @@ class TestSearch:
             assert result.exit_code == 0
             mock_sem.assert_called_once()
 
+    def test_semantic_until_is_forwarded(self):
+        mock_conn = MagicMock()
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.db.get_db", return_value=mock_conn),
+            patch("entirecontext.core.embedding.semantic_search", return_value=[]) as mock_sem,
+        ):
+            result = runner.invoke(
+                app,
+                ["search", "meaning", "--semantic", "--until", "2026-04-01T15:30:00+09:00"],
+            )
+
+        assert result.exit_code == 0
+        assert mock_sem.call_args.kwargs["until"] == "2026-04-01 06:30:00"
+        assert mock_sem.call_args.kwargs["until_exclusive"] is False
+
     def test_semantic_import_error(self):
         mock_conn = MagicMock()
         with (
@@ -122,6 +138,56 @@ class TestSearch:
             mock_cross.assert_called_once()
             assert "my-repo" in result.output
             assert "telemetry skipped: cross_repo" in result.output.lower()
+
+    def test_global_date_until_is_forwarded_as_exclusive(self):
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.core.cross_repo.cross_repo_search", return_value=[]) as mock_cross,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "search",
+                    "global query",
+                    "--hybrid",
+                    "--global",
+                    "--repo",
+                    "repo-a",
+                    "--until",
+                    "2026-04-01",
+                ],
+            )
+
+        assert result.exit_code == 0
+        assert "falling back to FTS5" in result.output
+        assert mock_cross.call_args.kwargs["search_type"] == "fts"
+        assert mock_cross.call_args.kwargs["repos"] == ["repo-a"]
+        assert mock_cross.call_args.kwargs["until"] == "2026-04-02 00:00:00"
+        assert mock_cross.call_args.kwargs["until_exclusive"] is True
+
+    def test_reversed_range_returns_before_core_search(self):
+        with (
+            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
+            patch("entirecontext.core.embedding.semantic_search", return_value=[]) as mock_sem,
+            patch("entirecontext.core.cross_repo.cross_repo_search", return_value=[]) as mock_cross,
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "search",
+                    "meaning",
+                    "--semantic",
+                    "--since",
+                    "2026-05-01",
+                    "--until",
+                    "2026-04-01",
+                ],
+            )
+
+        assert result.exit_code == 1
+        assert "Empty time range" in result.output
+        mock_sem.assert_not_called()
+        mock_cross.assert_not_called()
 
     def test_session_target(self):
         mock_conn = MagicMock()

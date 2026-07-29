@@ -186,6 +186,8 @@ def cross_repo_search(
     commit_filter: str | None = None,
     agent_filter: str | None = None,
     since: str | None = None,
+    until: str | None = None,
+    until_exclusive: bool = False,
     limit: int = 20,
     include_warnings: bool = False,
 ) -> list[dict] | tuple[list[dict], list[WarningEntry]]:
@@ -203,6 +205,8 @@ def cross_repo_search(
                 commit_filter=commit_filter,
                 agent_filter=agent_filter,
                 since=since,
+                until=until,
+                until_exclusive=until_exclusive,
                 limit=per_repo_limit,
             )
         if search_type == "fts":
@@ -214,6 +218,8 @@ def cross_repo_search(
                 commit_filter=commit_filter,
                 agent_filter=agent_filter,
                 since=since,
+                until=until,
+                until_exclusive=until_exclusive,
                 limit=per_repo_limit,
             )
         if search_type == "hybrid":
@@ -227,6 +233,8 @@ def cross_repo_search(
                 commit_filter=commit_filter,
                 agent_filter=agent_filter,
                 since=since,
+                until=until,
+                until_exclusive=until_exclusive,
                 limit=per_repo_limit,
             )
         return regex_search(
@@ -237,6 +245,8 @@ def cross_repo_search(
             commit_filter=commit_filter,
             agent_filter=agent_filter,
             since=since,
+            until=until,
+            until_exclusive=until_exclusive,
             limit=per_repo_limit,
         )
 

@@ -328,6 +328,109 @@ class TestMCPToolIntegration:
             result = json.loads(asyncio.run(ec_search("auth", search_type="semantic")))
         assert result["count"] >= 1
 
+    def test_ec_search_semantic_until_is_forwarded(self, mock_repo_db):
+        from unittest.mock import patch
+
+        from entirecontext.mcp.server import ec_search
+
+        with patch("entirecontext.core.embedding.semantic_search", return_value=[]) as mock_sem:
+            result = json.loads(
+                asyncio.run(
+                    ec_search(
+                        "auth",
+                        search_type="semantic",
+                        until="2026-04-01T15:30:00+09:00",
+                    )
+                )
+            )
+
+        assert result["count"] == 0
+        assert mock_sem.call_args.kwargs["until"] == "2026-04-01 06:30:00"
+        assert mock_sem.call_args.kwargs["until_exclusive"] is False
+
+    def test_ec_search_cross_repo_until_is_forwarded(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from entirecontext.mcp.server import ec_search
+
+        bound_conn = MagicMock()
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.resolve_repo",
+            lambda: ((bound_conn, "/tmp/current"), None),
+        )
+        cross_search = MagicMock(return_value=[])
+        monkeypatch.setattr("entirecontext.core.cross_repo.cross_repo_search", cross_search)
+
+        result = json.loads(
+            asyncio.run(
+                ec_search(
+                    "auth",
+                    search_type="semantic",
+                    until="2026-04-01",
+                    repos="repo-a",
+                )
+            )
+        )
+
+        assert result["count"] == 0
+        assert result["telemetry_skipped"] == "cross_repo"
+        assert cross_search.call_args.kwargs["repos"] == ["repo-a"]
+        assert cross_search.call_args.kwargs["until"] == "2026-04-02 00:00:00"
+        assert cross_search.call_args.kwargs["until_exclusive"] is True
+        bound_conn.close.assert_called_once_with()
+
+    def test_ec_search_reversed_cross_repo_range_short_circuits(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from entirecontext.mcp.server import ec_search
+
+        bound_conn = MagicMock()
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.resolve_repo",
+            lambda: ((bound_conn, "/tmp/current"), None),
+        )
+        cross_search = MagicMock(return_value=[])
+        semantic_search = MagicMock(return_value=[])
+        monkeypatch.setattr("entirecontext.core.cross_repo.cross_repo_search", cross_search)
+        monkeypatch.setattr("entirecontext.core.embedding.semantic_search", semantic_search)
+
+        result = json.loads(
+            asyncio.run(
+                ec_search(
+                    "auth",
+                    search_type="semantic",
+                    since="2026-05-01",
+                    until="2026-04-01",
+                    repos=["repo-a"],
+                )
+            )
+        )
+
+        assert "Empty time range" in result["error"]
+        cross_search.assert_not_called()
+        semantic_search.assert_not_called()
+        bound_conn.close.assert_called_once_with()
+
+    def test_ec_search_cross_repo_unresolved_ref_returns_tql_error(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from entirecontext.mcp.server import ec_search
+        from entirecontext.mcp.runtime import error_payload
+
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.resolve_repo",
+            lambda: ((None, None), error_payload("No repo found.")),
+        )
+        cross_search = MagicMock(return_value=[])
+        monkeypatch.setattr("entirecontext.core.cross_repo.cross_repo_search", cross_search)
+
+        result = json.loads(asyncio.run(ec_search("auth", until="missing-ref", repos=["repo-a"])))
+
+        assert result == {
+            "error": "Cannot resolve temporal reference 'missing-ref': not a valid git ref or date"
+        }
+        cross_search.assert_not_called()
+
     def test_ec_search_semantic_import_error(self, mock_repo_db):
         from unittest.mock import patch
 

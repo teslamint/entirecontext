@@ -1,48 +1,45 @@
 ---
 schema: release-loop/v1
-feature: Bound abbreviated-SHA blame lookup complexity
+feature: Consolidate PR enrichment state transitions in archaeology
 phase: ship
-phase_status: waiting-user
-started: 2026-07-21T04:10:21Z
-updated: 2026-07-21T07:28:42Z
-branch: fix/blame-sha-lookup-complexity
+phase_status: in_progress
+started: 2026-07-29T12:00:00Z
+updated: 2026-07-29T12:40:00Z
+branch: refactor/consolidate-pr-enrichment-state
 base_branch: main
 flags: []
-spec: docs/specs/2026-07-21-blame-sha-lookup-complexity-design.md
-plan: docs/plans/2026-07-21-001-fix-blame-sha-lookup-complexity-plan.md
+spec: docs/specs/2026-07-29-consolidate-pr-enrichment-state-design.md
+plan: docs/plans/2026-07-29-001-refactor-consolidate-pr-enrichment-plan.md
 retro: null
-design_approved: {by: user, at: 2026-07-21T04:31:29Z}
-ship_approved: {by: user, at: 2026-07-21T07:05:26Z, conditions: "push and PR approved; merge requires final approval"}
+design_approved: {by: user, at: 2026-07-29T12:05:00Z}
+plan_approved: {by: user, at: 2026-07-29T12:15:00Z}
+ship_approved: null
 current_unit: null
-ci_attempts: 2
-review_rounds: 3
-feedback_rounds: 1
-comments_fixed: 1
+ci_attempts: 0
+review_rounds: 1
+feedback_rounds: 0
+comments_fixed: 0
 comments_deferred: 0
-pr: 199
+pr: "https://github.com/teslamint/entirecontext/pull/204"
 merged: false
 blocked_reason: null
+final_action:
+  kind: merge-to-base
+  command: "gh pr merge 204 --squash --delete-branch"
+  status: determined
 ---
 
 ## Log
 
-- 2026-07-21T04:10:21Z init: selected `ROADMAP.md:351` P2 carry-forward; isolated branch created from `412288f`; prior completed v0.15.0 ledger archived.
-- 2026-07-21T04:18:29Z design: clean baseline verified with `PATH="$PWD/.venv/bin:$PATH" UV_CACHE_DIR=/tmp/uv-cache PYTHONPATH=src .venv/bin/pytest -q` → 2093 passed, 1 skipped, 1 warning.
-- 2026-07-21T04:26:43Z design: independent review found 2 Important query-plan/measurement gaps; both corrected; final re-review verdict `clean`; placeholder, consistency, scope, and empirical-evidence checks passed.
-- 2026-07-21T04:27:36Z design: draft spec committed; `git show --quiet --format=%H HEAD` → `1f861c016f7cd904a5582a2bdcd1b6747c9e282b`; waiting for the required user approval gate.
-- 2026-07-21T04:31:29Z design→plan: user approved the committed spec through the blocking Design gate; spec status changed to `approved`; Plan phase started.
-- 2026-07-21T04:36:35Z plan: all five retained assumptions rechecked as `match`; S1–S4 map to U1; stateless fallback present; placeholder/type/caller/scope checks passed; deepening skipped because no trigger scored.
-- 2026-07-21T04:37:08Z plan: draft committed; `git show --quiet --format=%H HEAD` → `6a5198beb90b92dc91f5719491ff8202eafdd4ec`; waiting for the required plan approval gate.
-- 2026-07-21T04:38:52Z plan→implement: user approved the committed plan through the blocking Plan gate; plan status changed to `approved`; U1 started with test-first execution.
-- 2026-07-21T04:43:56Z implement/U1: RED reproduced SQLite expression-depth failure in both new 1,200-SHA tests; GREEN passed 2 focused tests, 30 blame core/CLI tests, Ruff, mypy, and the full suite (`2095 passed, 1 skipped, 1 warning`); implementation committed as `6876ebe`.
-- 2026-07-21T04:51:01Z implement/U1 review round 1: Spec FAIL / Quality FAIL on uppercase full-SHA regression; added a RED→GREEN regression and bounded dual-case indexed exact lookup in `33eb341`; revalidated 31 blame tests, Ruff, mypy, `EXPLAIN QUERY PLAN`, and full suite (`2096 passed, 1 skipped, 1 warning`).
-- 2026-07-21T06:58:17Z implement/U1 review round 2: Spec FAIL / Quality FAIL on mixed-case full-SHA regression; user chose complete unchanged behavior over the narrower shorter-only candidate detail; added a RED→GREEN regression and same-width non-lowercase candidate fallback in `8bdb0da`; revalidated 32 blame tests, Ruff, mypy, exact-query index use, and full suite (`2097 passed, 1 skipped, 1 warning`).
-- 2026-07-21T06:59:28Z implement/U1 review round 3: Spec PASS / Quality PASS with no findings; mixed SHA-1/SHA-256 boundary check passed; no observable-behavior deviation artifact required. Unit 1: complete (commits `a3da957..8bdb0da`, review clean).
-- 2026-07-21T07:01:48Z implement→review: final branch review at `eff84ec` returned Spec PASS / Quality PASS with no findings; S1–S4, 32 blame tests, Ruff, mypy, query bounds, and index use were verified.
-- 2026-07-21T07:01:48Z review→ship: phase-gate verified the reviewed HEAD and `git diff --check main...HEAD` passed; waiting at the required first-hand Ship approval gate before outward operations.
-- 2026-07-21T07:05:26Z ship: user approved push and PR creation; capability preflight found `gh 2.96.0`, authenticated ADMIN access, and reachable `origin`; unrelated local-base commits were removed by rebasing `8d2332a` onto `origin/main`, producing clean-scope HEAD `76b09da` with 11 feature-only commits.
-- 2026-07-21T07:08:25Z ship: fresh post-rebase verification gate — `PATH="$PWD/.venv/bin:$PATH" UV_CACHE_DIR=/tmp/uv-cache PYTHONPATH=src .venv/bin/pytest -q` → `2097 passed, 1 skipped, 1 pre-existing warning`.
-- 2026-07-21T07:09:44Z ship: pushed `fix/blame-sha-lookup-complexity` and opened PR #199 with ROADMAP/spec/plan traceability and fresh verification evidence.
-- 2026-07-21T07:14:03Z ship/CI attempt 1: all checks passed; complete feedback fetch found one open P2 thread (`PRRT_kwDORPUqAs6SfR1i`, comment `3620137548`) showing unrelated abbreviated links can trigger unbounded `git rev-parse` calls; feedback round 1 started with a test-first fix.
-- 2026-07-21T07:25:47Z ship/feedback round 1: RED proved 1,000 unrelated links caused 1,000 extra Git calls; `2c1e6ab` added blamed-prefix filtering; independent review then found case-variant cache misses, and `609e93a` normalized cache keys with a 64-variant regression; 34 blame tests, Ruff, mypy, full suite (`2099 passed, 1 skipped`), and clean re-review passed; thread `PRRT_kwDORPUqAs6SfR1i` was replied to and re-fetched as resolved.
-- 2026-07-21T07:28:42Z ship/CI attempt 2: all checks passed on `d5b1e6a`; complete feedback re-fetch found one resolved thread, zero open actionable comments, and `mergeStateStatus=CLEAN`; waiting for the required merge approval after the final ledger-only push is rechecked.
+- 2026-07-29T12:00:00Z init: feature branch created from `28799ba`; carry-forward from v0.14.0/v0.15.0 ROADMAP.
+- 2026-07-29T12:00:00Z final_action: predicted merge-to-base; no PR yet.
+- 2026-07-29T12:05:00Z design→plan: spec approved by user; committed at `c2f164a`.
+- 2026-07-29T12:08:00Z plan: draft committed at `f79af48`; advisor review found 2 blocking (U1 env isolation, U3 dry-run grep contradiction) + 3 tightenings. All fixed. Draft amended to `561a981` (pre-review draft no longer in git history).
+- 2026-07-29T12:10:00Z plan: second advisor review — all 8 fixes confirmed landed; 1 non-blocking doc note (act.needs_patch multi-read) added. Plan executable as written.
+- 2026-07-29T12:15:00Z plan→implement: plan approved by user; starting U1.
+- 2026-07-29T12:20:00Z implement/U1: 4 characterization tests pass (8/8 total); committed at `72a3616`. U1 complete.
+- 2026-07-29T12:20:00Z implement/U2: 9 unit tests pass (112/112 total); committed at `79d34f7`. U2 complete.
+- 2026-07-29T12:25:00Z implement/U3: 112/112 tests pass, ruff+mypy clean, grep SC1=0 SC2=0; committed at `4dc72b6`. U3 complete.
+- 2026-07-29T12:30:00Z implement→review: all units complete; starting branch review.
+- 2026-07-29T12:35:00Z review: advisor confirmed behavioral correctness — all three equivalence sites verified. Spec PASS / Quality PASS.
+- 2026-07-29T12:40:00Z review→ship: PR #204 created and pushed. final_action determined: `gh pr merge 204 --squash --delete-branch`.
