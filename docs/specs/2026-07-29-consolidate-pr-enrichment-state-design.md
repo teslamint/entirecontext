@@ -1,6 +1,6 @@
 ---
 title: Consolidate PR Enrichment State Transitions
-status: draft
+status: approved
 tier: lightweight
 carry-forward-from: v0.14.0, v0.15.0
 priority: P3
