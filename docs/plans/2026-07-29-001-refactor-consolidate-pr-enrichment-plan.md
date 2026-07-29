@@ -153,6 +153,8 @@ Integration:
 - All `test_archaeology_cli.py` tests pass unchanged (including line 134 PR enrichment pending count).
 - All `test_migration_v017.py` tests pass unchanged.
 
+Note: reading `act.needs_patch` and `act.needs_pr` at multiple sites inside `_process_batch` is intended — only the derivation expression is centralized in `action()`, not every use of the derived boolean.
+
 **Acceptance**: Full archaeology test suite green. Run: `pytest tests/test_archaeology*.py tests/test_migration_v017.py -v`. Then verify deduplication: `grep -c "not state\.patch_processed\|not state\.pr_body_processed" src/entirecontext/core/archaeology.py` should return 0 (these expressions now live inside `action()` as `self.` references). `grep -c "pr_complete" src/entirecontext/core/archaeology.py` should return 0.
 
 ## Risks & Dependencies
