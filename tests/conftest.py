@@ -35,6 +35,11 @@ def git_repo(tmp_path):
         capture_output=True,
     )
     subprocess.run(
+        ["git", "-C", str(repo), "config", "commit.gpgsign", "false"],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
         ["git", "-C", str(repo), "commit", "--allow-empty", "-m", "init"],
         check=True,
         capture_output=True,
@@ -116,6 +121,11 @@ def multi_ec_repos(tmp_path, isolated_global_db):
         )
         subprocess.run(
             ["git", "-C", str(repo), "config", "user.name", "Test"],
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "commit.gpgsign", "false"],
             check=True,
             capture_output=True,
         )
