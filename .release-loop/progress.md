@@ -1,32 +1,32 @@
 ---
 schema: release-loop/v1
 feature: Consolidate PR enrichment state transitions in archaeology
-phase: ship
-phase_status: in_progress
+phase: retro
+phase_status: complete
 started: 2026-07-29T12:00:00Z
-updated: 2026-07-29T12:40:00Z
+updated: 2026-07-29T13:00:00Z
 branch: refactor/consolidate-pr-enrichment-state
 base_branch: main
 flags: []
 spec: docs/specs/2026-07-29-consolidate-pr-enrichment-state-design.md
 plan: docs/plans/2026-07-29-001-refactor-consolidate-pr-enrichment-plan.md
-retro: null
+retro: docs/retros/2026-07-29-pr-enrichment-consolidation-retro.md
 design_approved: {by: user, at: 2026-07-29T12:05:00Z}
 plan_approved: {by: user, at: 2026-07-29T12:15:00Z}
-ship_approved: null
+ship_approved: {by: user, at: 2026-07-29T12:45:00Z}
 current_unit: null
 ci_attempts: 0
 review_rounds: 1
-feedback_rounds: 0
-comments_fixed: 0
-comments_deferred: 0
+feedback_rounds: 1
+comments_fixed: 1
+comments_deferred: 3
 pr: "https://github.com/teslamint/entirecontext/pull/204"
-merged: false
+merged: true
 blocked_reason: null
 final_action:
   kind: merge-to-base
   command: "gh pr merge 204 --squash --delete-branch"
-  status: determined
+  status: executed
 ---
 
 ## Log
@@ -42,4 +42,7 @@ final_action:
 - 2026-07-29T12:25:00Z implement/U3: 112/112 tests pass, ruff+mypy clean, grep SC1=0 SC2=0; committed at `4dc72b6`. U3 complete.
 - 2026-07-29T12:30:00Z implement→review: all units complete; starting branch review.
 - 2026-07-29T12:35:00Z review: advisor confirmed behavioral correctness — all three equivalence sites verified. Spec PASS / Quality PASS.
-- 2026-07-29T12:40:00Z review→ship: PR #204 created and pushed. final_action determined: `gh pr merge 204 --squash --delete-branch`.
+- 2026-07-29T12:40:00Z review→ship: PR #204 created and pushed. final_action determined.
+- 2026-07-29T12:45:00Z ship: CI 11/11 green. 4 bot review comments — 1 valid (ROADMAP carry-forward closure, fixed), 3 false positives (TQL changes not in diff). ROADMAP lines 337, 358 marked complete.
+- 2026-07-29T12:50:00Z ship: PR #204 squash-merged at `e369ac1`. final_action executed. Branch deleted.
+- 2026-07-29T13:00:00Z retro: 6/6 SC Met. 7 carry-forward items reconciled (4 done, 3 ongoing). Plan status flipped to done. Retro committed.
