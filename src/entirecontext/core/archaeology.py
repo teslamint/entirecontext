@@ -440,11 +440,12 @@ def archaeologize(
             commits_scanned += 1
             try:
                 state = _get_processing_state(conn, sha)
-                if state.patch_processed:
+                act = state.action(pr_bodies)
+                if not act.needs_patch:
                     already_processed += 1
                 else:
                     result.patch_pending += 1
-                if pr_bodies and state.patch_processed and not state.pr_body_processed:
+                if act.pr_only:
                     result.pr_enrichment_pending += 1
             except sqlite3.OperationalError:
                 # archaeology_processed table doesn't exist yet (e.g. dry-run
@@ -474,19 +475,18 @@ def archaeologize(
             progress_callback(msg)
         return result
 
-    batch: list[tuple[str, str, str, _ProcessingState]] = []
+    batch: list[tuple[str, str, str, _ProcessingState, _CommitAction]] = []
     pr_fail_count = 0
     try:
         for sha, message, patch_text in commit_iter:
             commits_scanned += 1
             result.commits_scanned = commits_scanned
             state = _get_processing_state(conn, sha)
-            needs_patch = not state.patch_processed
-            needs_pr = pr_bodies and not state.pr_body_processed
-            if not needs_patch and not needs_pr:
+            act = state.action(pr_bodies)
+            if act.skip:
                 result.commits_skipped += 1
                 continue
-            if not needs_patch and needs_pr and not token:
+            if act.pr_only and not token:
                 result.commits_skipped += 1
                 if progress_callback:
                     progress_callback(
@@ -495,14 +495,13 @@ def archaeologize(
                         f"{result.candidates_generated} candidates"
                     )
                 continue
-            batch.append((sha, message, patch_text, state))
+            batch.append((sha, message, patch_text, state, act))
             if len(batch) >= batch_size:
                 pr_fail_count = _process_batch(
                     conn,
                     repo_path,
                     batch,
                     result,
-                    pr_bodies=pr_bodies,
                     token=token,
                     min_confidence=min_confidence,
                     extraction_weights=extraction_weights,
@@ -517,7 +516,6 @@ def archaeologize(
                 repo_path,
                 batch,
                 result,
-                pr_bodies=pr_bodies,
                 token=token,
                 min_confidence=min_confidence,
                 extraction_weights=extraction_weights,
@@ -543,10 +541,9 @@ _PR_BODY_FAIL_THRESHOLD = 3
 def _process_batch(
     conn: sqlite3.Connection,
     repo_path: str,
-    batch: list[tuple[str, str, str, _ProcessingState]],
+    batch: list[tuple[str, str, str, _ProcessingState, _CommitAction]],
     result: ArchaeologyResult,
     *,
-    pr_bodies: bool,
     token: str | None,
     min_confidence: float,
     extraction_weights: ExtractionWeights | None,
@@ -554,11 +551,9 @@ def _process_batch(
     consecutive_pr_failures: int = 0,
 ) -> int:
     """Returns updated consecutive_pr_failures count."""
-    for sha, message, patch_text, state in batch:
-        needs_patch = not state.patch_processed
-        needs_pr = pr_bodies and not state.pr_body_processed
+    for sha, message, patch_text, state, act in batch:
         pr_fetch: _PrBodyFetch | None = None
-        if needs_pr and token and consecutive_pr_failures < _PR_BODY_FAIL_THRESHOLD:
+        if act.needs_pr and token and consecutive_pr_failures < _PR_BODY_FAIL_THRESHOLD:
             pr_fetch = _fetch_pr_body(sha, repo_path, token)
             if pr_fetch.status is _PrBodyStatus.FAILURE:
                 consecutive_pr_failures += 1
@@ -570,19 +565,19 @@ def _process_batch(
                     )
             else:
                 consecutive_pr_failures = 0
-        if not needs_patch and pr_fetch is not None and pr_fetch.status is _PrBodyStatus.EMPTY:
+        if act.pr_only and state.resolve_pr_completion(pr_fetch, False):
             _mark_processed(conn, sha, 0, pr_body_processed=True)
             result.commits_processed += 1
             continue
 
         pr_body = pr_fetch.body if pr_fetch and pr_fetch.status is _PrBodyStatus.FOUND else None
-        if not needs_patch and not pr_body:
+        if not act.needs_patch and not pr_body:
             continue
 
         bundle = _build_signal_bundle(
             sha,
-            message if needs_patch else "",
-            patch_text if needs_patch else "",
+            message if act.needs_patch else "",
+            patch_text if act.needs_patch else "",
             pr_body,
         )
         try:
@@ -595,22 +590,13 @@ def _process_batch(
                 extraction_weights=extraction_weights,
             )
             if outcome.parsed_ok or outcome.candidates_inserted > 0:
-                pr_complete = bool(
-                    needs_pr
-                    and pr_fetch is not None
-                    and (
-                        pr_fetch.status is _PrBodyStatus.EMPTY
-                        or (
-                            pr_fetch.status is _PrBodyStatus.FOUND
-                            and outcome.parsed_ok
-                        )
-                    )
-                )
                 _mark_processed(
                     conn,
                     sha,
                     outcome.candidates_inserted,
-                    pr_body_processed=pr_complete,
+                    pr_body_processed=state.resolve_pr_completion(
+                        pr_fetch, outcome.parsed_ok
+                    ),
                 )
                 result.commits_processed += 1
                 result.candidates_generated += outcome.candidates_inserted

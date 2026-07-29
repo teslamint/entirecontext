@@ -14,7 +14,7 @@ retro: null
 design_approved: {by: user, at: 2026-07-29T12:05:00Z}
 plan_approved: {by: user, at: 2026-07-29T12:15:00Z}
 ship_approved: null
-current_unit: U1
+current_unit: U3
 ci_attempts: 0
 review_rounds: 0
 feedback_rounds: 0
@@ -36,3 +36,6 @@ final_action:
 - 2026-07-29T12:08:00Z plan: draft committed at `f79af48`; advisor review found 2 blocking (U1 env isolation, U3 dry-run grep contradiction) + 3 tightenings. All fixed. Draft amended to `561a981` (pre-review draft no longer in git history).
 - 2026-07-29T12:10:00Z plan: second advisor review — all 8 fixes confirmed landed; 1 non-blocking doc note (act.needs_patch multi-read) added. Plan executable as written.
 - 2026-07-29T12:15:00Z plan→implement: plan approved by user; starting U1.
+- 2026-07-29T12:20:00Z implement/U1: 4 characterization tests pass (8/8 total); committed at `72a3616`. U1 complete.
+- 2026-07-29T12:20:00Z implement/U2: 9 unit tests pass (112/112 total); committed at `79d34f7`. U2 complete.
+- 2026-07-29T12:25:00Z implement/U3: starting — refactor callers to use new abstractions.
