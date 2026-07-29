@@ -7,6 +7,7 @@ from unittest.mock import patch, MagicMock
 from entirecontext.core.archaeology import (
     _extract_files_from_patch,
     _build_signal_bundle,
+    _CommitAction,
     _ProcessingState,
     _get_processing_state,
     _is_processed,
@@ -875,3 +876,57 @@ class TestArchaeologize:
         # Exactly one commit was processed before the interrupt; the rest
         # (scanned minus that one) must be processed on the second run.
         assert second.commits_processed == second.commits_scanned - 1
+
+
+class TestCommitAction:
+    def test_action_fresh_state_pr_bodies_true(self):
+        act = _ProcessingState().action(True)
+        assert act == _CommitAction(needs_patch=True, needs_pr=True)
+        assert not act.skip
+        assert not act.pr_only
+
+    def test_action_fresh_state_pr_bodies_false(self):
+        act = _ProcessingState().action(False)
+        assert act == _CommitAction(needs_patch=True, needs_pr=False)
+        assert not act.skip
+
+    def test_action_patch_done_pr_bodies_true(self):
+        act = _ProcessingState(patch_processed=True).action(True)
+        assert act == _CommitAction(needs_patch=False, needs_pr=True)
+        assert not act.skip
+        assert act.pr_only
+
+    def test_action_fully_done(self):
+        act = _ProcessingState(patch_processed=True, pr_body_processed=True).action(True)
+        assert act.skip
+        assert not act.pr_only
+
+
+class TestResolvePrCompletion:
+    def test_found_parsed(self):
+        state = _ProcessingState()
+        assert state.resolve_pr_completion(
+            _PrBodyFetch(_PrBodyStatus.FOUND, body="x"), True
+        ) is True
+
+    def test_found_unparsed(self):
+        state = _ProcessingState()
+        assert state.resolve_pr_completion(
+            _PrBodyFetch(_PrBodyStatus.FOUND, body="x"), False
+        ) is False
+
+    def test_empty(self):
+        state = _ProcessingState()
+        assert state.resolve_pr_completion(
+            _PrBodyFetch(_PrBodyStatus.EMPTY), False
+        ) is True
+
+    def test_failure(self):
+        state = _ProcessingState()
+        assert state.resolve_pr_completion(
+            _PrBodyFetch(_PrBodyStatus.FAILURE), False
+        ) is False
+
+    def test_none(self):
+        state = _ProcessingState()
+        assert state.resolve_pr_completion(None, True) is False

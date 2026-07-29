@@ -127,10 +127,40 @@ def _build_signal_bundle(
 
 
 @dataclass(frozen=True)
+class _CommitAction:
+    needs_patch: bool
+    needs_pr: bool
+
+    @property
+    def skip(self) -> bool:
+        return not self.needs_patch and not self.needs_pr
+
+    @property
+    def pr_only(self) -> bool:
+        return not self.needs_patch and self.needs_pr
+
+
+@dataclass(frozen=True)
 class _ProcessingState:
     patch_processed: bool = False
     pr_body_processed: bool = False
     candidate_count: int = 0
+
+    def action(self, pr_bodies: bool) -> _CommitAction:
+        return _CommitAction(
+            needs_patch=not self.patch_processed,
+            needs_pr=pr_bodies and not self.pr_body_processed,
+        )
+
+    def resolve_pr_completion(
+        self, pr_fetch: _PrBodyFetch | None, parsed_ok: bool
+    ) -> bool:
+        if pr_fetch is None:
+            return False
+        return (
+            pr_fetch.status is _PrBodyStatus.EMPTY
+            or (pr_fetch.status is _PrBodyStatus.FOUND and parsed_ok)
+        )
 
 
 def _get_processing_state(conn: sqlite3.Connection, commit_sha: str) -> _ProcessingState:
