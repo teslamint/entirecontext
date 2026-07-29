@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
-from entirecontext.core.archaeology import archaeologize
+from entirecontext.core.archaeology import (
+    archaeologize,
+    _mark_processed,
+    _PrBodyFetch,
+    _PrBodyStatus,
+)
 
 
 @pytest.fixture
@@ -95,3 +100,104 @@ def test_source_type_archaeology_on_candidates(arch_repo, ec_db):
     row = ec_db.execute("SELECT source_type FROM decision_candidates LIMIT 1").fetchone()
     assert row is not None
     assert row["source_type"] == "archaeology"
+
+
+@pytest.fixture
+def single_commit_repo(ec_repo):
+    f = ec_repo / "single.py"
+    f.write_text("def single(): return 1\n")
+    subprocess.run(["git", "-C", str(ec_repo), "add", "."], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(ec_repo), "commit", "-m", "feat: add single module"],
+        check=True,
+        capture_output=True,
+    )
+    sha = subprocess.run(
+        ["git", "-C", str(ec_repo), "rev-parse", "HEAD"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    return ec_repo, sha
+
+
+def test_branch_a_fully_processed_skip(single_commit_repo, ec_db):
+    repo, sha = single_commit_repo
+    _mark_processed(ec_db, sha, 1, pr_body_processed=True)
+    ec_db.commit()
+
+    callback = MagicMock()
+    result = archaeologize(
+        ec_db, str(repo), pr_bodies=True, limit=1, progress_callback=callback,
+    )
+
+    assert result.commits_skipped == 1
+    assert result.commits_processed == 0
+    assert callback.call_count == 0
+
+
+def test_branch_b_tokenless_pr_only_skip_with_callback(single_commit_repo, ec_db, monkeypatch):
+    repo, sha = single_commit_repo
+    _mark_processed(ec_db, sha, 1, pr_body_processed=False)
+    ec_db.commit()
+
+    monkeypatch.setattr("entirecontext.core.archaeology._get_github_token", lambda: None)
+    callback = MagicMock()
+    result = archaeologize(
+        ec_db, str(repo), pr_bodies=True, limit=1, progress_callback=callback,
+    )
+
+    assert result.commits_skipped == 1
+    assert result.commits_processed == 0
+    assert callback.call_count == 1
+
+
+def test_branch_c_patch_done_pr_empty_terminal(single_commit_repo, ec_db, monkeypatch):
+    repo, sha = single_commit_repo
+    _mark_processed(ec_db, sha, 1, pr_body_processed=False)
+    ec_db.commit()
+
+    monkeypatch.setattr(
+        "entirecontext.core.archaeology._get_github_token",
+        lambda: "fake-token-for-test",
+    )
+    monkeypatch.setattr(
+        "entirecontext.core.archaeology._fetch_pr_body",
+        lambda *a, **kw: _PrBodyFetch(_PrBodyStatus.EMPTY),
+    )
+    extraction_mock = MagicMock()
+    monkeypatch.setattr("entirecontext.core.archaeology.run_extraction", extraction_mock)
+
+    result = archaeologize(ec_db, str(repo), pr_bodies=True, limit=1)
+
+    assert result.commits_skipped == 0
+    assert result.commits_processed == 1
+    extraction_mock.assert_not_called()
+    row = ec_db.execute(
+        "SELECT pr_body_processed FROM archaeology_processed WHERE commit_sha = ?",
+        (sha,),
+    ).fetchone()
+    assert row[0] == 1
+
+
+def test_branch_d_patch_done_pr_failure_retryable(single_commit_repo, ec_db, monkeypatch):
+    repo, sha = single_commit_repo
+    _mark_processed(ec_db, sha, 1, pr_body_processed=False)
+    ec_db.commit()
+
+    monkeypatch.setattr(
+        "entirecontext.core.archaeology._get_github_token",
+        lambda: "fake-token-for-test",
+    )
+    monkeypatch.setattr(
+        "entirecontext.core.archaeology._fetch_pr_body",
+        lambda *a, **kw: _PrBodyFetch(_PrBodyStatus.FAILURE, warning="test failure"),
+    )
+
+    result = archaeologize(ec_db, str(repo), pr_bodies=True, limit=1)
+
+    assert result.commits_skipped == 0
+    assert result.commits_processed == 0
+    row = ec_db.execute(
+        "SELECT pr_body_processed FROM archaeology_processed WHERE commit_sha = ?",
+        (sha,),
+    ).fetchone()
+    assert row[0] == 0
