@@ -1,10 +1,10 @@
 ---
 schema: release-loop/v1
 feature: Consolidate PR enrichment state transitions in archaeology
-phase: implement
-phase_status: in_progress
+phase: review
+phase_status: complete
 started: 2026-07-29T12:00:00Z
-updated: 2026-07-29T12:15:00Z
+updated: 2026-07-29T12:35:00Z
 branch: refactor/consolidate-pr-enrichment-state
 base_branch: main
 flags: []
@@ -14,9 +14,9 @@ retro: null
 design_approved: {by: user, at: 2026-07-29T12:05:00Z}
 plan_approved: {by: user, at: 2026-07-29T12:15:00Z}
 ship_approved: null
-current_unit: U3
+current_unit: null
 ci_attempts: 0
-review_rounds: 0
+review_rounds: 1
 feedback_rounds: 0
 comments_fixed: 0
 comments_deferred: 0
@@ -38,4 +38,6 @@ final_action:
 - 2026-07-29T12:15:00Z plan→implement: plan approved by user; starting U1.
 - 2026-07-29T12:20:00Z implement/U1: 4 characterization tests pass (8/8 total); committed at `72a3616`. U1 complete.
 - 2026-07-29T12:20:00Z implement/U2: 9 unit tests pass (112/112 total); committed at `79d34f7`. U2 complete.
-- 2026-07-29T12:25:00Z implement/U3: starting — refactor callers to use new abstractions.
+- 2026-07-29T12:25:00Z implement/U3: 112/112 tests pass, ruff+mypy clean, grep SC1=0 SC2=0; committed at `4dc72b6`. U3 complete.
+- 2026-07-29T12:30:00Z implement→review: all units complete; starting branch review.
+- 2026-07-29T12:35:00Z review: advisor confirmed behavioral correctness — all three equivalence sites verified. No `_process_batch` direct test callers found. Coverage note: U1 characterization tests cover per-branch side effects (limit=1); pre-existing `test_tokenless_mixed_buffered_patch_and_deferred_pr_progress_is_coherent` and `test_circuit_skipped_rows_remain_retryable_across_batches` cover the carried-act batch behavior. Spec PASS / Quality PASS.
