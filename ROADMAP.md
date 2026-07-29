@@ -334,7 +334,7 @@ Theme: close every concrete v0.13.1 archaeology carry-forward and lock productio
 
 Carry-forward after v0.14.0:
 - [ ] **Maturity 75 dogfooding** — use `ec context apply` when retrieved decisions or lessons materially influence work, then remeasure `applied_context_rate` and `lesson_reuse_rate`. _(measurement, ongoing)_
-- [ ] **Consolidate PR enrichment state transitions** — when archaeology is next modified, centralize repeated PR fetch-result and processing-state branches to reduce future divergence. _(architecture, P3)_
+- [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
 ## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Feature merged 2026-07-20)
@@ -352,10 +352,10 @@ Theme: bootstrap the repository's own decision history, promote archaeology cand
 Carry-forward after v0.15.0:
 - [x] **Bound abbreviated-SHA blame lookup complexity** — exact SHA queries are batched, abbreviated candidates are scanned once per width and filtered before Git resolution, and the 1,200-SHA regression passes. _(completed by `5a24ebf`, PR #199)_
 - [ ] **Post-squash archaeology convergence** — with explicit repository-content export authorization, process squash commit `11fb9ad`; measure completion by intersecting reachable non-merge SHAs with `archaeology_processed` rather than comparing raw counts. _(process/measurement, P3)_
-- [ ] **TQL `--until` for semantic search** — stop silently ignoring the upper bound in the local semantic path. _(feature gap, P3; carried from the TQL retro)_
-- [ ] **TQL `--until` for global search** — propagate the upper bound through cross-repo search. _(feature gap, P3; carried from the TQL retro)_
+- [x] **TQL `--until` for semantic search** — upper bound enforced in local semantic path. _(feature gap, P3; completed by commits `7b74b84..1bdfe5c`)_
+- [x] **TQL `--until` for global search** — upper bound propagated through cross-repo search. _(feature gap, P3; completed by commits `a5ad64d..1bdfe5c`)_
 - [ ] **Maturity 75 dogfooding** — continue explicit `ec context apply` usage; post-release telemetry remains `applied_context_rate=1%`, `lesson_reuse_rate=5%`, maturity 64. _(measurement, ongoing)_
-- [ ] **Consolidate PR enrichment state transitions** — centralize repeated archaeology PR fetch-result and processing-state branches when that code is next modified. _(architecture, P3)_
+- [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
 ## v1.0 — Loop Completes Autonomously
