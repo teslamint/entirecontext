@@ -2,7 +2,7 @@
 schema: plan/v1
 title: Consolidate PR enrichment state transitions
 type: refactor
-status: draft
+status: approved
 date: 2026-07-29
 execution: code
 origin: docs/specs/2026-07-29-consolidate-pr-enrichment-state-design.md
