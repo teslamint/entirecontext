@@ -1,0 +1,37 @@
+---
+schema: release-loop/v1
+feature: init-installs-hooks
+phase: design
+phase_status: in_progress
+started: 2026-08-11T00:00:00Z
+updated: 2026-08-11T00:00:00Z
+branch: feat/init-installs-hooks
+base_branch: main
+flags: []
+spec: null
+plan: null
+retro: null
+design_approved: null
+plan_approved: null
+ship_approved: null
+current_unit: null
+ci_attempts: 0
+review_rounds: 0
+feedback_rounds: 0
+comments_fixed: 0
+comments_deferred: 0
+pr: null
+merged: false
+blocked_reason: null
+final_action:
+  kind: merge-to-base
+  command: null
+  status: predicted
+---
+
+## Log
+
+- 2026-08-11T00:00:00Z init: worktree `.worktrees/init-installs-hooks` created from `bf790bc`; branch `feat/init-installs-hooks` off `main`.
+- 2026-08-11T00:00:00Z final_action: predicted merge-to-base; no PR yet.
+- 2026-08-11T00:00:00Z decisions: `ec_decision_related` returned 10 records; none on-point for the init/enable command-surface split (top hits cover hook `--type` plumbing, decision-hook config gating, MCP registration parity). Proceeding without an applicable prior decision (AGENTS.md rule 7).
+- 2026-08-11T00:00:00Z design: entering Design phase.
