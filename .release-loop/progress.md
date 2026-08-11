@@ -16,9 +16,9 @@ plan_approved: {by: user, at: 2026-08-11T00:30:00Z}
 ship_approved: null
 current_unit: null
 ci_attempts: 0
-review_rounds: 1
-feedback_rounds: 0
-comments_fixed: 0
+review_rounds: 2
+feedback_rounds: 1
+comments_fixed: 6
 comments_deferred: 0
 pr: "https://github.com/teslamint/entirecontext/pull/205"
 merged: false
@@ -51,3 +51,7 @@ final_action:
 - 2026-08-11T01:25:00Z review→ship: entering Ship. Note for the ship gate: local `main` is 1 commit (`bf790bc`, the release-loop archive chore) ahead of origin/main and this branch contains it, so main must be pushed first or the PR diff will carry the archive files.
 - 2026-08-11T01:35:00Z ship: `main` pushed (`5701996..bf790bc`) so the archive chore lands separately; branch pushed and PR #205 created. PR diff contains only this change (8 files), no archive files.
 - 2026-08-11T01:35:00Z final_action: determined — `gh pr merge 205 --squash --delete-branch`. Preparation evidence — first-hand consent still required.
+- 2026-08-11T02:00:00Z ship/CI: all checks green on `01ea111` (first run) and again on `a52c91f`. Residual: CodeRabbit reported `Review rate limited` on the second run, so it did not re-review the round-1 fixes; claude-review, CodeQL, GitGuardian, lint, type-check, and both test matrices did.
+- 2026-08-11T02:00:00Z ship/feedback round 1: 6 comments, 6 fixed, 0 deferred. `3755755781`+`3755755779`+`3755765254` in `485bb73`; `3755765241`+`3755765246`+`3755765251` in `a52c91f`. Two P1/P2 git-hook defects were reproduced before fixing (foreign hook destroyed by `ec init`; hooks dir unresolved in a linked worktree). Both predate this change but its blast radius widened them. Scope expansion authorized by the user and recorded in `docs/deviations/2026-08-11-git-hook-installation-safety.md`. ADR 0005 added per AGENTS.md public-interface-contract policy.
+- 2026-08-11T02:00:00Z ship: SC4 deliberately deviated — 4 `TestGitHooksInstallation` tests changed from fake `.git/hooks` mkdir to real `git init`; no assertion weakened. Recorded in the deviation doc and the PR.
+- 2026-08-11T02:00:00Z ship: full suite 2140 passed / 1 skipped. PR state MERGEABLE / CLEAN / APPROVED, 6 of 6 threads resolved. final_action unchanged and still determined. Awaiting USER merge gate.
