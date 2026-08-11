@@ -6,4 +6,5 @@ so the module must be executable or every generated hook fails at run time.
 
 from . import app
 
-app()
+if __name__ == "__main__":
+    app()

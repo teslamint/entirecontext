@@ -199,6 +199,15 @@ class TestFallbackModuleIsRunnable:
         assert result.returncode == 0, result.stderr
         assert "No module named" not in result.stderr
 
+    def test_plain_import_does_not_run_the_cli(self):
+        result = subprocess.run(
+            [sys.executable, "-c", "import entirecontext.cli.__main__"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Usage:" not in result.stdout
+
     def test_fallback_command_is_recognized(self, monkeypatch):
         monkeypatch.setattr("entirecontext.cli.project_cmds.shutil.which", lambda _: None)
         assert _is_ec_hook({"command": _resolve_ec_command("Stop", quote_path=True)})

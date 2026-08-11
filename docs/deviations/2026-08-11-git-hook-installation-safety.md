@@ -22,8 +22,9 @@ declares that no existing test in `tests/test_project_cmds.py` or
 
 Ten behavior changes fall outside that contract, plus one test-fixture change recorded
 separately below. They live in `_install_git_hooks()`, its new sibling `_resolve_hooks_dir()`,
-the Claude settings merge, or `init()`'s option handling, and all are observable through
-`ec enable` as well as `ec init` except item 6, which is `ec init`-only.
+the Claude settings merge, `init()`'s option handling, or the new
+`src/entirecontext/cli/__main__.py`. All are observable through `ec enable` as well as
+`ec init` except item 6, which is `ec init`-only.
 
 1. **Foreign hooks are preserved.** An existing `post-commit` or `pre-push` that does not
    contain the `EntireContext` marker is now left in place with a warning. It was previously
@@ -99,6 +100,7 @@ returned `[]` and `ec init` reported success having installed no git hooks.
 | Empty `core.hooksPath` read as unset | `git config core.hooksPath ""`, then `_has_custom_hooks_path(repo)` | `git config --get` exits 0 with `'\n'`; the truthiness check returned `False` and `_resolve_hooks_dir` resolved to the repository root |
 | Quoted command still recognized | `shlex` round-trip over 5 command shapes | raw match missed both quoted forms; the shlex-normalized match caught all four EC forms and rejected `some-other-tool run` |
 | Fallback module runs | `uv run python -m entirecontext.cli --help` | before: `No module named entirecontext.cli.__main__`; after: exit 0 with the usage banner |
+| Fallback module ships to users | `uv build`, then `unzip -l dist/*.whl` and `tar tzf dist/*.tar.gz` | `entirecontext/cli/__main__.py` present in the wheel and `src/entirecontext/cli/__main__.py` in the sdist |
 | All fixed | `uv run python -m pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py` | 74 passed; full suite 2147 passed / 1 skipped (18 pre-existing local Rich-console failures, identical on the unmodified tree) |
 
 ## Round 2 note: one deviation was self-inflicted
