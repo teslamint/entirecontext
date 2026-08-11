@@ -256,6 +256,7 @@ class TestResolveGitRef:
         subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
         subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmp_path, capture_output=True)
         subprocess.run(["git", "config", "user.name", "Test"], cwd=tmp_path, capture_output=True)
+        subprocess.run(["git", "config", "commit.gpgsign", "false"], cwd=tmp_path, capture_output=True)
         (tmp_path / "file.txt").write_text("hello")
         subprocess.run(["git", "add", "."], cwd=tmp_path, capture_output=True)
         subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, capture_output=True)
