@@ -20,9 +20,9 @@ declares that no existing test in `tests/test_project_cmds.py` or
 
 ## Observable behavior that deviates
 
-Six behavior changes fall outside that contract, plus one test-fixture change recorded
-separately below. All six live in `_install_git_hooks()`, its new sibling
-`_resolve_hooks_dir()`, or `init()`'s option handling, and all are observable through
+Eight behavior changes fall outside that contract, plus one test-fixture change recorded
+separately below. They live in `_install_git_hooks()`, its new sibling `_resolve_hooks_dir()`,
+the Claude settings merge, or `init()`'s option handling, and all are observable through
 `ec enable` as well as `ec init` except item 6, which is `ec init`-only.
 
 1. **Foreign hooks are preserved.** An existing `post-commit` or `pre-push` that does not
@@ -44,6 +44,12 @@ separately below. All six live in `_install_git_hooks()`, its new sibling
    `--no-hooks` supersedes `--agent`, so `ec init --no-hooks --agent bogus` now initializes
    the database instead of exiting 2. Validation still runs before `init_project()` on the
    installing path, preserving the plan's fail-fast requirement.
+7. **Claude hook groups keep their sibling commands.** `_strip_ec_hooks()` now removes only
+   the matching inner command; the previous filter discarded a whole matcher entry when any
+   nested command was ours, deleting another tool's hook on reinstall.
+8. **Claude hook commands are shell-quoted.** `_is_ec_command()` matches the raw string and
+   the shlex-normalized string, so quoted new entries and unquoted existing ones are both
+   recognized and `ec disable` keeps working across the change.
 
 ### Test-fixture change (SC4)
 
@@ -80,7 +86,8 @@ returned `[]` and `ec init` reported success having installed no git hooks.
 | Hooks dir missing after an empty-template init | `git init --template=<empty-dir>`, then `_resolve_hooks_dir(repo)` | `.git/hooks exists: False`; resolver returned `None` while `git rev-parse` returned the valid path `.git/hooks` |
 | `core.hooksPath` made two repositories share one directory | two repos each `git config core.hooksPath <shared>`, then `_resolve_hooks_dir` on both | both returned the same `<shared>` path; the pre-change code used `<repo>/.git/hooks` and never followed `core.hooksPath` |
 | Empty `core.hooksPath` read as unset | `git config core.hooksPath ""`, then `_has_custom_hooks_path(repo)` | `git config --get` exits 0 with `'\n'`; the truthiness check returned `False` and `_resolve_hooks_dir` resolved to the repository root |
-| All fixed | `uv run python -m pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py` on `79aa293` | 55 passed; full suite 2146 passed / 1 skipped |
+| Quoted command still recognized | `shlex` round-trip over 5 command shapes | raw match missed both quoted forms; the shlex-normalized match caught all four EC forms and rejected `some-other-tool run` |
+| All fixed | `uv run python -m pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py` | 65 passed; full suite 2156 passed / 1 skipped |
 
 ## Round 2 note: one deviation was self-inflicted
 
@@ -94,8 +101,10 @@ Round 2 closes it by refusing to manage hooks at all when `core.hooksPath` is se
 
 - Raised by: PR #205 review comments `3755765241` (P1) and `3755765246` (P2) in round 1;
   `3755884180` (P1), `3755884172` (P2), and `3755884176` (P2) in round 2;
-  `3755985910` (P2) and `3755985915` (P2) in round 3; `3756069218` (P2) in round 4
+  `3755985910` (P2) and `3755985915` (P2) in round 3; `3756069218` (P2), `3756069221` (P1),
+  and `3756069214` (P2) in round 4; `3756118788`, `3756118790`, and `3756118795` in round 5
 - ADR: `docs/adr/0005-init-installs-integrations.md`
 - EC decision: `83213b14-31a0-4b1f-9a42-a0aa0929a6f4`
 - Scope decision: the user was presented with fix-now / separate-PR / decline for each defect
-  and chose fix-now for both.
+  and chose fix-now every time, including at the merge gate for the two Claude-hook findings
+  that had been deferred at the review round cap.

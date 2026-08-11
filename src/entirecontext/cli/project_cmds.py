@@ -274,15 +274,48 @@ def _resolve_ec_command(hook_type: str | None = None, quote_path: bool = False) 
     return base
 
 
+def _is_ec_command(cmd: str) -> bool:
+    """Recognize an EntireContext hook command, quoted or not.
+
+    Existing installs wrote the executable path raw; new ones shell-quote it, so a spaced
+    path reads as `'/x y/ec' hook handle`. Matching the raw string and the shlex-normalized
+    string keeps both forms recognizable, which is what `ec disable` relies on.
+    """
+    if not cmd:
+        return False
+    candidates = [cmd]
+    try:
+        candidates.append(" ".join(shlex.split(cmd)))
+    except ValueError:
+        pass
+    return any("ec hook handle" in c or "entirecontext.cli hook handle" in c for c in candidates)
+
+
 def _is_ec_hook(entry: dict) -> bool:
-    cmd = entry.get("command", "")
-    if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
+    if _is_ec_command(entry.get("command", "")):
         return True
-    for h in entry.get("hooks", []):
-        cmd = h.get("command", "")
-        if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
-            return True
-    return False
+    return any(_is_ec_command(h.get("command", "")) for h in entry.get("hooks", []))
+
+
+def _strip_ec_hooks(entries: list) -> list:
+    """Remove EntireContext commands, preserving sibling commands in the same entry.
+
+    A matcher entry can hold several nested commands. Dropping the whole entry because one
+    of them is ours would delete another tool's hook.
+    """
+    kept = []
+    for entry in entries:
+        if _is_ec_command(entry.get("command", "")):
+            continue
+        inner = entry.get("hooks")
+        if isinstance(inner, list):
+            remaining = [h for h in inner if not _is_ec_command(h.get("command", ""))]
+            if not remaining:
+                continue
+            if len(remaining) != len(inner):
+                entry = {**entry, "hooks": remaining}
+        kept.append(entry)
+    return kept
 
 
 def init(
@@ -446,7 +479,9 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
             name: [
                 {
                     "matcher": "",
-                    "hooks": [{"type": "command", "command": _resolve_ec_command(name), "timeout": timeout}],
+                    "hooks": [
+                        {"type": "command", "command": _resolve_ec_command(name, quote_path=True), "timeout": timeout}
+                    ],
                 }
             ]
             for name, timeout in hook_timeouts.items()
@@ -454,7 +489,7 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
 
         for hook_name, hook_configs in ec_hooks.items():
             existing = hooks.get(hook_name, [])
-            existing = [h for h in existing if not _is_ec_hook(h)]
+            existing = _strip_ec_hooks(existing)
             existing.extend(hook_configs)
             hooks[hook_name] = existing
 
@@ -528,8 +563,8 @@ def disable(
             path_changed = False
             for hook_name in list(hooks.keys()):
                 original = hooks[hook_name]
-                filtered = [h for h in original if not _is_ec_hook(h)]
-                if len(filtered) != len(original):
+                filtered = _strip_ec_hooks(original)
+                if filtered != original:
                     path_changed = True
                     changed = True
                 if filtered:

@@ -11,7 +11,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
-from entirecontext.cli.project_cmds import _is_ec_hook, _install_git_hooks, _remove_git_hooks
+from entirecontext.cli.project_cmds import _install_git_hooks, _is_ec_hook, _remove_git_hooks, _strip_ec_hooks
 
 runner = CliRunner()
 
@@ -113,6 +113,48 @@ class TestIsEcHook:
     def test_empty_entry(self):
         assert not _is_ec_hook({})
 
+    def test_quoted_executable_path(self):
+        entry = {
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "'/tmp/bin with space/ec' hook handle --type Stop"}],
+        }
+        assert _is_ec_hook(entry)
+
+    def test_quoted_module_form(self):
+        assert _is_ec_hook({"command": "'/opt/py 3/python' -m entirecontext.cli hook handle --type Stop"})
+
+    def test_unbalanced_quotes_do_not_raise(self):
+        assert not _is_ec_hook({"command": "some-tool 'unterminated"})
+
+
+class TestStripEcHooks:
+    """_strip_ec_hooks must remove only our commands, never a sibling's."""
+
+    def test_preserves_sibling_command_in_same_entry(self):
+        entry = {
+            "matcher": "",
+            "hooks": [
+                {"type": "command", "command": "ec hook handle --type Stop", "timeout": 10},
+                {"type": "command", "command": "other-tool record", "timeout": 5},
+            ],
+        }
+
+        result = _strip_ec_hooks([entry])
+
+        assert len(result) == 1
+        assert [h["command"] for h in result[0]["hooks"]] == ["other-tool record"]
+
+    def test_drops_entry_when_only_ec_commands_remain(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": "ec hook handle --type Stop"}]}
+        assert _strip_ec_hooks([entry]) == []
+
+    def test_keeps_unrelated_entry_untouched(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": "other-tool record"}]}
+        assert _strip_ec_hooks([entry]) == [entry]
+
+    def test_drops_flat_legacy_ec_entry(self):
+        assert _strip_ec_hooks([{"command": "ec hook handle --type Stop", "timeout": 10}]) == []
+
 
 class TestGitHooksInstallation:
     """Gap 7: Git hook installation in enable/disable."""
@@ -209,6 +251,96 @@ class TestGitHooksInstallation:
         assert "pre-push" not in installed
         assert hook.read_text() == original
         assert "post-commit" in installed
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_preserves_sibling_command_in_shared_entry(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        settings_path = repo / ".claude" / "settings.local.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {"type": "command", "command": "ec hook handle --type Stop", "timeout": 10},
+                                    {"type": "command", "command": "other-tool record", "timeout": 5},
+                                ],
+                            }
+                        ]
+                    }
+                }
+            )
+        )
+
+        assert runner.invoke(app, ["enable", "--no-git-hooks"]).exit_code == 0
+
+        commands = [
+            h["command"] for entry in json.loads(settings_path.read_text())["hooks"]["Stop"] for h in entry["hooks"]
+        ]
+        assert "other-tool record" in commands
+        assert sum(1 for c in commands if "hook handle" in c) == 1
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_preserves_sibling_command_in_shared_entry(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        settings_path = repo / ".claude" / "settings.local.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {"type": "command", "command": "ec hook handle --type Stop", "timeout": 10},
+                                    {"type": "command", "command": "other-tool record", "timeout": 5},
+                                ],
+                            }
+                        ]
+                    }
+                }
+            )
+        )
+
+        result = runner.invoke(app, ["disable"])
+        assert result.exit_code == 0
+
+        commands = [
+            h["command"] for entry in json.loads(settings_path.read_text())["hooks"]["Stop"] for h in entry["hooks"]
+        ]
+        assert commands == ["other-tool record"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_quotes_claude_hook_executable_path(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        spaced = tmp_path / "bin with space"
+        spaced.mkdir()
+        ec_bin = spaced / "ec"
+        ec_bin.write_text("#!/bin/sh\n")
+        ec_bin.chmod(0o755)
+        monkeypatch.setattr("entirecontext.cli.project_cmds.shutil.which", lambda _: str(ec_bin))
+
+        assert runner.invoke(app, ["enable", "--no-git-hooks"]).exit_code == 0
+
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
+        command = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert shlex.split(command)[0] == str(ec_bin)
+        assert _is_ec_hook(settings["hooks"]["Stop"][0]), "quoted command must stay recognizable to ec disable"
 
     def test_install_restores_exec_bit_on_owned_hook(self, tmp_path):
         repo = tmp_path / "repo"
