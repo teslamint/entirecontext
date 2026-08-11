@@ -43,8 +43,11 @@ jobs:
           enable-cache: true
           python-version: "3.12"
 
+      # mcp is required: src/entirecontext/mcp/server.py guards its FastMCP import,
+      # so without the extra mypy checks the FastMCP = None fallback instead of the
+      # real types.
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra mcp
 
       - name: Type check
         run: uv run mypy src/entirecontext/
@@ -63,8 +66,10 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
 
+      # mcp is required: tests/test_mcp.py calls pytest.importorskip("mcp"), so
+      # without the extra its 119 tests silently skip instead of running.
       - name: Install dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra mcp
 
       - name: Test
         run: uv run pytest
