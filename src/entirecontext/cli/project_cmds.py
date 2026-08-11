@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import shutil
 import stat
@@ -258,9 +259,9 @@ def _disable_codex_notify(repo_path: str) -> bool:
 def _resolve_ec_command(hook_type: str | None = None, quote_path: bool = False) -> str:
     """Build the `ec hook handle` invocation.
 
-    `quote_path` shell-quotes the executable path and must be used only for the git hook
-    scripts. The Claude settings command string is matched by substring in `_is_ec_hook`,
-    so quoting it would break idempotency and `ec disable`.
+    `quote_path` shell-quotes the executable path so an `ec` under a path containing spaces
+    still runs. It is safe for the Claude settings command as well as the git hook scripts
+    because `_is_ec_command` recognizes the quoted and unquoted forms alike.
     """
     ec_bin = shutil.which("ec")
     if ec_bin:
@@ -275,20 +276,57 @@ def _resolve_ec_command(hook_type: str | None = None, quote_path: bool = False) 
 
 
 def _is_ec_command(cmd: str) -> bool:
-    """Recognize an EntireContext hook command, quoted or not.
+    """Recognize an EntireContext hook command however it was written.
 
-    Existing installs wrote the executable path raw; new ones shell-quote it, so a spaced
-    path reads as `'/x y/ec' hook handle`. Matching the raw string and the shlex-normalized
-    string keeps both forms recognizable, which is what `ec disable` relies on.
+    Three forms have to match, because failing to recognize one makes `ec disable` leave the
+    hook behind and every reinstall append a duplicate:
+
+    - `/usr/local/bin/ec hook handle` — what older installs wrote, path raw
+    - `'/x y/ec' hook handle` — what current installs write, path shell-quoted
+    - `C:\\...\\ec.exe hook handle` — the Windows console-script launcher
+
+    Substring matching alone misses the last two, so the command is also tokenized and its
+    executable compared by name.
     """
     if not cmd:
         return False
-    candidates = [cmd]
-    try:
-        candidates.append(" ".join(shlex.split(cmd)))
-    except ValueError:
-        pass
-    return any("ec hook handle" in c or "entirecontext.cli hook handle" in c for c in candidates)
+    if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
+        return True
+    return any(_tokens_are_ec_invocation(t) for t in _tokenizations(cmd))
+
+
+def _tokenizations(cmd: str) -> list[list[str]]:
+    """Split a command both ways, because neither split alone covers both platforms.
+
+    POSIX mode resolves the quotes current installs write, but eats the backslashes in a
+    Windows path. Non-POSIX mode keeps the path intact but leaves the quotes attached.
+    """
+    results = []
+    for posix in (True, False):
+        try:
+            tokens = shlex.split(cmd, posix=posix)
+        except ValueError:
+            continue
+        if tokens:
+            results.append(tokens)
+    return results
+
+
+def _tokens_are_ec_invocation(tokens: list[str]) -> bool:
+    rest = tokens[1:]
+    if _executable_name(tokens[0]) == "ec":
+        return rest[:2] == ["hook", "handle"]
+    return rest[:4] == ["-m", "entirecontext.cli", "hook", "handle"]
+
+
+def _executable_name(token: str) -> str:
+    """Basename of a command token, without surrounding quotes or a Windows `.exe` suffix.
+
+    Splits on both separators rather than using `Path`, because the flavor that wrote the
+    settings file is not necessarily the one reading it.
+    """
+    name = re.split(r"[\\/]", token.strip("'\""))[-1].lower()
+    return name[:-4] if name.endswith(".exe") else name
 
 
 def _is_ec_hook(entry: dict) -> bool:

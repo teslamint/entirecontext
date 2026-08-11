@@ -20,7 +20,7 @@ declares that no existing test in `tests/test_project_cmds.py` or
 
 ## Observable behavior that deviates
 
-Eight behavior changes fall outside that contract, plus one test-fixture change recorded
+Ten behavior changes fall outside that contract, plus one test-fixture change recorded
 separately below. They live in `_install_git_hooks()`, its new sibling `_resolve_hooks_dir()`,
 the Claude settings merge, or `init()`'s option handling, and all are observable through
 `ec enable` as well as `ec init` except item 6, which is `ec init`-only.
@@ -50,6 +50,17 @@ the Claude settings merge, or `init()`'s option handling, and all are observable
 8. **Claude hook commands are shell-quoted.** `_is_ec_command()` matches the raw string and
    the shlex-normalized string, so quoted new entries and unquoted existing ones are both
    recognized and `ec disable` keeps working across the change.
+
+9. **`python -m entirecontext.cli` is runnable.** The installer falls back to this form when
+   the `ec` console script is not on PATH, but `entirecontext.cli` had no `__main__.py`, so
+   every generated hook exited with `No module named entirecontext.cli.__main__` — capture
+   never ran and the failing `pre-push` hook blocked every push. A `__main__.py` now invokes
+   the Typer app.
+10. **`ec.exe` is recognized as our command.** On Windows the console script resolves to
+   `ec.exe`, which the substring match missed, so `ec disable` could not remove the hook and
+   every reinstall appended a duplicate. `_is_ec_command()` now also tokenizes the command
+   and compares the executable by name, trying both POSIX and non-POSIX splits because the
+   first eats Windows backslashes and the second leaves quotes attached.
 
 ### Test-fixture change (SC4)
 
@@ -87,7 +98,8 @@ returned `[]` and `ec init` reported success having installed no git hooks.
 | `core.hooksPath` made two repositories share one directory | two repos each `git config core.hooksPath <shared>`, then `_resolve_hooks_dir` on both | both returned the same `<shared>` path; the pre-change code used `<repo>/.git/hooks` and never followed `core.hooksPath` |
 | Empty `core.hooksPath` read as unset | `git config core.hooksPath ""`, then `_has_custom_hooks_path(repo)` | `git config --get` exits 0 with `'\n'`; the truthiness check returned `False` and `_resolve_hooks_dir` resolved to the repository root |
 | Quoted command still recognized | `shlex` round-trip over 5 command shapes | raw match missed both quoted forms; the shlex-normalized match caught all four EC forms and rejected `some-other-tool run` |
-| All fixed | `uv run python -m pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py` | 65 passed; full suite 2156 passed / 1 skipped |
+| Fallback module runs | `uv run python -m entirecontext.cli --help` | before: `No module named entirecontext.cli.__main__`; after: exit 0 with the usage banner |
+| All fixed | `uv run python -m pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py` | 74 passed; full suite 2147 passed / 1 skipped (18 pre-existing local Rich-console failures, identical on the unmodified tree) |
 
 ## Round 2 note: one deviation was self-inflicted
 
@@ -102,7 +114,8 @@ Round 2 closes it by refusing to manage hooks at all when `core.hooksPath` is se
 - Raised by: PR #205 review comments `3755765241` (P1) and `3755765246` (P2) in round 1;
   `3755884180` (P1), `3755884172` (P2), and `3755884176` (P2) in round 2;
   `3755985910` (P2) and `3755985915` (P2) in round 3; `3756069218` (P2), `3756069221` (P1),
-  and `3756069214` (P2) in round 4; `3756118788`, `3756118790`, and `3756118795` in round 5
+  and `3756069214` (P2) in round 4; `3756118788`, `3756118790`, and `3756118795` in round 5;
+  `3756252088` (P2) in round 6; `3756297185` (P1) and `3756297182` (P2) in round 7
 - ADR: `docs/adr/0005-init-installs-integrations.md`
 - EC decision: `83213b14-31a0-4b1f-9a42-a0aa0929a6f4`
 - Scope decision: the user was presented with fix-now / separate-PR / decline for each defect

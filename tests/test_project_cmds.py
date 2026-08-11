@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shlex
 import stat
 import subprocess
+import sys
 from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
-from entirecontext.cli.project_cmds import _install_git_hooks, _is_ec_hook, _remove_git_hooks, _strip_ec_hooks
+from entirecontext.cli.project_cmds import (
+    _install_git_hooks,
+    _is_ec_hook,
+    _remove_git_hooks,
+    _resolve_ec_command,
+    _strip_ec_hooks,
+)
 
 runner = CliRunner()
 
@@ -126,6 +134,21 @@ class TestIsEcHook:
     def test_unbalanced_quotes_do_not_raise(self):
         assert not _is_ec_hook({"command": "some-tool 'unterminated"})
 
+    def test_windows_exe_launcher(self):
+        assert _is_ec_hook({"command": r"C:\Users\me\.venv\Scripts\ec.exe hook handle --type Stop"})
+
+    def test_windows_exe_launcher_quoted(self):
+        assert _is_ec_hook({"command": "'C:/Program Files/venv/Scripts/ec.exe' hook handle --type Stop"})
+
+    def test_bare_exe_launcher(self):
+        assert _is_ec_hook({"command": "ec.exe hook handle --type Stop"})
+
+    def test_similarly_named_executable_is_not_ours(self):
+        assert not _is_ec_hook({"command": "/usr/bin/ecx hook handle --type Stop"})
+
+    def test_ec_executable_with_other_subcommand(self):
+        assert not _is_ec_hook({"command": "/usr/bin/ec search foo"})
+
 
 class TestStripEcHooks:
     """_strip_ec_hooks must remove only our commands, never a sibling's."""
@@ -154,6 +177,31 @@ class TestStripEcHooks:
 
     def test_drops_flat_legacy_ec_entry(self):
         assert _strip_ec_hooks([{"command": "ec hook handle --type Stop", "timeout": 10}]) == []
+
+    def test_drops_windows_exe_entry(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": r"C:\venv\Scripts\ec.exe hook handle"}]}
+        assert _strip_ec_hooks([entry]) == []
+
+
+class TestFallbackModuleIsRunnable:
+    """The no-PATH fallback writes `python -m entirecontext.cli`, which must execute."""
+
+    def test_module_entry_point_exists(self):
+        spec = importlib.util.find_spec("entirecontext.cli.__main__")
+        assert spec is not None, "python -m entirecontext.cli needs a __main__ module"
+
+    def test_module_form_runs(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "entirecontext.cli", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "No module named" not in result.stderr
+
+    def test_fallback_command_is_recognized(self, monkeypatch):
+        monkeypatch.setattr("entirecontext.cli.project_cmds.shutil.which", lambda _: None)
+        assert _is_ec_hook({"command": _resolve_ec_command("Stop", quote_path=True)})
 
 
 class TestGitHooksInstallation:
