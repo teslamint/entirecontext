@@ -36,6 +36,13 @@ as `ec init`.
 5. **The executable path is shell-quoted in the generated hook scripts**, and only there —
    the Claude settings command string stays unquoted because `_is_ec_hook` matches it by
    substring.
+6. **An owned hook that lost its executable bit gets it back.** Previously a file carrying
+   the `EntireContext` marker was skipped before the `chmod`, so a hook copied through a
+   filesystem that drops modes stayed at 0644 and git never ran it.
+7. **`--agent` is no longer validated on the `--no-hooks` path.** The approved spec says
+   `--no-hooks` supersedes `--agent`, so `ec init --no-hooks --agent bogus` now initializes
+   the database instead of exiting 2. Validation still runs before `init_project()` on the
+   installing path, preserving the plan's fail-fast requirement.
 3. **Four existing tests were modified**, contrary to SC4. `TestGitHooksInstallation`
    constructed fake repositories (`mkdir` of a `.git/hooks` path with no `git init`), which
    `git rev-parse` correctly refuses to treat as a repository. They now call

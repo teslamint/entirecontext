@@ -293,7 +293,8 @@ def init(
     """Initialize EntireContext in current git repo and install agent hooks."""
     from ..core.project import init_project
 
-    agent = _parse_agent_option(agent)
+    if not no_hooks:
+        agent = _parse_agent_option(agent)
 
     try:
         project = init_project()
@@ -387,6 +388,7 @@ def _install_git_hooks(repo_path: str) -> list[str]:
         if hook_path.exists():
             content = hook_path.read_text(encoding="utf-8")
             if "EntireContext" in content:
+                hook_path.chmod(hook_path.stat().st_mode | stat.S_IEXEC)
                 continue
             console.print(f"[yellow]Warning:[/yellow] {name} hook already exists and is not ours; leaving it alone.")
             continue

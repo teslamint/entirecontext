@@ -210,6 +210,17 @@ class TestGitHooksInstallation:
         assert hook.read_text() == original
         assert "post-commit" in installed
 
+    def test_install_restores_exec_bit_on_owned_hook(self, tmp_path):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        hook = repo / ".git" / "hooks" / "post-commit"
+        hook.write_text("#!/bin/sh\n# EntireContext: create checkpoint on commit\n")
+        hook.chmod(0o644)
+
+        _install_git_hooks(str(repo))
+
+        assert hook.stat().st_mode & stat.S_IEXEC
+
     def test_install_skips_when_core_hooks_path_is_set(self, tmp_path, capsys):
         repo = tmp_path / "repo"
         shared = tmp_path / "shared-hooks"
@@ -695,6 +706,11 @@ class TestInitInstallsIntegrations:
         result = runner.invoke(app, ["init", "--no-hooks"])
         assert result.exit_code == 0
         assert "ec enable" in result.output
+
+        # --no-hooks supersedes --agent, so an unrecognized value must not abort the
+        # database-only path.
+        result = runner.invoke(app, ["init", "--no-hooks", "--agent", "bogus"])
+        assert result.exit_code == 0
 
         assert not (git_repo / ".claude" / "settings.local.json").exists()
         assert not (git_repo / ".git" / "hooks" / "post-commit").exists()
