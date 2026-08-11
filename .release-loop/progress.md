@@ -1,7 +1,7 @@
 ---
 schema: release-loop/v1
 feature: init-installs-hooks
-phase: review
+phase: ship
 phase_status: in_progress
 started: 2026-08-11T00:00:00Z
 updated: 2026-08-11T00:00:00Z
@@ -20,13 +20,13 @@ review_rounds: 1
 feedback_rounds: 0
 comments_fixed: 0
 comments_deferred: 0
-pr: null
+pr: "https://github.com/teslamint/entirecontext/pull/205"
 merged: false
 blocked_reason: null
 final_action:
   kind: merge-to-base
-  command: null
-  status: predicted
+  command: "gh pr merge 205 --squash --delete-branch"
+  status: determined
 ---
 
 ## Log
@@ -49,3 +49,5 @@ final_action:
 - 2026-08-11T01:20:00Z implement/U3: README quick start, CLI table, MCP section, and hook section updated; docs/spec.md 176-186 and the manual's getting-started, command description, and command list sections updated. SC7 grep clean. Committed at `01ea111`. U3 complete. Plan U3 step 6's "command list near lines 443-448" was inspected and left unchanged: section 8.1 is a bare list of command names and both commands survive, so there is nothing to change there.
 - 2026-08-11T01:25:00Z review: final branch review (advisor) returned Spec PASS + Quality PASS. Scenario delivery verified on the actual branch — S1 and S2 walked end to end in isolated-HOME temp repos (one command installs 5 Claude hooks + 2 git hooks + MCP entry; `--no-hooks` leaves repo and home untouched while still creating the DB), S3 by SC4=0 with the existing suite unmodified, S4/S5/S6 by their 9 named tests. SC1-SC7 all measured: SC4=0, SC5 greps all 1, SC7 no match, full suite 2136 passed / 1 skipped. No cross-unit defects. MinorFindings carried forward unchanged; none block merge.
 - 2026-08-11T01:25:00Z review→ship: entering Ship. Note for the ship gate: local `main` is 1 commit (`bf790bc`, the release-loop archive chore) ahead of origin/main and this branch contains it, so main must be pushed first or the PR diff will carry the archive files.
+- 2026-08-11T01:35:00Z ship: `main` pushed (`5701996..bf790bc`) so the archive chore lands separately; branch pushed and PR #205 created. PR diff contains only this change (8 files), no archive files.
+- 2026-08-11T01:35:00Z final_action: determined — `gh pr merge 205 --squash --delete-branch`. Preparation evidence — first-hand consent still required.
