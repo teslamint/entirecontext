@@ -2,6 +2,8 @@
 
 CLAUDE.md and AGENTS.md are independently maintained. CLAUDE.md carries compact project reference and review principles; AGENTS.md carries workflow policies.
 
+Durable solved-problem guidance is indexed under `docs/solutions/`; shared domain vocabulary is defined in `CONCEPTS.md`.
+
 After `uv sync` that touches `mcp/` or `core/decisions.py`, restart Claude Code — the stdio MCP server does not auto-reload.
 
 ## Test
