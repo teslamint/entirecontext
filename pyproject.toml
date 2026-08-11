@@ -60,6 +60,12 @@ source-include = ["LICENSE", "CHANGELOG.md"]
 target-version = "py312"
 line-length = 120
 
+# Pinned explicitly so the enforced rule set does not change when ruff ships a
+# new default. Adding rules is a deliberate decision, not a side effect of a
+# version bump. See docs/adr/0006-ruff-explicit-lint-select.md.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
