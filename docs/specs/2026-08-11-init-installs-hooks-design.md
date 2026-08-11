@@ -53,9 +53,11 @@ working unchanged.
 
 ### S4: Codex user
 
-A Codex user runs `ec init --agent codex`. The command initializes the project and writes
-the Codex notify entry to `~/.codex/config.toml`, matching what `ec enable --agent codex`
-does today.
+A Codex user runs `ec init --agent codex`. The command initializes the project, writes the
+Codex notify entry to `~/.codex/config.toml`, and registers the MCP server — but installs
+no Claude Code hooks and no git hooks. That asymmetry is exactly what
+`ec enable --agent codex` does today (git hook installation is nested inside the claude
+branch; MCP registration is not), and this change preserves it rather than correcting it.
 
 ### S5: Re-running init on an initialized repo
 
@@ -117,15 +119,28 @@ init()                      enable()
   _parse_agent_option()       find_git_root()
   _install_integrations() <-- _install_integrations()
         |
-        +-- Claude Code hooks -> .claude/settings.local.json
-        +-- _install_git_hooks() -> .git/hooks/{post-commit,pre-push}
-        +-- _enable_codex_notify() -> ~/.codex/config.toml   (agent codex|both)
-        +-- MCP registration -> ~/.claude/settings.json
+        +-- if agent in {claude, both}:
+        |     Claude Code hooks -> .claude/settings.local.json
+        |     if not no_git_hooks:
+        |       _install_git_hooks() -> .git/hooks/{post-commit,pre-push}
+        +-- if agent in {codex, both}:
+        |     _enable_codex_notify() -> ~/.codex/config.toml
+        +-- unconditional:
+              MCP registration -> ~/.claude/settings.json
 ```
 
 `_install_integrations(repo_path, agent, no_git_hooks)` is the whole current body of
 `enable()` after its argument parsing and git-root lookup, moved verbatim. It prints the
 same messages it prints today, so `enable`'s observable output does not change.
+
+The nesting above is not incidental — it is today's behavior at
+`src/entirecontext/cli/project_cmds.py:353-411` and the helper must preserve it exactly.
+Two consequences are easy to flatten by accident: **git hook installation lives inside the
+claude branch**, so `--agent codex` installs no git hooks; and **MCP registration sits
+outside every agent conditional**, so `--agent codex` still registers the MCP server. A
+helper that treats the four actions as unconditional siblings changes `enable`'s behavior
+while possibly still passing the existing suite, so the test table below adds the
+assertions that pin it.
 
 The design-for-isolation test: the helper takes a resolved repo path, a parsed agent
 string, and a boolean; it depends on nothing from either caller's argument parsing; both
@@ -186,6 +201,7 @@ happening rather than inherit an already-initialized repo.
 | `test_init_no_hooks_skips_installation` | with `no_hooks=True`, `.claude/settings.local.json` does not exist and no git hooks are written |
 | `test_init_no_git_hooks_flag` | Claude hooks installed, git hooks absent |
 | `test_init_agent_codex_writes_notify` | `~/.codex/config.toml` contains the EC notify entry |
+| `test_init_agent_codex_skips_claude_and_git_hooks` | with `--agent codex`: `.claude/settings.local.json` absent, no git hooks written, and `~/.claude/settings.json` still contains `mcpServers.entirecontext` — pins the conditional structure the Architecture section describes |
 | `test_init_hook_failure_warns_and_exits_zero` | with the installer patched to raise, `init()` does not raise `typer.Exit` and the warning text is printed |
 | `test_init_idempotent` | running `init()` twice leaves exactly one EC entry per hook type |
 
@@ -219,10 +235,12 @@ measurement commit is needed, and none of the criteria depend on a dashboard met
 directory produces `.claude/settings.local.json` containing all five EC hook types.
 _Measured by:_ `test_init_installs_hooks_by_default` passes.
 
-**SC2: All four installation actions move.** `ec init` produces the Claude hooks, both git
-hooks, the MCP registration, and — under `--agent codex` — the Codex notify entry.
+**SC2: All four installation actions move, with their conditional structure intact.**
+`ec init` produces the Claude hooks, both git hooks, the MCP registration, and — under
+`--agent codex` — the Codex notify entry without Claude or git hooks.
 _Measured by:_ `test_init_installs_git_hooks_by_default`, `test_init_registers_mcp_server`,
-and `test_init_agent_codex_writes_notify` pass.
+`test_init_agent_codex_writes_notify`, and
+`test_init_agent_codex_skips_claude_and_git_hooks` pass.
 
 **SC3: The opt-out restores the old behavior.** `ec init --no-hooks` writes nothing outside
 `.entirecontext/` and prints the `ec enable` hint.
@@ -231,8 +249,9 @@ _Measured by:_ `test_init_no_hooks_skips_installation` passes.
 **SC4: `ec enable` is unchanged.** Every existing test in `tests/test_project_cmds.py` and
 `tests/test_e2e_hooks_install.py` passes without modification.
 _Measured by:_ `uv run pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py`
-green, and `git diff --stat main -- tests/test_project_cmds.py` shows additions only
-(no deleted or modified existing test lines).
+green, and
+`git diff -U0 main -- tests/test_project_cmds.py tests/test_e2e_hooks_install.py | grep -c '^-[^-]'`
+returns 0 (no deleted or modified existing test lines).
 
 **SC5: Installation logic exists once.** The Claude-hook dictionary, the git-hook call, the
 MCP registration block, and the Codex notify call each appear exactly once in
