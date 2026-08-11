@@ -388,6 +388,8 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 
 All PR #205 carry-forwards are registered under v0.16.0 above.
 
+- [ ] **`distill_lessons` emits duplicate Markdown headings** — `src/entirecontext/core/futures.py:176` builds every `LESSONS.md` heading from `impact_summary` alone, so repeated summaries (`Auto-assessed checkpoint`, identical `chore(deps)` bumps) collide. `markdownlint-cli2` reports MD024 at 6 locations in the current file. Not enforced today: the repository has no `.markdownlint*` config and no markdownlint CI step. Fix requires either adding a unique discriminator (assessment ID) to the heading or documenting an MD024 exemption for generated docs, then regenerating. Surfaced by CodeRabbit review on PR #206. _Priority: Low — cosmetic, unenforced._
+
 ## Later
 
 - [ ] **Sharpen product messaging around decision memory**
