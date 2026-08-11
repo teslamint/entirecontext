@@ -337,19 +337,8 @@ def _remove_git_hooks(repo_path: str) -> list[str]:
     return removed
 
 
-def enable(
-    no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
-    agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
-):
-    """Enable auto-capture by installing agent hooks."""
-    from ..core.project import find_git_root
-
-    agent = _parse_agent_option(agent)
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
+def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> None:
+    """Install agent hooks, git hooks, and the user-level MCP server entry."""
     if agent in {"claude", "both"}:
         settings_path = Path(repo_path) / ".claude" / "settings.local.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -409,6 +398,22 @@ def enable(
         }
         user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
         console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
+
+
+def enable(
+    no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
+    agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
+):
+    """Enable auto-capture by installing agent hooks."""
+    from ..core.project import find_git_root
+
+    agent = _parse_agent_option(agent)
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    _install_integrations(repo_path, agent, no_git_hooks)
 
 
 def disable(

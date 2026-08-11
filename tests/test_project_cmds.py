@@ -405,6 +405,23 @@ class TestCodexIntegration:
         assert not (repo / ".codex" / "config.toml").exists()
 
     @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_skips_claude_and_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / ".git" / "hooks").mkdir(parents=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["enable", "--agent", "codex"])
+        assert result.exit_code == 0
+        assert not (repo / ".claude" / "settings.local.json").exists()
+        assert not (repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (repo / ".git" / "hooks" / "pre-push").exists()
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "entirecontext" in user_settings["mcpServers"]
+
+    @patch("entirecontext.core.project.find_git_root")
     def test_enable_codex_migrates_project_notify_to_upstream(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         repo.mkdir()
