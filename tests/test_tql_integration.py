@@ -67,7 +67,10 @@ def conn_with_turns(tmp_path):
     ]
     for t in turns:
         db.execute("INSERT INTO turns VALUES (?, ?, ?, ?, ?, ?, ?)", t)
-        db.execute("INSERT INTO fts_turns(rowid, user_message, assistant_summary) VALUES (last_insert_rowid(), ?, ?)", (t[2], t[3]))
+        db.execute(
+            "INSERT INTO fts_turns(rowid, user_message, assistant_summary) VALUES (last_insert_rowid(), ?, ?)",
+            (t[2], t[3]),
+        )
 
     events = [
         (str(uuid4()), "milestone", "auth v1", "first auth release", "done", "2026-02-01 00:00:00"),

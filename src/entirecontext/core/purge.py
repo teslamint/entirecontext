@@ -118,9 +118,7 @@ def purge_ranking_snapshots(conn, retention_days: int = 90, dry_run: bool = True
         raise ValueError(f"retention_days must be >= 1, got {retention_days}")
     cutoff = conn.execute("SELECT datetime('now', ?)", (f"-{retention_days} days",)).fetchone()[0]
 
-    matched = conn.execute(
-        "SELECT COUNT(*) FROM ranking_snapshots WHERE created_at < ?", (cutoff,)
-    ).fetchone()[0]
+    matched = conn.execute("SELECT COUNT(*) FROM ranking_snapshots WHERE created_at < ?", (cutoff,)).fetchone()[0]
 
     if dry_run:
         return {"matched": matched, "deleted": 0, "dry_run": True}

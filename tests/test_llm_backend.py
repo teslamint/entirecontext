@@ -24,11 +24,15 @@ class TestCLIBackendClaude:
     def test_unwraps_json_array_response(self, mock_run):
         """claude output is a JSON array; result is in the {type:result} item."""
         result_text = '[{"title": "Use Redis", "rationale": "faster"}]'
-        mock_run.return_value = type("Result", (), {
-            "returncode": 0,
-            "stdout": self._make_claude_output(result_text),
-            "stderr": "",
-        })()
+        mock_run.return_value = type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": self._make_claude_output(result_text),
+                "stderr": "",
+            },
+        )()
 
         backend = CLIBackend(command="claude")
         output = backend.complete("system prompt", "user text")
@@ -39,11 +43,15 @@ class TestCLIBackendClaude:
     def test_unwraps_dict_response(self, mock_run):
         """Backward compat: dict envelope still works."""
         result_text = "[]"
-        mock_run.return_value = type("Result", (), {
-            "returncode": 0,
-            "stdout": json.dumps({"result": result_text, "type": "result"}),
-            "stderr": "",
-        })()
+        mock_run.return_value = type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": json.dumps({"result": result_text, "type": "result"}),
+                "stderr": "",
+            },
+        )()
 
         backend = CLIBackend(command="claude")
         output = backend.complete("system prompt", "user text")
@@ -53,11 +61,15 @@ class TestCLIBackendClaude:
     @patch("entirecontext.core.llm.subprocess.run")
     def test_returns_raw_on_unparseable(self, mock_run):
         """If output is not valid JSON, return as-is."""
-        mock_run.return_value = type("Result", (), {
-            "returncode": 0,
-            "stdout": "not json at all",
-            "stderr": "",
-        })()
+        mock_run.return_value = type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": "not json at all",
+                "stderr": "",
+            },
+        )()
 
         backend = CLIBackend(command="claude")
         output = backend.complete("system prompt", "user text")
@@ -67,11 +79,15 @@ class TestCLIBackendClaude:
     @patch("entirecontext.core.llm.subprocess.run")
     def test_codex_backend_passthrough(self, mock_run):
         """Codex backend should not apply claude unwrap logic."""
-        mock_run.return_value = type("Result", (), {
-            "returncode": 0,
-            "stdout": "raw codex output",
-            "stderr": "",
-        })()
+        mock_run.return_value = type(
+            "Result",
+            (),
+            {
+                "returncode": 0,
+                "stdout": "raw codex output",
+                "stderr": "",
+            },
+        )()
 
         backend = CLIBackend(command="codex")
         output = backend.complete("system prompt", "user text")

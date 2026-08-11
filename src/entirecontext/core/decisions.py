@@ -1687,9 +1687,7 @@ def rank_related_decisions(
 
         from .security import DEFAULT_PATTERNS
 
-        extra_patterns = (
-            _capture_config.get("security", {}).get("patterns") if _capture_config else None
-        )
+        extra_patterns = _capture_config.get("security", {}).get("patterns") if _capture_config else None
         if extra_patterns:
             merged = list(dict.fromkeys(DEFAULT_PATTERNS + extra_patterns))
             configured_patterns = merged
@@ -1733,9 +1731,7 @@ def rank_related_decisions(
     return top
 
 
-def backpatch_snapshot_event(
-    conn, *, snapshot_id: str | None, retrieval_event_id: str
-) -> None:
+def backpatch_snapshot_event(conn, *, snapshot_id: str | None, retrieval_event_id: str) -> None:
     """Link a ranking snapshot to its retrieval event after telemetry creation."""
     if snapshot_id is None:
         return

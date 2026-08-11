@@ -1,4 +1,5 @@
 """Tests for streaming Popen in _stream_commits and lazy archaeologize."""
+
 import subprocess
 from io import StringIO
 from types import SimpleNamespace
@@ -41,9 +42,7 @@ class TestStreamingPopen:
         monkeypatch.setattr("entirecontext.core.archaeology.subprocess.Popen", lambda *a, **kw: proc)
         warnings = []
 
-        assert list(_stream_commits("/repo", None, None, 10, warnings=warnings)) == [
-            (sha, "message", "patch")
-        ]
+        assert list(_stream_commits("/repo", None, None, 10, warnings=warnings)) == [(sha, "message", "patch")]
         assert warnings == []
         proc.terminate.assert_not_called()
 
@@ -97,8 +96,10 @@ class TestStreamingPopen:
         repo = str(git_repo)
         # Detect default branch name (may be main or master depending on git config)
         branch = subprocess.run(
-            ["git", "branch", "--show-current"], cwd=repo,
-            capture_output=True, text=True,
+            ["git", "branch", "--show-current"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         # Create a branch, commit, merge back with --no-ff
         subprocess.run(["git", "checkout", "-b", "feature"], cwd=repo, check=True)
@@ -108,7 +109,8 @@ class TestStreamingPopen:
         subprocess.run(["git", "checkout", branch], cwd=repo, check=True)
         subprocess.run(
             ["git", "merge", "feature", "--no-ff", "-m", "Merge branch feature"],
-            cwd=repo, check=True,
+            cwd=repo,
+            check=True,
         )
 
         results = list(_stream_commits(repo, since=None, until=None, limit=100))
@@ -164,5 +166,6 @@ class TestLazyArchaeologize:
         subprocess.run(["git", "commit", "-m", "test lazy"], cwd=repo, check=True)
 
         from entirecontext.core.archaeology import archaeologize
+
         result = archaeologize(ec_db, repo, dry_run=True, limit=10)
         assert result.commits_scanned >= 1

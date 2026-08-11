@@ -381,9 +381,7 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
     # would inflate total_added and flip replaced→refined.
     try:
         status_cmd = ["git", "status", "--porcelain", "--"] + overlap_files
-        status_result = subprocess.run(
-            status_cmd, cwd=repo_path, capture_output=True, text=True, timeout=5
-        )
+        status_result = subprocess.run(status_cmd, cwd=repo_path, capture_output=True, text=True, timeout=5)
         if status_result.returncode == 0:
             for sline in status_result.stdout.strip().splitlines():
                 if sline.startswith("??"):

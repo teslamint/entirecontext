@@ -267,7 +267,10 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     except (ValueError, TypeError):
                         pass
                 surfaced, _, snap_id = rank_decisions_for_prompt(
-                    conn, repo_path=repo_path, prompt_text=prompt_text, config=config,
+                    conn,
+                    repo_path=repo_path,
+                    prompt_text=prompt_text,
+                    config=config,
                     capture_snapshots=capture_snapshots,
                 )
                 trimmed = optimize_for_context_budget(
@@ -374,8 +377,11 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                         if trimmed:
                             for d in trimmed:
                                 record_retrieval_selection(
-                                    pdi_conn, evt["id"], result_type="decision",
-                                    result_id=d["id"], rank=d.get("rank", 0),
+                                    pdi_conn,
+                                    evt["id"],
+                                    result_type="decision",
+                                    result_id=d["id"],
+                                    rank=d.get("rank", 0),
                                 )
                 finally:
                     pdi_conn.close()

@@ -29,7 +29,7 @@ def _normalize_to_relative(path: str, repo_root: str) -> str:
     """Strip repo root prefix from an absolute path to get a relative path."""
     prefix = repo_root.rstrip(os.sep) + os.sep
     if path.startswith(prefix):
-        return path[len(prefix):]
+        return path[len(prefix) :]
     return path
 
 
@@ -66,9 +66,7 @@ def _relevant_content_paths(
     return selected[:5]
 
 
-def sample_accepted_outcomes(
-    conn: sqlite3.Connection, n: int = 50, repo_root: str = "."
-) -> list[dict]:
+def sample_accepted_outcomes(conn: sqlite3.Connection, n: int = 50, repo_root: str = ".") -> list[dict]:
     """Sample N auto-inferred 'accepted' outcomes, label-blinded."""
     rows = conn.execute(
         """
@@ -112,9 +110,7 @@ def sample_accepted_outcomes(
                 try:
                     parsed = json.loads(turn["files_touched"])
                     if isinstance(parsed, list):
-                        files_touched_all.update(
-                            _normalize_to_relative(f, repo_root_abs) for f in parsed
-                        )
+                        files_touched_all.update(_normalize_to_relative(f, repo_root_abs) for f in parsed)
                 except (json.JSONDecodeError, TypeError):
                     pass
 

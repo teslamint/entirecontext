@@ -59,9 +59,7 @@ def update_config_toml(config_path: Path, block_value: str) -> None:
     """Set experiment_block in the config TOML file."""
     if not config_path.exists():
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(
-            f"[decisions.injection]\nexperiment_block = \"{block_value}\"\n"
-        )
+        config_path.write_text(f'[decisions.injection]\nexperiment_block = "{block_value}"\n')
         return
 
     content = config_path.read_text()
@@ -134,7 +132,7 @@ def flip(
     update_config_toml(config_path, block_value)
 
     print(f"FLIPPED to block {new_block['block_id']} (injection={'ON' if new_injection else 'OFF'})")
-    print(f"Config updated: experiment_block = \"{block_value}\"")
+    print(f'Config updated: experiment_block = "{block_value}"')
     return new_block
 
 
@@ -157,7 +155,7 @@ def main() -> None:
         entry = init_block(blocks_path)
         update_config_toml(config_path, "on")
         print(f"Initialized block 1 (injection=ON) at {entry['started_at']}")
-        print("Config updated: experiment_block = \"on\"")
+        print('Config updated: experiment_block = "on"')
         return
 
     if not Path(args.db).exists():

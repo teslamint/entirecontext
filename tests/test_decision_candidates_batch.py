@@ -56,9 +56,7 @@ class TestHappyPath:
         assert result["skipped_below_threshold"] == 0
 
         for sid in source_ids:
-            row = ec_db.execute(
-                "SELECT decision_id FROM decision_commits WHERE commit_sha = ?", (sid,)
-            ).fetchone()
+            row = ec_db.execute("SELECT decision_id FROM decision_commits WHERE commit_sha = ?", (sid,)).fetchone()
             assert row is not None
             assert row["decision_id"] in result["confirmed"]
 
@@ -69,9 +67,7 @@ class TestHappyPath:
             for i, c in enumerate(confidences)
         ]
 
-        result = confirm_candidates_batch(
-            ec_db, source_type="archaeology", min_confidence=0.2, dry_run=True
-        )
+        result = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.2, dry_run=True)
 
         assert result["dry_run"] is True
         assert result["total_pending"] == 4
@@ -90,9 +86,7 @@ class TestHappyPath:
 
 class TestEdgeCases:
     @pytest.mark.parametrize("threshold", [float("nan"), float("inf"), float("-inf")])
-    def test_non_finite_min_confidence_is_rejected_without_mutation(
-        self, ec_repo, ec_db, threshold
-    ):
+    def test_non_finite_min_confidence_is_rejected_without_mutation(self, ec_repo, ec_db, threshold):
         candidate_id = _seed_candidate(
             ec_db,
             source_type="archaeology",
@@ -119,12 +113,8 @@ class TestEdgeCases:
 
     def test_source_type_filter_leaves_other_types_untouched(self, ec_repo, ec_db):
         arch_id = _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(1), confidence=0.9)
-        assessment_id = _seed_candidate(
-            ec_db, source_type="assessment", source_id="assessment-1", confidence=0.9
-        )
-        checkpoint_id = _seed_candidate(
-            ec_db, source_type="checkpoint", source_id="checkpoint-1", confidence=0.9
-        )
+        assessment_id = _seed_candidate(ec_db, source_type="assessment", source_id="assessment-1", confidence=0.9)
+        checkpoint_id = _seed_candidate(ec_db, source_type="checkpoint", source_id="checkpoint-1", confidence=0.9)
 
         result = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.0)
 
@@ -142,9 +132,7 @@ class TestEdgeCases:
             for i in range(1, 13)
         ]
 
-        result = confirm_candidates_batch(
-            ec_db, source_type="archaeology", min_confidence=0.5, page_size=5
-        )
+        result = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, page_size=5)
 
         assert result["failed"] == []
         assert sorted(result["confirmed"]) == sorted(result["confirmed"])
@@ -157,8 +145,7 @@ class TestEdgeCases:
 class TestErrorHandling:
     def test_single_candidate_failure_rolls_back_and_batch_continues(self, ec_repo, ec_db, monkeypatch):
         ids = [
-            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
-            for i in (1, 2, 3)
+            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9) for i in (1, 2, 3)
         ]
         fail_id = ids[1]
         fail_title = get_candidate(ec_db, fail_id)["title"]
@@ -183,9 +170,7 @@ class TestErrorHandling:
         assert row["review_status"] == "pending"
         assert row["promoted_decision_id"] is None
 
-    def test_already_confirmed_candidate_lands_in_failed_and_batch_continues(
-        self, ec_repo, ec_db, monkeypatch
-    ):
+    def test_already_confirmed_candidate_lands_in_failed_and_batch_continues(self, ec_repo, ec_db, monkeypatch):
         pre_id = _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(1), confidence=0.9)
         confirm_candidate(ec_db, pre_id, reviewer="pre")
         pre_row = get_candidate(ec_db, pre_id)
@@ -215,12 +200,9 @@ class TestErrorHandling:
         other_row = get_candidate(ec_db, other_id)
         assert other_row["review_status"] == "confirmed"
 
-    def test_small_page_size_with_failures_does_not_starve_low_confidence_candidate(
-        self, ec_repo, ec_db, monkeypatch
-    ):
+    def test_small_page_size_with_failures_does_not_starve_low_confidence_candidate(self, ec_repo, ec_db, monkeypatch):
         fail_ids = [
-            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
-            for i in (1, 2, 3)
+            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9) for i in (1, 2, 3)
         ]
         fail_titles = {get_candidate(ec_db, cid)["title"] for cid in fail_ids}
         low_id = _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(4), confidence=0.5)
@@ -236,9 +218,7 @@ class TestErrorHandling:
 
         monkeypatch.setattr(decisions_module, "create_decision", flaky_create_decision)
 
-        result = confirm_candidates_batch(
-            ec_db, source_type="archaeology", min_confidence=0.5, page_size=2
-        )
+        result = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, page_size=2)
 
         assert sorted(result["failed"]) == sorted(fail_ids)
         assert len(result["confirmed"]) == 1
@@ -259,8 +239,7 @@ class TestRerunSemantics:
         self, ec_repo, ec_db, monkeypatch
     ):
         ids = [
-            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
-            for i in (1, 2, 3)
+            _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9) for i in (1, 2, 3)
         ]
         fail_id = ids[1]
         fail_title = get_candidate(ec_db, fail_id)["title"]
@@ -308,9 +287,7 @@ class TestRerunSemantics:
 
 
 class TestEmbeddingIntegration:
-    def test_embedding_called_once_for_batch_when_auto_embed_and_repo_path(
-        self, ec_repo, ec_db, monkeypatch
-    ):
+    def test_embedding_called_once_for_batch_when_auto_embed_and_repo_path(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
             "entirecontext.core.config.load_config",
             lambda path=None: {"decisions": {"auto_embed": True}},
@@ -324,9 +301,7 @@ class TestEmbeddingIntegration:
         for i in (1, 2, 3):
             _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
 
-        result = confirm_candidates_batch(
-            ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo)
-        )
+        result = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo))
 
         assert len(result["confirmed"]) == 3
         assert len(calls) == 1
@@ -369,9 +344,7 @@ class TestEmbeddingIntegration:
 
         _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(1), confidence=0.9)
 
-        confirm_candidates_batch(
-            ec_db, source_type="archaeology", min_confidence=0.5, repo_path=None
-        )
+        confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, repo_path=None)
 
         assert calls == []
 
@@ -389,9 +362,7 @@ class TestEmbeddingIntegration:
         for i in (1, 2, 3):
             _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
 
-        result = confirm_candidates_batch(
-            ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo)
-        )
+        result = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo))
 
         assert len(result["confirmed"]) == 3
         assert result["failed"] == []
@@ -408,15 +379,11 @@ class TestEmbeddingIntegration:
         )
 
         _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(1), confidence=0.9)
-        result1 = confirm_candidates_batch(
-            ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo)
-        )
+        result1 = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo))
         assert len(result1["confirmed"]) == 1
         assert len(calls) == 1
 
         _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(2), confidence=0.9)
-        result2 = confirm_candidates_batch(
-            ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo)
-        )
+        result2 = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo))
         assert len(result2["confirmed"]) == 1
         assert len(calls) == 2

@@ -182,6 +182,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
 
         config = _load_decisions_config(repo_path)
         from ..core.config import is_experiment_off
+
         if is_experiment_off(config):
             return None
         if not config.get("show_related_on_start", False):
@@ -561,6 +562,7 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
         try:
             config = load_config(repo_path)
             from ..core.config import is_experiment_off
+
             if is_experiment_off(config.get("decisions", {})):
                 return None
             if not config.get("capture", {}).get("auto_capture", True):

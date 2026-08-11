@@ -269,9 +269,7 @@ def clear_stale_extraction_markers(conn) -> int:
     """
     from .context import transaction
 
-    rows = conn.execute(
-        "SELECT id, metadata FROM sessions WHERE metadata IS NOT NULL"
-    ).fetchall()
+    rows = conn.execute("SELECT id, metadata FROM sessions WHERE metadata IS NOT NULL").fetchall()
 
     cleared = 0
     with transaction(conn):
@@ -1201,9 +1199,7 @@ def run_extraction(
                 outcome.duplicates_skipped += 1
 
     if outcome.bundles_collected > 0 and outcome.drafts_parsed == 0:
-        outcome.warnings.append(
-            f"no_drafts: {outcome.bundles_collected} bundles collected but 0 drafts parsed"
-        )
+        outcome.warnings.append(f"no_drafts: {outcome.bundles_collected} bundles collected but 0 drafts parsed")
 
     if outcome.parsed_ok and session_id is not None:
         mark_session_extracted(conn, session_id)

@@ -48,8 +48,7 @@ class TestConfirmBatchCLI:
         monkeypatch.chdir(ec_repo)
         conn = get_db(str(ec_repo))
         ids = [
-            _seed_candidate(conn, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9)
-            for i in (1, 2, 3)
+            _seed_candidate(conn, source_type="archaeology", source_id=_hex_sha(i), confidence=0.9) for i in (1, 2, 3)
         ]
         conn.close()
 
@@ -76,9 +75,7 @@ class TestConfirmBatchCLI:
         ]
         conn.close()
 
-        result = runner.invoke(
-            app, ["decision", "candidates", "confirm-batch", "--min-confidence", "0.5", "--dry-run"]
-        )
+        result = runner.invoke(app, ["decision", "candidates", "confirm-batch", "--min-confidence", "0.5", "--dry-run"])
 
         assert result.exit_code == 0
         assert "Total pending: 3" in result.stdout

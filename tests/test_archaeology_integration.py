@@ -87,10 +87,7 @@ def test_dry_run_no_writes(arch_repo, ec_db):
 
 
 def test_source_type_archaeology_on_candidates(arch_repo, ec_db):
-    mock_response = (
-        '[{"title": "Test decision", "rationale": "Test", "scope": "test", '
-        '"rejected_alternatives": []}]'
-    )
+    mock_response = '[{"title": "Test decision", "rationale": "Test", "scope": "test", "rejected_alternatives": []}]'
     with patch(
         "entirecontext.core.decision_extraction.call_extraction_llm",
         return_value=mock_response,
@@ -114,7 +111,9 @@ def single_commit_repo(ec_repo):
     )
     sha = subprocess.run(
         ["git", "-C", str(ec_repo), "rev-parse", "HEAD"],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
     return ec_repo, sha
 
@@ -126,7 +125,11 @@ def test_branch_a_fully_processed_skip(single_commit_repo, ec_db):
 
     callback = MagicMock()
     result = archaeologize(
-        ec_db, str(repo), pr_bodies=True, limit=1, progress_callback=callback,
+        ec_db,
+        str(repo),
+        pr_bodies=True,
+        limit=1,
+        progress_callback=callback,
     )
 
     assert result.commits_skipped == 1
@@ -142,7 +145,11 @@ def test_branch_b_tokenless_pr_only_skip_with_callback(single_commit_repo, ec_db
     monkeypatch.setattr("entirecontext.core.archaeology._get_github_token", lambda: None)
     callback = MagicMock()
     result = archaeologize(
-        ec_db, str(repo), pr_bodies=True, limit=1, progress_callback=callback,
+        ec_db,
+        str(repo),
+        pr_bodies=True,
+        limit=1,
+        progress_callback=callback,
     )
 
     assert result.commits_skipped == 1

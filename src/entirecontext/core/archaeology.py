@@ -51,7 +51,7 @@ def _is_github_remote(url: str) -> bool:
         return host == "github.com"
     for prefix in ("https://", "http://", "ssh://"):
         if url.startswith(prefix):
-            host = url[len(prefix):].split("/", 1)[0].split("@")[-1].split(":")[0]
+            host = url[len(prefix) :].split("/", 1)[0].split("@")[-1].split(":")[0]
             return host == "github.com"
     return False
 
@@ -68,13 +68,13 @@ def _extract_files_from_patch(patch_text: str) -> list[str]:
             marker = f"{prefix}/"
             if not path.startswith(marker):
                 return None
-            path = path[len(marker):]
+            path = path[len(marker) :]
         return _decode_git_quoted_path(path)
 
     def header_fallback(payload: str) -> str | None:
         for separator in re.finditer(r' (?="?b/)', payload):
-            source = normalize(payload[:separator.start()], "a")
-            destination = normalize(payload[separator.end():], "b")
+            source = normalize(payload[: separator.start()], "a")
+            destination = normalize(payload[separator.end() :], "b")
             if source is not None and source == destination:
                 return destination
         return None
@@ -105,9 +105,7 @@ def _extract_files_from_patch(patch_text: str) -> list[str]:
     return files
 
 
-def _build_signal_bundle(
-    commit_sha: str, message: str, patch_text: str, pr_body: str | None
-) -> SignalBundle:
+def _build_signal_bundle(commit_sha: str, message: str, patch_text: str, pr_body: str | None) -> SignalBundle:
     text_blocks = []
     if message:
         text_blocks.append(message)
@@ -152,22 +150,16 @@ class _ProcessingState:
             needs_pr=pr_bodies and not self.pr_body_processed,
         )
 
-    def resolve_pr_completion(
-        self, pr_fetch: _PrBodyFetch | None, parsed_ok: bool
-    ) -> bool:
+    def resolve_pr_completion(self, pr_fetch: _PrBodyFetch | None, parsed_ok: bool) -> bool:
         if pr_fetch is None:
             return False
-        return (
-            pr_fetch.status is _PrBodyStatus.EMPTY
-            or (pr_fetch.status is _PrBodyStatus.FOUND and parsed_ok)
-        )
+        return pr_fetch.status is _PrBodyStatus.EMPTY or (pr_fetch.status is _PrBodyStatus.FOUND and parsed_ok)
 
 
 def _get_processing_state(conn: sqlite3.Connection, commit_sha: str) -> _ProcessingState:
     try:
         row = conn.execute(
-            "SELECT candidate_count, pr_body_processed "
-            "FROM archaeology_processed WHERE commit_sha = ?",
+            "SELECT candidate_count, pr_body_processed FROM archaeology_processed WHERE commit_sha = ?",
             (commit_sha,),
         ).fetchone()
     except sqlite3.OperationalError as exc:
@@ -232,8 +224,14 @@ def _stream_commits(
     # on \x00 with maxsplit=2 to get (sha, message, patch). %B (not %s) is
     # used so the full commit body reaches the bundle, not just the subject.
     cmd = [
-        "git", "log", "--patch", "--reverse", "--no-merges",
-        "--no-color", "--src-prefix=a/", "--dst-prefix=b/",
+        "git",
+        "log",
+        "--patch",
+        "--reverse",
+        "--no-merges",
+        "--no-color",
+        "--src-prefix=a/",
+        "--dst-prefix=b/",
         "--format=%x1e%H%x00%B%x00",
     ]
 
@@ -285,7 +283,7 @@ def _stream_commits(
             while "\x1e" in buf:
                 idx = buf.index("\x1e")
                 record = buf[:idx].strip()
-                buf = buf[idx + 1:]
+                buf = buf[idx + 1 :]
                 if not record:
                     continue
                 parts = record.split("\x00", maxsplit=2)
@@ -594,9 +592,7 @@ def _process_batch(
                     conn,
                     sha,
                     outcome.candidates_inserted,
-                    pr_body_processed=state.resolve_pr_completion(
-                        pr_fetch, outcome.parsed_ok
-                    ),
+                    pr_body_processed=state.resolve_pr_completion(pr_fetch, outcome.parsed_ok),
                 )
                 result.commits_processed += 1
                 result.candidates_generated += outcome.candidates_inserted

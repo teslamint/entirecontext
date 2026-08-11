@@ -28,12 +28,8 @@ def _create_ranking_snapshots(conn: sqlite3.Connection) -> None:
 
 
 def _create_ranking_snapshots_indexes(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_event_id ON ranking_snapshots(retrieval_event_id)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_created_at ON ranking_snapshots(created_at DESC)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_event_id ON ranking_snapshots(retrieval_event_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_ranking_snapshots_created_at ON ranking_snapshots(created_at DESC)")
 
 
 MIGRATION_STEPS = [

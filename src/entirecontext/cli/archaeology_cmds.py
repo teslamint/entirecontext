@@ -33,9 +33,7 @@ def archaeologize(
     arch_config = config.get("decisions", {}).get("archaeology", {})
 
     if not arch_config.get("enabled", True):
-        console.print(
-            "[yellow]Archaeology is disabled in config. Set [decisions.archaeology] enabled = true.[/yellow]"
-        )
+        console.print("[yellow]Archaeology is disabled in config. Set [decisions.archaeology] enabled = true.[/yellow]")
         raise typer.Exit(1)
 
     if limit <= 0:

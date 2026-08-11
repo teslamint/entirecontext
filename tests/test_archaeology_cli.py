@@ -45,9 +45,7 @@ def test_dry_run_on_fixture(git_repo):
                 "GIT_AUTHOR_EMAIL": "test@test.com",
                 "GIT_COMMITTER_NAME": "Test",
                 "GIT_COMMITTER_EMAIL": "test@test.com",
-                "PATH": subprocess.check_output(
-                    ["bash", "-c", "echo $PATH"]
-                ).decode().strip(),
+                "PATH": subprocess.check_output(["bash", "-c", "echo $PATH"]).decode().strip(),
             },
         )
     result = subprocess.run(
@@ -102,9 +100,7 @@ def test_read_only_v16_dry_run_reports_separate_queues_without_migration(git_rep
         (git_repo / f"legacy{i}.py").write_text(f"x = {i}")
         subprocess.run(["git", "add", "."], cwd=git_repo, check=True)
         subprocess.run(["git", "commit", "-m", f"feat: legacy {i}"], cwd=git_repo, check=True)
-    shas = subprocess.check_output(
-        ["git", "log", "-2", "--format=%H"], cwd=git_repo, text=True
-    ).splitlines()
+    shas = subprocess.check_output(["git", "log", "-2", "--format=%H"], cwd=git_repo, text=True).splitlines()
 
     db_path = git_repo / ".entirecontext" / "db" / "local.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
