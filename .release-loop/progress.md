@@ -9,7 +9,7 @@ branch: feat/init-installs-hooks
 base_branch: main
 flags: []
 spec: docs/specs/2026-08-11-init-installs-hooks-design.md
-plan: null
+plan: docs/plans/2026-08-11-001-feat-init-installs-hooks-plan.md
 retro: null
 design_approved: {by: user, at: 2026-08-11T00:10:00Z}
 plan_approved: null
