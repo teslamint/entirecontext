@@ -236,6 +236,17 @@ class TestGitHooksInstallation:
         assert "core.hooksPath" in capsys.readouterr().out
         assert list(shared.iterdir()) == []
 
+    def test_install_skips_when_core_hooks_path_is_empty(self, tmp_path):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "config", "core.hooksPath", ""], check=True, capture_output=True)
+
+        installed = _install_git_hooks(str(repo))
+
+        assert installed == []
+        assert not (repo / "post-commit").exists()
+        assert not (repo / "pre-push").exists()
+
     def test_remove_leaves_shared_hooks_path_untouched(self, tmp_path):
         repo = tmp_path / "repo"
         shared = tmp_path / "shared-hooks"

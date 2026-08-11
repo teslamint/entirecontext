@@ -334,8 +334,12 @@ def _git_capture(repo_path: str, args: list[str]) -> str | None:
 
 
 def _has_custom_hooks_path(repo_path: str) -> bool:
-    """True when core.hooksPath is set, which may point outside this repository."""
-    return bool(_git_capture(repo_path, ["config", "--get", "core.hooksPath"]))
+    """True when core.hooksPath is set, which may point outside this repository.
+
+    Presence, not truthiness: `core.hooksPath = ""` exits 0 with empty output, and treating
+    that as unset makes `git rev-parse --git-path hooks` resolve to the repository root.
+    """
+    return _git_capture(repo_path, ["config", "--get", "core.hooksPath"]) is not None
 
 
 def _resolve_hooks_dir(repo_path: str, create: bool = False) -> Path | None:
