@@ -54,7 +54,9 @@ def compact_cmd(
     db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
     if not db_path.exists():
         if execute:
-            console.print("[red]No EntireContext database — refusing to execute (would treat all content as orphans).[/red]")
+            console.print(
+                "[red]No EntireContext database — refusing to execute (would treat all content as orphans).[/red]"
+            )
             raise typer.Exit(1)
         console.print("[dim]No EntireContext database found — nothing to compact.[/dim]")
         return
@@ -62,9 +64,7 @@ def compact_cmd(
     conn = get_db(repo_path)
     try:
         check_and_migrate(conn)
-        report = compact_repo(
-            conn, repo_path, retention_days=retention_days, limit=limit, dry_run=not execute
-        )
+        report = compact_repo(conn, repo_path, retention_days=retention_days, limit=limit, dry_run=not execute)
     finally:
         conn.close()
 
@@ -99,7 +99,9 @@ def _print_report(report: dict[str, Any]) -> None:
         console.print(f"  [green]Freed: {_format_bytes(orphans['bytes_freed'])}[/green]")
 
     if vacuum:
-        console.print(f"\n[bold]DB vacuum:[/bold] {_format_bytes(vacuum['db_before'])} → {_format_bytes(vacuum['db_after'])}")
+        console.print(
+            f"\n[bold]DB vacuum:[/bold] {_format_bytes(vacuum['db_before'])} → {_format_bytes(vacuum['db_after'])}"
+        )
 
 
 def register(app: typer.Typer) -> None:

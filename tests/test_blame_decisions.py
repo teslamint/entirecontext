@@ -26,8 +26,7 @@ def _annotate_high_distinct_sha_file(ec_repo, ec_db, monkeypatch, traced_stateme
     link_decision_to_commit(ec_db, exact_decision["id"], shas[0])
     link_decision_to_commit(ec_db, abbreviated_decision["id"], shas[-1][:8])
     blame_output = "".join(
-        f"{sha} {line_number} {line_number} 1\n\tline {line_number}\n"
-        for line_number, sha in enumerate(shas, start=1)
+        f"{sha} {line_number} {line_number} 1\n\tline {line_number}\n" for line_number, sha in enumerate(shas, start=1)
     )
 
     def fake_run(command, **kwargs):
@@ -52,9 +51,7 @@ def _annotate_high_distinct_sha_file(ec_repo, ec_db, monkeypatch, traced_stateme
 
 
 class TestAnnotateFile:
-    def test_high_distinct_sha_count_survives_expression_depth_limit(
-        self, ec_repo, ec_db, monkeypatch
-    ):
+    def test_high_distinct_sha_count_survives_expression_depth_limit(self, ec_repo, ec_db, monkeypatch):
         result, shas, exact_decision, abbreviated_decision = _annotate_high_distinct_sha_file(
             ec_repo, ec_db, monkeypatch
         )
@@ -72,13 +69,9 @@ class TestAnnotateFile:
         _annotate_high_distinct_sha_file(ec_repo, ec_db, monkeypatch, traced_statements)
 
         candidate_queries = [
-            statement
-            for statement in traced_statements
-            if "FROM decision_commits dc JOIN decisions d" in statement
+            statement for statement in traced_statements if "FROM decision_commits dc JOIN decisions d" in statement
         ]
-        exact_queries = [
-            statement for statement in candidate_queries if "WHERE dc.commit_sha IN (" in statement
-        ]
+        exact_queries = [statement for statement in candidate_queries if "WHERE dc.commit_sha IN (" in statement]
         abbreviated_queries = [
             statement for statement in candidate_queries if "length(dc.commit_sha) >= 4" in statement
         ]
@@ -90,9 +83,7 @@ class TestAnnotateFile:
             assert match is not None
             assert len(match.group(1).split(",")) <= 400
 
-    def test_unrelated_abbreviated_links_do_not_invoke_git_resolution(
-        self, ec_repo, ec_db, monkeypatch
-    ):
+    def test_unrelated_abbreviated_links_do_not_invoke_git_resolution(self, ec_repo, ec_db, monkeypatch):
         full_sha = "abcdef0123" * 4
         relevant_abbreviation = full_sha[:8]
         decision = create_decision(ec_db, title="Relevant abbreviated SHA decision")
@@ -128,8 +119,10 @@ class TestAnnotateFile:
         case_variants = [
             "".join(characters)
             for characters in product(
-                *((character.lower(), character.upper()) if character.isalpha() else (character,)
-                  for character in relevant_abbreviation)
+                *(
+                    (character.lower(), character.upper()) if character.isalpha() else (character,)
+                    for character in relevant_abbreviation
+                )
             )
         ]
         decision = create_decision(ec_db, title="Case-variant abbreviated SHA decision")

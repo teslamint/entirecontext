@@ -329,7 +329,9 @@ def rank_decisions_for_prompt(
     quality_weights = _load_quality_weights(config)
 
     decisions_cfg = config.get("decisions", {})
-    capture = capture_snapshots if capture_snapshots is not None else decisions_cfg.get("capture_ranking_snapshots", False)
+    capture = (
+        capture_snapshots if capture_snapshots is not None else decisions_cfg.get("capture_ranking_snapshots", False)
+    )
 
     ranked, stats = rank_related_decisions(
         conn,

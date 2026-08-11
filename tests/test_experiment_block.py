@@ -45,10 +45,12 @@ class TestExperimentBlockOff:
 
         decisions_cfg = _decisions_config("off")
         with patch("entirecontext.hooks.decision_hooks._load_decisions_config", return_value=decisions_cfg):
-            result = on_session_start_decisions({
-                "session_id": "test-sess",
-                "cwd": str(ec_repo),
-            })
+            result = on_session_start_decisions(
+                {
+                    "session_id": "test-sess",
+                    "cwd": str(ec_repo),
+                }
+            )
         assert result is None
 
     def test_post_tool_use_suppressed(self):
@@ -64,12 +66,14 @@ class TestExperimentBlockOff:
             patch("entirecontext.db.get_db", return_value=mock_conn),
             patch("entirecontext.hooks.decision_hooks._find_ec_repo_root", return_value="/tmp/repo"),
         ):
-            result = on_post_tool_use_decisions({
-                "session_id": "test-sess",
-                "cwd": "/tmp/repo",
-                "tool_name": "Write",
-                "tool_input": {"file_path": "/tmp/repo/foo.py"},
-            })
+            result = on_post_tool_use_decisions(
+                {
+                    "session_id": "test-sess",
+                    "cwd": "/tmp/repo",
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": "/tmp/repo/foo.py"},
+                }
+            )
         assert result is None
         mock_conn.execute.assert_not_called()
 
@@ -95,12 +99,14 @@ class TestExperimentBlockOff:
         ):
             from entirecontext.hooks.turn_capture import on_user_prompt
 
-            on_user_prompt({
-                "hook_type": "UserPromptSubmit",
-                "session_id": session["id"],
-                "cwd": str(ec_repo),
-                "prompt": "test",
-            })
+            on_user_prompt(
+                {
+                    "hook_type": "UserPromptSubmit",
+                    "session_id": session["id"],
+                    "cwd": str(ec_repo),
+                    "prompt": "test",
+                }
+            )
             mock_launch.assert_not_called()
 
     def test_sync_pdi_suppressed(self):
@@ -120,11 +126,13 @@ class TestExperimentBlockOff:
             patch("entirecontext.hooks.turn_capture.on_user_prompt"),
             patch("entirecontext.db.get_db") as mock_get_db,
         ):
-            result = _handle_user_prompt({
-                "session_id": "test-sess",
-                "cwd": "/tmp/repo",
-                "prompt": "test",
-            })
+            result = _handle_user_prompt(
+                {
+                    "session_id": "test-sess",
+                    "cwd": "/tmp/repo",
+                    "prompt": "test",
+                }
+            )
         assert result == 0
         mock_get_db.assert_not_called()
 
@@ -137,10 +145,12 @@ class TestExperimentBlockOn:
 
         decisions_cfg = _decisions_config("on", show_related_on_start=False)
         with patch("entirecontext.hooks.decision_hooks._load_decisions_config", return_value=decisions_cfg):
-            result = on_session_start_decisions({
-                "session_id": "test-sess",
-                "cwd": "/tmp/repo",
-            })
+            result = on_session_start_decisions(
+                {
+                    "session_id": "test-sess",
+                    "cwd": "/tmp/repo",
+                }
+            )
         assert result is None
 
 

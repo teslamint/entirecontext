@@ -41,9 +41,7 @@ CREATE TABLE decision_candidates (
 def v15_db():
     """A genuine schema-v15 database: narrow decision_candidates CHECK, no archaeology_processed."""
     conn = get_memory_db()
-    conn.execute(
-        "CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)"
-    )
+    conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
     conn.execute("INSERT INTO schema_version (version, description) VALUES (15, 'v15')")
 
     # FK targets referenced by decision_candidates (foreign_keys=ON requires them to exist).
@@ -53,15 +51,9 @@ def v15_db():
     conn.execute("CREATE TABLE decisions (id TEXT PRIMARY KEY)")
 
     conn.execute(_V15_DECISION_CANDIDATES_DDL)
-    conn.execute(
-        "CREATE INDEX idx_decision_candidates_review ON decision_candidates(review_status)"
-    )
-    conn.execute(
-        "CREATE INDEX idx_decision_candidates_source ON decision_candidates(source_type, source_id)"
-    )
-    conn.execute(
-        "CREATE INDEX idx_decision_candidates_confidence ON decision_candidates(confidence DESC)"
-    )
+    conn.execute("CREATE INDEX idx_decision_candidates_review ON decision_candidates(review_status)")
+    conn.execute("CREATE INDEX idx_decision_candidates_source ON decision_candidates(source_type, source_id)")
+    conn.execute("CREATE INDEX idx_decision_candidates_confidence ON decision_candidates(confidence DESC)")
     conn.execute("CREATE INDEX idx_decision_candidates_dedup ON decision_candidates(dedup_key)")
     conn.execute("CREATE INDEX idx_decision_candidates_session ON decision_candidates(session_id)")
     conn.execute(
@@ -124,9 +116,7 @@ def test_source_type_accepts_archaeology(v15_db):
         "(id, title, source_type, source_id, confidence, dedup_key) "
         "VALUES ('test1', 'Test', 'archaeology', 'abc123', 0.5, 'dk1')"
     )
-    row = v15_db.execute(
-        "SELECT source_type FROM decision_candidates WHERE id = 'test1'"
-    ).fetchone()
+    row = v15_db.execute("SELECT source_type FROM decision_candidates WHERE id = 'test1'").fetchone()
     assert row["source_type"] == "archaeology"
 
 
@@ -147,9 +137,7 @@ def test_existing_candidates_preserved(v15_db):
         "VALUES ('pre1', 'Existing', 'session', 's1', 0.7, 'dk0', 'reason')"
     )
     apply_migrations(v15_db, 15, 16)
-    row = v15_db.execute(
-        "SELECT title, source_type, rationale FROM decision_candidates WHERE id = 'pre1'"
-    ).fetchone()
+    row = v15_db.execute("SELECT title, source_type, rationale FROM decision_candidates WHERE id = 'pre1'").fetchone()
     assert row["title"] == "Existing"
     assert row["source_type"] == "session"
     assert row["rationale"] == "reason"
@@ -170,9 +158,7 @@ def test_fts_triggers_work_after_migration(v15_db):
 
 def test_archaeology_processed_schema(v15_db):
     apply_migrations(v15_db, 15, 16)
-    v15_db.execute(
-        "INSERT INTO archaeology_processed (commit_sha, candidate_count) VALUES ('abc123', 3)"
-    )
+    v15_db.execute("INSERT INTO archaeology_processed (commit_sha, candidate_count) VALUES ('abc123', 3)")
     row = v15_db.execute(
         "SELECT commit_sha, candidate_count, processed_at FROM archaeology_processed WHERE commit_sha = 'abc123'"
     ).fetchone()

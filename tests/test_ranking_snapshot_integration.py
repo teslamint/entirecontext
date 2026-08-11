@@ -40,9 +40,7 @@ def test_full_snapshot_lifecycle(ec_db):
         latency_ms=1,
     )
     backpatch_snapshot_event(conn, snapshot_id=snapshot_id, retrieval_event_id=event["id"])
-    row = conn.execute(
-        "SELECT retrieval_event_id FROM ranking_snapshots WHERE id = ?", (snapshot_id,)
-    ).fetchone()
+    row = conn.execute("SELECT retrieval_event_id FROM ranking_snapshots WHERE id = ?", (snapshot_id,)).fetchone()
     assert row["retrieval_event_id"] == event["id"]
 
     # 4. Verify snapshot content

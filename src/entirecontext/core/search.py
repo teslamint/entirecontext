@@ -50,7 +50,9 @@ def regex_search(
 ) -> list[dict]:
     """Regex search across turns/sessions/events."""
     if target == "turn":
-        results = _regex_search_turns(conn, pattern, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit)
+        results = _regex_search_turns(
+            conn, pattern, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit
+        )
     elif target == "session":
         results = _regex_search_sessions(conn, pattern, since, until, until_exclusive, limit)
     elif target == "event":
@@ -62,7 +64,9 @@ def regex_search(
     return _apply_query_redaction(results, config)
 
 
-def _regex_search_turns(conn, pattern: str, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit) -> list[dict]:
+def _regex_search_turns(
+    conn, pattern: str, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit
+) -> list[dict]:
     from .tql import TQLContext, apply_temporal_filters
 
     query = """
@@ -229,7 +233,9 @@ def fts_search(
 ) -> list[dict]:
     """FTS5 full-text search."""
     if target == "turn":
-        results = _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit)
+        results = _fts_search_turns(
+            conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit
+        )
     elif target == "session":
         results = _fts_search_sessions(conn, query, since, until, until_exclusive, limit)
     elif target == "event":
@@ -239,7 +245,9 @@ def fts_search(
     return _apply_query_redaction(results, config)
 
 
-def _fts_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit) -> list[dict]:
+def _fts_search_turns(
+    conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit
+) -> list[dict]:
     from .tql import TQLContext, apply_temporal_filters
 
     sql = """
@@ -362,7 +370,9 @@ def hybrid_search(
 ) -> list[dict]:
     """Hybrid search combining FTS5 relevance and recency via RRF."""
     if target == "turn":
-        results = _hybrid_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit, k)
+        results = _hybrid_search_turns(
+            conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit, k
+        )
     elif target == "session":
         results = _hybrid_search_sessions(conn, query, since, until, until_exclusive, limit, k)
     elif target == "event":
@@ -391,7 +401,9 @@ def _fuse_and_rank(fts_results: list[dict], ts_key: str, limit: int, k: int) -> 
     return results
 
 
-def _hybrid_search_turns(conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit, k) -> list[dict]:
+def _hybrid_search_turns(
+    conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit, k
+) -> list[dict]:
     fetch_multiplier = 10 if file_filter else 3
     fts_results = _fts_search_turns(
         conn, query, file_filter, commit_filter, agent_filter, since, until, until_exclusive, limit * fetch_multiplier

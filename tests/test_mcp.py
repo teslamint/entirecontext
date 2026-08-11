@@ -426,9 +426,7 @@ class TestMCPToolIntegration:
 
         result = json.loads(asyncio.run(ec_search("auth", until="missing-ref", repos=["repo-a"])))
 
-        assert result == {
-            "error": "Cannot resolve temporal reference 'missing-ref': not a valid git ref or date"
-        }
+        assert result == {"error": "Cannot resolve temporal reference 'missing-ref': not a valid git ref or date"}
         cross_search.assert_not_called()
 
     def test_ec_search_semantic_import_error(self, mock_repo_db):

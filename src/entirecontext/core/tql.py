@@ -104,9 +104,7 @@ def _resolve_git_ref(ref: str, repo_path: str) -> str | None:
     return None
 
 
-def apply_temporal_filters(
-    conditions: list[str], params: list[Any], tql: TQLContext | None, column: str
-) -> None:
+def apply_temporal_filters(conditions: list[str], params: list[Any], tql: TQLContext | None, column: str) -> None:
     """Append datetime()-normalized WHERE clauses for since/until bounds."""
     if not tql:
         return

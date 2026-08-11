@@ -30,16 +30,16 @@ def _write_repo_config(repo: Path, body: str) -> None:
     cfg.write_text(body, encoding="utf-8")
 
 
-_MOCK_LLM_RESPONSE = json.dumps([
-    {
-        "title": "Use SQLite WAL mode for concurrent reads",
-        "rationale": "WAL allows readers and writers to operate concurrently",
-        "scope": "database",
-        "rejected_alternatives": [
-            {"alternative": "Default journal mode", "reason": "Blocks concurrent readers"}
-        ],
-    }
-])
+_MOCK_LLM_RESPONSE = json.dumps(
+    [
+        {
+            "title": "Use SQLite WAL mode for concurrent reads",
+            "rationale": "WAL allows readers and writers to operate concurrently",
+            "scope": "database",
+            "rejected_alternatives": [{"alternative": "Default journal mode", "reason": "Blocks concurrent readers"}],
+        }
+    ]
+)
 
 
 class TestAutonomousLoopE2E:
@@ -48,37 +48,48 @@ class TestAutonomousLoopE2E:
     def test_full_loop(self, ec_repo, ec_db, monkeypatch):
         repo_path = str(ec_repo)
 
-        _write_repo_config(ec_repo, "\n".join([
-            "[decisions]",
-            "auto_extract = true",
-            "infer_applied_on_session_end = true",
-            "infer_outcome_type = true",
-            "",
-            "[decisions.ranking]",
-            "file_exact_weight = 10.0",
-        ]))
+        _write_repo_config(
+            ec_repo,
+            "\n".join(
+                [
+                    "[decisions]",
+                    "auto_extract = true",
+                    "infer_applied_on_session_end = true",
+                    "infer_outcome_type = true",
+                    "",
+                    "[decisions.ranking]",
+                    "file_exact_weight = 10.0",
+                ]
+            ),
+        )
 
         (ec_repo / "src").mkdir(exist_ok=True)
         (ec_repo / "src" / "db.py").write_text("# database module\n")
         subprocess.run(["git", "add", "."], cwd=repo_path, capture_output=True)
         subprocess.run(
             ["git", "commit", "-m", "feat: add WAL mode"],
-            cwd=repo_path, capture_output=True,
+            cwd=repo_path,
+            capture_output=True,
         )
         commit_hash = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=repo_path, capture_output=True, text=True,
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
 
         project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
 
         # ── CAPTURE ──
         session1 = create_session(ec_db, project_id)
-        for i, (user, assistant) in enumerate([
-            ("How should we configure SQLite?", "We decided to use WAL mode"),
-            ("What about the journal?", "WAL lets readers not block writers"),
-            ("Update src/db.py", "Updated src/db.py with WAL pragma"),
-        ], 1):
+        for i, (user, assistant) in enumerate(
+            [
+                ("How should we configure SQLite?", "We decided to use WAL mode"),
+                ("What about the journal?", "WAL lets readers not block writers"),
+                ("Update src/db.py", "Updated src/db.py with WAL pragma"),
+            ],
+            1,
+        ):
             turn = create_turn(
                 ec_db,
                 session_id=session1["id"],
@@ -95,8 +106,7 @@ class TestAutonomousLoopE2E:
 
         cp_id = str(uuid.uuid4())
         ec_db.execute(
-            "INSERT INTO checkpoints (id, session_id, git_commit_hash, diff_summary) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO checkpoints (id, session_id, git_commit_hash, diff_summary) VALUES (?, ?, ?, ?)",
             (cp_id, session1["id"], commit_hash, "src/db.py | 3 +++"),
         )
         ec_db.commit()
@@ -113,14 +123,11 @@ class TestAutonomousLoopE2E:
         from entirecontext.core.decision_extraction import run_extraction
 
         extraction = run_extraction(ec_db, session1["id"], repo_path)
-        assert extraction.candidates_inserted > 0, (
-            f"Expected candidates, got: {extraction.__dict__}"
-        )
+        assert extraction.candidates_inserted > 0, f"Expected candidates, got: {extraction.__dict__}"
 
         # Confirm candidate → decision
         candidate = ec_db.execute(
-            "SELECT id, title, rationale, scope FROM decision_candidates "
-            "WHERE review_status = 'pending' LIMIT 1"
+            "SELECT id, title, rationale, scope FROM decision_candidates WHERE review_status = 'pending' LIMIT 1"
         ).fetchone()
         assert candidate is not None
 

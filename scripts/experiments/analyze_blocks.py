@@ -73,9 +73,7 @@ def sessions_in_block(conn: sqlite3.Connection, start: str, end: str | None) -> 
     return [dict(r) for r in rows]
 
 
-def manual_retrieval_count(
-    conn: sqlite3.Connection, session_ids: list[str], start: str, end: str | None
-) -> int:
+def manual_retrieval_count(conn: sqlite3.Connection, session_ids: list[str], start: str, end: str | None) -> int:
     """Count manual retrieval events (non-proactive) in given sessions within a time window."""
     if not session_ids:
         return 0
@@ -127,7 +125,9 @@ def analyze(conn: sqlite3.Connection, blocks: list[dict]) -> dict:
                 "pair": (on_b["block_id"], off_b["block_id"]),
                 "on_sessions": on_b["qualifying_sessions"],
                 "off_sessions": off_b["qualifying_sessions"],
-                "avg_turns_delta": round(on_turns - off_turns, 3) if on_turns is not None and off_turns is not None else None,
+                "avg_turns_delta": round(on_turns - off_turns, 3)
+                if on_turns is not None and off_turns is not None
+                else None,
                 "manual_retrieval_delta": on_b["manual_retrieval_events"] - off_b["manual_retrieval_events"],
             }
         )
@@ -171,7 +171,9 @@ def main() -> None:
     if result["pair_deltas"]:
         print("\nPer-pair deltas (ON - OFF):")
         for pd in result["pair_deltas"]:
-            print(f"  Pair {pd['pair']}: avg_turns_delta={pd['avg_turns_delta']}, manual_retrieval_delta={pd['manual_retrieval_delta']}")
+            print(
+                f"  Pair {pd['pair']}: avg_turns_delta={pd['avg_turns_delta']}, manual_retrieval_delta={pd['manual_retrieval_delta']}"
+            )
     if result["pairs"] < 4:
         print("WARNING: <4 block pairs. Directional signal only; do not claim significance.")
     comp = result["compensation_check"]

@@ -10,9 +10,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def find_orphan_content_files(
-    conn: sqlite3.Connection, repo_path: str, *, min_age_seconds: int = 3600
-) -> list[Path]:
+def find_orphan_content_files(conn: sqlite3.Connection, repo_path: str, *, min_age_seconds: int = 3600) -> list[Path]:
     """Find JSONL content files on disk that have no matching turn_content row.
 
     Args:
@@ -180,9 +178,7 @@ def compact_repo(
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
     before_date = cutoff.isoformat()
-    consolidation = consolidate_old_turns(
-        conn, repo_path, before_date=before_date, limit=limit, dry_run=dry_run
-    )
+    consolidation = consolidate_old_turns(conn, repo_path, before_date=before_date, limit=limit, dry_run=dry_run)
 
     orphans = remove_orphan_content_files(conn, repo_path, dry_run=dry_run)
 

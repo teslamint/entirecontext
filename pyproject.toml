@@ -66,6 +66,13 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F"]
 
+# Markdown under docs/ is excluded from formatting only. Ruff 0.16 formats Python
+# code blocks inside Markdown, which would rewrite the snippets in historical
+# plans and specs — those record what was proposed at the time, not shipped code.
+# Lint scope is unaffected. See docs/adr/0007-ruff-format-enforced.md.
+[tool.ruff.format]
+exclude = ["docs/**/*.md"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true

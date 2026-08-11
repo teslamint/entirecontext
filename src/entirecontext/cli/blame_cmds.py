@@ -135,8 +135,7 @@ def _render_decision_annotations(file: str, decision_result: dict) -> None:
 
     for s, e in unlinked_ranges:
         console.print(
-            f"  lines {s}-{e}: no recorded decision "
-            "(absence of links, not evidence that no decisions were made)"
+            f"  lines {s}-{e}: no recorded decision (absence of links, not evidence that no decisions were made)"
         )
 
     for s, e in uncommitted_ranges:

@@ -21,9 +21,7 @@ def test_backpatch_links_snapshot_to_event(ec_db):
 
     backpatch_snapshot_event(conn, snapshot_id="snap-1", retrieval_event_id="evt-1")
 
-    row = conn.execute(
-        "SELECT retrieval_event_id FROM ranking_snapshots WHERE id = ?", ("snap-1",)
-    ).fetchone()
+    row = conn.execute("SELECT retrieval_event_id FROM ranking_snapshots WHERE id = ?", ("snap-1",)).fetchone()
     assert row["retrieval_event_id"] == "evt-1"
 
 
@@ -106,9 +104,7 @@ def test_session_start_wiring_backpatches_snapshot(ec_repo, ec_db, monkeypatch):
     on_session_start_decisions(data)
 
     # A snapshot should exist and be backpatched
-    row = conn.execute(
-        "SELECT id, retrieval_event_id FROM ranking_snapshots"
-    ).fetchone()
+    row = conn.execute("SELECT id, retrieval_event_id FROM ranking_snapshots").fetchone()
     assert row is not None, "Expected a ranking snapshot to be captured"
     assert row["retrieval_event_id"] is not None, "Expected retrieval_event_id to be backpatched"
 
@@ -188,9 +184,7 @@ def test_mcp_ec_decision_related_backpatches_snapshot(ec_repo, ec_db, monkeypatc
     assert "error" not in payload
 
     # A snapshot should exist and be backpatched
-    row = conn.execute(
-        "SELECT id, retrieval_event_id FROM ranking_snapshots"
-    ).fetchone()
+    row = conn.execute("SELECT id, retrieval_event_id FROM ranking_snapshots").fetchone()
     assert row is not None, "Expected a ranking snapshot to be captured"
     assert row["retrieval_event_id"] == "evt-test-1"
 
@@ -263,9 +257,7 @@ def test_worker_path_backpatches_snapshot(ec_repo, ec_db, monkeypatch):
     conn2 = get_db(repo_path)
     try:
         # A snapshot should exist and be backpatched with a real event_id
-        row = conn2.execute(
-            "SELECT id, retrieval_event_id FROM ranking_snapshots"
-        ).fetchone()
+        row = conn2.execute("SELECT id, retrieval_event_id FROM ranking_snapshots").fetchone()
         assert row is not None, "Expected a ranking snapshot from the worker path"
         assert row["retrieval_event_id"] is not None, "Expected retrieval_event_id to be backpatched"
     finally:

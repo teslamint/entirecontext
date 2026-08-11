@@ -30,6 +30,9 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      - name: Format
+        run: uv run ruff format --check .
+
   type-check:
     runs-on: ubuntu-latest
     steps:

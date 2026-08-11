@@ -6,9 +6,7 @@ import sqlite3
 
 
 def _create_archaeology_processed(conn: sqlite3.Connection) -> None:
-    row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='archaeology_processed'"
-    ).fetchone()
+    row = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='archaeology_processed'").fetchone()
     if row is not None:
         return
     conn.execute(
@@ -80,9 +78,7 @@ def _rebuild_decision_candidates(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS fts_decision_candidates")
 
     conn.execute(_WIDENED_DDL)
-    conn.execute(
-        f"INSERT INTO decision_candidates_new SELECT {_COLUMNS} FROM decision_candidates"
-    )
+    conn.execute(f"INSERT INTO decision_candidates_new SELECT {_COLUMNS} FROM decision_candidates")
     conn.execute("DROP TABLE decision_candidates")
     conn.execute("ALTER TABLE decision_candidates_new RENAME TO decision_candidates")
 
@@ -91,21 +87,15 @@ def _rebuild_decision_candidates(conn: sqlite3.Connection) -> None:
 
 
 def _create_indexes(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_decision_candidates_review ON decision_candidates(review_status)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_decision_candidates_review ON decision_candidates(review_status)")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_decision_candidates_source ON decision_candidates(source_type, source_id)"
     )
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_decision_candidates_confidence ON decision_candidates(confidence DESC)"
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_decision_candidates_dedup ON decision_candidates(dedup_key)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_decision_candidates_session ON decision_candidates(session_id)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_decision_candidates_dedup ON decision_candidates(dedup_key)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_decision_candidates_session ON decision_candidates(session_id)")
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS uniq_decision_candidates_source_dedup "
         "ON decision_candidates(source_type, source_id, dedup_key)"

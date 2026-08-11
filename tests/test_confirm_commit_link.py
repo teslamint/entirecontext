@@ -201,9 +201,7 @@ class TestArchaeologyCommitLink:
     def test_archaeology_candidate_links_source_id_as_commit(self, ec_repo, ec_db):
         """INV5: archaeology candidate with 40-char hex source_id -> decision_commits row created."""
         source_id = "a" * 40
-        cid = _seed_archaeology_candidate(
-            ec_db, ec_repo, session_id="inv5-archaeology-hex40", source_id=source_id
-        )
+        cid = _seed_archaeology_candidate(ec_db, ec_repo, session_id="inv5-archaeology-hex40", source_id=source_id)
         result = confirm_candidate(ec_db, cid, reviewer="test")
 
         assert result["promoted"] is True
@@ -219,9 +217,7 @@ class TestArchaeologyCommitLink:
     def test_archaeology_non_hex_source_id_no_link(self, ec_repo, ec_db):
         """INV6: non-hex source_id -> no link, promotion succeeds."""
         source_id = "not-a-commit-sha-zzzzzzzzzzzzzzzzzzzzzzzz"
-        cid = _seed_archaeology_candidate(
-            ec_db, ec_repo, session_id="inv6-archaeology-nonhex", source_id=source_id
-        )
+        cid = _seed_archaeology_candidate(ec_db, ec_repo, session_id="inv6-archaeology-nonhex", source_id=source_id)
         result = confirm_candidate(ec_db, cid, reviewer="test")
 
         assert result["promoted"] is True
@@ -234,9 +230,7 @@ class TestArchaeologyCommitLink:
     def test_archaeology_sha256_source_id_links(self, ec_repo, ec_db):
         """INV5b: 64-char SHA-256 source_id -> link created."""
         source_id = "b" * 64
-        cid = _seed_archaeology_candidate(
-            ec_db, ec_repo, session_id="inv5b-archaeology-sha256", source_id=source_id
-        )
+        cid = _seed_archaeology_candidate(ec_db, ec_repo, session_id="inv5b-archaeology-sha256", source_id=source_id)
         result = confirm_candidate(ec_db, cid, reviewer="test")
 
         assert result["promoted"] is True

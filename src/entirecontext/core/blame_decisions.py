@@ -87,9 +87,7 @@ def _resolve_blamed_sha(repo_path: str, stored_sha: str, blamed_shas: set[str]) 
     return resolved_sha if resolved_sha in blamed_shas else None
 
 
-def _query_decision_links(
-    conn: sqlite3.Connection, blamed_shas: list[str]
-) -> list[sqlite3.Row]:
+def _query_decision_links(conn: sqlite3.Connection, blamed_shas: list[str]) -> list[sqlite3.Row]:
     rows: list[sqlite3.Row] = []
     select = """SELECT dc.commit_sha, d.id, d.title, d.rationale,
         d.rejected_alternatives, d.staleness_status
@@ -166,9 +164,7 @@ def annotate_file(
         rows = _query_decision_links(conn, shas)
         blamed_sha_set = set(shas)
         blamed_sha_candidates = blamed_sha_set | {
-            sha[:prefix_length]
-            for sha in blamed_sha_set
-            for prefix_length in range(4, len(sha))
+            sha[:prefix_length] for sha in blamed_sha_set for prefix_length in range(4, len(sha))
         }
         resolved_links: dict[str, str | None] = {}
         annotation_keys: set[tuple[str, str]] = set()
@@ -178,9 +174,7 @@ def annotate_file(
             if normalized_stored_sha not in blamed_sha_candidates:
                 continue
             if normalized_stored_sha not in resolved_links:
-                resolved_links[normalized_stored_sha] = _resolve_blamed_sha(
-                    repo_path, stored_sha, blamed_sha_set
-                )
+                resolved_links[normalized_stored_sha] = _resolve_blamed_sha(repo_path, stored_sha, blamed_sha_set)
             resolved_sha = resolved_links[normalized_stored_sha]
             if resolved_sha is None:
                 continue

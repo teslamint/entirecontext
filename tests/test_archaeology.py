@@ -83,10 +83,7 @@ class TestExtractFilesFromPatch:
         assert _extract_files_from_patch(patch) == ["my file.py"]
 
     def test_path_containing_separator_text(self):
-        patch = (
-            "diff --git a/dir b/name b/dir b/name\n"
-            "--- a/dir b/name\n+++ b/dir b/name\n"
-        )
+        patch = "diff --git a/dir b/name b/dir b/name\n--- a/dir b/name\n+++ b/dir b/name\n"
         assert _extract_files_from_patch(patch) == ["dir b/name"]
 
     def test_deleted_path_uses_source_header(self):
@@ -119,10 +116,7 @@ class TestExtractFilesFromPatch:
         assert _extract_files_from_patch(patch) == ["a.py", "b.py"]
 
     def test_octal_quoted_destination_path(self):
-        patch = (
-            'diff --git "a/old.py" "b/\\355\\225\\234.py"\n'
-            '--- a/old.py\n+++ "b/\\355\\225\\234.py"\n'
-        )
+        patch = 'diff --git "a/old.py" "b/\\355\\225\\234.py"\n--- a/old.py\n+++ "b/\\355\\225\\234.py"\n'
         assert _extract_files_from_patch(patch) == ["한.py"]
 
 
@@ -140,9 +134,7 @@ class TestBuildSignalBundle:
         assert "diff" in bundle.text_blocks
 
     def test_message_included_in_text_blocks(self):
-        bundle = _build_signal_bundle(
-            "abc123", "fix: handle edge case\n\nThis explains why.", "diff content", None
-        )
+        bundle = _build_signal_bundle("abc123", "fix: handle edge case\n\nThis explains why.", "diff content", None)
         assert "fix: handle edge case\n\nThis explains why." in bundle.text_blocks
 
     def test_message_precedes_pr_body_and_patch(self):
@@ -289,9 +281,7 @@ class TestStreamCommits:
 
     def test_both_refs_since_until(self, git_repo):
         _make_commits(git_repo, 4)
-        log = subprocess.run(
-            ["git", "log", "--format=%H"], cwd=git_repo, capture_output=True, text=True, check=True
-        )
+        log = subprocess.run(["git", "log", "--format=%H"], cwd=git_repo, capture_output=True, text=True, check=True)
         shas_newest_first = log.stdout.strip().splitlines()
         since_sha = shas_newest_first[3]  # oldest commit
         until_sha = shas_newest_first[1]
@@ -311,9 +301,7 @@ class TestStreamCommits:
 
     def test_bad_ref_reports_warning_not_silent_empty(self, git_repo):
         warnings: list[str] = []
-        commits = list(
-            _stream_commits(str(git_repo), since="not-a-real-ref", until=None, limit=10, warnings=warnings)
-        )
+        commits = list(_stream_commits(str(git_repo), since="not-a-real-ref", until=None, limit=10, warnings=warnings))
         assert commits == []
         assert warnings
         assert "git log failed" in warnings[0]
@@ -463,7 +451,10 @@ class TestArchaeologize:
             patch("entirecontext.core.archaeology._fetch_pr_body") as fetch,
         ):
             result = archaeologize(
-                ec_db, "/repo", pr_bodies=True, dry_run=True,
+                ec_db,
+                "/repo",
+                pr_bodies=True,
+                dry_run=True,
                 progress_callback=progress.append,
             )
         assert result.patch_pending == 1
@@ -905,27 +896,19 @@ class TestCommitAction:
 class TestResolvePrCompletion:
     def test_found_parsed(self):
         state = _ProcessingState()
-        assert state.resolve_pr_completion(
-            _PrBodyFetch(_PrBodyStatus.FOUND, body="x"), True
-        ) is True
+        assert state.resolve_pr_completion(_PrBodyFetch(_PrBodyStatus.FOUND, body="x"), True) is True
 
     def test_found_unparsed(self):
         state = _ProcessingState()
-        assert state.resolve_pr_completion(
-            _PrBodyFetch(_PrBodyStatus.FOUND, body="x"), False
-        ) is False
+        assert state.resolve_pr_completion(_PrBodyFetch(_PrBodyStatus.FOUND, body="x"), False) is False
 
     def test_empty(self):
         state = _ProcessingState()
-        assert state.resolve_pr_completion(
-            _PrBodyFetch(_PrBodyStatus.EMPTY), False
-        ) is True
+        assert state.resolve_pr_completion(_PrBodyFetch(_PrBodyStatus.EMPTY), False) is True
 
     def test_failure(self):
         state = _ProcessingState()
-        assert state.resolve_pr_completion(
-            _PrBodyFetch(_PrBodyStatus.FAILURE), False
-        ) is False
+        assert state.resolve_pr_completion(_PrBodyFetch(_PrBodyStatus.FAILURE), False) is False
 
     def test_none(self):
         state = _ProcessingState()

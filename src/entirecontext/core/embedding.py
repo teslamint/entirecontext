@@ -152,8 +152,7 @@ def semantic_search(
             if tql.since and normalized_timestamp < tql.since:
                 continue
             if tql.until and (
-                normalized_timestamp > tql.until
-                or (tql.until_exclusive and normalized_timestamp == tql.until)
+                normalized_timestamp > tql.until or (tql.until_exclusive and normalized_timestamp == tql.until)
             ):
                 continue
 
