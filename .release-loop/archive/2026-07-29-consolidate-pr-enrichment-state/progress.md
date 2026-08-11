@@ -1,10 +1,10 @@
 ---
 schema: release-loop/v1
 feature: Consolidate PR enrichment state transitions in archaeology
-phase: retro
+phase: done
 phase_status: complete
 started: 2026-07-29T12:00:00Z
-updated: 2026-07-29T13:00:00Z
+updated: 2026-08-11T00:00:00Z
 branch: refactor/consolidate-pr-enrichment-state
 base_branch: main
 flags: []
@@ -46,3 +46,4 @@ final_action:
 - 2026-07-29T12:45:00Z ship: CI 11/11 green. 4 bot review comments — 1 valid (ROADMAP carry-forward closure, fixed), 3 false positives (TQL changes not in diff). ROADMAP lines 337, 358 marked complete.
 - 2026-07-29T12:50:00Z ship: PR #204 squash-merged at `e369ac1`. final_action executed. Branch deleted.
 - 2026-07-29T13:00:00Z retro: 6/6 SC Met. 7 carry-forward items reconciled (4 done, 3 ongoing). Plan status flipped to done. Retro committed.
+- 2026-08-11T00:00:00Z done: retro commit `51d7262` verified in git log. archive-destination: .release-loop/archive/2026-07-29-consolidate-pr-enrichment-state (reused pre-existing empty destination from an interrupted archive attempt; no collision suffix needed).
