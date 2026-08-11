@@ -4,7 +4,7 @@ Time-travel searchable agent memory anchored to git state. Python 3.12+, uv, SQL
 
 After `uv sync` that touches `mcp/` or `core/decisions.py`, restart Claude Code — the stdio MCP server does not auto-reload.
 
-Durable guidance from solved problems lives under `docs/solutions/`; check the relevant category before repeating a diagnosis.
+Durable guidance from solved problems lives under `docs/solutions/`; check the relevant category before repeating a diagnosis. Shared domain vocabulary lives in `CONCEPTS.md`.
 
 ## Test
 
