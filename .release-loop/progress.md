@@ -1,7 +1,7 @@
 ---
 schema: release-loop/v1
 feature: init-installs-hooks
-phase: design
+phase: plan
 phase_status: in_progress
 started: 2026-08-11T00:00:00Z
 updated: 2026-08-11T00:00:00Z
@@ -11,7 +11,7 @@ flags: []
 spec: docs/specs/2026-08-11-init-installs-hooks-design.md
 plan: null
 retro: null
-design_approved: null
+design_approved: {by: user, at: 2026-08-11T00:10:00Z}
 plan_approved: null
 ship_approved: null
 current_unit: null
@@ -38,3 +38,4 @@ final_action:
 - 2026-08-11T00:00:00Z design: 3 scope questions answered by user (move all four install actions; keep `ec enable` as repair path; install by default with `--no-hooks` opt-out).
 - 2026-08-11T00:00:00Z design: spec draft committed at `3332272`. Empirical grounding caught 2 falsified claims pre-review (`rg -c mcpServers` returns 2 not 1; `mock_git_root` is a `@patch` arg, not a conftest fixture) — both fixed.
 - 2026-08-11T00:00:00Z design: advisor review found 1 material defect — the Architecture diagram flattened `enable()`'s conditional nesting (git hooks are claude-only; MCP registration is unconditional). Fixed in Architecture + S4 + test table + SC2; 2 hygiene items also applied. Awaiting USER approval gate.
+- 2026-08-11T00:10:00Z design→plan: spec approved by user; `status: approved` committed. Entering Plan phase.
