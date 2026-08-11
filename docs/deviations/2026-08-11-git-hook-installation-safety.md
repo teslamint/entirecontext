@@ -29,7 +29,13 @@ as `ec init`.
    overwritten.
 2. **The hooks directory is resolved, not assumed.** `git rev-parse --git-path hooks`
    replaces the hardcoded `<repo>/.git/hooks`. When resolution fails, installation is
-   skipped with an explicit warning instead of returning an empty list silently.
+   skipped with an explicit warning instead of returning an empty list silently. The
+   resolved directory is created when it does not exist.
+4. **`core.hooksPath` disables git hook management.** When that config is set, both
+   installation and removal are skipped; installation warns.
+5. **The executable path is shell-quoted in the generated hook scripts**, and only there —
+   the Claude settings command string stays unquoted because `_is_ec_hook` matches it by
+   substring.
 3. **Four existing tests were modified**, contrary to SC4. `TestGitHooksInstallation`
    constructed fake repositories (`mkdir` of a `.git/hooks` path with no `git init`), which
    `git rev-parse` correctly refuses to treat as a repository. They now call
@@ -59,11 +65,22 @@ returned `[]` and `ec init` reported success having installed no git hooks.
 |---|---|---|
 | Foreign hook destroyed before the fix | `ec init` in a temp repo whose `pre-push` contained `# my precious custom hook` | `custom hook survived: False`; content replaced with `# EntireContext: sync on push...` |
 | Worktree resolution broken before the fix | `python3 -c "print((Path('.git')/'hooks').is_dir())"` in `.worktrees/init-installs-hooks` | `False`; `.git` is an 84-byte ASCII file |
-| Both fixed | `uv run python -m pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py` | 49 passed, including `test_install_preserves_foreign_hooks` and `test_install_resolves_hooks_dir_in_linked_worktree` |
+| Hooks dir missing after an empty-template init | `git init --template=<empty-dir>`, then `_resolve_hooks_dir(repo)` | `.git/hooks exists: False`; resolver returned `None` while `git rev-parse` returned the valid path `.git/hooks` |
+| `core.hooksPath` made two repositories share one directory | two repos each `git config core.hooksPath <shared>`, then `_resolve_hooks_dir` on both | both returned the same `<shared>` path; the pre-change code used `<repo>/.git/hooks` and never followed `core.hooksPath` |
+| All fixed | `uv run python -m pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py` | 53 passed; full suite 2144 passed / 1 skipped |
+
+## Round 2 note: one deviation was self-inflicted
+
+The `core.hooksPath` sharing hazard was **introduced by this PR's own round-1 fix**, not
+inherited. Before that fix, `_install_git_hooks` hardcoded `<repo>/.git/hooks` and therefore
+never followed `core.hooksPath`, so cross-repository deletion was impossible. Resolving the
+hooks directory through git — necessary to fix the linked-worktree no-op — made it possible.
+Round 2 closes it by refusing to manage hooks at all when `core.hooksPath` is set.
 
 ## Traceability
 
-- Raised by: PR #205 review comments `3755765241` (P1) and `3755765246` (P2)
+- Raised by: PR #205 review comments `3755765241` (P1) and `3755765246` (P2) in round 1;
+  `3755884180` (P1), `3755884172` (P2), and `3755884176` (P2) in round 2
 - ADR: `docs/adr/0005-init-installs-integrations.md`
 - EC decision: `83213b14-31a0-4b1f-9a42-a0aa0929a6f4`
 - Scope decision: the user was presented with fix-now / separate-PR / decline for each defect

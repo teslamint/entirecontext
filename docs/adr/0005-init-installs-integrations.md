@@ -49,7 +49,18 @@ someone who deliberately ran `ec enable`:
   other tooling's hook.
 - The hooks directory is resolved with `git rev-parse --git-path hooks` rather than assumed
   to be `<repo>/.git/hooks`. In a linked worktree `.git` is a file, so the old assumption
-  made installation a silent no-op.
+  made installation a silent no-op. The resolved directory is created when missing, because
+  `git init --template=<empty-dir>` produces a repository with no hooks directory.
+- When `core.hooksPath` is set, installation and removal are both skipped, with a warning on
+  the install side. That setting can point at a directory shared by several repositories, and
+  following it would let `ec disable` in one repository delete another's hooks. Skipping is
+  the honest response: a user who centralizes hooks via `core.hooksPath` is managing them
+  deliberately, and writing into that directory is not ours to do. Reference-counted
+  ownership tracking was considered and rejected as disproportionate.
+- The executable path is shell-quoted in the generated hook scripts, so an `ec` under a path
+  containing spaces still runs. Quoting is applied only to the git hook scripts: the Claude
+  settings `command` string is matched by substring in `_is_ec_hook`, so quoting it would
+  break hook idempotency and `ec disable`.
 
 ## Consequences
 

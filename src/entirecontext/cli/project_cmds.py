@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
 import stat
 import subprocess
@@ -254,11 +255,20 @@ def _disable_codex_notify(repo_path: str) -> bool:
     return found
 
 
-def _resolve_ec_command(hook_type: str | None = None) -> str:
-    if shutil.which("ec"):
-        base = f"{Path(shutil.which('ec')).resolve()} hook handle"
+def _resolve_ec_command(hook_type: str | None = None, quote_path: bool = False) -> str:
+    """Build the `ec hook handle` invocation.
+
+    `quote_path` shell-quotes the executable path and must be used only for the git hook
+    scripts. The Claude settings command string is matched by substring in `_is_ec_hook`,
+    so quoting it would break idempotency and `ec disable`.
+    """
+    ec_bin = shutil.which("ec")
+    if ec_bin:
+        executable = str(Path(ec_bin).resolve())
+        base = f"{shlex.quote(executable) if quote_path else executable} hook handle"
     else:
-        base = f"{sys.executable} -m entirecontext.cli hook handle"
+        executable = shlex.quote(sys.executable) if quote_path else sys.executable
+        base = f"{executable} -m entirecontext.cli hook handle"
     if hook_type:
         base += f" --type {hook_type}"
     return base
@@ -307,15 +317,11 @@ def init(
         console.print(f"  Run [bold]{retry}[/bold] to retry.")
 
 
-def _resolve_hooks_dir(repo_path: str) -> Path | None:
-    """Resolve git's effective hooks directory. Returns None when it cannot be determined.
-
-    In a linked worktree `.git` is a file, so `<repo>/.git/hooks` does not exist; git
-    resolves the hooks path into the main repository instead.
-    """
+def _git_capture(repo_path: str, args: list[str]) -> str | None:
+    """Run a git command in repo_path. Returns stripped stdout, or None on any failure."""
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--git-path", "hooks"],
+            ["git", *args],
             cwd=repo_path,
             capture_output=True,
             text=True,
@@ -323,24 +329,49 @@ def _resolve_hooks_dir(repo_path: str) -> Path | None:
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return None
-    if result.returncode != 0:
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _has_custom_hooks_path(repo_path: str) -> bool:
+    """True when core.hooksPath is set, which may point outside this repository."""
+    return bool(_git_capture(repo_path, ["config", "--get", "core.hooksPath"]))
+
+
+def _resolve_hooks_dir(repo_path: str, create: bool = False) -> Path | None:
+    """Resolve git's effective hooks directory. Returns None when it cannot be determined.
+
+    In a linked worktree `.git` is a file, so `<repo>/.git/hooks` does not exist; git
+    resolves the hooks path into the main repository instead. Callers must rule out
+    `core.hooksPath` first — see `_has_custom_hooks_path`.
+    """
+    out = _git_capture(repo_path, ["rev-parse", "--git-path", "hooks"])
+    if out is None:
         return None
 
-    hooks_dir = Path(result.stdout.strip())
+    hooks_dir = Path(out)
     if not hooks_dir.is_absolute():
         hooks_dir = Path(repo_path) / hooks_dir
+    if create:
+        try:
+            hooks_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
     return hooks_dir if hooks_dir.is_dir() else None
 
 
 def _install_git_hooks(repo_path: str) -> list[str]:
     """Install git hooks (post-commit, pre-push). Returns list of installed hook names."""
-    hooks_dir = _resolve_hooks_dir(repo_path)
+    if _has_custom_hooks_path(repo_path):
+        console.print("[yellow]Warning:[/yellow] core.hooksPath is set; skipping git hook installation.")
+        return []
+
+    hooks_dir = _resolve_hooks_dir(repo_path, create=True)
     if hooks_dir is None:
         console.print("[yellow]Warning:[/yellow] could not resolve the git hooks directory; skipping git hooks.")
         return []
 
     installed = []
-    ec_cmd = _resolve_ec_command()
+    ec_cmd = _resolve_ec_command(quote_path=True)
 
     post_commit_script = f"""#!/bin/sh
 # EntireContext: create checkpoint on commit if active session
@@ -368,6 +399,9 @@ def _install_git_hooks(repo_path: str) -> list[str]:
 
 def _remove_git_hooks(repo_path: str) -> list[str]:
     """Remove EntireContext git hooks. Returns list of removed hook names."""
+    if _has_custom_hooks_path(repo_path):
+        return []
+
     hooks_dir = _resolve_hooks_dir(repo_path)
     if hooks_dir is None:
         return []

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import stat
 import subprocess
 from unittest.mock import patch
@@ -10,7 +11,7 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
-from entirecontext.cli.project_cmds import _is_ec_hook, _install_git_hooks
+from entirecontext.cli.project_cmds import _is_ec_hook, _install_git_hooks, _remove_git_hooks
 
 runner = CliRunner()
 
@@ -208,6 +209,65 @@ class TestGitHooksInstallation:
         assert "pre-push" not in installed
         assert hook.read_text() == original
         assert "post-commit" in installed
+
+    def test_install_skips_when_core_hooks_path_is_set(self, tmp_path, capsys):
+        repo = tmp_path / "repo"
+        shared = tmp_path / "shared-hooks"
+        shared.mkdir()
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "core.hooksPath", str(shared)], check=True, capture_output=True
+        )
+
+        installed = _install_git_hooks(str(repo))
+
+        assert installed == []
+        assert "core.hooksPath" in capsys.readouterr().out
+        assert list(shared.iterdir()) == []
+
+    def test_remove_leaves_shared_hooks_path_untouched(self, tmp_path):
+        repo = tmp_path / "repo"
+        shared = tmp_path / "shared-hooks"
+        shared.mkdir()
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "core.hooksPath", str(shared)], check=True, capture_output=True
+        )
+        sentinel = shared / "post-commit"
+        sentinel.write_text("#!/bin/sh\n# EntireContext: installed by another repo\n")
+
+        removed = _remove_git_hooks(str(repo))
+
+        assert removed == []
+        assert sentinel.exists()
+
+    def test_install_creates_missing_hooks_dir(self, tmp_path):
+        template = tmp_path / "empty-template"
+        template.mkdir()
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", f"--template={template}", str(repo)], check=True, capture_output=True)
+        assert not (repo / ".git" / "hooks").exists()
+
+        installed = _install_git_hooks(str(repo))
+
+        assert sorted(installed) == ["post-commit", "pre-push"]
+        assert (repo / ".git" / "hooks" / "post-commit").exists()
+
+    def test_hook_script_quotes_executable_path(self, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        spaced = tmp_path / "bin with space"
+        spaced.mkdir()
+        ec_bin = spaced / "ec"
+        ec_bin.write_text("#!/bin/sh\n")
+        ec_bin.chmod(0o755)
+        monkeypatch.setattr("entirecontext.cli.project_cmds.shutil.which", lambda _: str(ec_bin))
+
+        _install_git_hooks(str(repo))
+
+        content = (repo / ".git" / "hooks" / "post-commit").read_text()
+        command_line = [line for line in content.splitlines() if line and not line.startswith("#")][-1]
+        assert shlex.split(command_line)[0] == str(ec_bin)
 
     def test_install_resolves_hooks_dir_in_linked_worktree(self, tmp_path):
         repo = tmp_path / "repo"
