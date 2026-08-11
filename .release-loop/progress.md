@@ -14,7 +14,7 @@ retro: null
 design_approved: {by: user, at: 2026-08-11T00:10:00Z}
 plan_approved: {by: user, at: 2026-08-11T00:30:00Z}
 ship_approved: null
-current_unit: null
+current_unit: U2
 ci_attempts: 0
 review_rounds: 0
 feedback_rounds: 0
@@ -41,3 +41,5 @@ final_action:
 - 2026-08-11T00:10:00Z design→plan: spec approved by user; `status: approved` committed. Entering Plan phase.
 - 2026-08-11T00:25:00Z plan: draft committed at `7189ea4`; validator exit 0. advisor review re-derived the carry-forward audit (14 open / 1 fired / 0 unobservable — matches) and found 1 blocking defect: tests written as direct `project_cmds.init(...)` calls would hit Typer's truthy `OptionInfo` defaults. Corrected to `runner.invoke(app, [...])`, this file's universal convention; per-test expected-failure reasons corrected. Committed at `d941f48`.
 - 2026-08-11T00:30:00Z plan→implement: plan approved by user; `status: approved` + `body_seal ecefd1bb` committed. Starting U1.
+- 2026-08-11T00:40:00Z implement/U1: characterization test passed against pre-refactor code, then `_install_integrations()` extracted. 37/37 tests pass (test_project_cmds + test_e2e_hooks_install), ruff check clean, 0 existing test lines edited. Committed at `16d3d1a`. U1 complete.
+- 2026-08-11T00:40:00Z implement: executing inline serially, not via subagents — this session is instructed not to use the Agent tool. Review passes use the `advisor` tool (separate stronger reviewer, not self-approval) at the U1+U2 code boundary and again for the final branch review, rather than once per unit.
