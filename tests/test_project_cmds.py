@@ -8,6 +8,7 @@ import shlex
 import stat
 import subprocess
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -149,6 +150,12 @@ class TestIsEcHook:
     def test_ec_executable_with_other_subcommand(self):
         assert not _is_ec_hook({"command": "/usr/bin/ec search foo"})
 
+    def test_foreign_tool_whose_name_ends_in_ec(self):
+        assert not _is_ec_hook({"command": "/usr/local/bin/myec hook handle --type Stop"})
+
+    def test_foreign_tool_whose_name_ends_in_ec_exe(self):
+        assert not _is_ec_hook({"command": r"C:\tools\myec.exe hook handle --type Stop"})
+
 
 class TestStripEcHooks:
     """_strip_ec_hooks must remove only our commands, never a sibling's."""
@@ -177,6 +184,10 @@ class TestStripEcHooks:
 
     def test_drops_flat_legacy_ec_entry(self):
         assert _strip_ec_hooks([{"command": "ec hook handle --type Stop", "timeout": 10}]) == []
+
+    def test_preserves_foreign_tool_whose_name_ends_in_ec(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": "/usr/local/bin/myec hook handle"}]}
+        assert _strip_ec_hooks([entry]) == [entry]
 
     def test_drops_windows_exe_entry(self):
         entry = {"matcher": "", "hooks": [{"type": "command", "command": r"C:\venv\Scripts\ec.exe hook handle"}]}
@@ -396,7 +407,7 @@ class TestGitHooksInstallation:
 
         settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
         command = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
-        assert shlex.split(command)[0] == str(ec_bin)
+        assert shlex.split(command)[0] == str(Path(ec_bin).resolve())
         assert _is_ec_hook(settings["hooks"]["Stop"][0]), "quoted command must stay recognizable to ec disable"
 
     def test_install_restores_exec_bit_on_owned_hook(self, tmp_path):

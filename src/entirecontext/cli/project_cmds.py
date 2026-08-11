@@ -285,13 +285,12 @@ def _is_ec_command(cmd: str) -> bool:
     - `'/x y/ec' hook handle` — what current installs write, path shell-quoted
     - `C:\\...\\ec.exe hook handle` — the Windows console-script launcher
 
-    Substring matching alone misses the last two, so the command is also tokenized and its
-    executable compared by name.
+    Matching is token-based rather than by substring, because `ec hook handle` is a substring
+    of another tool's `myec hook handle` and deleting a foreign hook is worse than missing
+    one of ours.
     """
     if not cmd:
         return False
-    if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
-        return True
     return any(_tokens_are_ec_invocation(t) for t in _tokenizations(cmd))
 
 

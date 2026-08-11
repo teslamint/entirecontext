@@ -57,11 +57,13 @@ the Claude settings merge, `init()`'s option handling, or the new
    every generated hook exited with `No module named entirecontext.cli.__main__` — capture
    never ran and the failing `pre-push` hook blocked every push. A `__main__.py` now invokes
    the Typer app.
-10. **`ec.exe` is recognized as our command.** On Windows the console script resolves to
-   `ec.exe`, which the substring match missed, so `ec disable` could not remove the hook and
-   every reinstall appended a duplicate. `_is_ec_command()` now also tokenizes the command
-   and compares the executable by name, trying both POSIX and non-POSIX splits because the
-   first eats Windows backslashes and the second leaves quotes attached.
+10. **Hook commands are recognized by token, not by substring.** The old check asked whether
+   `ec hook handle` appeared anywhere in the command, which both missed the Windows `ec.exe`
+   launcher — so `ec disable` could not remove the hook and every reinstall appended a
+   duplicate — and over-matched a foreign `myec hook handle`, which `_strip_ec_hooks()` would
+   then delete. `_is_ec_command()` now tokenizes the command and compares the executable by
+   name, trying both POSIX and non-POSIX splits because the first eats Windows backslashes
+   and the second leaves quotes attached.
 
 ### Test-fixture change (SC4)
 
@@ -99,6 +101,7 @@ returned `[]` and `ec init` reported success having installed no git hooks.
 | `core.hooksPath` made two repositories share one directory | two repos each `git config core.hooksPath <shared>`, then `_resolve_hooks_dir` on both | both returned the same `<shared>` path; the pre-change code used `<repo>/.git/hooks` and never followed `core.hooksPath` |
 | Empty `core.hooksPath` read as unset | `git config core.hooksPath ""`, then `_has_custom_hooks_path(repo)` | `git config --get` exits 0 with `'\n'`; the truthiness check returned `False` and `_resolve_hooks_dir` resolved to the repository root |
 | Quoted command still recognized | `shlex` round-trip over 5 command shapes | raw match missed both quoted forms; the shlex-normalized match caught all four EC forms and rejected `some-other-tool run` |
+| Foreign `myec` hook survives | `_strip_ec_hooks` on an entry holding `/usr/local/bin/myec hook handle` | substring matching classified it as ours and removed it; token matching returns the entry unchanged |
 | Fallback module runs | `uv run python -m entirecontext.cli --help` | before: `No module named entirecontext.cli.__main__`; after: exit 0 with the usage banner |
 | Fallback module ships to users | `uv build`, then `unzip -l dist/*.whl` and `tar tzf dist/*.tar.gz` | `entirecontext/cli/__main__.py` present in the wheel and `src/entirecontext/cli/__main__.py` in the sdist |
 | All fixed | `uv run python -m pytest tests/test_project_cmds.py tests/test_e2e_hooks_install.py` | 74 passed; full suite 2147 passed / 1 skipped (18 pre-existing local Rich-console failures, identical on the unmodified tree) |
