@@ -1,8 +1,18 @@
 # Lessons Learned
 
-_Generated from 45 assessed changes._
+_Generated from 46 assessed changes._
 
 ## 🟢 Expand (increases future options)
+
+### ✅ Generator correctness fix + missing regression test + fixture broadening + debt registration collectively lower the cost and risk of future generator and test-suite changes.
+
+**Roadmap alignment:** Directly addresses Hardening Backlog's MD024 item (registered in ROADMAP per retro carry-forward rule), closes test gaps named in prior assessments, and extends GPG-signing fixture coverage to sync/TQL helpers — all consistent with the project's measure-first and stabilize-before-extend principles.
+
+**Suggestion:** Keep the pattern of shipping regression tests alongside the fix they guard (49c5659 lesson internalized here); next tidy opportunity is the MD024 fix itself — either add a unique discriminator (assessment ID) to generated headings or add a `.markdownlint*` exemption, since the debt is now visible in ROADMAP and can be resolved cheaply before markdownlint enforcement is added.
+
+**Feedback:** agree — Expand is right: the regression test converts a fix that could silently revert into one that fails loudly, and the fixture broadening removes a host-dependent failure from the suite. One correction to the wording — this work registered the MD024 item in the Hardening Backlog, it did not address it; the debt is now visible but unresolved. The suggestion is actionable and the cheap discriminator option (assessment ID in the heading) is the one already identified in the ROADMAP entry.
+
+_Assessment: c8a43edf | 2026-08-11T13:24:56.131806+00:00_
 
 ### ✅ U8a establishes retained Signal C quality and fresh-process latency thresholds before production fusion.
 
