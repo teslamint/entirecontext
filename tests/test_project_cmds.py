@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import stat
+import subprocess
 from unittest.mock import patch
 
 from typer.testing import CliRunner
@@ -20,8 +21,7 @@ class TestHookTimeoutUnits:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_generates_correct_timeouts(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -40,8 +40,7 @@ class TestHookTimeoutUnits:
     @patch("entirecontext.core.project.find_git_root")
     def test_timeouts_are_positive_seconds(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -61,8 +60,7 @@ class TestHookConfigStructure:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_generates_matcher_format(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -83,8 +81,7 @@ class TestHookConfigStructure:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_command_contains_hook_type(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -122,8 +119,7 @@ class TestGitHooksInstallation:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_installs_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -141,8 +137,7 @@ class TestGitHooksInstallation:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_no_git_hooks_flag(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -156,8 +151,7 @@ class TestGitHooksInstallation:
     @patch("entirecontext.core.project.find_git_root")
     def test_disable_removes_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -173,8 +167,7 @@ class TestGitHooksInstallation:
     @patch("entirecontext.core.project.find_git_root")
     def test_disable_leaves_non_ec_git_hooks(self, mock_git_root, tmp_path):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
 
         other_hook = repo / ".git" / "hooks" / "post-commit"
@@ -196,16 +189,48 @@ class TestGitHooksInstallation:
 
     def test_install_skips_existing_ec_hooks(self, tmp_path):
         repo = tmp_path / "repo"
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         hook = repo / ".git" / "hooks" / "post-commit"
         hook.write_text("#!/bin/sh\n# EntireContext: already here\n")
 
         installed = _install_git_hooks(str(repo))
         assert "post-commit" not in installed
 
+    def test_install_preserves_foreign_hooks(self, tmp_path):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        hook = repo / ".git" / "hooks" / "pre-push"
+        original = "#!/bin/sh\n# husky\nnpm test\n"
+        hook.write_text(original)
+
+        installed = _install_git_hooks(str(repo))
+
+        assert "pre-push" not in installed
+        assert hook.read_text() == original
+        assert "post-commit" in installed
+
+    def test_install_resolves_hooks_dir_in_linked_worktree(self, tmp_path):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t.com"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "T"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "--allow-empty", "-m", "init"], check=True, capture_output=True
+        )
+        linked = tmp_path / "linked"
+        subprocess.run(
+            ["git", "-C", str(repo), "worktree", "add", "-b", "wt", str(linked)], check=True, capture_output=True
+        )
+        assert (linked / ".git").is_file()
+
+        installed = _install_git_hooks(str(linked))
+
+        assert sorted(installed) == ["post-commit", "pre-push"]
+        assert (repo / ".git" / "hooks" / "post-commit").exists()
+
     def test_post_commit_script_content(self, tmp_path):
         repo = tmp_path / "repo"
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
 
         _install_git_hooks(str(repo))
 
@@ -215,7 +240,7 @@ class TestGitHooksInstallation:
 
     def test_pre_push_script_content(self, tmp_path):
         repo = tmp_path / "repo"
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
 
         _install_git_hooks(str(repo))
 
@@ -348,8 +373,7 @@ class TestEnableDisableRoundTrip:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_disable_cleans_up(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         fake_home = tmp_path / "fakehome"
         fake_home.mkdir()
@@ -368,8 +392,7 @@ class TestEnableDisableRoundTrip:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_preserves_existing_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         fake_home = tmp_path / "fakehome"
         fake_home.mkdir()
@@ -407,8 +430,7 @@ class TestCodexIntegration:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_codex_skips_claude_and_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         fake_home = tmp_path / "fakehome"
         monkeypatch.setenv("HOME", str(fake_home))

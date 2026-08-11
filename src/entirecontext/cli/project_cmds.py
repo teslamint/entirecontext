@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import stat
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -306,10 +307,36 @@ def init(
         console.print(f"  Run [bold]{retry}[/bold] to retry.")
 
 
+def _resolve_hooks_dir(repo_path: str) -> Path | None:
+    """Resolve git's effective hooks directory. Returns None when it cannot be determined.
+
+    In a linked worktree `.git` is a file, so `<repo>/.git/hooks` does not exist; git
+    resolves the hooks path into the main repository instead.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-path", "hooks"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if result.returncode != 0:
+        return None
+
+    hooks_dir = Path(result.stdout.strip())
+    if not hooks_dir.is_absolute():
+        hooks_dir = Path(repo_path) / hooks_dir
+    return hooks_dir if hooks_dir.is_dir() else None
+
+
 def _install_git_hooks(repo_path: str) -> list[str]:
     """Install git hooks (post-commit, pre-push). Returns list of installed hook names."""
-    hooks_dir = Path(repo_path) / ".git" / "hooks"
-    if not hooks_dir.exists():
+    hooks_dir = _resolve_hooks_dir(repo_path)
+    if hooks_dir is None:
+        console.print("[yellow]Warning:[/yellow] could not resolve the git hooks directory; skipping git hooks.")
         return []
 
     installed = []
@@ -330,6 +357,8 @@ def _install_git_hooks(repo_path: str) -> list[str]:
             content = hook_path.read_text(encoding="utf-8")
             if "EntireContext" in content:
                 continue
+            console.print(f"[yellow]Warning:[/yellow] {name} hook already exists and is not ours; leaving it alone.")
+            continue
         hook_path.write_text(script, encoding="utf-8")
         hook_path.chmod(hook_path.stat().st_mode | stat.S_IEXEC)
         installed.append(name)
@@ -339,8 +368,8 @@ def _install_git_hooks(repo_path: str) -> list[str]:
 
 def _remove_git_hooks(repo_path: str) -> list[str]:
     """Remove EntireContext git hooks. Returns list of removed hook names."""
-    hooks_dir = Path(repo_path) / ".git" / "hooks"
-    if not hooks_dir.exists():
+    hooks_dir = _resolve_hooks_dir(repo_path)
+    if hooks_dir is None:
         return []
 
     removed = []
