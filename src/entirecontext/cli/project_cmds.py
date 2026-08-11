@@ -299,8 +299,11 @@ def init(
     try:
         _install_integrations(project["repo_path"], agent, no_git_hooks)
     except Exception as exc:
+        retry = f"ec enable --agent {agent}"
+        if no_git_hooks:
+            retry += " --no-git-hooks"
         console.print(f"[yellow]Warning:[/yellow] hook installation failed: {exc}")
-        console.print("  Run [bold]ec enable[/bold] to retry.")
+        console.print(f"  Run [bold]{retry}[/bold] to retry.")
 
 
 def _install_git_hooks(repo_path: str) -> list[str]:

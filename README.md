@@ -535,7 +535,7 @@ All tools accept a `repos` parameter for cross-repo queries: `null` = current re
 
 ## Hook System
 
-`ec init` installs two kinds of hooks automatically. No manual intervention required. `ec enable` reinstalls the same set.
+`ec init` installs two kinds of hooks automatically on the default `--agent claude` path. No manual intervention required. `ec enable` reinstalls the same set. `--agent codex` writes only the Codex notify entry and the MCP registration — it installs neither the Claude Code hooks nor the git hooks.
 
 ### Claude Code Hooks (`.claude/settings.local.json`)
 

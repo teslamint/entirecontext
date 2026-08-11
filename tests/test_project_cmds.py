@@ -674,3 +674,31 @@ class TestInitInstallsIntegrations:
         assert result.exception is None
         assert "boom" in result.output
         assert "ec enable" in result.output
+
+    @patch("entirecontext.cli.project_cmds._install_integrations")
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_failure_recovery_preserves_agent(
+        self, mock_git_root, mock_install, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        monkeypatch.setenv("COLUMNS", "200")
+        mock_install.side_effect = OSError("boom")
+
+        result = runner.invoke(app, ["init", "--agent", "codex"])
+        assert result.exit_code == 0
+        assert "ec enable --agent codex" in result.output
+
+    @patch("entirecontext.cli.project_cmds._install_integrations")
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_failure_recovery_preserves_no_git_hooks(
+        self, mock_git_root, mock_install, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        monkeypatch.setenv("COLUMNS", "200")
+        mock_install.side_effect = OSError("boom")
+
+        result = runner.invoke(app, ["init", "--no-git-hooks"])
+        assert result.exit_code == 0
+        assert "ec enable --agent claude --no-git-hooks" in result.output

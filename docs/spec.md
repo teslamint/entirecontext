@@ -183,7 +183,7 @@ Exit codes:
 
 ## 4.4 Git hooks `[Implemented]`
 
-Installed by `ec init` (or `ec enable`) unless `--no-git-hooks` is passed, and skipped entirely by `ec init --no-hooks`:
+Installed by `ec init` (or `ec enable`) only when the target agent is `claude` or `both`, and only when `--no-git-hooks` is not passed. `--agent codex` installs no git hooks, and `ec init --no-hooks` skips them along with everything else:
 
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
 - `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`
