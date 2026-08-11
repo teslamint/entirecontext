@@ -117,10 +117,9 @@ Decision outcomes are the feedback vocabulary: `accepted`, `ignored`, `contradic
 The package is Python-based and currently targets Python 3.12+. The README is the source for installation commands and optional extras. At a conceptual level:
 
 1. Install the package and any desired extras.
-2. Initialize a git repository with `ec init`.
-3. Enable capture integrations with `ec enable` for the relevant agent surface.
-4. Use the agent normally.
-5. Inspect status, sessions, decisions, checkpoints, and lessons through CLI or MCP.
+2. Initialize a git repository with `ec init`, which also installs the capture integrations for the relevant agent surface. Pass `--agent codex` or `--agent both` to target Codex; pass `--no-hooks` to initialize without installing anything.
+3. Use the agent normally.
+4. Inspect status, sessions, decisions, checkpoints, and lessons through CLI or MCP.
 
 Use safe placeholder values in examples. Do not put real tokens, private prompts, customer data, or secret keys into docs or demos.
 
@@ -128,8 +127,8 @@ Use safe placeholder values in examples. Do not put real tokens, private prompts
 
 The project command surface is registered in `src/entirecontext/cli/project_cmds.py` and includes:
 
-- `ec init` — create or initialize repo-local EntireContext state.
-- `ec enable` — install supported hooks or notification wiring.
+- `ec init` — create or initialize repo-local EntireContext state, then install the supported hooks and notification wiring.
+- `ec enable` — reinstall the supported hooks or notification wiring without touching repo-local state.
 - `ec disable` — remove supported hook or notification wiring.
 - `ec status` — show capture/project/session status.
 - `ec config` — read or write configuration values.
