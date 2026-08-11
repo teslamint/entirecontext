@@ -555,3 +555,122 @@ class TestCodexIntegration:
 
         result = runner.invoke(app, ["doctor", "--agent", "codex"])
         assert "codex" in result.output.lower()
+
+
+class TestInitInstallsIntegrations:
+    """ec init installs hooks by default; --no-hooks opts out."""
+
+    @staticmethod
+    def _hooks(repo):
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
+        return settings["hooks"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_installs_hooks_by_default(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+
+        hooks = self._hooks(git_repo)
+        for name in ("SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "SessionEnd"):
+            assert any(_is_ec_hook(h) for h in hooks[name])
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_installs_git_hooks_by_default(
+        self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+
+        for name in ("post-commit", "pre-push"):
+            hook_path = git_repo / ".git" / "hooks" / name
+            assert hook_path.exists()
+            assert "EntireContext" in hook_path.read_text(encoding="utf-8")
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_registers_mcp_server(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        fake_home = tmp_path / "fakehome"
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "entirecontext" in user_settings["mcpServers"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_no_hooks_skips_installation(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        fake_home = tmp_path / "fakehome"
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["init", "--no-hooks"])
+        assert result.exit_code == 0
+        assert "ec enable" in result.output
+
+        assert not (git_repo / ".claude" / "settings.local.json").exists()
+        assert not (git_repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (git_repo / ".git" / "hooks" / "pre-push").exists()
+        assert not (fake_home / ".claude" / "settings.json").exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_no_git_hooks_flag(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        result = runner.invoke(app, ["init", "--no-git-hooks"])
+        assert result.exit_code == 0
+
+        assert (git_repo / ".claude" / "settings.local.json").exists()
+        assert not (git_repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (git_repo / ".git" / "hooks" / "pre-push").exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_agent_codex_skips_claude_and_git_hooks(
+        self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        fake_home = tmp_path / "fakehome"
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["init", "--agent", "codex"])
+        assert result.exit_code == 0
+
+        assert "codex-notify" in (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert not (git_repo / ".claude" / "settings.local.json").exists()
+        assert not (git_repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (git_repo / ".git" / "hooks" / "pre-push").exists()
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "entirecontext" in user_settings["mcpServers"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_idempotent(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        assert runner.invoke(app, ["init"]).exit_code == 0
+        assert runner.invoke(app, ["init"]).exit_code == 0
+
+        assert len(self._hooks(git_repo)["SessionStart"]) == 1
+
+    @patch("entirecontext.cli.project_cmds._install_integrations")
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_hook_failure_warns_and_exits_zero(
+        self, mock_git_root, mock_install, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        monkeypatch.setenv("COLUMNS", "200")
+        mock_install.side_effect = OSError("boom")
+
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+        assert result.exception is None
+        assert "boom" in result.output
+        assert "ec enable" in result.output

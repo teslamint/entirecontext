@@ -274,18 +274,33 @@ def _is_ec_hook(entry: dict) -> bool:
     return False
 
 
-def init():
-    """Initialize EntireContext in current git repo."""
+def init(
+    no_hooks: bool = typer.Option(False, "--no-hooks", help="Skip hook and MCP installation"),
+    no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
+    agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
+):
+    """Initialize EntireContext in current git repo and install agent hooks."""
     from ..core.project import init_project
+
+    agent = _parse_agent_option(agent)
 
     try:
         project = init_project()
         console.print(f"[green]Initialized EntireContext[/green] in {project['repo_path']}")
         console.print(f"  Project: {project['name']} ({project['id'][:8]}...)")
-        console.print("  Run [bold]ec enable[/bold] to install Claude Code hooks.")
     except RuntimeError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
+
+    if no_hooks:
+        console.print("  Run [bold]ec enable[/bold] to install Claude Code hooks.")
+        return
+
+    try:
+        _install_integrations(project["repo_path"], agent, no_git_hooks)
+    except Exception as exc:
+        console.print(f"[yellow]Warning:[/yellow] hook installation failed: {exc}")
+        console.print("  Run [bold]ec enable[/bold] to retry.")
 
 
 def _install_git_hooks(repo_path: str) -> list[str]:
