@@ -388,6 +388,8 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 
 All PR #205 carry-forwards are registered under v0.16.0 above.
 
+- [ ] **Lift the `entirecontext.mcp.*` mypy overrides** — `pyproject.toml:146-154` places all nine MCP modules under `ignore_errors = true`, so mypy reports nothing for 2,261 lines of MCP server code even with the `mcp` extra installed. Measured with the overrides removed: 127 errors across 9 files — 42 `no-untyped-call`, 30 `no-any-return`, 18 `no-untyped-def`, 13 `type-arg`, 12 `union-attr`, 12 other. ADR 0002 states this list should shrink over time. Surfaced by review on PR #212. _(type-safety debt, P2)_
+
 - [ ] **`distill_lessons` emits duplicate Markdown headings** — `src/entirecontext/core/futures.py:176` builds every `LESSONS.md` heading from `impact_summary` alone, so repeated summaries (`Auto-assessed checkpoint`, identical `chore(deps)` bumps) collide. `markdownlint-cli2` reports MD024 at 6 locations in the current file. Not enforced today: the repository has no `.markdownlint*` config and no markdownlint CI step. Fix requires either adding a unique discriminator (assessment ID) to the heading or documenting an MD024 exemption for generated docs, then regenerating. Surfaced by CodeRabbit review on PR #206. _Priority: Low — cosmetic, unenforced._
 
 ## Later
