@@ -1,7 +1,7 @@
 ---
 schema: release-loop/v1
 feature: init-installs-hooks
-phase: plan
+phase: implement
 phase_status: in_progress
 started: 2026-08-11T00:00:00Z
 updated: 2026-08-11T00:00:00Z
@@ -12,7 +12,7 @@ spec: docs/specs/2026-08-11-init-installs-hooks-design.md
 plan: docs/plans/2026-08-11-001-feat-init-installs-hooks-plan.md
 retro: null
 design_approved: {by: user, at: 2026-08-11T00:10:00Z}
-plan_approved: null
+plan_approved: {by: user, at: 2026-08-11T00:30:00Z}
 ship_approved: null
 current_unit: null
 ci_attempts: 0
@@ -39,3 +39,5 @@ final_action:
 - 2026-08-11T00:00:00Z design: spec draft committed at `3332272`. Empirical grounding caught 2 falsified claims pre-review (`rg -c mcpServers` returns 2 not 1; `mock_git_root` is a `@patch` arg, not a conftest fixture) — both fixed.
 - 2026-08-11T00:00:00Z design: advisor review found 1 material defect — the Architecture diagram flattened `enable()`'s conditional nesting (git hooks are claude-only; MCP registration is unconditional). Fixed in Architecture + S4 + test table + SC2; 2 hygiene items also applied. Awaiting USER approval gate.
 - 2026-08-11T00:10:00Z design→plan: spec approved by user; `status: approved` committed. Entering Plan phase.
+- 2026-08-11T00:25:00Z plan: draft committed at `7189ea4`; validator exit 0. advisor review re-derived the carry-forward audit (14 open / 1 fired / 0 unobservable — matches) and found 1 blocking defect: tests written as direct `project_cmds.init(...)` calls would hit Typer's truthy `OptionInfo` defaults. Corrected to `runner.invoke(app, [...])`, this file's universal convention; per-test expected-failure reasons corrected. Committed at `d941f48`.
+- 2026-08-11T00:30:00Z plan→implement: plan approved by user; `status: approved` + `body_seal ecefd1bb` committed. Starting U1.

@@ -2,10 +2,11 @@
 schema: plan/v1
 title: ec init installs hooks
 type: feat
-status: draft
+status: approved
 date: 2026-08-11
 execution: code
 origin: docs/specs/2026-08-11-init-installs-hooks-design.md
+body_seal: ecefd1bbdb56bfb152d919181fffa142c97575784412f5bd4871e6131fb1a774
 ---
 
 # ec init installs hooks
