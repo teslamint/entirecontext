@@ -103,6 +103,40 @@ def test_distill_lessons_empty():
     assert "No lessons recorded yet" in text
 
 
+def test_distill_lessons_has_no_trailing_whitespace():
+    """Test that no emitted line ends with whitespace (regression: assessment line had a trailing space)."""
+    assessments = [
+        {
+            "id": "aaaa-bbbb-cccc",
+            "verdict": "expand",
+            "impact_summary": "Full change",
+            "roadmap_alignment": "Aligned",
+            "tidy_suggestion": "Keep it",
+            "feedback": "agree",
+            "feedback_reason": "Correct",
+            "created_at": "2025-01-01T00:00:00",
+        },
+        {
+            "id": "dddd-eeee-ffff",
+            "verdict": "narrow",
+            "impact_summary": "Minimal change",
+            "feedback": "disagree",
+            "created_at": "2025-01-02T00:00:00",
+        },
+        {
+            "id": "1111-2222-3333",
+            "verdict": "neutral",
+            "impact_summary": "Neutral change",
+            "feedback": "agree",
+            "feedback_reason": "Fine",
+            "created_at": "",
+        },
+    ]
+    text = distill_lessons(assessments)
+    offenders = [line for line in text.split("\n") if line != line.rstrip()]
+    assert offenders == []
+
+
 def test_get_assessment_prefix_match(ec_db):
     """Test that get_assessment supports prefix matching (regression: dd6184a2-c16 not found)."""
     result = create_assessment(ec_db, verdict="expand", impact_summary="Prefix test")

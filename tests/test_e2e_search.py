@@ -238,6 +238,51 @@ class TestSemanticSearch:
         conn.close()
         assert [result["id"] for result in results] == [turns[0]["id"]]
 
+    @pytest.mark.parametrize(
+        ("until_exclusive", "expected_session_ids"),
+        [
+            (False, ["search-session"]),
+            (True, []),
+        ],
+    )
+    def test_semantic_search_applies_until_boundary_to_session_embeddings(
+        self,
+        seeded_with_embeddings,
+        monkeypatch,
+        until_exclusive,
+        expected_session_ids,
+    ):
+        import struct
+
+        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
+        monkeypatch.setattr(
+            "entirecontext.core.embedding.embed_text",
+            lambda *_args, **_kwargs: fake_vec,
+        )
+        conn = get_db(str(seeded_with_embeddings))
+        conn.execute(
+            "UPDATE sessions SET started_at = ? WHERE id = ?",
+            ("2026-04-02T00:00:00+00:00", "search-session"),
+        )
+        conn.execute(
+            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+            "VALUES ('emb-search-session', 'session', 'search-session', "
+            "'all-MiniLM-L6-v2', ?, 3, 'session-hash')",
+            (fake_vec,),
+        )
+        conn.commit()
+        from entirecontext.core.embedding import semantic_search
+
+        results = semantic_search(
+            conn,
+            "auth",
+            until="2026-04-02 00:00:00",
+            until_exclusive=until_exclusive,
+        )
+        conn.close()
+        session_ids = [result["id"] for result in results if result["source_type"] == "session"]
+        assert session_ids == expected_session_ids
+
     def test_semantic_search_excludes_unparseable_timestamp_when_bounded(self, seeded_with_embeddings):
         import struct
         from unittest.mock import patch

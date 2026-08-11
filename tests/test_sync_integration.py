@@ -28,6 +28,7 @@ def _init_repo(repo_path: Path, remote_path: Path) -> Path:
     _run_git(["init", str(repo_path)])
     _run_git(["-C", str(repo_path), "config", "user.email", "test@test.com"])
     _run_git(["-C", str(repo_path), "config", "user.name", "Test"])
+    _run_git(["-C", str(repo_path), "config", "commit.gpgsign", "false"])
     _run_git(["-C", str(repo_path), "remote", "add", "origin", str(remote_path)])
     _run_git(["-C", str(repo_path), "commit", "--allow-empty", "-m", "init"])
     return repo_path
