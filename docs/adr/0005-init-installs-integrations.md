@@ -57,10 +57,17 @@ someone who deliberately ran `ec enable`:
   the honest response: a user who centralizes hooks via `core.hooksPath` is managing them
   deliberately, and writing into that directory is not ours to do. Reference-counted
   ownership tracking was considered and rejected as disproportionate.
-- The executable path is shell-quoted in the generated hook scripts, so an `ec` under a path
-  containing spaces still runs. Quoting is applied only to the git hook scripts: the Claude
-  settings `command` string is matched by substring in `_is_ec_hook`, so quoting it would
-  break hook idempotency and `ec disable`.
+- The executable path is shell-quoted in both the generated git hook scripts and the Claude
+  settings `command` string, so an `ec` under a path containing spaces still runs. Quoting the
+  settings string was only safe once recognition stopped depending on the raw text:
+  `_is_ec_command()` matches the raw string *and* the shlex-normalized string, so newly
+  written quoted entries and already-installed unquoted ones are both recognized and
+  `ec disable` keeps working across the change. `shlex.quote` is the identity on paths without
+  spaces, so existing installs see no rewrite.
+- A matcher entry's sibling commands survive reinstallation. `_strip_ec_hooks()` removes only
+  the matching inner command and drops the outer entry only when it becomes empty; the previous
+  filter discarded the whole entry whenever any nested command was ours, deleting another
+  tool's hook.
 
 ## Consequences
 

@@ -34,9 +34,9 @@ the Claude settings merge, or `init()`'s option handling, and all are observable
    resolved directory is created when it does not exist.
 3. **`core.hooksPath` disables git hook management.** When that config is set, both
    installation and removal are skipped; installation warns.
-4. **The executable path is shell-quoted in the generated hook scripts**, and only there —
-   the Claude settings command string stays unquoted because `_is_ec_hook` matches it by
-   substring.
+4. **The executable path is shell-quoted in the generated git hook scripts.** Item 8 extends
+   the same quoting to the Claude settings command once recognition no longer depended on the
+   raw text.
 5. **An owned hook that lost its executable bit gets it back.** Previously a file carrying
    the `EntireContext` marker was skipped before the `chmod`, so a hook copied through a
    filesystem that drops modes stayed at 0644 and git never ran it.
