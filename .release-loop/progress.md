@@ -15,7 +15,7 @@ design_approved: {by: user, at: 2026-08-11T00:10:00Z}
 plan_approved: {by: user, at: 2026-08-11T00:30:00Z}
 ship_approved: null
 current_unit: null
-ci_attempts: 0
+ci_attempts: 2
 review_rounds: 2
 feedback_rounds: 1
 comments_fixed: 6
@@ -55,3 +55,7 @@ final_action:
 - 2026-08-11T02:00:00Z ship/feedback round 1: 6 comments, 6 fixed, 0 deferred. `3755755781`+`3755755779`+`3755765254` in `485bb73`; `3755765241`+`3755765246`+`3755765251` in `a52c91f`. Two P1/P2 git-hook defects were reproduced before fixing (foreign hook destroyed by `ec init`; hooks dir unresolved in a linked worktree). Both predate this change but its blast radius widened them. Scope expansion authorized by the user and recorded in `docs/deviations/2026-08-11-git-hook-installation-safety.md`. ADR 0005 added per AGENTS.md public-interface-contract policy.
 - 2026-08-11T02:00:00Z ship: SC4 deliberately deviated — 4 `TestGitHooksInstallation` tests changed from fake `.git/hooks` mkdir to real `git init`; no assertion weakened. Recorded in the deviation doc and the PR.
 - 2026-08-11T02:00:00Z ship: full suite 2140 passed / 1 skipped. PR state MERGEABLE / CLEAN / APPROVED, 6 of 6 threads resolved. final_action unchanged and still determined. Awaiting USER merge gate.
+- 2026-08-11T02:10:00Z ship: CI green on first run (12 checks). Review round 1 fetched via API: 6 comments (CodeRabbit 2, Codex connector 4), one a duplicate. All 6 verified against code before acting, all 6 fixed, replied, and resolved; re-fetched from the API afterward and confirmed 0 unresolved.
+- 2026-08-11T02:10:00Z ship: scope expanded with explicit user authorization to cover two pre-existing `_install_git_hooks` defects whose blast radius this change widened — foreign git hooks were overwritten (data loss, reproduced) and the hooks dir was unresolvable in a linked worktree (silent no-op, reproduced). Both fixed in `a52c91f`; recorded in `docs/deviations/2026-08-11-git-hook-installation-safety.md` because they also change `ec enable`. ADR 0005 added per AGENTS.md.
+- 2026-08-11T02:10:00Z ship: SC4 no longer holds — 4 TestGitHooksInstallation tests changed from fake `.git` dirs to real `git init` repos. Fixture upgrade, no assertion weakened. Stated in the deviation record and the PR body rather than quietly restated.
+- 2026-08-11T02:10:00Z ship: CI green again after fixes. Full suite 2140 passed / 1 skipped. PR #205 MERGEABLE / CLEAN / APPROVED. final_action unchanged: `gh pr merge 205 --squash --delete-branch`. Preparation evidence — first-hand consent still required.
