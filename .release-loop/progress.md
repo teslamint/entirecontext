@@ -14,7 +14,7 @@ retro: null
 design_approved: {by: user, at: 2026-08-11T00:10:00Z}
 plan_approved: {by: user, at: 2026-08-11T00:30:00Z}
 ship_approved: null
-current_unit: U2
+current_unit: U3
 ci_attempts: 0
 review_rounds: 0
 feedback_rounds: 0
@@ -43,3 +43,6 @@ final_action:
 - 2026-08-11T00:30:00Z plan→implement: plan approved by user; `status: approved` + `body_seal ecefd1bb` committed. Starting U1.
 - 2026-08-11T00:40:00Z implement/U1: characterization test passed against pre-refactor code, then `_install_integrations()` extracted. 37/37 tests pass (test_project_cmds + test_e2e_hooks_install), ruff check clean, 0 existing test lines edited. Committed at `16d3d1a`. U1 complete.
 - 2026-08-11T00:40:00Z implement: executing inline serially, not via subagents — this session is instructed not to use the Agent tool. Review passes use the `advisor` tool (separate stronger reviewer, not self-approval) at the U1+U2 code boundary and again for the final branch review, rather than once per unit.
+- 2026-08-11T01:00:00Z implement/U2: 8 new init tests written failing (4 with exit_code 2 / "No such option", 3 on file assertions, 1 on OSError propagation), then `init()` implemented with `--no-hooks`/`--no-git-hooks`/`--agent` and warn-and-exit-0 degradation. 45/45 in scope, full suite 2136 passed / 1 skipped, ruff clean. SC5 greps all return 1. Committed at `2a1f696`. U2 complete.
+- 2026-08-11T01:05:00Z review (U1+U2): advisor returned Spec PASS + Quality PASS with one verification gap to close first — no one had checked whether tests outside the two grepped files invoke `ec init`, which now writes `~/.claude/settings.json`; such a test would pollute the real home while still passing. Closed: `rg` over tests/ and scripts/ found 0 CLI `init` invocations (all `"init"` hits are `git init` subprocesses), and the real `~/.claude/settings.json` mtime (14:34) predates the full-suite run (~15:05-15:15). No contamination.
+- MinorFindings: (1) `ec init --no-hooks --agent bogus` exits 2 because `_parse_agent_option` runs first; consistent with `enable`'s value validation and not the combination-rejection the spec forbids — interpretation recorded, no code change. (2) SC4's mechanical no-deleted-test-lines check against `main` deferred to the final branch review. (3) A future test invoking `["init"]` without HOME isolation would write the real home; zero such tests exist today, so nothing to fix now.
