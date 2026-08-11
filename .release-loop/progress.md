@@ -1,7 +1,7 @@
 ---
 schema: release-loop/v1
 feature: init-installs-hooks
-phase: implement
+phase: review
 phase_status: in_progress
 started: 2026-08-11T00:00:00Z
 updated: 2026-08-11T00:00:00Z
@@ -14,9 +14,9 @@ retro: null
 design_approved: {by: user, at: 2026-08-11T00:10:00Z}
 plan_approved: {by: user, at: 2026-08-11T00:30:00Z}
 ship_approved: null
-current_unit: U3
+current_unit: null
 ci_attempts: 0
-review_rounds: 0
+review_rounds: 1
 feedback_rounds: 0
 comments_fixed: 0
 comments_deferred: 0
@@ -46,3 +46,6 @@ final_action:
 - 2026-08-11T01:00:00Z implement/U2: 8 new init tests written failing (4 with exit_code 2 / "No such option", 3 on file assertions, 1 on OSError propagation), then `init()` implemented with `--no-hooks`/`--no-git-hooks`/`--agent` and warn-and-exit-0 degradation. 45/45 in scope, full suite 2136 passed / 1 skipped, ruff clean. SC5 greps all return 1. Committed at `2a1f696`. U2 complete.
 - 2026-08-11T01:05:00Z review (U1+U2): advisor returned Spec PASS + Quality PASS with one verification gap to close first — no one had checked whether tests outside the two grepped files invoke `ec init`, which now writes `~/.claude/settings.json`; such a test would pollute the real home while still passing. Closed: `rg` over tests/ and scripts/ found 0 CLI `init` invocations (all `"init"` hits are `git init` subprocesses), and the real `~/.claude/settings.json` mtime (14:34) predates the full-suite run (~15:05-15:15). No contamination.
 - MinorFindings: (1) `ec init --no-hooks --agent bogus` exits 2 because `_parse_agent_option` runs first; consistent with `enable`'s value validation and not the combination-rejection the spec forbids — interpretation recorded, no code change. (2) SC4's mechanical no-deleted-test-lines check against `main` deferred to the final branch review. (3) A future test invoking `["init"]` without HOME isolation would write the real home; zero such tests exist today, so nothing to fix now.
+- 2026-08-11T01:20:00Z implement/U3: README quick start, CLI table, MCP section, and hook section updated; docs/spec.md 176-186 and the manual's getting-started, command description, and command list sections updated. SC7 grep clean. Committed at `01ea111`. U3 complete. Plan U3 step 6's "command list near lines 443-448" was inspected and left unchanged: section 8.1 is a bare list of command names and both commands survive, so there is nothing to change there.
+- 2026-08-11T01:25:00Z review: final branch review (advisor) returned Spec PASS + Quality PASS. Scenario delivery verified on the actual branch — S1 and S2 walked end to end in isolated-HOME temp repos (one command installs 5 Claude hooks + 2 git hooks + MCP entry; `--no-hooks` leaves repo and home untouched while still creating the DB), S3 by SC4=0 with the existing suite unmodified, S4/S5/S6 by their 9 named tests. SC1-SC7 all measured: SC4=0, SC5 greps all 1, SC7 no match, full suite 2136 passed / 1 skipped. No cross-unit defects. MinorFindings carried forward unchanged; none block merge.
+- 2026-08-11T01:25:00Z review→ship: entering Ship. Note for the ship gate: local `main` is 1 commit (`bf790bc`, the release-loop archive chore) ahead of origin/main and this branch contains it, so main must be pushed first or the PR diff will carry the archive files.
