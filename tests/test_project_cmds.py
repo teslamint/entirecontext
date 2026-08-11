@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
+import shlex
 import stat
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
-from entirecontext.cli.project_cmds import _is_ec_hook, _install_git_hooks
+from entirecontext.cli.project_cmds import (
+    _install_git_hooks,
+    _is_ec_hook,
+    _remove_git_hooks,
+    _resolve_ec_command,
+    _strip_ec_hooks,
+)
 
 runner = CliRunner()
 
@@ -20,8 +31,7 @@ class TestHookTimeoutUnits:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_generates_correct_timeouts(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -40,8 +50,7 @@ class TestHookTimeoutUnits:
     @patch("entirecontext.core.project.find_git_root")
     def test_timeouts_are_positive_seconds(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -61,8 +70,7 @@ class TestHookConfigStructure:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_generates_matcher_format(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -83,8 +91,7 @@ class TestHookConfigStructure:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_command_contains_hook_type(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -115,6 +122,107 @@ class TestIsEcHook:
     def test_empty_entry(self):
         assert not _is_ec_hook({})
 
+    def test_quoted_executable_path(self):
+        entry = {
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "'/tmp/bin with space/ec' hook handle --type Stop"}],
+        }
+        assert _is_ec_hook(entry)
+
+    def test_quoted_module_form(self):
+        assert _is_ec_hook({"command": "'/opt/py 3/python' -m entirecontext.cli hook handle --type Stop"})
+
+    def test_unbalanced_quotes_do_not_raise(self):
+        assert not _is_ec_hook({"command": "some-tool 'unterminated"})
+
+    def test_windows_exe_launcher(self):
+        assert _is_ec_hook({"command": r"C:\Users\me\.venv\Scripts\ec.exe hook handle --type Stop"})
+
+    def test_windows_exe_launcher_quoted(self):
+        assert _is_ec_hook({"command": "'C:/Program Files/venv/Scripts/ec.exe' hook handle --type Stop"})
+
+    def test_bare_exe_launcher(self):
+        assert _is_ec_hook({"command": "ec.exe hook handle --type Stop"})
+
+    def test_similarly_named_executable_is_not_ours(self):
+        assert not _is_ec_hook({"command": "/usr/bin/ecx hook handle --type Stop"})
+
+    def test_ec_executable_with_other_subcommand(self):
+        assert not _is_ec_hook({"command": "/usr/bin/ec search foo"})
+
+    def test_foreign_tool_whose_name_ends_in_ec(self):
+        assert not _is_ec_hook({"command": "/usr/local/bin/myec hook handle --type Stop"})
+
+    def test_foreign_tool_whose_name_ends_in_ec_exe(self):
+        assert not _is_ec_hook({"command": r"C:\tools\myec.exe hook handle --type Stop"})
+
+
+class TestStripEcHooks:
+    """_strip_ec_hooks must remove only our commands, never a sibling's."""
+
+    def test_preserves_sibling_command_in_same_entry(self):
+        entry = {
+            "matcher": "",
+            "hooks": [
+                {"type": "command", "command": "ec hook handle --type Stop", "timeout": 10},
+                {"type": "command", "command": "other-tool record", "timeout": 5},
+            ],
+        }
+
+        result = _strip_ec_hooks([entry])
+
+        assert len(result) == 1
+        assert [h["command"] for h in result[0]["hooks"]] == ["other-tool record"]
+
+    def test_drops_entry_when_only_ec_commands_remain(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": "ec hook handle --type Stop"}]}
+        assert _strip_ec_hooks([entry]) == []
+
+    def test_keeps_unrelated_entry_untouched(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": "other-tool record"}]}
+        assert _strip_ec_hooks([entry]) == [entry]
+
+    def test_drops_flat_legacy_ec_entry(self):
+        assert _strip_ec_hooks([{"command": "ec hook handle --type Stop", "timeout": 10}]) == []
+
+    def test_preserves_foreign_tool_whose_name_ends_in_ec(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": "/usr/local/bin/myec hook handle"}]}
+        assert _strip_ec_hooks([entry]) == [entry]
+
+    def test_drops_windows_exe_entry(self):
+        entry = {"matcher": "", "hooks": [{"type": "command", "command": r"C:\venv\Scripts\ec.exe hook handle"}]}
+        assert _strip_ec_hooks([entry]) == []
+
+
+class TestFallbackModuleIsRunnable:
+    """The no-PATH fallback writes `python -m entirecontext.cli`, which must execute."""
+
+    def test_module_entry_point_exists(self):
+        spec = importlib.util.find_spec("entirecontext.cli.__main__")
+        assert spec is not None, "python -m entirecontext.cli needs a __main__ module"
+
+    def test_module_form_runs(self):
+        result = subprocess.run(
+            [sys.executable, "-m", "entirecontext.cli", "--help"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "No module named" not in result.stderr
+
+    def test_plain_import_does_not_run_the_cli(self):
+        result = subprocess.run(
+            [sys.executable, "-c", "import entirecontext.cli.__main__"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "Usage:" not in result.stdout
+
+    def test_fallback_command_is_recognized(self, monkeypatch):
+        monkeypatch.setattr("entirecontext.cli.project_cmds.shutil.which", lambda _: None)
+        assert _is_ec_hook({"command": _resolve_ec_command("Stop", quote_path=True)})
+
 
 class TestGitHooksInstallation:
     """Gap 7: Git hook installation in enable/disable."""
@@ -122,8 +230,7 @@ class TestGitHooksInstallation:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_installs_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -141,8 +248,7 @@ class TestGitHooksInstallation:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_no_git_hooks_flag(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -156,8 +262,7 @@ class TestGitHooksInstallation:
     @patch("entirecontext.core.project.find_git_root")
     def test_disable_removes_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
 
@@ -173,8 +278,7 @@ class TestGitHooksInstallation:
     @patch("entirecontext.core.project.find_git_root")
     def test_disable_leaves_non_ec_git_hooks(self, mock_git_root, tmp_path):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
 
         other_hook = repo / ".git" / "hooks" / "post-commit"
@@ -196,16 +300,219 @@ class TestGitHooksInstallation:
 
     def test_install_skips_existing_ec_hooks(self, tmp_path):
         repo = tmp_path / "repo"
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         hook = repo / ".git" / "hooks" / "post-commit"
         hook.write_text("#!/bin/sh\n# EntireContext: already here\n")
 
         installed = _install_git_hooks(str(repo))
         assert "post-commit" not in installed
 
+    def test_install_preserves_foreign_hooks(self, tmp_path):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        hook = repo / ".git" / "hooks" / "pre-push"
+        original = "#!/bin/sh\n# husky\nnpm test\n"
+        hook.write_text(original)
+
+        installed = _install_git_hooks(str(repo))
+
+        assert "pre-push" not in installed
+        assert hook.read_text() == original
+        assert "post-commit" in installed
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_preserves_sibling_command_in_shared_entry(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        settings_path = repo / ".claude" / "settings.local.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {"type": "command", "command": "ec hook handle --type Stop", "timeout": 10},
+                                    {"type": "command", "command": "other-tool record", "timeout": 5},
+                                ],
+                            }
+                        ]
+                    }
+                }
+            )
+        )
+
+        assert runner.invoke(app, ["enable", "--no-git-hooks"]).exit_code == 0
+
+        commands = [
+            h["command"] for entry in json.loads(settings_path.read_text())["hooks"]["Stop"] for h in entry["hooks"]
+        ]
+        assert "other-tool record" in commands
+        assert sum(1 for c in commands if "hook handle" in c) == 1
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_preserves_sibling_command_in_shared_entry(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        settings_path = repo / ".claude" / "settings.local.json"
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(
+            json.dumps(
+                {
+                    "hooks": {
+                        "Stop": [
+                            {
+                                "matcher": "",
+                                "hooks": [
+                                    {"type": "command", "command": "ec hook handle --type Stop", "timeout": 10},
+                                    {"type": "command", "command": "other-tool record", "timeout": 5},
+                                ],
+                            }
+                        ]
+                    }
+                }
+            )
+        )
+
+        result = runner.invoke(app, ["disable"])
+        assert result.exit_code == 0
+
+        commands = [
+            h["command"] for entry in json.loads(settings_path.read_text())["hooks"]["Stop"] for h in entry["hooks"]
+        ]
+        assert commands == ["other-tool record"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_quotes_claude_hook_executable_path(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        spaced = tmp_path / "bin with space"
+        spaced.mkdir()
+        ec_bin = spaced / "ec"
+        ec_bin.write_text("#!/bin/sh\n")
+        ec_bin.chmod(0o755)
+        monkeypatch.setattr("entirecontext.cli.project_cmds.shutil.which", lambda _: str(ec_bin))
+
+        assert runner.invoke(app, ["enable", "--no-git-hooks"]).exit_code == 0
+
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
+        command = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+        assert shlex.split(command)[0] == str(Path(ec_bin).resolve())
+        assert _is_ec_hook(settings["hooks"]["Stop"][0]), "quoted command must stay recognizable to ec disable"
+
+    def test_install_restores_exec_bit_on_owned_hook(self, tmp_path):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        hook = repo / ".git" / "hooks" / "post-commit"
+        hook.write_text("#!/bin/sh\n# EntireContext: create checkpoint on commit\n")
+        hook.chmod(0o644)
+
+        _install_git_hooks(str(repo))
+
+        assert hook.stat().st_mode & stat.S_IEXEC
+
+    def test_install_skips_when_core_hooks_path_is_set(self, tmp_path, capsys):
+        repo = tmp_path / "repo"
+        shared = tmp_path / "shared-hooks"
+        shared.mkdir()
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "core.hooksPath", str(shared)], check=True, capture_output=True
+        )
+
+        installed = _install_git_hooks(str(repo))
+
+        assert installed == []
+        assert "core.hooksPath" in capsys.readouterr().out
+        assert list(shared.iterdir()) == []
+
+    def test_install_skips_when_core_hooks_path_is_empty(self, tmp_path):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "config", "core.hooksPath", ""], check=True, capture_output=True)
+
+        installed = _install_git_hooks(str(repo))
+
+        assert installed == []
+        assert not (repo / "post-commit").exists()
+        assert not (repo / "pre-push").exists()
+
+    def test_remove_leaves_shared_hooks_path_untouched(self, tmp_path):
+        repo = tmp_path / "repo"
+        shared = tmp_path / "shared-hooks"
+        shared.mkdir()
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "config", "core.hooksPath", str(shared)], check=True, capture_output=True
+        )
+        sentinel = shared / "post-commit"
+        sentinel.write_text("#!/bin/sh\n# EntireContext: installed by another repo\n")
+
+        removed = _remove_git_hooks(str(repo))
+
+        assert removed == []
+        assert sentinel.exists()
+
+    def test_install_creates_missing_hooks_dir(self, tmp_path):
+        template = tmp_path / "empty-template"
+        template.mkdir()
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", f"--template={template}", str(repo)], check=True, capture_output=True)
+        assert not (repo / ".git" / "hooks").exists()
+
+        installed = _install_git_hooks(str(repo))
+
+        assert sorted(installed) == ["post-commit", "pre-push"]
+        assert (repo / ".git" / "hooks" / "post-commit").exists()
+
+    def test_hook_script_quotes_executable_path(self, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        spaced = tmp_path / "bin with space"
+        spaced.mkdir()
+        ec_bin = spaced / "ec"
+        ec_bin.write_text("#!/bin/sh\n")
+        ec_bin.chmod(0o755)
+        monkeypatch.setattr("entirecontext.cli.project_cmds.shutil.which", lambda _: str(ec_bin))
+
+        _install_git_hooks(str(repo))
+
+        content = (repo / ".git" / "hooks" / "post-commit").read_text()
+        command_line = [line for line in content.splitlines() if line and not line.startswith("#")][-1]
+        assert shlex.split(command_line)[0] == str(ec_bin)
+
+    def test_install_resolves_hooks_dir_in_linked_worktree(self, tmp_path):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@t.com"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "T"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "commit", "--allow-empty", "-m", "init"], check=True, capture_output=True
+        )
+        linked = tmp_path / "linked"
+        subprocess.run(
+            ["git", "-C", str(repo), "worktree", "add", "-b", "wt", str(linked)], check=True, capture_output=True
+        )
+        assert (linked / ".git").is_file()
+
+        installed = _install_git_hooks(str(linked))
+
+        assert sorted(installed) == ["post-commit", "pre-push"]
+        assert (repo / ".git" / "hooks" / "post-commit").exists()
+
     def test_post_commit_script_content(self, tmp_path):
         repo = tmp_path / "repo"
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
 
         _install_git_hooks(str(repo))
 
@@ -215,7 +522,7 @@ class TestGitHooksInstallation:
 
     def test_pre_push_script_content(self, tmp_path):
         repo = tmp_path / "repo"
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
 
         _install_git_hooks(str(repo))
 
@@ -348,8 +655,7 @@ class TestEnableDisableRoundTrip:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_disable_cleans_up(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         fake_home = tmp_path / "fakehome"
         fake_home.mkdir()
@@ -368,8 +674,7 @@ class TestEnableDisableRoundTrip:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_preserves_existing_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
-        repo.mkdir()
-        (repo / ".git" / "hooks").mkdir(parents=True)
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         fake_home = tmp_path / "fakehome"
         fake_home.mkdir()
@@ -403,6 +708,22 @@ class TestCodexIntegration:
         content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
         assert "codex-notify" in content
         assert not (repo / ".codex" / "config.toml").exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_skips_claude_and_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["enable", "--agent", "codex"])
+        assert result.exit_code == 0
+        assert not (repo / ".claude" / "settings.local.json").exists()
+        assert not (repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (repo / ".git" / "hooks" / "pre-push").exists()
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "entirecontext" in user_settings["mcpServers"]
 
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_codex_migrates_project_notify_to_upstream(self, mock_git_root, tmp_path, monkeypatch):
@@ -538,3 +859,155 @@ class TestCodexIntegration:
 
         result = runner.invoke(app, ["doctor", "--agent", "codex"])
         assert "codex" in result.output.lower()
+
+
+class TestInitInstallsIntegrations:
+    """ec init installs hooks by default; --no-hooks opts out."""
+
+    @staticmethod
+    def _hooks(repo):
+        settings = json.loads((repo / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
+        return settings["hooks"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_installs_hooks_by_default(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+
+        hooks = self._hooks(git_repo)
+        for name in ("SessionStart", "UserPromptSubmit", "Stop", "PostToolUse", "SessionEnd"):
+            assert any(_is_ec_hook(h) for h in hooks[name])
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_installs_git_hooks_by_default(
+        self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+
+        for name in ("post-commit", "pre-push"):
+            hook_path = git_repo / ".git" / "hooks" / name
+            assert hook_path.exists()
+            assert "EntireContext" in hook_path.read_text(encoding="utf-8")
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_registers_mcp_server(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        fake_home = tmp_path / "fakehome"
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "entirecontext" in user_settings["mcpServers"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_no_hooks_skips_installation(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        fake_home = tmp_path / "fakehome"
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["init", "--no-hooks"])
+        assert result.exit_code == 0
+        assert "ec enable" in result.output
+
+        # --no-hooks supersedes --agent, so an unrecognized value must not abort the
+        # database-only path.
+        result = runner.invoke(app, ["init", "--no-hooks", "--agent", "bogus"])
+        assert result.exit_code == 0
+
+        assert not (git_repo / ".claude" / "settings.local.json").exists()
+        assert not (git_repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (git_repo / ".git" / "hooks" / "pre-push").exists()
+        assert not (fake_home / ".claude" / "settings.json").exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_no_git_hooks_flag(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        result = runner.invoke(app, ["init", "--no-git-hooks"])
+        assert result.exit_code == 0
+
+        assert (git_repo / ".claude" / "settings.local.json").exists()
+        assert not (git_repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (git_repo / ".git" / "hooks" / "pre-push").exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_agent_codex_skips_claude_and_git_hooks(
+        self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        fake_home = tmp_path / "fakehome"
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["init", "--agent", "codex"])
+        assert result.exit_code == 0
+
+        assert "codex-notify" in (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert not (git_repo / ".claude" / "settings.local.json").exists()
+        assert not (git_repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (git_repo / ".git" / "hooks" / "pre-push").exists()
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "entirecontext" in user_settings["mcpServers"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_idempotent(self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+
+        assert runner.invoke(app, ["init"]).exit_code == 0
+        assert runner.invoke(app, ["init"]).exit_code == 0
+
+        assert len(self._hooks(git_repo)["SessionStart"]) == 1
+
+    @patch("entirecontext.cli.project_cmds._install_integrations")
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_hook_failure_warns_and_exits_zero(
+        self, mock_git_root, mock_install, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        monkeypatch.setenv("COLUMNS", "200")
+        mock_install.side_effect = OSError("boom")
+
+        result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+        assert result.exception is None
+        assert "boom" in result.output
+        assert "ec enable" in result.output
+
+    @patch("entirecontext.cli.project_cmds._install_integrations")
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_failure_recovery_preserves_agent(
+        self, mock_git_root, mock_install, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        monkeypatch.setenv("COLUMNS", "200")
+        mock_install.side_effect = OSError("boom")
+
+        result = runner.invoke(app, ["init", "--agent", "codex"])
+        assert result.exit_code == 0
+        assert "ec enable --agent codex" in result.output
+
+    @patch("entirecontext.cli.project_cmds._install_integrations")
+    @patch("entirecontext.core.project.find_git_root")
+    def test_init_failure_recovery_preserves_no_git_hooks(
+        self, mock_git_root, mock_install, git_repo, isolated_global_db, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        monkeypatch.setenv("COLUMNS", "200")
+        mock_install.side_effect = OSError("boom")
+
+        result = runner.invoke(app, ["init", "--no-git-hooks"])
+        assert result.exit_code == 0
+        assert "ec enable --agent claude --no-git-hooks" in result.output

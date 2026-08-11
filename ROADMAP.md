@@ -337,6 +337,19 @@ Carry-forward after v0.14.0:
 - [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
+## v0.16.0 — Hook Installation Correctness
+
+Carry-forward from PR #205 (`ec init` installs hooks). Moving installation into `ec init` made
+`_install_git_hooks()` and `_is_ec_hook()` reachable by every new user's first command, which
+surfaced correctness defects in both. The two Claude-hook items were fixed inside PR #205 after
+all; the rest remain open.
+
+- [x] **Claude hook group loses sibling commands** — `_is_ec_hook()` matches a matcher entry when *any* nested command is ours, and `enable`/`init` filter out the whole entry before re-adding. A matcher entry holding both an EntireContext command and another tool's command loses the sibling on reinstall. Fixed in PR #205: `_strip_ec_hooks()` removes only the matching inner command and drops the outer entry only when it becomes empty. Surfaced by PR #205 review (`3756069221`). _(data loss, P1)_
+- [x] **Claude hook commands are unquoted** — `_resolve_ec_command(quote_path=False)` writes a raw executable path into `.claude/settings.local.json`, so an `ec` under a path containing spaces produces a command the shell splits wrongly and no capture hook runs. PR #205 quoted the git hook scripts only, because `_is_ec_hook()` recognizes settings commands by substring and quoting would break idempotency and `ec disable` for existing installs. Fixed in PR #205: the settings command is quoted, and `_is_ec_command()` matches the raw string and the shlex-normalized string so existing unquoted installs stay recognizable to `ec disable`. Surfaced by PR #205 review (`3756069214`). _(correctness, P2)_
+- [ ] **`--agent codex` installs no git hooks** — git hook installation is nested inside the `claude|both` branch, but `post-commit` checkpointing and `pre-push` sync are agent-independent. Preserved rather than fixed in PR #205 because changing it alters `ec enable`, which that PR's spec excluded. Needs its own spec. _(correctness, P2)_
+- [ ] **`ec disable` does not undo MCP registration or Codex notify** — `enable`/`init` write `~/.claude/settings.json` and `~/.codex/config.toml`; `disable` removes only the hooks. Pre-existing asymmetry noted during PR #205. _(consistency, P3)_
+- [ ] **Spec directory drift** — AGENTS.md names `docs/superpowers/specs/` as the governing spec path, but the four most recent specs (2026-07-19, 07-21, 07-29, 08-11) were written to `docs/specs/`. Either migrate them and fix the `origin:` pointers, or update AGENTS.md to match practice. Surfaced by PR #205 review (`3755985909`). _(process, P2)_
+
 ## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Feature merged 2026-07-20)
 
 The feature scope is merged, but release artifacts remain at v0.14.0 (`v0.14.0` tag, `CHANGELOG.md`, `pyproject.toml`, and `src/entirecontext/__init__.py`). This section does not claim a published or tagged v0.15.0 release.
@@ -372,6 +385,8 @@ The last manual bottleneck is **outcome attribution**. Current automation: Sessi
 ## Hardening Backlog
 
 Structural debt outside the "decision memory depth" wedge. The three items previously listed here (`confirm_candidate` atomicity, `LEGACY_TRANSACTION_CONTROL`, review-bot noise) have been absorbed into v0.5.0 — see S1, S2, S4 above. New items go here as they are surfaced.
+
+All PR #205 carry-forwards are registered under v0.16.0 above.
 
 ## Later
 

@@ -249,16 +249,13 @@ Tagged GitHub releases also include the built wheel and source tarball as releas
 Use the same workflow after either install path:
 
 ```bash
-# 2. Initialize in your repo
+# 2. Initialize in your repo — installs Claude Code hooks, git hooks, and MCP config
 cd your-project
 ec init
 
-# 3. Install Claude Code hooks
-ec enable
+# 3. Use Claude Code as usual — sessions are captured automatically
 
-# 4. Use Claude Code as usual — sessions are captured automatically
-
-# 5. Query your history
+# 4. Query your history
 ec search "authentication"
 ec search "refactor" --fts
 ec session list
@@ -272,7 +269,6 @@ ec checkpoint list
 - PowerShell example:
   ```powershell
   ec init
-  ec enable
   ec search "authentication"
   ```
 - If `ec` is not recognized, open a new terminal (or sign out/in) so updated PATH is loaded.
@@ -286,8 +282,8 @@ The sections below are reference material for the current CLI surface. They stay
 
 | Command | Description |
 |---------|-------------|
-| `ec init` | Initialize EntireContext in current git repo |
-| `ec enable [--no-git-hooks]` | Install Claude Code hooks, git hooks, and user-level MCP config (skip git hooks with `--no-git-hooks`) |
+| `ec init [--no-hooks] [--no-git-hooks] [--agent claude\|codex\|both]` | Initialize EntireContext in current git repo and install Claude Code hooks, git hooks, and user-level MCP config (skip all installation with `--no-hooks`) |
+| `ec enable [--no-git-hooks] [--agent claude\|codex\|both]` | Reinstall the same hooks and MCP config without touching the database — use it to repair a clobbered config |
 | `ec disable` | Remove Claude Code hooks and installed git hooks |
 | `ec status` | Show capture status (project, sessions, turns, active session) |
 | `ec config [KEY] [VALUE]` | Get or set configuration (dotted keys) |
@@ -459,14 +455,14 @@ EntireContext exposes the same retrieval and assessment primitives to coding age
 
 ### Automatic Setup
 
-`ec enable` automatically registers the MCP server in `~/.claude/settings.json` (user-level):
+`ec init` automatically registers the MCP server in `~/.claude/settings.json` (user-level):
 
 ```bash
-ec enable    # installs hooks AND configures MCP server
+ec init      # initializes the repo, installs hooks AND configures MCP server
 ec doctor    # verify MCP config is present
 ```
 
-This is idempotent — running `ec enable` again skips the MCP entry if it already exists. `ec disable` removes hooks but preserves the MCP config (other repos may use it).
+`ec enable` does the same registration without the database work, so either command gets you there. Both are idempotent — a repeat run skips the MCP entry if it already exists. `ec disable` removes hooks but preserves the MCP config (other repos may use it).
 
 ### Manual Setup
 
@@ -539,7 +535,7 @@ All tools accept a `repos` parameter for cross-repo queries: `null` = current re
 
 ## Hook System
 
-`ec enable` installs two kinds of hooks automatically. No manual intervention required.
+`ec init` installs two kinds of hooks automatically on the default `--agent claude` path. No manual intervention required. `ec enable` reinstalls the same set. `--agent codex` writes only the Codex notify entry and the MCP registration — it installs neither the Claude Code hooks nor the git hooks.
 
 ### Claude Code Hooks (`.claude/settings.local.json`)
 
@@ -560,7 +556,7 @@ Hook protocol: stdin JSON, exit code 0 = success, 2 = block.
 | `post-commit` | `git commit` | Create checkpoint tied to the new commit if a session is active |
 | `pre-push` | `git push` | Run `ec sync` if `auto_sync_on_push` is enabled |
 
-Skip git hook installation with `ec enable --no-git-hooks`. Both hooks are removed by `ec disable`.
+Skip git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. Both hooks are removed by `ec disable`.
 
 ## Configuration
 

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
+import shlex
 import shutil
 import stat
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -253,49 +256,197 @@ def _disable_codex_notify(repo_path: str) -> bool:
     return found
 
 
-def _resolve_ec_command(hook_type: str | None = None) -> str:
-    if shutil.which("ec"):
-        base = f"{Path(shutil.which('ec')).resolve()} hook handle"
+def _resolve_ec_command(hook_type: str | None = None, quote_path: bool = False) -> str:
+    """Build the `ec hook handle` invocation.
+
+    `quote_path` shell-quotes the executable path so an `ec` under a path containing spaces
+    still runs. It is safe for the Claude settings command as well as the git hook scripts
+    because `_is_ec_command` recognizes the quoted and unquoted forms alike.
+    """
+    ec_bin = shutil.which("ec")
+    if ec_bin:
+        executable = str(Path(ec_bin).resolve())
+        base = f"{shlex.quote(executable) if quote_path else executable} hook handle"
     else:
-        base = f"{sys.executable} -m entirecontext.cli hook handle"
+        executable = shlex.quote(sys.executable) if quote_path else sys.executable
+        base = f"{executable} -m entirecontext.cli hook handle"
     if hook_type:
         base += f" --type {hook_type}"
     return base
 
 
+def _is_ec_command(cmd: str) -> bool:
+    """Recognize an EntireContext hook command however it was written.
+
+    Three forms have to match, because failing to recognize one makes `ec disable` leave the
+    hook behind and every reinstall append a duplicate:
+
+    - `/usr/local/bin/ec hook handle` — what older installs wrote, path raw
+    - `'/x y/ec' hook handle` — what current installs write, path shell-quoted
+    - `C:\\...\\ec.exe hook handle` — the Windows console-script launcher
+
+    Matching is token-based rather than by substring, because `ec hook handle` is a substring
+    of another tool's `myec hook handle` and deleting a foreign hook is worse than missing
+    one of ours.
+    """
+    if not cmd:
+        return False
+    return any(_tokens_are_ec_invocation(t) for t in _tokenizations(cmd))
+
+
+def _tokenizations(cmd: str) -> list[list[str]]:
+    """Split a command both ways, because neither split alone covers both platforms.
+
+    POSIX mode resolves the quotes current installs write, but eats the backslashes in a
+    Windows path. Non-POSIX mode keeps the path intact but leaves the quotes attached.
+    """
+    results = []
+    for posix in (True, False):
+        try:
+            tokens = shlex.split(cmd, posix=posix)
+        except ValueError:
+            continue
+        if tokens:
+            results.append(tokens)
+    return results
+
+
+def _tokens_are_ec_invocation(tokens: list[str]) -> bool:
+    rest = tokens[1:]
+    if _executable_name(tokens[0]) == "ec":
+        return rest[:2] == ["hook", "handle"]
+    return rest[:4] == ["-m", "entirecontext.cli", "hook", "handle"]
+
+
+def _executable_name(token: str) -> str:
+    """Basename of a command token, without surrounding quotes or a Windows `.exe` suffix.
+
+    Splits on both separators rather than using `Path`, because the flavor that wrote the
+    settings file is not necessarily the one reading it.
+    """
+    name = re.split(r"[\\/]", token.strip("'\""))[-1].lower()
+    return name[:-4] if name.endswith(".exe") else name
+
+
 def _is_ec_hook(entry: dict) -> bool:
-    cmd = entry.get("command", "")
-    if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
+    if _is_ec_command(entry.get("command", "")):
         return True
-    for h in entry.get("hooks", []):
-        cmd = h.get("command", "")
-        if "ec hook handle" in cmd or "entirecontext.cli hook handle" in cmd:
-            return True
-    return False
+    return any(_is_ec_command(h.get("command", "")) for h in entry.get("hooks", []))
 
 
-def init():
-    """Initialize EntireContext in current git repo."""
+def _strip_ec_hooks(entries: list) -> list:
+    """Remove EntireContext commands, preserving sibling commands in the same entry.
+
+    A matcher entry can hold several nested commands. Dropping the whole entry because one
+    of them is ours would delete another tool's hook.
+    """
+    kept = []
+    for entry in entries:
+        if _is_ec_command(entry.get("command", "")):
+            continue
+        inner = entry.get("hooks")
+        if isinstance(inner, list):
+            remaining = [h for h in inner if not _is_ec_command(h.get("command", ""))]
+            if not remaining:
+                continue
+            if len(remaining) != len(inner):
+                entry = {**entry, "hooks": remaining}
+        kept.append(entry)
+    return kept
+
+
+def init(
+    no_hooks: bool = typer.Option(False, "--no-hooks", help="Skip hook and MCP installation"),
+    no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
+    agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
+):
+    """Initialize EntireContext in current git repo and install agent hooks."""
     from ..core.project import init_project
+
+    if not no_hooks:
+        agent = _parse_agent_option(agent)
 
     try:
         project = init_project()
         console.print(f"[green]Initialized EntireContext[/green] in {project['repo_path']}")
         console.print(f"  Project: {project['name']} ({project['id'][:8]}...)")
-        console.print("  Run [bold]ec enable[/bold] to install Claude Code hooks.")
     except RuntimeError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
 
+    if no_hooks:
+        console.print("  Run [bold]ec enable[/bold] to install Claude Code hooks.")
+        return
+
+    try:
+        _install_integrations(project["repo_path"], agent, no_git_hooks)
+    except Exception as exc:
+        retry = f"ec enable --agent {agent}"
+        if no_git_hooks:
+            retry += " --no-git-hooks"
+        console.print(f"[yellow]Warning:[/yellow] hook installation failed: {exc}")
+        console.print(f"  Run [bold]{retry}[/bold] to retry.")
+
+
+def _git_capture(repo_path: str, args: list[str]) -> str | None:
+    """Run a git command in repo_path. Returns stripped stdout, or None on any failure."""
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _has_custom_hooks_path(repo_path: str) -> bool:
+    """True when core.hooksPath is set, which may point outside this repository.
+
+    Presence, not truthiness: `core.hooksPath = ""` exits 0 with empty output, and treating
+    that as unset makes `git rev-parse --git-path hooks` resolve to the repository root.
+    """
+    return _git_capture(repo_path, ["config", "--get", "core.hooksPath"]) is not None
+
+
+def _resolve_hooks_dir(repo_path: str, create: bool = False) -> Path | None:
+    """Resolve git's effective hooks directory. Returns None when it cannot be determined.
+
+    In a linked worktree `.git` is a file, so `<repo>/.git/hooks` does not exist; git
+    resolves the hooks path into the main repository instead. Callers must rule out
+    `core.hooksPath` first — see `_has_custom_hooks_path`.
+    """
+    out = _git_capture(repo_path, ["rev-parse", "--git-path", "hooks"])
+    if out is None:
+        return None
+
+    hooks_dir = Path(out)
+    if not hooks_dir.is_absolute():
+        hooks_dir = Path(repo_path) / hooks_dir
+    if create:
+        try:
+            hooks_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+    return hooks_dir if hooks_dir.is_dir() else None
+
 
 def _install_git_hooks(repo_path: str) -> list[str]:
     """Install git hooks (post-commit, pre-push). Returns list of installed hook names."""
-    hooks_dir = Path(repo_path) / ".git" / "hooks"
-    if not hooks_dir.exists():
+    if _has_custom_hooks_path(repo_path):
+        console.print("[yellow]Warning:[/yellow] core.hooksPath is set; skipping git hook installation.")
+        return []
+
+    hooks_dir = _resolve_hooks_dir(repo_path, create=True)
+    if hooks_dir is None:
+        console.print("[yellow]Warning:[/yellow] could not resolve the git hooks directory; skipping git hooks.")
         return []
 
     installed = []
-    ec_cmd = _resolve_ec_command()
+    ec_cmd = _resolve_ec_command(quote_path=True)
 
     post_commit_script = f"""#!/bin/sh
 # EntireContext: create checkpoint on commit if active session
@@ -311,7 +462,10 @@ def _install_git_hooks(repo_path: str) -> list[str]:
         if hook_path.exists():
             content = hook_path.read_text(encoding="utf-8")
             if "EntireContext" in content:
+                hook_path.chmod(hook_path.stat().st_mode | stat.S_IEXEC)
                 continue
+            console.print(f"[yellow]Warning:[/yellow] {name} hook already exists and is not ours; leaving it alone.")
+            continue
         hook_path.write_text(script, encoding="utf-8")
         hook_path.chmod(hook_path.stat().st_mode | stat.S_IEXEC)
         installed.append(name)
@@ -321,8 +475,11 @@ def _install_git_hooks(repo_path: str) -> list[str]:
 
 def _remove_git_hooks(repo_path: str) -> list[str]:
     """Remove EntireContext git hooks. Returns list of removed hook names."""
-    hooks_dir = Path(repo_path) / ".git" / "hooks"
-    if not hooks_dir.exists():
+    if _has_custom_hooks_path(repo_path):
+        return []
+
+    hooks_dir = _resolve_hooks_dir(repo_path)
+    if hooks_dir is None:
         return []
 
     removed = []
@@ -337,19 +494,8 @@ def _remove_git_hooks(repo_path: str) -> list[str]:
     return removed
 
 
-def enable(
-    no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
-    agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
-):
-    """Enable auto-capture by installing agent hooks."""
-    from ..core.project import find_git_root
-
-    agent = _parse_agent_option(agent)
-    repo_path = find_git_root()
-    if not repo_path:
-        console.print("[red]Not in a git repository.[/red]")
-        raise typer.Exit(1)
-
+def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> None:
+    """Install agent hooks, git hooks, and the user-level MCP server entry."""
     if agent in {"claude", "both"}:
         settings_path = Path(repo_path) / ".claude" / "settings.local.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -370,7 +516,9 @@ def enable(
             name: [
                 {
                     "matcher": "",
-                    "hooks": [{"type": "command", "command": _resolve_ec_command(name), "timeout": timeout}],
+                    "hooks": [
+                        {"type": "command", "command": _resolve_ec_command(name, quote_path=True), "timeout": timeout}
+                    ],
                 }
             ]
             for name, timeout in hook_timeouts.items()
@@ -378,7 +526,7 @@ def enable(
 
         for hook_name, hook_configs in ec_hooks.items():
             existing = hooks.get(hook_name, [])
-            existing = [h for h in existing if not _is_ec_hook(h)]
+            existing = _strip_ec_hooks(existing)
             existing.extend(hook_configs)
             hooks[hook_name] = existing
 
@@ -411,6 +559,22 @@ def enable(
         console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
 
 
+def enable(
+    no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
+    agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
+):
+    """Enable auto-capture by installing agent hooks."""
+    from ..core.project import find_git_root
+
+    agent = _parse_agent_option(agent)
+    repo_path = find_git_root()
+    if not repo_path:
+        console.print("[red]Not in a git repository.[/red]")
+        raise typer.Exit(1)
+
+    _install_integrations(repo_path, agent, no_git_hooks)
+
+
 def disable(
     agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
 ):
@@ -436,8 +600,8 @@ def disable(
             path_changed = False
             for hook_name in list(hooks.keys()):
                 original = hooks[hook_name]
-                filtered = [h for h in original if not _is_ec_hook(h)]
-                if len(filtered) != len(original):
+                filtered = _strip_ec_hooks(original)
+                if filtered != original:
                     path_changed = True
                     changed = True
                 if filtered:

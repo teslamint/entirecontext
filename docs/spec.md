@@ -173,8 +173,8 @@ Runtime entrypoint:
 
 Install location and format:
 
-- Claude Code hooks are installed by `ec enable` into `.claude/settings.local.json` using Claude hook object format with `matcher` + nested `hooks`.
-- User-level MCP config is installed by `ec enable` into `~/.claude/settings.json` under `mcpServers.entirecontext`.
+- Claude Code hooks are installed by `ec init` into `.claude/settings.local.json` using Claude hook object format with `matcher` + nested `hooks`. `ec enable` performs the same installation and exists as the re-install path.
+- User-level MCP config is installed by `ec init` into `~/.claude/settings.json` under `mcpServers.entirecontext`, and by `ec enable` on the same terms.
 
 Exit codes:
 
@@ -183,7 +183,7 @@ Exit codes:
 
 ## 4.4 Git hooks `[Implemented]`
 
-Installed by `ec enable` unless `--no-git-hooks` is passed:
+Installed by `ec init` (or `ec enable`) only when the target agent is `claude` or `both`, and only when `--no-git-hooks` is not passed. `--agent codex` installs no git hooks, and `ec init --no-hooks` skips them along with everything else:
 
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
 - `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`
