@@ -184,7 +184,7 @@ def distill_lessons(assessments: list[dict]) -> str:
             if a.get("feedback_reason"):
                 lines.append(f"**Feedback:** {a['feedback']} — {a['feedback_reason']}")
                 lines.append("")
-            lines.append(f"_Assessment: {a['id'][:8]} | {a.get('created_at', '')}_ ")
+            lines.append(f"_Assessment: {a['id'][:8]} | {a.get('created_at', '')}_")
             lines.append("")
 
     return "\n".join(lines) + "\n"
