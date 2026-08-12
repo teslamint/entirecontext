@@ -2,7 +2,8 @@
 schema: plan/v1
 title: "@overload for the include_warnings cross-repo functions"
 type: refactor
-status: approved
+status: done
+completed_by: 99e16672ae89329d9f8e9de7269457c598f69b95
 date: 2026-08-12
 execution: code
 origin: docs/specs/2026-08-12-cross-repo-overload-design.md
