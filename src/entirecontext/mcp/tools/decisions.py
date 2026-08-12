@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
+
+from typing import Any
 
 from .. import runtime
 
 
-def _ensure_list(value: str | dict | list | None, field_name: str) -> list | None:
+def _ensure_list(value: str | dict[str, Any] | list[Any] | None, field_name: str) -> list[Any] | None:
     """Coerce common agent input shapes for list fields into proper lists."""
     if value is None:
         return None
@@ -22,9 +25,10 @@ def _ensure_list(value: str | dict | list | None, field_name: str) -> list | Non
 
 
 async def ec_decision_get(decision_id: str) -> str:
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import get_decision
 
@@ -61,9 +65,10 @@ async def ec_decision_related(
         since: Lower-bound filter — only return decisions created after this date (git ref or ISO date)
         until: Upper-bound filter — only return decisions created before this date (git ref or ISO date)
     """
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.config import load_config
         from ...core.decisions import (
@@ -184,9 +189,10 @@ async def ec_decision_context(
     """
     import subprocess
 
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.config import load_config
         from ...core.decisions import (
@@ -387,7 +393,7 @@ async def ec_decision_context(
             )
             item["selection_id"] = selection_id
 
-        payload = {
+        payload: dict[str, Any] = {
             "decisions": decisions,
             "count": len(decisions),
             "retrieval_event_id": tracked_event_id,
@@ -422,9 +428,10 @@ async def ec_decision_outcome(
     enabling quality tracking. Falls back to the current session context when
     session_id and turn_id are not explicitly provided.
     """
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import record_decision_outcome
         from ...core.telemetry import detect_current_context
@@ -456,8 +463,8 @@ async def ec_decision_create(
     title: str,
     rationale: str | None = None,
     scope: str | None = None,
-    rejected_alternatives: list[str] | str | dict | None = None,
-    supporting_evidence: list | str | dict | None = None,
+    rejected_alternatives: list[str] | str | dict[str, Any] | None = None,
+    supporting_evidence: list[Any] | str | dict[str, Any] | None = None,
 ) -> str:
     """Create a new decision record.
 
@@ -468,9 +475,10 @@ async def ec_decision_create(
         rejected_alternatives: List of alternatives that were considered and rejected
         supporting_evidence: Evidence supporting the decision
     """
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         rejected_alternatives = _ensure_list(rejected_alternatives, "rejected_alternatives")
         supporting_evidence = _ensure_list(supporting_evidence, "supporting_evidence")
@@ -511,9 +519,10 @@ async def ec_decision_list(
         limit: Maximum results (default 20)
         include_contradicted: Include contradicted decisions (default False)
     """
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import list_decisions
         from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
@@ -556,9 +565,10 @@ async def ec_decision_stale(decision_id: str) -> str:
     Args:
         decision_id: Decision ID (supports prefix)
     """
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import check_staleness
 
@@ -622,7 +632,7 @@ async def ec_decision_search(
         except TQLError as exc:
             return runtime.error_payload(str(exc))
 
-        def _query(conn, _repo):
+        def _query(conn: sqlite3.Connection, _repo: dict[str, Any]) -> list[dict[str, Any]]:
             if search_type == "hybrid":
                 return hybrid_search_decisions(
                     conn,
@@ -655,9 +665,10 @@ async def ec_decision_search(
         formatted = _format_decision_results(all_results)
         return json.dumps({"decisions": formatted, "count": len(formatted), "retrieval_event_id": None})
 
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import fts_search_decisions, hybrid_search_decisions
         from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
@@ -735,10 +746,10 @@ def _truncate(text: str, max_len: int) -> str:
     return text if len(text) <= max_len else text[:max_len] + "…"
 
 
-def _format_decision_results(results: list[dict]) -> list[dict]:
+def _format_decision_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     formatted = []
     for r in results:
-        entry: dict = {
+        entry: dict[str, Any] = {
             "id": r.get("id", ""),
             "title": r.get("title", ""),
             "rationale_excerpt": _truncate(r.get("rationale") or "", 200),
@@ -756,7 +767,7 @@ def _format_decision_results(results: list[dict]) -> list[dict]:
     return formatted
 
 
-def register_tools(mcp, services=None) -> None:
+def register_tools(mcp: Any, services: runtime.ServiceRegistry | None = None) -> None:
     for tool in (
         ec_decision_get,
         ec_decision_related,

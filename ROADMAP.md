@@ -342,13 +342,15 @@ Carry-forward after v0.14.0:
 Carry-forward from PR #205 (`ec init` installs hooks). Moving installation into `ec init` made
 `_install_git_hooks()` and `_is_ec_hook()` reachable by every new user's first command, which
 surfaced correctness defects in both. The two Claude-hook items were fixed inside PR #205 after
-all; the rest remain open.
+all; the rest remain open. The `@overload` item at the end is unrelated to hooks — it is typing
+debt surfaced by PR #215 and given a target version here so it does not sit unscheduled.
 
 - [x] **Claude hook group loses sibling commands** — `_is_ec_hook()` matches a matcher entry when *any* nested command is ours, and `enable`/`init` filter out the whole entry before re-adding. A matcher entry holding both an EntireContext command and another tool's command loses the sibling on reinstall. Fixed in PR #205: `_strip_ec_hooks()` removes only the matching inner command and drops the outer entry only when it becomes empty. Surfaced by PR #205 review (`3756069221`). _(data loss, P1)_
 - [x] **Claude hook commands are unquoted** — `_resolve_ec_command(quote_path=False)` writes a raw executable path into `.claude/settings.local.json`, so an `ec` under a path containing spaces produces a command the shell splits wrongly and no capture hook runs. PR #205 quoted the git hook scripts only, because `_is_ec_hook()` recognizes settings commands by substring and quoting would break idempotency and `ec disable` for existing installs. Fixed in PR #205: the settings command is quoted, and `_is_ec_command()` matches the raw string and the shlex-normalized string so existing unquoted installs stay recognizable to `ec disable`. Surfaced by PR #205 review (`3756069214`). _(correctness, P2)_
 - [ ] **`--agent codex` installs no git hooks** — git hook installation is nested inside the `claude|both` branch, but `post-commit` checkpointing and `pre-push` sync are agent-independent. Preserved rather than fixed in PR #205 because changing it alters `ec enable`, which that PR's spec excluded. Needs its own spec. _(correctness, P2)_
 - [ ] **`ec disable` does not undo MCP registration or Codex notify** — `enable`/`init` write `~/.claude/settings.json` and `~/.codex/config.toml`; `disable` removes only the hooks. Pre-existing asymmetry noted during PR #205. _(consistency, P3)_
 - [ ] **Spec directory drift** — AGENTS.md names `docs/superpowers/specs/` as the governing spec path, but the four most recent specs (2026-07-19, 07-21, 07-29, 08-11) were written to `docs/specs/`. Either migrate them and fix the `origin:` pointers, or update AGENTS.md to match practice. Surfaced by PR #205 review (`3755985909`). _(process, P2)_
+- [ ] **Add `@overload` to the `include_warnings` cross-repo functions** — eleven functions in `src/entirecontext/core/cross_repo.py` return `X | tuple[X, list[WarningEntry]]` depending on the `include_warnings` argument, a shape mypy cannot resolve from a literal argument. Four MCP call sites work around it with `cast` (`tools/search.py`, `tools/session.py` ×2, `tools/checkpoint.py`); every future caller will need the same. Fix by declaring `@overload` variants keyed on `Literal[True]` / `Literal[False]`, then removing the casts. Surfaced while lifting the MCP mypy overrides in PR #215. _(type-safety debt, P3)_
 
 ## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Feature merged 2026-07-20)
 
@@ -388,7 +390,7 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 
 All PR #205 carry-forwards are registered under v0.16.0 above.
 
-- [ ] **Lift the `entirecontext.mcp.*` mypy overrides** — `pyproject.toml:146-154` places all nine MCP modules under `ignore_errors = true`, so mypy reports nothing for 2,261 lines of MCP server code even with the `mcp` extra installed. Measured with the overrides removed: 127 errors across 9 files — 42 `no-untyped-call`, 30 `no-any-return`, 18 `no-untyped-def`, 13 `type-arg`, 12 `union-attr`, 12 other. ADR 0002 states this list should shrink over time. Surfaced by review on PR #212. _(type-safety debt, P2)_
+- [x] **Lift the `entirecontext.mcp.*` mypy overrides** — all nine MCP modules sat under `ignore_errors = true`, hiding 127 errors across 2,261 lines. Removed in three stages: annotate `runtime.py` (127 → 106), replace the `resolve_repo` tuple-plus-error-payload shape with a raising `open_repo` (106 → 48, since 60 errors traced to the unnarrowable `Connection | None`), then annotate the remaining modules (48 → 0). `mypy src/entirecontext/` now enforces the whole package in CI. ADR 0002's override list is nine entries shorter. Surfaced by review on PR #212.
 
 - [x] **`distill_lessons` emits duplicate Markdown headings** — every `LESSONS.md` heading came from `impact_summary` alone, so repeated summaries (`Auto-assessed checkpoint` ×7, identical `chore(deps)` bumps) collided and all but the first anchor became unreachable. Fixed by appending the short assessment ID to the heading; `test_distill_lessons_headings_are_unique_per_assessment` guards it. No markdownlint config or CI step was added — the unit test is the enforcement point. Surfaced by CodeRabbit review on PR #206.
 

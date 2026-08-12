@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import time
 
+from typing import Any, cast
+
 from .. import runtime
 
 
@@ -22,13 +24,15 @@ async def ec_search(
     repo_names = runtime.normalize_repo_names(repos)
     is_cross_repo = repos is not None and repos != ""
 
+    resolved_since: str | None = None
+    resolved_until: str | None = None
+    until_exclusive: bool = False
+    results: list[dict[str, Any]]
+
     if is_cross_repo:
         from ...core.cross_repo import cross_repo_search
         from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
-        resolved_since: str | None = None
-        resolved_until: str | None = None
-        until_exclusive: bool = False
         bound_conn = None
         try:
             if since or until:
@@ -51,25 +55,32 @@ async def ec_search(
                 bound_conn.close()
 
         try:
-            results = cross_repo_search(
-                query,
-                search_type=search_type,
-                repos=repo_names,
-                file_filter=file_filter,
-                commit_filter=commit_filter,
-                agent_filter=agent_filter,
-                since=resolved_since,
-                until=resolved_until,
-                until_exclusive=until_exclusive,
-                limit=limit,
+            # cast: cross_repo_search's return type is conditional on include_warnings,
+            # which mypy cannot express without @overload on the definition. Omitting the
+            # argument makes the branch unambiguous. See ROADMAP.md.
+            results = cast(
+                "list[dict[str, Any]]",
+                cross_repo_search(
+                    query,
+                    search_type=search_type,
+                    repos=repo_names,
+                    file_filter=file_filter,
+                    commit_filter=commit_filter,
+                    agent_filter=agent_filter,
+                    since=resolved_since,
+                    until=resolved_until,
+                    until_exclusive=until_exclusive,
+                    limit=limit,
+                ),
             )
         except ValueError as exc:
             return runtime.error_payload(str(exc))
         retrieval_event_id = None
     else:
-        (conn, repo_path), error = runtime.resolve_repo()
-        if error:
-            return error
+        try:
+            conn, repo_path = runtime.open_repo()
+        except runtime.RepoResolutionError as exc:
+            return runtime.error_payload(str(exc))
 
         try:
             from ...core.config import load_config
@@ -77,9 +88,6 @@ async def ec_search(
 
             config = load_config(repo_path)
 
-            resolved_since: str | None = None
-            resolved_until: str | None = None
-            until_exclusive: bool = False
             try:
                 if since:
                     resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
@@ -226,9 +234,10 @@ async def ec_related(
         ]
         return json.dumps({"related": related, "count": len(related), "warnings": warnings})
 
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         results = []
@@ -281,9 +290,10 @@ async def ec_ast_search(
     file_filter: str | None = None,
     limit: int = 20,
 ) -> str:
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         from ...core.ast_index import search_ast_symbols
@@ -304,9 +314,10 @@ async def ec_activate(
     if not seed_turn_id and not seed_session_id:
         return runtime.error_payload("Either seed_turn_id or seed_session_id is required")
 
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         from ...core.activation import spread_activation
@@ -324,6 +335,6 @@ async def ec_activate(
         conn.close()
 
 
-def register_tools(mcp, services=None) -> None:
+def register_tools(mcp: Any, services: runtime.ServiceRegistry | None = None) -> None:
     for tool in (ec_search, ec_related, ec_ast_search, ec_activate):
         mcp.tool()(tool)
