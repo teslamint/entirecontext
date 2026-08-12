@@ -2,7 +2,8 @@
 schema: plan/v1
 title: ec init installs hooks
 type: feat
-status: approved
+status: done
+completed_by: 705765762c13fe3befbd484ed7a752ae6bdecfdf
 date: 2026-08-11
 execution: code
 origin: docs/specs/2026-08-11-init-installs-hooks-design.md
