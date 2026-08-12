@@ -6,7 +6,7 @@ branch: fix/disable-empty-group-key-deletion
 phase: done
 phase_status: complete
 updated: 2026-08-12T21:55:00Z
-spec: .release-loop/briefs/spec-disable-empty-group-key.md
+spec: .release-loop/archive/2026-08-12-disable-empty-group-key/spec-disable-empty-group-key.md
 ---
 
 ## Final Action
