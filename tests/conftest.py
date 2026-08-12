@@ -3,11 +3,26 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 import pytest
 
 import tests.conftest_hypothesis  # noqa: F401
+
+
+@pytest.fixture(autouse=True)
+def hermetic_git_config(monkeypatch):
+    """Isolate every git invocation from the host's global and system config.
+
+    Whatever the developer has set globally — commit.gpgsign, signing keys,
+    aliases, hook paths — otherwise leaks into the repos these tests build, so a
+    test's outcome depends on whose machine it runs on. Individual fixtures used
+    to disable commit.gpgsign one at a time; each new call site reintroduced the
+    same failure until it was patched too.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
 
 
 @pytest.fixture(autouse=True)
