@@ -143,7 +143,6 @@ module = [
     "entirecontext.hooks.handler",
     "entirecontext.hooks.session_lifecycle",
     "entirecontext.hooks.turn_capture",
-    "entirecontext.mcp.runtime",
     "entirecontext.mcp.server",
     "entirecontext.mcp.tools.checkpoint",
     "entirecontext.mcp.tools.decision_candidates",

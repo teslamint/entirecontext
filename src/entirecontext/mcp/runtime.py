@@ -9,6 +9,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -88,13 +89,13 @@ def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | str:
     return context.conn, context.repo_path
 
 
-def _list_valid_registered_repos() -> list[dict]:
+def _list_valid_registered_repos() -> list[dict[str, Any]]:
     from ..core.context import GlobalContext, RepoContext
 
     with GlobalContext.create() as global_context:
         repos = global_context.list_registered_repos()
 
-    valid_repos: list[dict] = []
+    valid_repos: list[dict[str, Any]] = []
     for repo in repos:
         repo_path = repo.get("repo_path")
         if not repo_path or not _path_exists_timeout(repo_path):
@@ -107,7 +108,7 @@ def _list_valid_registered_repos() -> list[dict]:
     return valid_repos
 
 
-def _open_single_registered_repo(valid_repos: list[dict]) -> tuple[sqlite3.Connection, str]:
+def _open_single_registered_repo(valid_repos: list[dict[str, Any]]) -> tuple[sqlite3.Connection, str]:
     """Open the sole registered repo, raising on ambiguity or absence."""
     from ..core.context import RepoContext
 
@@ -153,26 +154,30 @@ def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
     return result
 
 
-def resolve_repo():
+def resolve_repo() -> tuple[tuple[sqlite3.Connection, str] | tuple[None, None], str | None]:
+    """Return ``((conn, repo_path), None)`` on success, ``((None, None), error_json)`` on failure.
+
+    Callers unpack both halves and return the error payload verbatim when it is not None.
+    """
     try:
         return get_repo_db(), None
     except RepoResolutionError as exc:
         return (None, None), error_payload(str(exc))
 
 
-def detect_current_session(conn):
+def detect_current_session(conn: sqlite3.Connection) -> str | None:
     from . import server
 
     return server._detect_current_session(conn)
 
 
-def record_search_event(conn, **kwargs):
+def record_search_event(conn: sqlite3.Connection, **kwargs: Any) -> str:
     from . import server
 
     return server._record_search_event(conn, **kwargs)
 
 
-def record_selection(conn, **kwargs):
+def record_selection(conn: sqlite3.Connection, **kwargs: Any) -> str | None:
     from . import server
 
     return server._record_selection(conn, **kwargs)
@@ -184,8 +189,8 @@ def normalize_repo_names(repos: str | list[str] | None) -> list[str] | None:
     return None if not repos or repos == ["*"] else repos
 
 
-def error_payload(message: str, *, warnings: list | None = None, **extra) -> str:
-    payload = {"error": message}
+def error_payload(message: str, *, warnings: list[Any] | None = None, **extra: Any) -> str:
+    payload: dict[str, Any] = {"error": message}
     if warnings:
         payload["warnings"] = warnings
     payload.update(extra)
