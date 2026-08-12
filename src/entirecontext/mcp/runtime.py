@@ -154,10 +154,24 @@ def get_repo_db(repo_hint: str | None = None) -> tuple[sqlite3.Connection, str]:
     return result
 
 
+def open_repo() -> tuple[sqlite3.Connection, str]:
+    """Resolve the target repo, raising ``RepoResolutionError`` when it cannot be opened.
+
+    Preferred over :func:`resolve_repo` for tools that cannot proceed without a
+    connection. The tuple-plus-error-payload shape forces a ``Connection | None``
+    on the caller that no ``if error:`` check can narrow away, so every use of the
+    connection had to be either unchecked or guarded by hand. Raising keeps the
+    success path free of ``None``.
+    """
+    return get_repo_db()
+
+
 def resolve_repo() -> tuple[tuple[sqlite3.Connection, str] | tuple[None, None], str | None]:
     """Return ``((conn, repo_path), None)`` on success, ``((None, None), error_json)`` on failure.
 
-    Callers unpack both halves and return the error payload verbatim when it is not None.
+    For best-effort callers that continue without a repo — cross-repo search resolving
+    temporal refs against whatever local repo happens to be present. Tools that need a
+    connection should use :func:`open_repo` instead.
     """
     try:
         return get_repo_db(), None

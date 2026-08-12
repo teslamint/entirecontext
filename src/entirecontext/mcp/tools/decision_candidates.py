@@ -15,9 +15,10 @@ async def ec_decision_candidate_list(
     limit: int = 50,
 ) -> str:
     """List candidate decisions. Filter by session, status, confidence, source type (session|checkpoint|assessment|archaeology)."""
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decision_candidates import list_candidates
 
@@ -38,9 +39,10 @@ async def ec_decision_candidate_list(
 
 async def ec_decision_candidate_get(candidate_id: str) -> str:
     """Get a single candidate with full breakdown."""
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decision_candidates import get_candidate
 
@@ -60,9 +62,10 @@ async def ec_decision_candidate_confirm(
     note: str | None = None,
 ) -> str:
     """Confirm a candidate: promote to a real decision with provenance links."""
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decision_candidates import confirm_candidate
 
@@ -85,9 +88,10 @@ async def ec_decision_candidate_confirm(
 
 async def ec_decision_candidate_reject(candidate_id: str, reason: str | None = None) -> str:
     """Reject a candidate: leaves no trace in decisions."""
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decision_candidates import reject_candidate
 

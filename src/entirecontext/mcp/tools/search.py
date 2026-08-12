@@ -67,9 +67,10 @@ async def ec_search(
             return runtime.error_payload(str(exc))
         retrieval_event_id = None
     else:
-        (conn, repo_path), error = runtime.resolve_repo()
-        if error:
-            return error
+        try:
+            conn, repo_path = runtime.open_repo()
+        except runtime.RepoResolutionError as exc:
+            return runtime.error_payload(str(exc))
 
         try:
             from ...core.config import load_config
@@ -226,9 +227,10 @@ async def ec_related(
         ]
         return json.dumps({"related": related, "count": len(related), "warnings": warnings})
 
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         results = []
@@ -281,9 +283,10 @@ async def ec_ast_search(
     file_filter: str | None = None,
     limit: int = 20,
 ) -> str:
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         from ...core.ast_index import search_ast_symbols
@@ -304,9 +307,10 @@ async def ec_activate(
     if not seed_turn_id and not seed_session_id:
         return runtime.error_payload("Either seed_turn_id or seed_session_id is required")
 
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         from ...core.activation import spread_activation

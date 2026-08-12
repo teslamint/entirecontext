@@ -22,9 +22,10 @@ def _ensure_list(value: str | dict | list | None, field_name: str) -> list | Non
 
 
 async def ec_decision_get(decision_id: str) -> str:
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import get_decision
 
@@ -61,9 +62,10 @@ async def ec_decision_related(
         since: Lower-bound filter — only return decisions created after this date (git ref or ISO date)
         until: Upper-bound filter — only return decisions created before this date (git ref or ISO date)
     """
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.config import load_config
         from ...core.decisions import (
@@ -184,9 +186,10 @@ async def ec_decision_context(
     """
     import subprocess
 
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.config import load_config
         from ...core.decisions import (
@@ -422,9 +425,10 @@ async def ec_decision_outcome(
     enabling quality tracking. Falls back to the current session context when
     session_id and turn_id are not explicitly provided.
     """
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import record_decision_outcome
         from ...core.telemetry import detect_current_context
@@ -468,9 +472,10 @@ async def ec_decision_create(
         rejected_alternatives: List of alternatives that were considered and rejected
         supporting_evidence: Evidence supporting the decision
     """
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         rejected_alternatives = _ensure_list(rejected_alternatives, "rejected_alternatives")
         supporting_evidence = _ensure_list(supporting_evidence, "supporting_evidence")
@@ -511,9 +516,10 @@ async def ec_decision_list(
         limit: Maximum results (default 20)
         include_contradicted: Include contradicted decisions (default False)
     """
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import list_decisions
         from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
@@ -556,9 +562,10 @@ async def ec_decision_stale(decision_id: str) -> str:
     Args:
         decision_id: Decision ID (supports prefix)
     """
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import check_staleness
 
@@ -655,9 +662,10 @@ async def ec_decision_search(
         formatted = _format_decision_results(all_results)
         return json.dumps({"decisions": formatted, "count": len(formatted), "retrieval_event_id": None})
 
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import fts_search_decisions, hybrid_search_decisions
         from ...core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until

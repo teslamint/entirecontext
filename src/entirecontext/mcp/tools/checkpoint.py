@@ -46,9 +46,10 @@ async def ec_checkpoint_list(
             }
         )
 
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         query = "SELECT * FROM checkpoints WHERE 1=1"
@@ -118,9 +119,10 @@ async def ec_rewind(checkpoint_id: str, repos: str | list[str] | None = None) ->
             }
         )
 
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         checkpoint = conn.execute("SELECT * FROM checkpoints WHERE id = ?", (checkpoint_id,)).fetchone()

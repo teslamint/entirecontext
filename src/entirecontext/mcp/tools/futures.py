@@ -8,9 +8,10 @@ from .. import runtime
 
 
 async def ec_assess(assessment_id: str | None = None, retrieval_event_id: str | None = None) -> str:
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         if assessment_id:
             from ...core.futures import get_assessment
@@ -49,9 +50,10 @@ async def ec_assess_create(
     backend: str | None = None,
     model: str | None = None,
 ) -> str:
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.futures import ASSESS_SYSTEM_PROMPT, create_assessment
 
@@ -130,9 +132,10 @@ async def ec_assess_create(
 
 
 async def ec_feedback(assessment_id: str, feedback: str, reason: str | None = None) -> str:
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.futures import add_feedback, auto_distill_lessons
 
@@ -153,9 +156,10 @@ async def ec_feedback(assessment_id: str, feedback: str, reason: str | None = No
 
 
 async def ec_lessons(limit: int = 50) -> str:
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
     try:
         from ...core.futures import get_lessons
 

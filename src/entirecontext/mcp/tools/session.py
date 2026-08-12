@@ -47,9 +47,10 @@ async def ec_session_context(
             }
         )
 
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         if not session_id:
@@ -134,9 +135,10 @@ async def ec_attribution(
         ]
         return json.dumps({"file_path": file_path, "attributions": attributions, "warnings": warnings})
 
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         query = "SELECT * FROM attributions WHERE file_path = ?"
@@ -201,9 +203,10 @@ async def ec_turn_content(
             }
         )
 
-    (conn, repo_path), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, repo_path = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         from ...core.turn import get_turn
@@ -257,9 +260,10 @@ async def ec_context_apply(
     session_id: str | None = None,
     turn_id: str | None = None,
 ) -> str:
-    (conn, _), error = runtime.resolve_repo()
-    if error:
-        return error
+    try:
+        conn, _ = runtime.open_repo()
+    except runtime.RepoResolutionError as exc:
+        return runtime.error_payload(str(exc))
 
     try:
         from ...core.telemetry import detect_current_context, record_context_application
