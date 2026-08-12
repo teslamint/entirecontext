@@ -1,19 +1,19 @@
 ---
 schema: release-loop/v1
 feature: init-installs-hooks
-phase: ship
-phase_status: in_progress
+phase: done
+phase_status: complete
 started: 2026-08-11T00:00:00Z
-updated: 2026-08-11T00:00:00Z
+updated: 2026-08-12T00:00:00Z
 branch: feat/init-installs-hooks
 base_branch: main
 flags: []
 spec: docs/specs/2026-08-11-init-installs-hooks-design.md
 plan: docs/plans/2026-08-11-001-feat-init-installs-hooks-plan.md
-retro: null
+retro: docs/retros/2026-08-12-init-installs-hooks-retro.md
 design_approved: {by: user, at: 2026-08-11T00:10:00Z}
 plan_approved: {by: user, at: 2026-08-11T00:30:00Z}
-ship_approved: null
+ship_approved: {by: user, at: 2026-08-11T08:55:19Z}
 current_unit: null
 ci_attempts: 2
 review_rounds: 5
@@ -21,12 +21,12 @@ feedback_rounds: 4
 comments_fixed: 15
 comments_deferred: 3
 pr: "https://github.com/teslamint/entirecontext/pull/205"
-merged: false
+merged: true
 blocked_reason: null
 final_action:
   kind: merge-to-base
   command: "gh pr merge 205 --squash --delete-branch"
-  status: determined
+  status: executed
 ---
 
 ## Log
@@ -63,4 +63,8 @@ final_action:
 - 2026-08-11T03:00:00Z ship/feedback round 4 (cap): 3 comments. `3756069218` (P2, empty `core.hooksPath` read as unset — a defect in round 2's own code) fixed in `79aa293`. `3756069221` (P1, Claude hook group loses sibling commands) and `3756069214` (P2, unquoted Claude hook commands) deferred at the cap: both are pre-existing `ec enable` behavior and both need `_is_ec_hook`'s matching contract changed, which carries a migration question for installed configs. All 3 deferrals plus the 2 round-1 asymmetries registered in ROADMAP.md.
 - 2026-08-11T03:10:00Z ship/feedback round 5: 3 CodeRabbit doc-quality comments on my own artifacts — inconsistent test counts across documents, broken numbering in the deviation doc (`1,2,4,5,6,7,3` under a heading claiming three items), and ROADMAP carry-forwards lacking a target version. All three valid; fixed rather than deferred since they are documentation hygiene on this PR's own output.
 - 2026-08-11T03:10:00Z ship: full suite 2146 passed / 1 skipped on `79aa293`. 15 comments fixed, 3 deferred with rationale in ROADMAP and the PR body.
+- 2026-08-12T00:00:00Z retro→done: retrospective committed at `1c955f6` (`docs/retros/2026-08-12-init-installs-hooks-retro.md`). 4 of 7 success criteria Met, 2 Partially met, 1 Not met, all re-measured fresh. Heterogeneous facilitator (GPT-5.5 via `codex exec`, fresh context), 2 of 5 rounds, all exchanges finally accepted after one rejection and one respondent-initiated correction. Four new carry-forwards registered in ROADMAP v0.16.0; compound wrote `docs/solutions/developer-experience/installed-tool-drifts-from-checkout.md` and seeded a Tool provenance cluster in `CONCEPTS.md`. Plan flipped to `status: done` / `completed_by: 705765762c13fe3befbd484ed7a752ae6bdecfdf`.
+- 2026-08-12T00:00:00Z archive-destination: .release-loop/archive/2026-08-12-init-installs-hooks
+- 2026-08-12T00:00:00Z reconstruction: this record was found live at `phase: ship / in_progress` with `merged: false`, but git and the GitHub API both show PR #205 merged at 2026-08-11T08:55:19Z as squash commit `7057657` with `feat/init-installs-hooks` deleted. The ship phase completed and the record was never advanced — the session ended between the merge and the state write. State rebuilt from that evidence per the resume rule (progress.md + git log outrank conversation memory); `final_action` flipped to `executed`, `ship_approved` stamped at the merge time, `merged: true`. Entering Retro.
+- 2026-08-12T00:00:00Z retro/prereq: the working tree carried an uncommitted LESSONS.md regression — every heading had lost the assessment-ID suffix that PR #214 added to fix MD024. Root cause is not this repo's source but the `ec` tool install: `~/.local/share/uv/tools/entirecontext` predated #214, so hook-driven `auto_distill` regenerated LESSONS.md with the old code and silently reverted the shipped fix. Reinstalled from the checkout (`uv tool install --force .`), verified `futures.py:176` now carries the suffix in the installed package, and reverted the file. Recorded as a retro finding, not a side fix.
 - 2026-08-11T03:25:00Z ship: rounds 2-5 committed (`42aa5af`, `bbc49b5`, `79aa293`, `c6c2005`). CI green on `c6c2005`. 18 threads total, 15 resolved, 3 left open by design — the deferred findings, each with a reply naming the cap and the ROADMAP v0.16.0 registration. PR MERGEABLE / CLEAN / APPROVED. final_action unchanged and still determined. Awaiting USER merge gate.
