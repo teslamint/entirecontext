@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from typing import Any, cast
+from typing import Any
 
 from .. import runtime
 
@@ -104,12 +104,7 @@ async def ec_rewind(checkpoint_id: str, repos: str | list[str] | None = None) ->
     if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_rewind
 
-        # cast: the return type is conditional on include_warnings, which mypy cannot
-        # express without @overload on the definition. See ROADMAP.md.
-        result, warnings = cast(
-            "tuple[dict[str, Any] | None, list[dict[str, str]]]",
-            cross_repo_rewind(checkpoint_id, repos=repo_names, include_warnings=True),
-        )
+        result, warnings = cross_repo_rewind(checkpoint_id, repos=repo_names, include_warnings=True)
         if not result:
             return runtime.error_payload(f"Checkpoint not found: {checkpoint_id}", warnings=warnings)
         return json.dumps(
