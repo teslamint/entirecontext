@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from entirecontext.cli import app
 from entirecontext.cli import decisions_cmds
+from tests.conftest import git_commit_env
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -40,13 +41,7 @@ def test_dry_run_on_fixture(git_repo):
             ["git", "commit", "-m", f"feat: add file{i}"],
             cwd=git_repo,
             check=True,
-            env={
-                "GIT_AUTHOR_NAME": "Test",
-                "GIT_AUTHOR_EMAIL": "test@test.com",
-                "GIT_COMMITTER_NAME": "Test",
-                "GIT_COMMITTER_EMAIL": "test@test.com",
-                "PATH": subprocess.check_output(["bash", "-c", "echo $PATH"]).decode().strip(),
-            },
+            env=git_commit_env(),
         )
     result = subprocess.run(
         ["uv", "run", "ec", "archaeologize", "--dry-run"],
@@ -69,13 +64,7 @@ def test_dry_run_does_not_create_db(git_repo):
             ["git", "commit", "-m", f"feat: add file{i}"],
             cwd=git_repo,
             check=True,
-            env={
-                "GIT_AUTHOR_NAME": "Test",
-                "GIT_AUTHOR_EMAIL": "test@test.com",
-                "GIT_COMMITTER_NAME": "Test",
-                "GIT_COMMITTER_EMAIL": "test@test.com",
-                "PATH": subprocess.check_output(["bash", "-c", "echo $PATH"]).decode().strip(),
-            },
+            env=git_commit_env(),
         )
     result = subprocess.run(
         ["uv", "run", "ec", "archaeologize", "--dry-run"],
