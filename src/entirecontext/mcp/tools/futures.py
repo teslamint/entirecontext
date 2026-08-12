@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from typing import Any
+
 from .. import runtime
 
 
@@ -181,6 +183,6 @@ async def ec_assess_trends(repos: str | list[str] | None = None, since: str | No
     return json.dumps({**trends, "warnings": warnings})
 
 
-def register_tools(mcp, services=None) -> None:
+def register_tools(mcp: Any, services: runtime.ServiceRegistry | None = None) -> None:
     for tool in (ec_assess, ec_assess_create, ec_feedback, ec_lessons, ec_assess_trends):
         mcp.tool()(tool)

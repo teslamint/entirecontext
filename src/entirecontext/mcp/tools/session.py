@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from typing import Any, cast
+
 from .. import runtime
 
 
@@ -18,7 +20,12 @@ async def ec_session_context(
 
         if not session_id:
             return runtime.error_payload("session_id is required for cross-repo session context")
-        result, warnings = cross_repo_session_detail(session_id, repos=repo_names, include_warnings=True)
+        # cast: the return type is conditional on include_warnings, which mypy cannot
+        # express without @overload on the definition. See ROADMAP.md.
+        result, warnings = cast(
+            "tuple[dict[str, Any] | None, list[dict[str, str]]]",
+            cross_repo_session_detail(session_id, repos=repo_names, include_warnings=True),
+        )
         if not result:
             return runtime.error_payload(f"Session not found: {session_id}", warnings=warnings)
         turns = result.get("turns", [])
@@ -142,7 +149,7 @@ async def ec_attribution(
 
     try:
         query = "SELECT * FROM attributions WHERE file_path = ?"
-        params: list = [file_path]
+        params: list[Any] = [file_path]
         if start_line is not None:
             query += " AND end_line >= ?"
             params.append(start_line)
@@ -183,7 +190,12 @@ async def ec_turn_content(
     if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_turn_content
 
-        result, warnings = cross_repo_turn_content(turn_id, repos=repo_names, include_warnings=True)
+        # cast: the return type is conditional on include_warnings, which mypy cannot
+        # express without @overload on the definition. See ROADMAP.md.
+        result, warnings = cast(
+            "tuple[dict[str, Any] | None, list[dict[str, str]]]",
+            cross_repo_turn_content(turn_id, repos=repo_names, include_warnings=True),
+        )
         if not result:
             return runtime.error_payload(f"Turn not found: {turn_id}", warnings=warnings)
         return json.dumps(
@@ -307,6 +319,6 @@ async def ec_context_apply(
         conn.close()
 
 
-def register_tools(mcp, services=None) -> None:
+def register_tools(mcp: Any, services: runtime.ServiceRegistry | None = None) -> None:
     for tool in (ec_session_context, ec_attribution, ec_turn_content, ec_context_apply):
         mcp.tool()(tool)

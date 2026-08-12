@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from typing import Any
+
 from .. import runtime
 
 
@@ -105,7 +107,7 @@ async def ec_decision_candidate_reject(candidate_id: str, reason: str | None = N
         conn.close()
 
 
-def register_tools(mcp, services=None) -> None:
+def register_tools(mcp: Any, services: runtime.ServiceRegistry | None = None) -> None:
     for tool in (
         ec_decision_candidate_list,
         ec_decision_candidate_get,

@@ -136,10 +136,10 @@ def test_mcp_ec_decision_related_backpatches_snapshot(ec_repo, ec_db, monkeypatc
         (dec["id"], "src/main.py"),
     )
 
-    # Monkeypatch resolve_repo
+    # Monkeypatch open_repo
     monkeypatch.setattr(
-        "entirecontext.mcp.tools.decisions.runtime.resolve_repo",
-        lambda: ((conn, repo_path), None),
+        "entirecontext.mcp.tools.decisions.runtime.open_repo",
+        lambda: (conn, repo_path),
     )
 
     # Monkeypatch load_config (imported lazily inside the function)

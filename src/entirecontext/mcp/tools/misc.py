@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from typing import Any
+
 from .. import runtime
 
 
@@ -36,6 +38,6 @@ async def ec_dashboard(since: str | None = None, limit: int = 10) -> str:
         conn.close()
 
 
-def register_tools(mcp, services=None) -> None:
+def register_tools(mcp: Any, services: runtime.ServiceRegistry | None = None) -> None:
     for tool in (ec_graph, ec_dashboard):
         mcp.tool()(tool)

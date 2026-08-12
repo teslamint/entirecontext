@@ -810,6 +810,36 @@ class TestMCPRepoResolver:
         assert path == "/tmp/test"
         assert error is None
 
+    def test_open_repo_success(self, db, monkeypatch):
+        from entirecontext.mcp import runtime
+
+        monkeypatch.setattr(runtime, "get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
+
+        conn, path = runtime.open_repo()
+        assert conn is db
+        assert path == "/tmp/test"
+
+    def test_open_repo_raises_instead_of_returning_none(self, monkeypatch):
+        """open_repo propagates the error; tools convert it to the resolve_repo payload."""
+        from entirecontext.mcp import runtime
+
+        monkeypatch.setattr(
+            runtime,
+            "get_repo_db",
+            lambda repo_hint=None: (_ for _ in ()).throw(runtime.RepoResolutionError("No repo found.")),
+        )
+
+        with pytest.raises(runtime.RepoResolutionError, match="No repo found."):
+            runtime.open_repo()
+
+        # The converted payload must stay byte-identical to what resolve_repo produced,
+        # because it is what every MCP tool returns to the agent on this path.
+        (_, _), legacy_error = runtime.resolve_repo()
+        try:
+            runtime.open_repo()
+        except runtime.RepoResolutionError as exc:
+            assert runtime.error_payload(str(exc)) == legacy_error
+
     def test_resolve_repo_failure(self, monkeypatch):
         from entirecontext.mcp import runtime
 

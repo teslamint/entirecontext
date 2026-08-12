@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
+
+from typing import Any
 
 from .. import runtime
 
 
-def _ensure_list(value: str | dict | list | None, field_name: str) -> list | None:
+def _ensure_list(value: str | dict[str, Any] | list[Any] | None, field_name: str) -> list[Any] | None:
     """Coerce common agent input shapes for list fields into proper lists."""
     if value is None:
         return None
@@ -390,7 +393,7 @@ async def ec_decision_context(
             )
             item["selection_id"] = selection_id
 
-        payload = {
+        payload: dict[str, Any] = {
             "decisions": decisions,
             "count": len(decisions),
             "retrieval_event_id": tracked_event_id,
@@ -460,8 +463,8 @@ async def ec_decision_create(
     title: str,
     rationale: str | None = None,
     scope: str | None = None,
-    rejected_alternatives: list[str] | str | dict | None = None,
-    supporting_evidence: list | str | dict | None = None,
+    rejected_alternatives: list[str] | str | dict[str, Any] | None = None,
+    supporting_evidence: list[Any] | str | dict[str, Any] | None = None,
 ) -> str:
     """Create a new decision record.
 
@@ -629,7 +632,7 @@ async def ec_decision_search(
         except TQLError as exc:
             return runtime.error_payload(str(exc))
 
-        def _query(conn, _repo):
+        def _query(conn: sqlite3.Connection, _repo: dict[str, Any]) -> list[dict[str, Any]]:
             if search_type == "hybrid":
                 return hybrid_search_decisions(
                     conn,
@@ -743,10 +746,10 @@ def _truncate(text: str, max_len: int) -> str:
     return text if len(text) <= max_len else text[:max_len] + "…"
 
 
-def _format_decision_results(results: list[dict]) -> list[dict]:
+def _format_decision_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     formatted = []
     for r in results:
-        entry: dict = {
+        entry: dict[str, Any] = {
             "id": r.get("id", ""),
             "title": r.get("title", ""),
             "rationale_excerpt": _truncate(r.get("rationale") or "", 200),
@@ -764,7 +767,7 @@ def _format_decision_results(results: list[dict]) -> list[dict]:
     return formatted
 
 
-def register_tools(mcp, services=None) -> None:
+def register_tools(mcp: Any, services: runtime.ServiceRegistry | None = None) -> None:
     for tool in (
         ec_decision_get,
         ec_decision_related,

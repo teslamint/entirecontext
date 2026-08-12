@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from typing import Any, cast
+
 from .. import runtime
 
 
@@ -53,7 +55,7 @@ async def ec_checkpoint_list(
 
     try:
         query = "SELECT * FROM checkpoints WHERE 1=1"
-        params: list = []
+        params: list[Any] = []
         if session_id:
             query += " AND session_id = ?"
             params.append(session_id)
@@ -64,7 +66,7 @@ async def ec_checkpoint_list(
         params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
-        selection_ids = []
+        selection_ids: list[str | None] = []
         checkpoints = []
         for row in rows:
             selection_id = runtime.record_selection(
@@ -102,7 +104,12 @@ async def ec_rewind(checkpoint_id: str, repos: str | list[str] | None = None) ->
     if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_rewind
 
-        result, warnings = cross_repo_rewind(checkpoint_id, repos=repo_names, include_warnings=True)
+        # cast: the return type is conditional on include_warnings, which mypy cannot
+        # express without @overload on the definition. See ROADMAP.md.
+        result, warnings = cast(
+            "tuple[dict[str, Any] | None, list[dict[str, str]]]",
+            cross_repo_rewind(checkpoint_id, repos=repo_names, include_warnings=True),
+        )
         if not result:
             return runtime.error_payload(f"Checkpoint not found: {checkpoint_id}", warnings=warnings)
         return json.dumps(
@@ -153,6 +160,6 @@ async def ec_rewind(checkpoint_id: str, repos: str | list[str] | None = None) ->
         conn.close()
 
 
-def register_tools(mcp, services=None) -> None:
+def register_tools(mcp: Any, services: runtime.ServiceRegistry | None = None) -> None:
     for tool in (ec_checkpoint_list, ec_rewind):
         mcp.tool()(tool)
