@@ -137,6 +137,28 @@ def test_distill_lessons_has_no_trailing_whitespace():
     assert offenders == []
 
 
+def test_distill_lessons_headings_are_unique_per_assessment():
+    """Identical impact_summary values must not collide into one heading (MD024).
+
+    Every heading came from impact_summary alone, so repeated summaries — auto-assessed
+    checkpoints, identical dependency bumps — produced duplicate headings and, with them,
+    duplicate anchors that make all but the first entry unreachable by link.
+    """
+    assessments = [
+        {
+            "id": f"{i}aaaaaaa-bbbb-cccc",
+            "verdict": "neutral",
+            "impact_summary": "Auto-assessed checkpoint",
+            "feedback": "disagree",
+            "created_at": "",
+        }
+        for i in range(3)
+    ]
+    headings = [line for line in distill_lessons(assessments).split("\n") if line.startswith("### ")]
+    assert len(headings) == 3
+    assert len(set(headings)) == 3
+
+
 def test_get_assessment_prefix_match(ec_db):
     """Test that get_assessment supports prefix matching (regression: dd6184a2-c16 not found)."""
     result = create_assessment(ec_db, verdict="expand", impact_summary="Prefix test")
