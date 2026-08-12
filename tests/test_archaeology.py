@@ -23,16 +23,11 @@ from entirecontext.core.archaeology import (
     ArchaeologyResult,
 )
 from entirecontext.core.decision_extraction import ExtractionOutcome
+from tests.conftest import git_commit_env
 
 
 def _make_commits(git_repo, n, prefix="c"):
-    env = {
-        "GIT_AUTHOR_NAME": "Test",
-        "GIT_AUTHOR_EMAIL": "test@test.com",
-        "GIT_COMMITTER_NAME": "Test",
-        "GIT_COMMITTER_EMAIL": "test@test.com",
-        "PATH": subprocess.check_output(["bash", "-c", "echo $PATH"]).decode().strip(),
-    }
+    env = git_commit_env()
     for i in range(n):
         (git_repo / f"{prefix}{i}.txt").write_text(f"content {i}")
         subprocess.run(["git", "add", "."], cwd=git_repo, check=True)
@@ -187,13 +182,7 @@ class TestStreamCommits:
                 ["git", "commit", "-m", f"commit {i}"],
                 cwd=git_repo,
                 check=True,
-                env={
-                    "GIT_AUTHOR_NAME": "Test",
-                    "GIT_AUTHOR_EMAIL": "test@test.com",
-                    "GIT_COMMITTER_NAME": "Test",
-                    "GIT_COMMITTER_EMAIL": "test@test.com",
-                    "PATH": subprocess.check_output(["bash", "-c", "echo $PATH"]).decode().strip(),
-                },
+                env=git_commit_env(),
             )
         commits = list(_stream_commits(str(git_repo), since=None, until=None, limit=10))
         assert len(commits) >= 3
@@ -210,13 +199,7 @@ class TestStreamCommits:
                 ["git", "commit", "-m", f"c{i}"],
                 cwd=git_repo,
                 check=True,
-                env={
-                    "GIT_AUTHOR_NAME": "Test",
-                    "GIT_AUTHOR_EMAIL": "test@test.com",
-                    "GIT_COMMITTER_NAME": "Test",
-                    "GIT_COMMITTER_EMAIL": "test@test.com",
-                    "PATH": subprocess.check_output(["bash", "-c", "echo $PATH"]).decode().strip(),
-                },
+                env=git_commit_env(),
             )
         commits = list(_stream_commits(str(git_repo), since=None, until=None, limit=2))
         assert len(commits) == 2
@@ -239,13 +222,7 @@ class TestStreamCommits:
             ],
             cwd=git_repo,
             check=True,
-            env={
-                "GIT_AUTHOR_NAME": "Test",
-                "GIT_AUTHOR_EMAIL": "test@test.com",
-                "GIT_COMMITTER_NAME": "Test",
-                "GIT_COMMITTER_EMAIL": "test@test.com",
-                "PATH": subprocess.check_output(["bash", "-c", "echo $PATH"]).decode().strip(),
-            },
+            env=git_commit_env(),
         )
         commits = list(_stream_commits(str(git_repo), since=None, until=None, limit=1))
         assert len(commits) == 1

@@ -3,11 +3,43 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 
 import pytest
 
 import tests.conftest_hypothesis  # noqa: F401
+
+
+def git_commit_env() -> dict[str, str]:
+    """Environment for subprocess git commits that must pass ``env=`` explicitly.
+
+    ``env=`` replaces the inherited environment rather than extending it, so a
+    hand-built mapping silently drops the variables ``hermetic_git_config`` sets
+    and lets host configuration back in. Building on ``os.environ`` keeps the
+    isolation, and carries PATH along without a separate lookup.
+    """
+    return {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@test.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@test.com",
+    }
+
+
+@pytest.fixture(autouse=True)
+def hermetic_git_config(monkeypatch):
+    """Isolate every git invocation from the host's global and system config.
+
+    Whatever the developer has set globally — commit.gpgsign, signing keys,
+    aliases, hook paths — otherwise leaks into the repos these tests build, so a
+    test's outcome depends on whose machine it runs on. Individual fixtures used
+    to disable commit.gpgsign one at a time; each new call site reintroduced the
+    same failure until it was patched too.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
 
 
 @pytest.fixture(autouse=True)
