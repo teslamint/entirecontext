@@ -4,7 +4,7 @@ _Generated from 46 assessed changes._
 
 ## 🟢 Expand (increases future options)
 
-### ✅ Generator correctness fix + missing regression test + fixture broadening + debt registration collectively lower the cost and risk of future generator and test-suite changes.
+### ✅ Generator correctness fix + missing regression test + fixture broadening + debt registration collectively lower the cost and risk of future generator and test-suite changes. (c8a43edf)
 
 **Roadmap alignment:** Directly addresses Hardening Backlog's MD024 item (registered in ROADMAP per retro carry-forward rule), closes test gaps named in prior assessments, and extends GPG-signing fixture coverage to sync/TQL helpers — all consistent with the project's measure-first and stabilize-before-extend principles.
 
@@ -14,7 +14,7 @@ _Generated from 46 assessed changes._
 
 _Assessment: c8a43edf | 2026-08-11T13:24:56.131806+00:00_
 
-### ✅ U8a establishes retained Signal C quality and fresh-process latency thresholds before production fusion.
+### ✅ U8a establishes retained Signal C quality and fresh-process latency thresholds before production fusion. (0d31f73a)
 
 **Roadmap alignment:** Aligned with Stage A U8a. The benchmark proves no nDCG@5 regression, one semantic-only improvement, and the existing PDI p95 gate.
 
@@ -24,7 +24,7 @@ _Assessment: c8a43edf | 2026-08-11T13:24:56.131806+00:00_
 
 _Assessment: 0d31f73a | 2026-08-11T02:10:33.053125+00:00_
 
-### ✅ U7 adds explicit, approval-gated repository decision publication without mixing checkpoint or session data.
+### ✅ U7 adds explicit, approval-gated repository decision publication without mixing checkpoint or session data. (013eb607)
 
 **Roadmap alignment:** Aligned with Stage A U7. The dedicated decision ref, signed approval, one-time nonce, hostile-remote rejection, and ref isolation are implemented and verified.
 
@@ -34,61 +34,61 @@ _Assessment: 0d31f73a | 2026-08-11T02:10:33.053125+00:00_
 
 _Assessment: 013eb607 | 2026-08-10T17:56:19.385200+00:00_
 
-### ✅ docs(retro): Record v0.15.0 self-archaeology outcomes
+### ✅ docs(retro): Record v0.15.0 self-archaeology outcomes (93ea5aba)
 
 **Feedback:** agree — Agree: the retrospective expands durable options by reconciling measurable gaps, roadmap debt, and reusable squash-merge guidance.
 
 _Assessment: 93ea5aba | 2026-07-20T08:33:04.639268+00:00_
 
-### ❌ fix(blame): Make decision metadata type-safe
+### ❌ fix(blame): Make decision metadata type-safe (bcf60f64)
 
 **Feedback:** disagree — Disagree: this was a behavior-preserving type-safety fix and should be neutral; expansion belongs to the overall self-archaeology feature.
 
 _Assessment: bcf60f64 | 2026-07-20T06:55:32.632449+00:00_
 
-### ✅ feat(cli): ec blame --decisions — decision-annotated blame output
+### ✅ feat(cli): ec blame --decisions — decision-annotated blame output (bbbb7b7b)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: bbbb7b7b | 2026-07-19T15:12:40.543671+00:00_
 
-### ✅ feat(blame): blame_decisions core — porcelain SHA extraction + decision_commits join
+### ✅ feat(blame): blame_decisions core — porcelain SHA extraction + decision_commits join (69bf370e)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: 69bf370e | 2026-07-19T15:07:01.694766+00:00_
 
-### ✅ feat(cli): ec decision candidates confirm-batch — filtered batch promotion
+### ✅ feat(cli): ec decision candidates confirm-batch — filtered batch promotion (eb23e002)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: eb23e002 | 2026-07-19T15:01:08.424857+00:00_
 
-### ✅ chore(release): v0.14.0 — Archaeology carry-forward completion
+### ✅ chore(release): v0.14.0 — Archaeology carry-forward completion (94a3104d)
 
 **Feedback:** agree — v0.14.0 expands future options by making PR enrichment independently retryable and preserving exact archaeology file linkage; CI and final branch review confirmed the state model and regression coverage.
 
 _Assessment: 94a3104d | 2026-07-12T03:48:37.904488+00:00_
 
-### ✅ chore(deps): bump sentence-transformers from 5.5.0 to 5.5.1
+### ✅ chore(deps): bump sentence-transformers from 5.5.0 to 5.5.1 (d28a0263)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: d28a0263 | 2026-06-06T14:40:01.177319+00:00_
 
-### ✅ chore(deps): bump sentence-transformers from 5.5.0 to 5.5.1
+### ✅ chore(deps): bump sentence-transformers from 5.5.0 to 5.5.1 (d58c0efa)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: d58c0efa | 2026-06-06T14:40:01.169773+00:00_
 
-### ✅ feat(distill): v0.8.0 auto-assess automation (#157)
+### ✅ feat(distill): v0.8.0 auto-assess automation (#157) (dbe3569f)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: dbe3569f | 2026-06-06T14:40:01.145677+00:00_
 
-### ✅ MCP 입력 정규화와 FTS 오류 처리를 안정화해 에이전트가 검색·결정 도구를 더 예측 가능하게 사용할 수 있게 하므로 future option을 넓힌다.
+### ✅ MCP 입력 정규화와 FTS 오류 처리를 안정화해 에이전트가 검색·결정 도구를 더 예측 가능하게 사용할 수 있게 하므로 future option을 넓힌다. (c3efff0c)
 
 **Roadmap alignment:** 로드맵의 핵심 루프인 capture -> distill -> retrieve -> intervene 중 retrieve/intervene 품질을 직접 개선한다. 새 제품 표면이나 스키마를 늘리지 않고, agent-facing MCP 도구의 실패 모드를 줄여 decision memory 재사용 가능성을 높인 점에서 v0.5.0의 안정화 방향과도 맞고, 이후 v0.6.0 outcome semantics 작업의 기반을 방해하지 않는다.
 
@@ -98,7 +98,7 @@ _Assessment: dbe3569f | 2026-06-06T14:40:01.145677+00:00_
 
 _Assessment: c3efff0c | 2026-04-27T05:09:41.038581+00:00_
 
-### ✅ 세션 고정 MCP 검색, PostToolUse 기반 결정 surfacing, 선택 telemetry 보강으로 과거 결정이 실제 편집 순간에 재등장할 가능성을 높여 향후 agent 판단 옵션을 넓힌다.
+### ✅ 세션 고정 MCP 검색, PostToolUse 기반 결정 surfacing, 선택 telemetry 보강으로 과거 결정이 실제 편집 순간에 재등장할 가능성을 높여 향후 agent 판단 옵션을 넓힌다. (69228644)
 
 **Roadmap alignment:** 로드맵의 핵심 루프인 capture -> distill -> retrieve -> intervene 중 retrieve/intervene를 직접 강화하며, 특히 Exploration의 Proactive Decision Injection과 v0.3~v0.4의 retrieval telemetry/selection_id 흐름에 잘 맞는다; 검토한 관련 결정은 v0.6.0 범위 결정(743ebcb2, 77b44176)과 v0.5.0 hardening 결정(4c7893b0, 03ab3e25)이며, 스키마/outcome semantics 확장 없이 surfacing 정확도와 세션 격리를 보강하므로 충돌은 없어 보인다.
 
@@ -108,7 +108,7 @@ _Assessment: c3efff0c | 2026-04-27T05:09:41.038581+00:00_
 
 _Assessment: 69228644 | 2026-04-27T05:09:40.291239+00:00_
 
-### ✅ 연결 수명 관리와 릴리스 검증을 정리해 ResourceWarning/누수 위험을 줄이고, 이후 결정 메모리 기능을 더 안전하게 확장할 수 있는 기반 옵션을 넓힌다.
+### ✅ 연결 수명 관리와 릴리스 검증을 정리해 ResourceWarning/누수 위험을 줄이고, 이후 결정 메모리 기능을 더 안전하게 확장할 수 있는 기반 옵션을 넓힌다. (4fbe6465)
 
 **Roadmap alignment:** 로드맵의 핵심 wedge인 decision-memory loop를 직접 깊게 하지는 않지만, capture/hooks/CLI/MCP 기반의 신뢰성과 배포 안전성을 높여 'strong git grounding for trust, auditability, and rewindability' 및 Done Foundations 운영 안정화에 잘 맞는다.
 
@@ -118,7 +118,7 @@ _Assessment: 69228644 | 2026-04-27T05:09:40.291239+00:00_
 
 _Assessment: 4fbe6465 | 2026-04-27T05:09:26.385266+00:00_
 
-### ✅ 현재 변경 파일, diff, assessment, commit 신호로 관련 결정을 랭킹해 과거 판단이 다음 코드 변경 시점에 재등장할 가능성을 높이므로 미래 선택지를 넓힌다.
+### ✅ 현재 변경 파일, diff, assessment, commit 신호로 관련 결정을 랭킹해 과거 판단이 다음 코드 변경 시점에 재등장할 가능성을 높이므로 미래 선택지를 넓힌다. (fea07b4e)
 
 **Roadmap alignment:** 로드맵의 핵심 루프인 capture -> distill -> retrieve -> intervene 중 retrieve/intervene를 직접 강화하며, generic memory 확장보다 decision memory wedge에 맞는다; 특히 v0.2의 proactive retrieval 및 이후 v0.4 F3 ranking weight config의 기반이 되는 변화다.
 
@@ -128,7 +128,7 @@ _Assessment: 4fbe6465 | 2026-04-27T05:09:26.385266+00:00_
 
 _Assessment: fea07b4e | 2026-04-27T05:09:13.716317+00:00_
 
-### ✅ 결정 검색, stale/contradicted 필터링, outcome 기록, hook 기반 proactive surfacing, MCP/CLI 표면과 테스트를 추가해 coding-agent decision memory의 재사용 경로를 크게 넓힌다.
+### ✅ 결정 검색, stale/contradicted 필터링, outcome 기록, hook 기반 proactive surfacing, MCP/CLI 표면과 테스트를 추가해 coding-agent decision memory의 재사용 경로를 크게 넓힌다. (49c852ae)
 
 **Roadmap alignment:** 로드맵의 핵심 thesis인 capture -> distill -> retrieve -> intervene 중 retrieve/intervene를 강화하며, v0.2.0의 first-class decision model, proactive retrieval, staleness/contradiction handling과 직접 정렬된다. 다만 v0.6.0의 refined/replaced outcome semantics 자체는 아직 구현하지 않는 변경으로 보인다.
 
@@ -138,7 +138,7 @@ _Assessment: fea07b4e | 2026-04-27T05:09:13.716317+00:00_
 
 _Assessment: 49c852ae | 2026-04-27T05:09:09.089900+00:00_
 
-### ✅ 변경은 decision/rejected-alternative 처리와 CLI/MCP 노출, 회귀 테스트를 보강해 향후 decision memory 품질 개선 옵션을 넓힌다.
+### ✅ 변경은 decision/rejected-alternative 처리와 CLI/MCP 노출, 회귀 테스트를 보강해 향후 decision memory 품질 개선 옵션을 넓힌다. (bd7df7b7)
 
 **Roadmap alignment:** v0.6.1의 rejected-alternative quality 항목과 강하게 맞고, decision memory wedge에는 부합하지만 v0.6.0의 outcome semantics breaking track 자체를 직접 진전시키지는 않는다.
 
@@ -148,7 +148,7 @@ _Assessment: 49c852ae | 2026-04-27T05:09:09.089900+00:00_
 
 _Assessment: bd7df7b7 | 2026-04-27T05:08:50.632894+00:00_
 
-### ✅ decision 후보 추출, 검토, MCP/CLI 노출, schema v13 기반 후보 테이블을 추가해 raw history에서 검토 가능한 decision memory로 넘어가는 선택지를 크게 넓힌다.
+### ✅ decision 후보 추출, 검토, MCP/CLI 노출, schema v13 기반 후보 테이블을 추가해 raw history에서 검토 가능한 decision memory로 넘어가는 선택지를 크게 넓힌다. (134621fa)
 
 **Roadmap alignment:** 로드맵의 핵심 루프인 capture -> distill -> retrieve -> intervene 중 distill 품질을 강화하며, v0.2.0의 first-class decision model과 v0.3.0 E3 extraction validation/noise gate 방향에 잘 맞는다. 다만 diff 규모와 schema/CLI/MCP/fixture/테스트 동시 확장은 v0.5.0의 'zero new product features, zero schema changes' 안정화 기조와는 맞지 않고, v0.6.1 rejected-alternative 정규화 범위와도 일부 겹칠 가능성이 있다.
 
@@ -158,7 +158,7 @@ _Assessment: bd7df7b7 | 2026-04-27T05:08:50.632894+00:00_
 
 _Assessment: 134621fa | 2026-04-27T05:07:55.149737+00:00_
 
-### ✅ This change expands future options by adding both manual and hook-based checkpoint creation with shared git helpers while keeping heavier snapshot capture optional and reversible.
+### ✅ This change expands future options by adding both manual and hook-based checkpoint creation with shared git helpers while keeping heavier snapshot capture optional and reversible. (84288d4f)
 
 **Roadmap alignment:** It aligns well with the roadmap’s capture automation direction (hook/trigger-based flow for futures/lessons) and partially advances the upcoming lightweight-checkpoint goal by defaulting to git-ref metadata unless `--snapshot` is explicitly requested.
 
@@ -166,7 +166,7 @@ _Assessment: 134621fa | 2026-04-27T05:07:55.149737+00:00_
 
 _Assessment: 84288d4f | 2026-02-20T10:48:16.009213+00:00_
 
-### ✅ Introducing a pluggable LLM backend with a CLI `--backend` option increases reversibility and execution options for futures assessment, though IDE-specific files add minor portability drag.
+### ✅ Introducing a pluggable LLM backend with a CLI `--backend` option increases reversibility and execution options for futures assessment, though IDE-specific files add minor portability drag. (dd6184a2)
 
 **Roadmap alignment:** Strongly aligned with `Now` (futures assessment delivery) and creates a useful foundation for `Next` items like GitHub Action triggers and MCP-based self-evaluation by decoupling assessment from a single provider.
 
@@ -176,7 +176,7 @@ _Assessment: dd6184a2 | 2026-02-20T08:51:22.221135+00:00_
 
 ## 🟡 Neutral
 
-### ✅ All three approved regression scenarios are delivered. Full suite passed 2114 tests with 1 skip; Ruff and mypy passed. One non-blocking session-embedding regression-test coverage gap remains.
+### ✅ All three approved regression scenarios are delivered. Full suite passed 2114 tests with 1 skip; Ruff and mypy passed. One non-blocking session-embedding regression-test coverage gap remains. (a1661d20)
 
 **Roadmap alignment:** aligned
 
@@ -186,145 +186,145 @@ _Assessment: dd6184a2 | 2026-02-20T08:51:22.221135+00:00_
 
 _Assessment: a1661d20 | 2026-07-23T09:19:52.662179+00:00_
 
-### ✅ docs(release): Reconcile review feedback count
+### ✅ docs(release): Reconcile review feedback count (dc6144be)
 
 **Feedback:** agree — Agree: review-count reconciliation is evidence-only and roadmap-neutral.
 
 _Assessment: dc6144be | 2026-07-20T07:53:54.260470+00:00_
 
-### ✅ fix(blame): Normalize and deduplicate commit links
+### ✅ fix(blame): Normalize and deduplicate commit links (4c663ed8)
 
 **Feedback:** agree — Agree: commit-link normalization is bounded correctness hardening; the overall PR, not this fix alone, expands options.
 
 _Assessment: 4c663ed8 | 2026-07-20T07:51:12.467851+00:00_
 
-### ✅ fix(decisions): Reject non-finite batch thresholds
+### ✅ fix(decisions): Reject non-finite batch thresholds (af47aeb4)
 
 **Feedback:** agree — Agree: non-finite threshold rejection is bounded input validation and roadmap-neutral.
 
 _Assessment: af47aeb4 | 2026-07-20T07:45:38.468377+00:00_
 
-### ✅ fix(blame): Migrate and resolve commit link prefixes
+### ✅ fix(blame): Migrate and resolve commit link prefixes (65f3191c)
 
 **Feedback:** agree — Agree: migration and abbreviated-link compatibility preserve the existing interface.
 
 _Assessment: 65f3191c | 2026-07-20T07:45:38.296254+00:00_
 
-### ✅ docs(release): Record pull request review outcomes
+### ✅ docs(release): Record pull request review outcomes (c6c31389)
 
 **Feedback:** agree — Agree: review outcome tracking is release metadata only.
 
 _Assessment: c6c31389 | 2026-07-20T07:34:30.191899+00:00_
 
-### ✅ fix(blame): Preserve mixed and binary blame context
+### ✅ fix(blame): Preserve mixed and binary blame context (bb044111)
 
 **Feedback:** agree — Agree: mixed and binary blame handling is correctness hardening within the approved scope.
 
 _Assessment: bb044111 | 2026-07-20T07:27:03.349214+00:00_
 
-### ✅ docs(skills): Document release-loop migration
+### ✅ docs(skills): Document release-loop migration (b8cf70db)
 
 **Feedback:** agree — Agree: migration documentation removes a stale contract without changing product direction.
 
 _Assessment: b8cf70db | 2026-07-20T07:20:20.945647+00:00_
 
-### ✅ fix(blame): Support SHA-256 porcelain headers
+### ✅ fix(blame): Support SHA-256 porcelain headers (a378abf1)
 
 **Feedback:** agree — Agree: SHA-256 support closes a compatibility gap in the approved blame surface.
 
 _Assessment: a378abf1 | 2026-07-20T07:20:20.780358+00:00_
 
-### ✅ docs(release): Link self-archaeology pull request
+### ✅ docs(release): Link self-archaeology pull request (11334d15)
 
 **Feedback:** agree — Agree: linking the PR is release metadata only.
 
 _Assessment: 11334d15 | 2026-07-20T07:08:19.698276+00:00_
 
-### ✅ docs(release): Normalize bootstrap evidence logs
+### ✅ docs(release): Normalize bootstrap evidence logs (0b9d44c9)
 
 **Feedback:** agree — Agree: whitespace normalization changes no behavior or options.
 
 _Assessment: 0b9d44c9 | 2026-07-20T06:58:21.202065+00:00_
 
-### ✅ refactor(skills): Remove migrated release-loop skill
+### ✅ refactor(skills): Remove migrated release-loop skill (93ec7f47)
 
 **Feedback:** agree — Agree: removing the migrated duplicate skill is source-of-truth cleanup, not a roadmap change.
 
 _Assessment: 93ec7f47 | 2026-07-20T06:56:54.738527+00:00_
 
-### ✅ docs(release): Record v0.15.0 bootstrap evidence
+### ✅ docs(release): Record v0.15.0 bootstrap evidence (ab53a688)
 
 **Feedback:** agree — Agree: bootstrap evidence records measured outcomes without changing behavior.
 
 _Assessment: ab53a688 | 2026-07-20T06:56:42.241403+00:00_
 
-### ✅ fix(decisions): confirm-batch — prevent starvation under pagination+failures; complete T2 evidence
+### ✅ fix(decisions): confirm-batch — prevent starvation under pagination+failures; complete T2 evidence (88086889)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: 88086889 | 2026-07-19T14:55:43.370593+00:00_
 
-### ✅ chore(release): v0.14.0 — Archaeology carry-forward completion
+### ✅ chore(release): v0.14.0 — Archaeology carry-forward completion (56c4f997)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: 56c4f997 | 2026-07-12T03:48:56.655119+00:00_
 
-### ❌ Auto-assessed checkpoint
+### ❌ Auto-assessed checkpoint (48c8431e)
 
 **Feedback:** disagree — Comprehensive project manual expands future onboarding, maintenance, and review options; neutral auto-assessment understates the docs deliverable value.
 
 _Assessment: 48c8431e | 2026-06-21T15:07:26.849554+00:00_
 
-### ❌ Auto-assessed checkpoint
+### ❌ Auto-assessed checkpoint (bbb6a37b)
 
 **Feedback:** disagree — Doc review found and fixed source-map drift plus evidence artifact terminology drift in the comprehensive manual plan, expanding future execution and review reliability rather than being neutral.
 
 _Assessment: bbb6a37b | 2026-06-21T13:15:39.090809+00:00_
 
-### ❌ Auto-assessed checkpoint
+### ❌ Auto-assessed checkpoint (3cdb666b)
 
 **Feedback:** disagree — The comprehensive manual plan expands future onboarding, review, and execution options by defining a source-backed A-to-Z documentation deliverable, evidence matrix, and verification criteria rather than being merely neutral.
 
 _Assessment: 3cdb666b | 2026-06-20T06:53:53.103439+00:00_
 
-### ❌ Auto-assessed checkpoint
+### ❌ Auto-assessed checkpoint (39ae7b45)
 
 **Feedback:** disagree — Docs refresh closes README/spec contract drift for version, schema, CLI, MCP, and proposal status; this should expand future review and onboarding options rather than neutral.
 
 _Assessment: 39ae7b45 | 2026-06-20T05:12:55.966118+00:00_
 
-### ✅ Auto-assessed checkpoint
+### ✅ Auto-assessed checkpoint (b5fed17f)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: b5fed17f | 2026-06-07T04:04:23.897323+00:00_
 
-### ✅ Merge branch 'docs/roadmap-direction-2026-06-02'
+### ✅ Merge branch 'docs/roadmap-direction-2026-06-02' (5d19a93c)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: 5d19a93c | 2026-06-06T14:40:01.191856+00:00_
 
-### ✅ fix(hooks): prevent codex-notify stdin blocking that accumulates zombie processes
+### ✅ fix(hooks): prevent codex-notify stdin blocking that accumulates zombie processes (d9e00b3f)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: d9e00b3f | 2026-06-06T14:40:01.184484+00:00_
 
-### ✅ Auto-assessed checkpoint
+### ✅ Auto-assessed checkpoint (be7950ff)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: be7950ff | 2026-06-06T14:40:01.161669+00:00_
 
-### ✅ Auto-assessed checkpoint
+### ✅ Auto-assessed checkpoint (4ac6facf)
 
 **Feedback:** agree — auto:committed
 
 _Assessment: 4ac6facf | 2026-06-06T14:40:01.154162+00:00_
 
-### ✅ 릴리스 커밋의 closing reference를 기준으로 GitHub 이슈를 자동 종료해 운영 마찰은 줄이지만, 결정 메모리 루프 자체의 선택지를 크게 넓히거나 좁히지는 않는다.
+### ✅ 릴리스 커밋의 closing reference를 기준으로 GitHub 이슈를 자동 종료해 운영 마찰은 줄이지만, 결정 메모리 루프 자체의 선택지를 크게 넓히거나 좁히지는 않는다. (e5d01a13)
 
 **Roadmap alignment:** v0.6.0의 outcome semantics나 decision-memory wedge와 직접 연결되지는 않으며, v0.5.0 이후의 운영 안정화 성격에 가까운 주변 자동화다; 검토한 기존 결정들은 v0.6.0 범위 축소와 v0.5.0 hardening 원칙이었고, 이 변경은 그 방향을 위반하지는 않지만 핵심 로드맵을 전진시키지도 않는다.
 

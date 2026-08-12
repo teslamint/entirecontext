@@ -173,7 +173,7 @@ def distill_lessons(assessments: list[dict]) -> str:
         lines.append("")
         for a in items:
             feedback_icon = "\u2705" if a.get("feedback") == "agree" else "\u274c"
-            lines.append(f"### {feedback_icon} {a.get('impact_summary', 'No summary')}")
+            lines.append(f"### {feedback_icon} {a.get('impact_summary', 'No summary')} ({a['id'][:8]})")
             lines.append("")
             if a.get("roadmap_alignment"):
                 lines.append(f"**Roadmap alignment:** {a['roadmap_alignment']}")
