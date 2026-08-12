@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from typing import Any, cast
+from typing import Any
 
 from .. import runtime
 
@@ -20,12 +20,7 @@ async def ec_session_context(
 
         if not session_id:
             return runtime.error_payload("session_id is required for cross-repo session context")
-        # cast: the return type is conditional on include_warnings, which mypy cannot
-        # express without @overload on the definition. See ROADMAP.md.
-        result, warnings = cast(
-            "tuple[dict[str, Any] | None, list[dict[str, str]]]",
-            cross_repo_session_detail(session_id, repos=repo_names, include_warnings=True),
-        )
+        result, warnings = cross_repo_session_detail(session_id, repos=repo_names, include_warnings=True)
         if not result:
             return runtime.error_payload(f"Session not found: {session_id}", warnings=warnings)
         turns = result.get("turns", [])
@@ -190,12 +185,7 @@ async def ec_turn_content(
     if repos is not None and repos != "":
         from ...core.cross_repo import cross_repo_turn_content
 
-        # cast: the return type is conditional on include_warnings, which mypy cannot
-        # express without @overload on the definition. See ROADMAP.md.
-        result, warnings = cast(
-            "tuple[dict[str, Any] | None, list[dict[str, str]]]",
-            cross_repo_turn_content(turn_id, repos=repo_names, include_warnings=True),
-        )
+        result, warnings = cross_repo_turn_content(turn_id, repos=repo_names, include_warnings=True)
         if not result:
             return runtime.error_payload(f"Turn not found: {turn_id}", warnings=warnings)
         return json.dumps(

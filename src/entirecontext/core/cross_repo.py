@@ -358,6 +358,19 @@ def cross_repo_checkpoints(
     return _return_with_warnings(results, warnings, include_warnings)
 
 
+@overload
+def cross_repo_session_detail(
+    session_id: str,
+    repos: list[str] | None = ...,
+    include_warnings: Literal[False] = ...,
+) -> dict | None: ...
+@overload
+def cross_repo_session_detail(
+    session_id: str,
+    repos: list[str] | None = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[dict | None, list[WarningEntry]]: ...
 def cross_repo_session_detail(
     session_id: str,
     repos: list[str] | None = None,
@@ -486,6 +499,19 @@ def cross_repo_related(
     return _return_with_warnings(results, warnings, include_warnings)
 
 
+@overload
+def cross_repo_rewind(
+    checkpoint_id: str,
+    repos: list[str] | None = ...,
+    include_warnings: Literal[False] = ...,
+) -> dict | None: ...
+@overload
+def cross_repo_rewind(
+    checkpoint_id: str,
+    repos: list[str] | None = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[dict | None, list[WarningEntry]]: ...
 def cross_repo_rewind(
     checkpoint_id: str,
     repos: list[str] | None = None,
@@ -502,6 +528,19 @@ def cross_repo_rewind(
     return result
 
 
+@overload
+def cross_repo_turn_content(
+    turn_id: str,
+    repos: list[str] | None = ...,
+    include_warnings: Literal[False] = ...,
+) -> dict | None: ...
+@overload
+def cross_repo_turn_content(
+    turn_id: str,
+    repos: list[str] | None = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[dict | None, list[WarningEntry]]: ...
 def cross_repo_turn_content(
     turn_id: str,
     repos: list[str] | None = None,
