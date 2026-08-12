@@ -193,6 +193,10 @@ class TestStripEcHooks:
         entry = {"matcher": "", "hooks": [{"type": "command", "command": r"C:\venv\Scripts\ec.exe hook handle"}]}
         assert _strip_ec_hooks([entry]) == []
 
+    def test_preserves_entry_with_already_empty_hooks(self):
+        entry = {"matcher": "", "hooks": []}
+        assert _strip_ec_hooks([entry]) == [entry]
+
 
 class TestFallbackModuleIsRunnable:
     """The no-PATH fallback writes `python -m entirecontext.cli`, which must execute."""
@@ -691,6 +695,30 @@ class TestEnableDisableRoundTrip:
         assert len(session_start_hooks) == 2
         assert any("other-tool" in h.get("command", "") for h in session_start_hooks)
         assert any(_is_ec_hook(h) for h in session_start_hooks)
+
+
+class TestDisablePreservesEmptyHookGroups:
+    """_strip_ec_hooks must not corrupt settings containing pre-existing empty hook entries."""
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_preserves_empty_hooks_entry(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        (repo / ".claude").mkdir(parents=True)
+        settings = {"hooks": {"Stop": [{"matcher": "", "hooks": []}]}}
+        (repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
+
+        result = runner.invoke(app, ["disable"])
+
+        after = json.loads((repo / ".claude" / "settings.local.json").read_text())
+        assert "Stop" in after.get("hooks", {}), "Stop key must survive disable"
+        assert after["hooks"]["Stop"] == [{"matcher": "", "hooks": []}]
+        assert "No EntireContext hooks found" in result.output
 
 
 class TestCodexIntegration:

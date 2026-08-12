@@ -347,7 +347,7 @@ def _strip_ec_hooks(entries: list) -> list:
         inner = entry.get("hooks")
         if isinstance(inner, list):
             remaining = [h for h in inner if not _is_ec_command(h.get("command", ""))]
-            if not remaining:
+            if inner and not remaining:
                 continue
             if len(remaining) != len(inner):
                 entry = {**entry, "hooks": remaining}
