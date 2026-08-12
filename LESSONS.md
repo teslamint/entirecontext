@@ -1,6 +1,6 @@
 # Lessons Learned
 
-_Generated from 46 assessed changes._
+_Generated from 47 assessed changes._
 
 ## 🟢 Expand (increases future options)
 
@@ -175,6 +175,12 @@ _Assessment: 84288d4f | 2026-02-20T10:48:16.009213+00:00_
 _Assessment: dd6184a2 | 2026-02-20T08:51:22.221135+00:00_
 
 ## 🟡 Neutral
+
+### ✅ Merge pull request #215 from teslamint/chore/mypy-mcp-runtime (16c24bc6)
+
+**Feedback:** agree — Correct as neutral for roadmap-position purposes: neither PR adds product surface. But the type-safety change is not cosmetic — 60 of 127 mypy errors came from one unnarrowable Connection | None shape, and replacing it means future MCP tools start from a checked baseline rather than inheriting the union. The MD024 fix likewise restores anchor reachability in a generated file, not just tidiness.
+
+_Assessment: 16c24bc6 | 2026-08-12T03:33:14.568011+00:00_
 
 ### ✅ All three approved regression scenarios are delivered. Full suite passed 2114 tests with 1 skip; Ruff and mypy passed. One non-blocking session-embedding regression-test coverage gap remains. (a1661d20)
 
