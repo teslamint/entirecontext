@@ -1,6 +1,6 @@
 ---
 title: "@overload for the include_warnings cross-repo functions"
-status: draft
+status: approved
 date: 2026-08-12
 schema: spec/v1
 ---
