@@ -610,6 +610,19 @@ def cross_repo_assessments(
     return _return_with_warnings(results, warnings, include_warnings)
 
 
+@overload
+def cross_repo_assessment_trends(
+    repos: list[str] | None = ...,
+    since: str | None = ...,
+    include_warnings: Literal[False] = ...,
+) -> dict: ...
+@overload
+def cross_repo_assessment_trends(
+    repos: list[str] | None = ...,
+    since: str | None = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[dict, list[WarningEntry]]: ...
 def cross_repo_assessment_trends(
     repos: list[str] | None = None,
     since: str | None = None,
