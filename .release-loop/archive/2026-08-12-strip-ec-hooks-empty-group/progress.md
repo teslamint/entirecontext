@@ -6,8 +6,8 @@ branch: fix/strip-ec-hooks-empty-group
 phase: done
 phase_status: complete
 updated: 2026-08-12T21:35:00Z
-plan: .release-loop/briefs/plan-strip-ec-hooks-empty-group.md
-spec: .release-loop/briefs/spec-strip-ec-hooks-empty-group.md
+plan: .release-loop/archive/2026-08-12-strip-ec-hooks-empty-group/plan-strip-ec-hooks-empty-group.md
+spec: .release-loop/archive/2026-08-12-strip-ec-hooks-empty-group/spec-strip-ec-hooks-empty-group.md
 ---
 
 ## Final Action
