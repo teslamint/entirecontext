@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal, overload
 
 from .context import GlobalContext
 from .search import FTSQueryError
@@ -177,6 +177,37 @@ def _return_with_warnings(results: list[dict], warnings: list[WarningEntry], inc
     return results
 
 
+@overload
+def cross_repo_search(
+    query: str,
+    search_type: str = ...,
+    target: str = ...,
+    repos: list[str] | None = ...,
+    file_filter: str | None = ...,
+    commit_filter: str | None = ...,
+    agent_filter: str | None = ...,
+    since: str | None = ...,
+    until: str | None = ...,
+    until_exclusive: bool = ...,
+    limit: int = ...,
+    include_warnings: Literal[False] = ...,
+) -> list[dict]: ...
+@overload
+def cross_repo_search(
+    query: str,
+    search_type: str = ...,
+    target: str = ...,
+    repos: list[str] | None = ...,
+    file_filter: str | None = ...,
+    commit_filter: str | None = ...,
+    agent_filter: str | None = ...,
+    since: str | None = ...,
+    until: str | None = ...,
+    until_exclusive: bool = ...,
+    limit: int = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[list[dict], list[WarningEntry]]: ...
 def cross_repo_search(
     query: str,
     search_type: str = "regex",
@@ -261,6 +292,21 @@ def cross_repo_search(
     return _return_with_warnings(results, warnings, include_warnings)
 
 
+@overload
+def cross_repo_sessions(
+    repos: list[str] | None = ...,
+    limit: int = ...,
+    include_ended: bool = ...,
+    include_warnings: Literal[False] = ...,
+) -> list[dict]: ...
+@overload
+def cross_repo_sessions(
+    repos: list[str] | None = ...,
+    limit: int = ...,
+    include_ended: bool = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[list[dict], list[WarningEntry]]: ...
 def cross_repo_sessions(
     repos: list[str] | None = None,
     limit: int = 20,
@@ -276,6 +322,23 @@ def cross_repo_sessions(
     return _return_with_warnings(results, warnings, include_warnings)
 
 
+@overload
+def cross_repo_checkpoints(
+    repos: list[str] | None = ...,
+    session_id: str | None = ...,
+    since: str | None = ...,
+    limit: int = ...,
+    include_warnings: Literal[False] = ...,
+) -> list[dict]: ...
+@overload
+def cross_repo_checkpoints(
+    repos: list[str] | None = ...,
+    session_id: str | None = ...,
+    since: str | None = ...,
+    limit: int = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[list[dict], list[WarningEntry]]: ...
 def cross_repo_checkpoints(
     repos: list[str] | None = None,
     session_id: str | None = None,
@@ -316,6 +379,23 @@ def cross_repo_session_detail(
     return result
 
 
+@overload
+def cross_repo_events(
+    repos: list[str] | None = ...,
+    status: str | None = ...,
+    event_type: str | None = ...,
+    limit: int = ...,
+    include_warnings: Literal[False] = ...,
+) -> list[dict]: ...
+@overload
+def cross_repo_events(
+    repos: list[str] | None = ...,
+    status: str | None = ...,
+    event_type: str | None = ...,
+    limit: int = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[list[dict], list[WarningEntry]]: ...
 def cross_repo_events(
     repos: list[str] | None = None,
     status: str | None = None,
@@ -332,6 +412,23 @@ def cross_repo_events(
     return _return_with_warnings(results, warnings, include_warnings)
 
 
+@overload
+def cross_repo_attribution(
+    file_path: str,
+    start_line: int | None = ...,
+    end_line: int | None = ...,
+    repos: list[str] | None = ...,
+    include_warnings: Literal[False] = ...,
+) -> list[dict]: ...
+@overload
+def cross_repo_attribution(
+    file_path: str,
+    start_line: int | None = ...,
+    end_line: int | None = ...,
+    repos: list[str] | None = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[list[dict], list[WarningEntry]]: ...
 def cross_repo_attribution(
     file_path: str,
     start_line: int | None = None,
@@ -348,6 +445,23 @@ def cross_repo_attribution(
     return _return_with_warnings(results, warnings, include_warnings)
 
 
+@overload
+def cross_repo_related(
+    query: str | None = ...,
+    files: list[str] | None = ...,
+    repos: list[str] | None = ...,
+    limit: int = ...,
+    include_warnings: Literal[False] = ...,
+) -> list[dict]: ...
+@overload
+def cross_repo_related(
+    query: str | None = ...,
+    files: list[str] | None = ...,
+    repos: list[str] | None = ...,
+    limit: int = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[list[dict], list[WarningEntry]]: ...
 def cross_repo_related(
     query: str | None = None,
     files: list[str] | None = None,
@@ -418,6 +532,23 @@ def resolve_content_path(repo_path: str, content_path: str) -> Path:
     return Path(repo_path) / ".entirecontext" / content_path
 
 
+@overload
+def cross_repo_assessments(
+    repos: list[str] | None = ...,
+    verdict: str | None = ...,
+    since: str | None = ...,
+    limit: int = ...,
+    include_warnings: Literal[False] = ...,
+) -> list[dict]: ...
+@overload
+def cross_repo_assessments(
+    repos: list[str] | None = ...,
+    verdict: str | None = ...,
+    since: str | None = ...,
+    limit: int = ...,
+    *,
+    include_warnings: Literal[True],
+) -> tuple[list[dict], list[WarningEntry]]: ...
 def cross_repo_assessments(
     repos: list[str] | None = None,
     verdict: str | None = None,

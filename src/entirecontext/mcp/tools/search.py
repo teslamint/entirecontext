@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 
-from typing import Any, cast
+from typing import Any
 
 from .. import runtime
 
@@ -55,23 +55,17 @@ async def ec_search(
                 bound_conn.close()
 
         try:
-            # cast: cross_repo_search's return type is conditional on include_warnings,
-            # which mypy cannot express without @overload on the definition. Omitting the
-            # argument makes the branch unambiguous. See ROADMAP.md.
-            results = cast(
-                "list[dict[str, Any]]",
-                cross_repo_search(
-                    query,
-                    search_type=search_type,
-                    repos=repo_names,
-                    file_filter=file_filter,
-                    commit_filter=commit_filter,
-                    agent_filter=agent_filter,
-                    since=resolved_since,
-                    until=resolved_until,
-                    until_exclusive=until_exclusive,
-                    limit=limit,
-                ),
+            results = cross_repo_search(
+                query,
+                search_type=search_type,
+                repos=repo_names,
+                file_filter=file_filter,
+                commit_filter=commit_filter,
+                agent_filter=agent_filter,
+                since=resolved_since,
+                until=resolved_until,
+                until_exclusive=until_exclusive,
+                limit=limit,
             )
         except ValueError as exc:
             return runtime.error_payload(str(exc))
