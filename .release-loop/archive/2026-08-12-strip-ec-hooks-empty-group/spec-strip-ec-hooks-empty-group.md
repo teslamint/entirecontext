@@ -16,8 +16,8 @@ created: 2026-08-12
 ```python
 if isinstance(inner, list):
     remaining = [h for h in inner if not _is_ec_command(h.get("command", ""))]
-    if not remaining:       # ← True for both "became empty" AND "was already empty"
-        continue            # ← drops the entry either way
+    if not remaining:  # ← True for both "became empty" AND "was already empty"
+        continue  # ← drops the entry either way
 ```
 
 When `inner = []` (pre-existing empty), `remaining = []`, `not remaining` is `True`, and the entry is discarded. The code cannot distinguish "we emptied it" from "it was already empty."
