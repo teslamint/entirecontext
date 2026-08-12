@@ -14,9 +14,9 @@ created: 2026-08-12
 ### Root cause
 
 ```python
-if filtered:           # line 607
+if filtered:  # line 607
     hooks[hook_name] = filtered
-else:                  # line 609
+else:  # line 609
     del hooks[hook_name]  # line 610 — deletes even if original was already []
 ```
 
