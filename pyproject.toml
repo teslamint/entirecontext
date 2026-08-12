@@ -166,6 +166,10 @@ ignore_errors = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# -rs prints a reason line for every skip. Skips are how a missing optional extra
+# hides an entire module: tests/test_mcp.py went 119 tests unrun in CI without a
+# visible signal. Making them visible is the guard against that recurring.
+addopts = "-rs"
 
 [tool.uv.sources]
 entirecontext = { workspace = true }
