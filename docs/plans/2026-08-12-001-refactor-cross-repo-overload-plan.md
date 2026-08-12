@@ -2,10 +2,11 @@
 schema: plan/v1
 title: "@overload for the include_warnings cross-repo functions"
 type: refactor
-status: draft
+status: approved
 date: 2026-08-12
 execution: code
 origin: docs/specs/2026-08-12-cross-repo-overload-design.md
+body_seal: fb89059f5f5c89ee9e3651cf1d3413a665cd926cc89c58b15b4e953302d59f15
 ---
 
 # @overload for the `include_warnings` cross-repo functions
@@ -105,8 +106,7 @@ today and unchanged by this plan (204/265/336/379 maturity 64, 300 applied-conte
 lesson-reuse 14%, 392 alpha status, 231 verdict mapping), or event-based on an occurrence this
 cycle does not produce (376 export authorization, 406/408 product scope).
 
-**Attestation**: all 22 open rows were classified; 4 fired; 4 have dispositions above; 0 were
-skipped.
+Audited ROADMAP.md at c3aab1c: 22 open rows, 4 fired, 0 unobservable.
 
 ## Scenario coverage map
 
