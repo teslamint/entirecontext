@@ -3,9 +3,9 @@ schema: 2
 feature: strip-ec-hooks-empty-group
 base_branch: main
 branch: fix/strip-ec-hooks-empty-group
-phase: retro
-phase_status: in_progress
-updated: 2026-08-12T21:32:00Z
+phase: done
+phase_status: complete
+updated: 2026-08-12T21:35:00Z
 plan: .release-loop/briefs/plan-strip-ec-hooks-empty-group.md
 spec: .release-loop/briefs/spec-strip-ec-hooks-empty-group.md
 ---
@@ -35,3 +35,5 @@ spec: .release-loop/briefs/spec-strip-ec-hooks-empty-group.md
 - 2026-08-12T21:30:00Z: Committed 467f0f6. Pushed. PR #218 created.
 - 2026-08-12T21:30:00Z: final_action determined: gh pr merge 218 --squash --auto
 - 2026-08-12T21:32:00Z: Phase → retro
+- 2026-08-12T21:35:00Z: Retro committed e8ad4f1. Phase → done.
+- 2026-08-12T21:35:00Z: archive-destination: .release-loop/archive/2026-08-12-strip-ec-hooks-empty-group/
