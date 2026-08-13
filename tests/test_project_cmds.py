@@ -726,16 +726,14 @@ class TestDisablePreservesEmptyGroupKeys:
 
     @patch("entirecontext.core.project.find_git_root")
     def test_disable_preserves_empty_group_key_when_sibling_triggers_rewrite(
-        self, mock_git_root, tmp_path, monkeypatch
+        self, mock_git_root, git_repo, tmp_path, monkeypatch
     ):
-        repo = tmp_path / "repo"
-        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
-        mock_git_root.return_value = str(repo)
+        mock_git_root.return_value = str(git_repo)
         fake_home = tmp_path / "fakehome"
         fake_home.mkdir()
         monkeypatch.setenv("HOME", str(fake_home))
 
-        (repo / ".claude").mkdir(parents=True)
+        (git_repo / ".claude").mkdir(parents=True)
         settings = {
             "hooks": {
                 "PreToolUse": [],
@@ -747,11 +745,11 @@ class TestDisablePreservesEmptyGroupKeys:
                 ],
             }
         }
-        (repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
+        (git_repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
 
         runner.invoke(app, ["disable"])
 
-        after = json.loads((repo / ".claude" / "settings.local.json").read_text())
+        after = json.loads((git_repo / ".claude" / "settings.local.json").read_text())
         assert "PreToolUse" in after.get("hooks", {}), "empty PreToolUse key must survive disable"
         assert after["hooks"]["PreToolUse"] == []
         assert "Stop" not in after.get("hooks", {}), "Stop with only EC hooks must be removed"
