@@ -606,7 +606,7 @@ def disable(
                     changed = True
                 if filtered:
                     hooks[hook_name] = filtered
-                else:
+                elif original:
                     del hooks[hook_name]
             if path_changed:
                 path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")

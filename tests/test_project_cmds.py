@@ -721,6 +721,40 @@ class TestDisablePreservesEmptyHookGroups:
         assert "No EntireContext hooks found" in result.output
 
 
+class TestDisablePreservesEmptyGroupKeys:
+    """disable must not delete hook-type keys whose value is an empty list."""
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_preserves_empty_group_key_when_sibling_triggers_rewrite(
+        self, mock_git_root, git_repo, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        (git_repo / ".claude").mkdir(parents=True)
+        settings = {
+            "hooks": {
+                "PreToolUse": [],
+                "Stop": [
+                    {
+                        "matcher": "",
+                        "hooks": [{"type": "command", "command": "ec hook handle --type Stop", "timeout": 10}],
+                    }
+                ],
+            }
+        }
+        (git_repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
+
+        runner.invoke(app, ["disable"])
+
+        after = json.loads((git_repo / ".claude" / "settings.local.json").read_text())
+        assert "PreToolUse" in after.get("hooks", {}), "empty PreToolUse key must survive disable"
+        assert after["hooks"]["PreToolUse"] == []
+        assert "Stop" not in after.get("hooks", {}), "Stop with only EC hooks must be removed"
+
+
 class TestCodexIntegration:
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_codex_writes_user_notify(self, mock_git_root, tmp_path, monkeypatch):
