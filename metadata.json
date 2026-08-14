@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.0",
+  "checkpoint_id": "01M013TR5NGND4RCSN3N7B5XAV",
+  "strategy": "manual-commit",
+  "branch": "fix/lessons-verdict-floor-review",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "src/entirecontext/core/futures.py",
+    "src/entirecontext/db/migrations/__init__.py",
+    "src/entirecontext/db/schema.py",
+    "tests/test_db_schema.py",
+    "tests/test_decisions_cli.py",
+    "tests/test_futures.py",
+    "tests/test_mcp.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 46040,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 6912,
+    "output_tokens": 249,
+    "api_call_count": 1
+  }
+}
