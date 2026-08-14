@@ -279,7 +279,7 @@ Artifacts:
 
 - `futures feedback` triggers auto-distill checks.
 - Session end lifecycle can trigger auto-distill checks.
-- Assessment enrichment/backlog processing is controlled by `[futures]` config keys such as `auto_distill`, `assess_enrich`, and `assess_backfill_window_days`.
+- Assessment enrichment/backlog processing is controlled by `[futures]` config keys such as `auto_distill`, `assess_enrich`, `assess_backfill_window_days`, and `lessons_min_per_verdict`.
 
 ---
 
@@ -383,6 +383,7 @@ embed_model = "all-MiniLM-L6-v2"
 [futures]
 auto_distill = false
 lessons_output = "LESSONS.md"
+lessons_min_per_verdict = 5
 default_backend = "claude"
 default_model = ""
 assess_enrich = true
@@ -410,6 +411,7 @@ enabled = false
 patterns = []
 replacement = "[FILTERED]"
 ```
+Lesson selection reserves slots per verdict inside the total lesson cap, so a run of one verdict cannot evict every lesson of another; the reservation never exceeds half the cap, and `0` restores pure recency ordering.
 
 ---
 
