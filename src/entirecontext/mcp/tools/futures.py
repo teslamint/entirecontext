@@ -159,13 +159,17 @@ async def ec_feedback(assessment_id: str, feedback: str, reason: str | None = No
 
 async def ec_lessons(limit: int = 50) -> str:
     try:
-        conn, _ = runtime.open_repo()
+        conn, repo_path = runtime.open_repo()
     except runtime.RepoResolutionError as exc:
         return runtime.error_payload(str(exc))
     try:
-        from ...core.futures import get_lessons
+        from ...core.config import load_config
+        from ...core.futures import DEFAULT_LESSONS_MIN_PER_VERDICT, get_lessons
 
-        lessons = get_lessons(conn, limit=limit)
+        floor = (
+            load_config(repo_path).get("futures", {}).get("lessons_min_per_verdict", DEFAULT_LESSONS_MIN_PER_VERDICT)
+        )
+        lessons = get_lessons(conn, limit=limit, min_per_verdict=floor)
         return json.dumps({"lessons": lessons, "count": len(lessons)})
     finally:
         conn.close()

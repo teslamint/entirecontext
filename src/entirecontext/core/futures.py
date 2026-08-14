@@ -254,7 +254,10 @@ def auto_distill_lessons(repo_path: str | Path) -> bool:
 
     conn = get_db(str(repo_path))
     try:
-        lessons = get_lessons(conn)
+        lessons = get_lessons(
+            conn,
+            min_per_verdict=config.get("futures", {}).get("lessons_min_per_verdict", DEFAULT_LESSONS_MIN_PER_VERDICT),
+        )
     finally:
         conn.close()
 

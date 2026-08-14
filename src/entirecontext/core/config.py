@@ -68,6 +68,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "futures": {
         "auto_distill": False,
         "lessons_output": "LESSONS.md",
+        "lessons_min_per_verdict": 5,
         "default_backend": "claude",
         "default_model": "",
         "assess_enrich": True,

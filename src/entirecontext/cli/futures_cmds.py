@@ -236,7 +236,7 @@ def futures_lessons(
     ),
 ):
     """Generate LESSONS.md from assessed changes with feedback."""
-    from ..core.futures import distill_lessons, get_lessons
+    from ..core.futures import DEFAULT_LESSONS_MIN_PER_VERDICT, distill_lessons, get_lessons
     from ..core.project import find_git_root
     from ..db import get_db
 
@@ -245,9 +245,13 @@ def futures_lessons(
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
 
+    from ..core.config import load_config
+
+    floor = load_config(repo_path).get("futures", {}).get("lessons_min_per_verdict", DEFAULT_LESSONS_MIN_PER_VERDICT)
+
     conn = get_db(repo_path)
     try:
-        lessons = get_lessons(conn)
+        lessons = get_lessons(conn, min_per_verdict=floor)
     finally:
         conn.close()
 
