@@ -2,9 +2,10 @@
 schema: plan/v1
 title: "Verdict-quota selection for get_lessons"
 type: fix
-status: draft
+status: approved
 date: 2026-08-15
 execution: code
+body_seal: 08ae234c65c862b5d2ed123f90798feb5898fc46844a1504fbf5893724d27cd4
 ---
 
 # Verdict-quota selection for `get_lessons`
