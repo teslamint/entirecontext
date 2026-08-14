@@ -159,6 +159,102 @@ def test_distill_lessons_headings_are_unique_per_assessment():
     assert len(set(headings)) == 3
 
 
+def _seed_lesson(conn, verdict: str, created_at: str, feedback: str = "agree") -> str:
+    from uuid import uuid4
+
+    lesson_id = str(uuid4())
+    conn.execute(
+        """INSERT INTO assessments (id, verdict, impact_summary, feedback, created_at)
+        VALUES (?, ?, ?, ?, ?)""",
+        (lesson_id, verdict, f"{verdict} at {created_at}", feedback, created_at),
+    )
+    return lesson_id
+
+
+def test_get_lessons_reserves_floor_for_minority_verdict(ec_db):
+    """A neutral flood must not evict every expand lesson (S1)."""
+    for i in range(60):
+        _seed_lesson(ec_db, "neutral", f"2026-08-14T{i // 60:02d}:{i % 60:02d}:00+00:00")
+    for i in range(8):
+        _seed_lesson(ec_db, "expand", f"2026-08-01T00:{i:02d}:00+00:00")
+
+    lessons = get_lessons(ec_db, limit=50, min_per_verdict=5)
+
+    assert len(lessons) == 50
+    assert len([item for item in lessons if item["verdict"] == "expand"]) >= 5
+
+
+def test_get_lessons_never_exceeds_limit(ec_db):
+    """limit stays a total cap across all verdicts (S2)."""
+    for verdict in ("expand", "narrow", "neutral"):
+        for i in range(10):
+            _seed_lesson(ec_db, verdict, f"2026-08-1{i}T00:00:00+00:00")
+
+    assert len(get_lessons(ec_db, limit=9, min_per_verdict=5)) == 9
+    assert get_lessons(ec_db, limit=0, min_per_verdict=5) == []
+
+
+def test_get_lessons_absent_verdict_forfeits_floor(ec_db):
+    """A verdict with no rows must not shrink the result (S3)."""
+    for i in range(12):
+        _seed_lesson(ec_db, "neutral", f"2026-08-10T00:{i:02d}:00+00:00")
+
+    lessons = get_lessons(ec_db, limit=10, min_per_verdict=5)
+
+    assert len(lessons) == 10
+    assert {item["verdict"] for item in lessons} == {"neutral"}
+
+
+def test_get_lessons_fills_remaining_slots_by_global_recency(ec_db):
+    """Non-reserved slots take the globally newest rows, in deterministic order (S4).
+
+    Guards the overflow.sort that makes the fill global rather than
+    per-verdict — every other test here passes without it.
+    """
+    for i in range(6):
+        _seed_lesson(ec_db, "expand", f"2026-08-02T00:{i:02d}:00+00:00")
+    for i in range(6):
+        _seed_lesson(ec_db, "neutral", f"2026-08-03T00:{i:02d}:00+00:00")
+    for i in range(6):
+        _seed_lesson(ec_db, "narrow", f"2026-08-04T00:{i:02d}:00+00:00")
+
+    lessons = get_lessons(ec_db, limit=12, min_per_verdict=1)
+
+    assert len(lessons) == 12
+    stamps = [item["created_at"] for item in lessons]
+    assert stamps == sorted(stamps, reverse=True)
+    # narrow is newest, so after the 1-per-verdict floors the fill is
+    # narrow-then-neutral; no expand row beyond its floor can appear.
+    assert len([item for item in lessons if item["verdict"] == "expand"]) == 1
+
+
+def test_get_lessons_small_limit_caps_floor_budget(ec_db):
+    """A small limit stays recency-ordered, not a per-verdict sampler (S5)."""
+    for i in range(4):
+        _seed_lesson(ec_db, "expand", f"2026-08-01T00:{i:02d}:00+00:00")
+    for i in range(4):
+        _seed_lesson(ec_db, "neutral", f"2026-08-09T00:{i:02d}:00+00:00")
+
+    lessons = get_lessons(ec_db, limit=3, min_per_verdict=5)
+
+    assert len(lessons) == 3
+    # floor budget is limit // 2 == 1, so at most one slot is reserved and
+    # the newest rows (neutral) take the rest.
+    assert len([item for item in lessons if item["verdict"] == "neutral"]) >= 2
+
+
+def test_get_lessons_min_per_verdict_zero_is_pure_recency(ec_db):
+    """min_per_verdict=0 restores the pre-fix ordering exactly (S6)."""
+    for i in range(4):
+        _seed_lesson(ec_db, "expand", f"2026-08-01T00:{i:02d}:00+00:00")
+    for i in range(4):
+        _seed_lesson(ec_db, "neutral", f"2026-08-09T00:{i:02d}:00+00:00")
+
+    lessons = get_lessons(ec_db, limit=4, min_per_verdict=0)
+
+    assert [item["verdict"] for item in lessons] == ["neutral"] * 4
+
+
 def test_get_assessment_prefix_match(ec_db):
     """Test that get_assessment supports prefix matching (regression: dd6184a2-c16 not found)."""
     result = create_assessment(ec_db, verdict="expand", impact_summary="Prefix test")
