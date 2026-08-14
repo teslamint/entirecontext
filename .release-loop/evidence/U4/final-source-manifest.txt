@@ -1,0 +1,35 @@
+Final-source manifest evidence
+
+Scope:
+  pyproject.toml
+  sorted src/entirecontext/**/*.py
+File count: 122
+Algorithm:
+  SHA-256 over each relative POSIX path, NUL, file bytes, NUL, in scope order
+
+Ceremony sequence:
+  The manifest was computed in the same isolated ceremony process before the
+  forced-failure timestamp (2026-08-14T21:35:20.343006+00:00) was assigned.
+  All six outcome fixtures were then executed without modifying repository source.
+
+Ceremony manifest:
+  4d4371ad619d7435a40ac9f201752d6fa59a64b4c43072c1e8dceb2fa179a113
+
+Post-ceremony independent recheck:
+  checked_at: 2026-08-14T21:42:03.059582+00:00
+  sha256: 4d4371ad619d7435a40ac9f201752d6fa59a64b4c43072c1e8dceb2fa179a113
+  file_count: 122
+  matches_ceremony: true
+
+Verifier logic:
+  hasher = hashlib.sha256()
+  files = [Path("pyproject.toml")] + sorted(Path("src/entirecontext").rglob("*.py"))
+  for file in files:
+      hasher.update(file.as_posix().encode())
+      hasher.update(b"\0")
+      hasher.update(file.read_bytes())
+      hasher.update(b"\0")
+  print(hasher.hexdigest(), len(files))
+
+Repository-relative execution is required so the verifier path bytes match the
+recorded scope. No secret or machine-local fixture path is included.
