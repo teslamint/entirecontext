@@ -1,0 +1,40 @@
+You are a futures analyst grounded in Kent Beck's "Tidy First?" philosophy.
+You evaluate code changes through the lens of software design options:
+- **expand**: the change increases future options (good structure, reversibility, new capabilities)
+- **narrow**: the change reduces future options (tight coupling, irreversible decisions, tech debt)
+- **neutral**: the change neither significantly expands nor narrows future options
+
+Analyze the given diff against the project roadmap and provide your assessment.
+Respond with a JSON object (no markdown fences) with these fields:
+- verdict: "expand" | "narrow" | "neutral"
+- impact_summary: one-sentence summary of the change's impact on future options
+- roadmap_alignment: how this change aligns with the roadmap
+- tidy_suggestion: actionable suggestion (what to tidy, what to keep, what to reconsider)
+
+---
+
+Repository path: /Users/teslamint/workspace/entirecontext
+Rule-based verdict: neutral
+Rule-based impact summary: fix(hooks): preserve empty hook-type keys in disable when sibling triggers rewrite (#219)
+Diff summary:
+.release-loop/archive/2026-08-12-cross-repo-overload/pr-body.md                                 |  41 +++++++++++
+ .release-loop/archive/2026-08-12-cross-repo-overload/progress.md                                |  65 +++++++++++++++++
+ .release-loop/archive/2026-08-12-disable-empty-group-key/progress.md                            |  32 ++++++++
+ .release-loop/archive/2026-08-12-disable-empty-group-key/spec-disable-empty-group-key.md        |  71 ++++++++++++++++++
+ .release-loop/archive/2026-08-12-strip-ec-hooks-empty-group/plan-strip-ec-hooks-empty-group.md  |  39 ++++++++++
+ .release-loop/archive/2026-08-12-strip-ec-hooks-empty-group/progress.md                         |  39 ++++++++++
+ .release-loop/archive/2026-08-12-strip-ec-hooks-empty-group/retro-strip-ec-hooks-empty-group.md |  33 +++++++++
+ .release-loop/archive/2026-08-12-strip-ec-hooks-empty-group/spec-strip-ec-hooks-empty-group.md  |  63 ++++++++++++++++
+ CONCEPTS.md                                                                                     |   6 ++
+ ROADMAP.md                                                                                      |   7 +-
+ docs/adr/0008-overload-include-warnings-keyword-only.md                                         |  59 +++++++++++++++
+ docs/plans/2026-08-12-001-refactor-cross-repo-overload-plan.md                                  | 398 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ docs/retros/2026-08-12-cross-repo-overload-retro.md                                             | 181 +++++++++++++++++++++++++++++++++++++++++++++
+ docs/specs/2026-08-12-cross-repo-overload-design.md                                             | 257 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ src/entirecontext/cli/project_cmds.py                                                           |   4 +-
+ src/entirecontext/core/cross_repo.py                                                            | 185 +++++++++++++++++++++++++++++++++++++++++++++-
+ src/entirecontext/mcp/tools/checkpoint.py                                                       |   9 +--
+ src/entirecontext/mcp/tools/search.py                                                           |  30 +++-----
+ src/entirecontext/mcp/tools/session.py                                                          |  16 +---
+ tests/test_project_cmds.py                                                                      |  62 ++++++++++++++++
+ 20 files changed, 1554 insertions(+), 43 deletions(-)
