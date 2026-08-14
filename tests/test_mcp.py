@@ -2164,6 +2164,41 @@ class TestEcDecisionContext:
         assert shas[0] == "sha-9"  # most-recent created_at
 
 
+class TestMCPLessons:
+    @pytest.fixture(autouse=True)
+    def _require_mcp(self):
+        pytest.importorskip("mcp")
+
+    def test_ec_lessons_passes_configured_floor(self, db, monkeypatch):
+        from entirecontext.mcp.tools.futures import ec_lessons
+
+        seen: dict[str, int] = {}
+
+        monkeypatch.setattr(
+            "entirecontext.mcp.runtime.open_repo",
+            lambda repo_hint=None: (db, "/tmp/test"),
+        )
+        monkeypatch.setattr(
+            "entirecontext.core.config.load_config",
+            lambda repo_path=None: {"futures": {"lessons_min_per_verdict": 7}},
+        )
+
+        def fake_get_lessons(conn, limit=50, *, min_per_verdict=5):
+            seen["limit"] = limit
+            seen["min_per_verdict"] = min_per_verdict
+            return []
+
+        monkeypatch.setattr(
+            "entirecontext.core.futures.get_lessons",
+            fake_get_lessons,
+        )
+
+        result = json.loads(asyncio.run(ec_lessons(limit=12)))
+
+        assert result == {"lessons": [], "count": 0}
+        assert seen == {"limit": 12, "min_per_verdict": 7}
+
+
 class TestMCPAssessTrends:
     @pytest.fixture(autouse=True)
     def _require_mcp(self):

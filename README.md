@@ -526,12 +526,12 @@ ec mcp serve
 | `ec_assess` | Assess staged diff or checkpoint against roadmap via LLM |
 | `ec_assess_create` | Create an assessment programmatically (verdict, impact, suggestion) |
 | `ec_feedback` | Add agree/disagree feedback to an assessment |
-| `ec_lessons` | Generate LESSONS.md from assessed changes with feedback |
+| `ec_lessons` | Return a bounded JSON lesson list for the resolved repository, using the configured verdict floor; does not write `LESSONS.md` |
 | `ec_assess_trends` | Cross-repo assessment trend analysis (verdict distribution, feedback stats) |
 | `ec_dashboard` | Dashboard statistics: session/turn/checkpoint activity over a `since` window |
 | `ec_graph` | Build a knowledge graph (nodes/edges/stats) for a session or time window |
 
-All tools accept a `repos` parameter for cross-repo queries: `null` = current repo, `["*"]` = all repos, `["name"]` = specific repos.
+Tools that expose a `repos` parameter use `null` for the current repo, `["*"]` for all repos, and `["name"]` for specific repos. Tools without that parameter operate on the resolved current repository or their tool-specific scope.
 
 ## Hook System
 

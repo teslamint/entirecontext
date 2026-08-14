@@ -251,12 +251,9 @@ def futures_lessons(
 
     conn = get_db(repo_path)
     try:
-        lessons = get_lessons(conn, min_per_verdict=floor)
+        lessons = get_lessons(conn, min_per_verdict=floor, since=since)
     finally:
         conn.close()
-
-    if since:
-        lessons = [item for item in lessons if (item.get("created_at") or "") >= since]
 
     text = distill_lessons(lessons)
     Path(output).write_text(text, encoding="utf-8")

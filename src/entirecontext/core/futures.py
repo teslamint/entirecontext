@@ -165,35 +165,57 @@ def get_lessons(
     limit: int = 50,
     *,
     min_per_verdict: int = DEFAULT_LESSONS_MIN_PER_VERDICT,
+    since: str | None = None,
 ) -> list[dict]:
     """Get assessments that have feedback — these are lessons learned.
 
-    Selection reserves a bounded per-verdict floor before filling the rest
-    by recency, so a run of one verdict cannot evict every lesson of
-    another. limit remains a total cap on the rows returned.
+    Selection first limits candidates to ``since`` when provided, then reserves
+    a bounded per-verdict floor before filling the rest by recency, so a run of
+    one verdict cannot evict every lesson of another. ``limit`` remains a total
+    cap on the rows returned.
     """
     if limit <= 0:
         return []
 
+    since_clause = " AND created_at >= ?" if since is not None else ""
     floors = _allocate_verdict_floors(limit, min_per_verdict)
-    reserved: list[dict] = []
-    overflow: list[dict] = []
-
-    for verdict in VALID_VERDICTS:
-        rows = conn.execute(
-            """SELECT * FROM assessments
-            WHERE feedback IS NOT NULL AND verdict = ?
+    candidate_ctes = [
+        f"""verdict_{index} AS (
+            SELECT * FROM assessments
+            WHERE feedback IS NOT NULL AND verdict = ?{since_clause}
             ORDER BY created_at DESC, id DESC
-            LIMIT ?""",
-            (verdict, limit),
-        ).fetchall()
-        candidates = [dict(r) for r in rows]
-        floor = floors[verdict]
-        reserved.extend(candidates[:floor])
-        overflow.extend(candidates[floor:])
+            LIMIT ?
+        )"""
+        for index, _verdict in enumerate(VALID_VERDICTS)
+    ]
+    candidate_selects = [f"SELECT * FROM verdict_{index}" for index, _verdict in enumerate(VALID_VERDICTS)]
+    parameters = tuple(
+        value
+        for verdict in VALID_VERDICTS
+        for value in ((verdict, since, limit) if since is not None else (verdict, limit))
+    )
+    rows = conn.execute(
+        f"WITH {', '.join(candidate_ctes)} {' UNION ALL '.join(candidate_selects)}",
+        parameters,
+    ).fetchall()
 
     def _recency_key(item: dict) -> tuple[str, str]:
         return (item.get("created_at") or "", item.get("id") or "")
+
+    candidates_by_verdict: dict[str, list[dict]] = {verdict: [] for verdict in VALID_VERDICTS}
+    for row in rows:
+        item = dict(row)
+        candidates_by_verdict[item["verdict"]].append(item)
+    for candidates in candidates_by_verdict.values():
+        candidates.sort(key=_recency_key, reverse=True)
+
+    reserved: list[dict] = []
+    overflow: list[dict] = []
+    for verdict in VALID_VERDICTS:
+        candidates = candidates_by_verdict[verdict]
+        floor = floors[verdict]
+        reserved.extend(candidates[:floor])
+        overflow.extend(candidates[floor:])
 
     overflow.sort(key=_recency_key, reverse=True)
     selected = reserved + overflow[: max(0, limit - len(reserved))]

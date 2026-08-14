@@ -159,8 +159,9 @@ def test_futures_lessons_passes_config_floor(ec_repo, monkeypatch, tmp_path):
     """The configured floor reaches get_lessons rather than the default (S6)."""
     seen = {}
 
-    def fake_get_lessons(conn, limit=50, *, min_per_verdict=5):
+    def fake_get_lessons(conn, limit=50, *, min_per_verdict=5, since=None):
         seen["min_per_verdict"] = min_per_verdict
+        seen["since"] = since
         return []
 
     monkeypatch.chdir(ec_repo)
@@ -170,7 +171,18 @@ def test_futures_lessons_passes_config_floor(ec_repo, monkeypatch, tmp_path):
         lambda *a, **k: {"futures": {"lessons_min_per_verdict": 3}},
     )
 
-    result = runner.invoke(app, ["futures", "lessons", "--output", str(tmp_path / "OUT.md")])
+    result = runner.invoke(
+        app,
+        [
+            "futures",
+            "lessons",
+            "--output",
+            str(tmp_path / "OUT.md"),
+            "--since",
+            "2026-08-01",
+        ],
+    )
 
     assert result.exit_code == 0
     assert seen["min_per_verdict"] == 3
+    assert seen["since"] == "2026-08-01"

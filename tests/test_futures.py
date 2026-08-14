@@ -184,6 +184,24 @@ def test_get_lessons_reserves_floor_for_minority_verdict(ec_db):
     assert len([item for item in lessons if item["verdict"] == "expand"]) >= 5
 
 
+def test_get_lessons_applies_since_before_verdict_floors(ec_db):
+    """Old reserved rows must not displace eligible recent lessons."""
+    for i in range(60):
+        _seed_lesson(ec_db, "neutral", f"2026-08-14T00:{i:02d}:00+00:00")
+    for i in range(5):
+        _seed_lesson(ec_db, "expand", f"2026-07-01T00:{i:02d}:00+00:00")
+
+    lessons = get_lessons(
+        ec_db,
+        limit=50,
+        min_per_verdict=5,
+        since="2026-08-01",
+    )
+
+    assert len(lessons) == 50
+    assert all(lesson["created_at"] >= "2026-08-01" for lesson in lessons)
+
+
 def test_get_lessons_never_exceeds_limit(ec_db):
     """limit stays a total cap across all verdicts (S2)."""
     for verdict in ("expand", "narrow", "neutral"):
@@ -255,6 +273,111 @@ def test_get_lessons_min_per_verdict_zero_is_pure_recency(ec_db):
     assert [item["verdict"] for item in lessons] == ["neutral"] * 4
 
 
+def test_get_lessons_ties_are_ordered_by_id(ec_db):
+    """Equal timestamps use the stable id tiebreak (S4)."""
+    timestamp = "2026-08-10T00:00:00+00:00"
+    for lesson_id in ("lesson-a", "lesson-z"):
+        ec_db.execute(
+            """INSERT INTO assessments (id, verdict, impact_summary, feedback, created_at)
+            VALUES (?, 'neutral', ?, 'agree', ?)""",
+            (lesson_id, lesson_id, timestamp),
+        )
+
+    lessons = get_lessons(ec_db, limit=2, min_per_verdict=0)
+
+    assert [lesson["id"] for lesson in lessons] == ["lesson-z", "lesson-a"]
+
+
+def test_get_lessons_keeps_verdict_with_fewer_rows_than_floor(ec_db):
+    """A positive shortfall keeps its rows and forfeits unused floor slots (S3)."""
+    for i in range(12):
+        _seed_lesson(ec_db, "neutral", f"2026-08-10T00:{i:02d}:00+00:00")
+    expand_id = _seed_lesson(ec_db, "expand", "2026-08-01T00:00:00+00:00")
+
+    lessons = get_lessons(ec_db, limit=10, min_per_verdict=5)
+
+    assert len(lessons) == 10
+    assert expand_id in {lesson["id"] for lesson in lessons}
+
+
+@pytest.mark.parametrize(("limit", "expected_verdict"), [(1, "neutral"), (2, "neutral")])
+def test_get_lessons_limits_below_verdict_count_follow_recency(ec_db, limit, expected_verdict):
+    """Limits below the verdict count keep the floor budget bounded (S5)."""
+    _seed_lesson(ec_db, "expand", "2026-08-01T00:00:00+00:00")
+    _seed_lesson(ec_db, "neutral", "2026-08-10T00:00:00+00:00")
+
+    lessons = get_lessons(ec_db, limit=limit, min_per_verdict=5)
+
+    assert len(lessons) == limit
+    assert lessons[0]["verdict"] == expected_verdict
+
+
+def test_get_lessons_reads_candidates_in_one_statement(ec_db):
+    """All verdict partitions share one SQLite snapshot."""
+    _seed_lesson(ec_db, "neutral", "2026-08-10T00:00:00+00:00")
+
+    class _CountingConnection:
+        def __init__(self, conn):
+            self._conn = conn
+            self.select_count = 0
+
+        def execute(self, sql, parameters=()):
+            if "SELECT * FROM assessments" in sql:
+                self.select_count += 1
+            return self._conn.execute(sql, parameters)
+
+    counting = _CountingConnection(ec_db)
+    get_lessons(counting)
+
+    assert counting.select_count == 1
+
+
+def test_get_lessons_uses_one_snapshot_across_verdict_partitions(ec_repo):
+    """Concurrent enrichment must not duplicate a lesson across verdicts."""
+    from entirecontext.db import get_db
+
+    reader = get_db(str(ec_repo))
+    writer = get_db(str(ec_repo))
+    lesson_id = _seed_lesson(reader, "expand", "2026-08-10T00:00:00+00:00")
+
+    class _InterleavingCursor:
+        def __init__(self, cursor):
+            self._cursor = cursor
+
+        def fetchall(self):
+            rows = self._cursor.fetchall()
+            writer.execute(
+                "UPDATE assessments SET verdict = 'narrow' WHERE id = ?",
+                (lesson_id,),
+            )
+            return rows
+
+    class _InterleavingConnection:
+        def __init__(self, conn):
+            self._conn = conn
+            self._interleaved = False
+
+        def execute(self, sql, parameters=()):
+            cursor = self._conn.execute(sql, parameters)
+            if not self._interleaved and "verdict = ?" in sql and parameters and parameters[0] == "expand":
+                self._interleaved = True
+                return _InterleavingCursor(cursor)
+            return cursor
+
+    try:
+        lessons = get_lessons(
+            _InterleavingConnection(reader),
+            limit=10,
+            min_per_verdict=5,
+        )
+    finally:
+        writer.close()
+        reader.close()
+
+    ids = [lesson["id"] for lesson in lessons]
+    assert ids.count(lesson_id) == 1
+
+
 def test_get_assessment_prefix_match(ec_db):
     """Test that get_assessment supports prefix matching (regression: dd6184a2-c16 not found)."""
     result = create_assessment(ec_db, verdict="expand", impact_summary="Prefix test")
@@ -312,6 +435,37 @@ def test_auto_distill_lessons_enabled(ec_repo, monkeypatch):
     output = ec_repo / "LESSONS.md"
     assert output.exists()
     assert "Auto distill test" in output.read_text(encoding="utf-8")
+
+
+def test_auto_distill_lessons_passes_configured_floor(ec_repo, monkeypatch):
+    """Hook-driven distillation must honor the repository floor (S6)."""
+    from entirecontext.core.config import load_config
+
+    seen: dict[str, int] = {}
+
+    monkeypatch.setattr(
+        "entirecontext.core.config.load_config",
+        lambda repo_path=None: {
+            **load_config(repo_path),
+            "futures": {
+                "auto_distill": True,
+                "lessons_output": "LESSONS.md",
+                "lessons_min_per_verdict": 7,
+            },
+        },
+    )
+
+    def fake_get_lessons(conn, limit=50, *, min_per_verdict=5):
+        seen["min_per_verdict"] = min_per_verdict
+        return []
+
+    monkeypatch.setattr(
+        "entirecontext.core.futures.get_lessons",
+        fake_get_lessons,
+    )
+
+    assert auto_distill_lessons(str(ec_repo)) is True
+    assert seen == {"min_per_verdict": 7}
 
 
 def test_auto_distill_lessons_disabled(ec_repo, monkeypatch):
