@@ -1,0 +1,55 @@
+date: 2026-08-14T20:09:07Z
+checkout_head: 97a055cdc36358db42360e41a74c3d67d0c1449d
+resolved_ec: /Users/teslamint/.local/bin/ec 
+shim: /Users/teslamint/.local/bin/ec
+installed_python: /Users/teslamint/.local/share/uv/tools/entirecontext/bin/python
+installed_pkg_dir: /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext
+min_per_verdict_before: 0
+  hash_before: 836b3841d073b1c2eb512e83c68e30ac060ff552  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/__init__.py
+  hash_before: ccd850dba41334060610d36aefe343bd1203acd7  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/aar.py
+  hash_before: 310b16115d74f6fb74f615233d0ea3b29f909950  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/activation.py
+  hash_before: d3423df526a5f33e3ab585e4a88e1055c1053d74  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/agent_graph.py
+  hash_before: 82b79fd92f8e2fd6a7d6ec5610fc52158fdadb07  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/archaeology.py
+  hash_before: 8c9d5d2f31d700278430ed7b31923b26dfaaf9cc  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/ast_index.py
+  hash_before: 18514379fb88d0b2a843f80d891593458490b781  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/async_worker.py
+  hash_before: a56dc258722da55fae472cc9865699268ca048a8  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/attribution.py
+  hash_before: 46d7f30b5c068e233507975593bc6ebf505ec7ce  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/auto_apply.py
+  hash_before: ff322d1134643e08883993b4a41e680b1da5152c  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/auto_assess.py
+  hash_before: 1f0b16fc22cecd7cbad4575a2010a09b9043e245  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/blame_decisions.py
+  hash_before: 7711898619e9eb700c801afd36a4cc5b36cb17c9  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/checkpoint.py
+  hash_before: f8dff4b1d2f81334c41b594c5c478a1a3a952281  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/compact.py
+  hash_before: a3f12e5a813b40e9f370bd2d5195ad4f96c52cb1  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/config.py
+  hash_before: 4a83ba15b6e6d2904b711b8dfc6e079479c9441e  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/consolidation.py
+  hash_before: a11270a1d1f0f45fcf8282d2f03fe679cb78b5bf  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/content_filter.py
+  hash_before: 9fc109e93af3b8ac11cb1798cdc0074d6811968f  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/context.py
+  hash_before: 4ea76bde54752d9d3980b012b307bc5524011aa9  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/cross_repo.py
+  hash_before: f8b512e3890c0cd721dcbb75f83b717e9424d5c3  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/dashboard.py
+  hash_before: b5ffd18b059983c9eceac54a2530cd060f969578  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/decision_candidates.py
+  hash_before: 01c8812eb947d7ea303d7048485c4b1c321edcf5  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/decision_extraction.py
+  hash_before: f51d5f92219514640216a3e9360374e1cebbcd7b  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/decision_prompt_surfacing.py
+  hash_before: a172addbd84c5212f1c349744bbc8f2854384eea  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/decisions.py
+  hash_before: eeb07a0af026be2ef700f49f8de6cd458ac31dbe  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/embedding.py
+  hash_before: cf4a3a625258d240e349746afa27ee7d75a6e943  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/event.py
+  hash_before: 367e39e7036fe1fe7f708e60658292e3278d51cb  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/export.py
+  hash_before: 39e85c16fdb0e87a162674373b3241775304c6a6  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/futures.py
+  hash_before: 5ebf6d369abc69bea6b188f961b29c611fb4be06  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/git_utils.py
+  hash_before: 9334c799eacbd46e4e1893b8461ae599ea9285e8  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/import_aline.py
+  hash_before: 238b8a276a2c08984709d4f0c6396448bcf1c7e2  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/knowledge_graph.py
+  hash_before: c5661356c1f792b37ff9f6a257294c23f317a8c4  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/lesson_surfacing.py
+  hash_before: 9f4b66f3ed8660f8a7380b003127f33138e1aef2  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/llm.py
+  hash_before: 759fd393790362c71f41e6c0e55f086a2c08ea5b  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/project.py
+  hash_before: 3c2b65ee5acbd976ab391bc87208dcbc5a9f7ed9  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/purge.py
+  hash_before: 47094c497f6026bf44cdf4666f896253b032966d  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/report.py
+  hash_before: 3ba42190a88dd03fb72dedd18ecdc9212b539aa9  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/resolve.py
+  hash_before: 23c6a6b2244a645ed625b5cffc133a8e7a015ce2  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/search.py
+  hash_before: 5903dddecddf880619e1a9ac1b74e829f2b8b647  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/security.py
+  hash_before: 8bf7c20371ed6d4734727d15b59aefe5cd8abfd5  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/session.py
+  hash_before: d97c5cef6aa2a11ad03880253c1ca7a46217e407  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/telemetry.py
+  hash_before: 36cf1189e645e36b83f9204674cea13416c197e4  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/tidy_pr.py
+  hash_before: e224eaed0cfbcbba540f3fdab85585601f956a03  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/tql.py
+  hash_before: 1dbcf1f54c8d3f58c3e85755bbd1c2fd91c816ec  /Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext/core/turn.py
+min_per_verdict_after: 8 (/Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext)
+min_per_verdict_after_rerun: 8 (/Users/teslamint/.local/share/uv/tools/entirecontext/lib/python3.13/site-packages/entirecontext)
+returned 50
+by_verdict {'expand': 5, 'neutral': 45}
+expand_section_entries: 5
