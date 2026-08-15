@@ -2169,14 +2169,14 @@ class TestMCPLessons:
     def _require_mcp(self):
         pytest.importorskip("mcp")
 
-    def test_ec_lessons_passes_configured_floor(self, db, monkeypatch):
+    def test_ec_lessons_passes_configured_floor(self, ec_repo, ec_db, monkeypatch):
         from entirecontext.mcp.tools.futures import ec_lessons
 
         seen: dict[str, int] = {}
 
         monkeypatch.setattr(
             "entirecontext.mcp.runtime.open_repo",
-            lambda repo_hint=None: (db, "/tmp/test"),
+            lambda repo_hint=None: (ec_db, str(ec_repo)),
         )
         monkeypatch.setattr(
             "entirecontext.core.config.load_config",
