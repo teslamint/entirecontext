@@ -46,8 +46,8 @@ state, or install behavior changes because of this retention decision.
 | Claim | Command | Observed |
 |---|---|---|
 | U4 evidence was not gitignored | `git check-ignore -v .release-loop/evidence/U4/install-provenance.txt` before `edf4f18` | no matching rule |
-| Repository already tracks release-loop evidence | `git ls-files .release-loop/archive | sed -n '1,5p'` | prior transition evidence paths returned |
-| Repository tracks no release-loop binaries | `git ls-files .release-loop | grep -cE '\\.(tgz|tar|gz|zip)$'` | `0` |
+| Repository already tracks release-loop evidence | `git ls-files .release-loop/archive \| sed -n '1,5p'` | prior transition evidence paths returned |
+| Repository tracks no release-loop binaries | `git ls-files .release-loop \| grep -cE '\\.(tgz\|tar\|gz\|zip)$'` | `0` |
 | Text and archive have different durability value | `du -h .release-loop/evidence/U4/*` | provenance `8.0K`; archive `624K` |
 | Final ignore scope is archive-only | `git check-ignore -v .release-loop/evidence/U4/pre-install-bin.tgz` | `.release-loop/.gitignore` archive rule matches |
 

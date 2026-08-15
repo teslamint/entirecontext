@@ -55,10 +55,10 @@ without rewriting the sealed plan.
 - `tests/test_futures.py` covers concurrent verdict mutation, duplicate suppression by one snapshot,
   deterministic tie ordering, pre-allocation `since` filtering, floor allocation, shortfalls,
   limits, and the zero-floor compatibility path.
-- `tests/test_migration_v018.py` covers v17-to-v18 migration, fresh-schema parity, idempotence, index
-  SQL, and `EXPLAIN QUERY PLAN` use without a temporary B-tree.
-- Full verification after the review fixes: `2204 passed, 1 skipped`; mypy clean; ruff clean. A final
-  rerun is required after the `since` fix and this addendum.
+- `tests/test_migration_v018.py` covers v17-to-v18 migration, fresh-schema parity,
+  matching-index replay, mismatched-index rejection, DDL/schema-version rollback, index SQL, and
+  `EXPLAIN QUERY PLAN` use without a temporary B-tree.
+- Full verification after the review fixes: `2208 passed, 1 skipped`; mypy clean; ruff clean.
 - Rollback is forward compensation: reinstall a selected base revision and use its schema-aware
   code. SQLite indexes may safely remain if application code no longer depends on them.
 
