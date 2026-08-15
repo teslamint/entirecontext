@@ -11,6 +11,13 @@ from entirecontext.db.migration import check_and_migrate, get_current_version, i
 from entirecontext.db.schema import SCHEMA_VERSION
 
 
+def _create_assessments_migration_stub(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS assessments ("
+        "id TEXT PRIMARY KEY, verdict TEXT NOT NULL, feedback TEXT, created_at TEXT)"
+    )
+
+
 @pytest.fixture
 def db():
     conn = get_memory_db()
@@ -243,7 +250,7 @@ class TestMigration:
         conn.execute("CREATE TABLE turns (id TEXT PRIMARY KEY)")
         # FK targets for decision_candidates, created later in the migration chain (v013, widened in v016).
         conn.execute("CREATE TABLE IF NOT EXISTS checkpoints (id TEXT PRIMARY KEY)")
-        conn.execute("CREATE TABLE IF NOT EXISTS assessments (id TEXT PRIMARY KEY)")
+        _create_assessments_migration_stub(conn)
         conn.commit()
 
         check_and_migrate(conn)
@@ -278,7 +285,7 @@ class TestMigration:
         # FK targets for decision_candidates, created later in the migration chain (v013, widened in v016).
         conn.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY)")
         conn.execute("CREATE TABLE IF NOT EXISTS checkpoints (id TEXT PRIMARY KEY)")
-        conn.execute("CREATE TABLE IF NOT EXISTS assessments (id TEXT PRIMARY KEY)")
+        _create_assessments_migration_stub(conn)
         conn.commit()
 
         check_and_migrate(conn)
@@ -301,6 +308,7 @@ class TestMigration:
         conn.execute("INSERT INTO schema_version (version, description) VALUES (13, 'v13')")
         conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
         conn.execute("CREATE TABLE turns (id TEXT PRIMARY KEY)")
+        _create_assessments_migration_stub(conn)
         conn.execute(
             "CREATE TABLE retrieval_selections (id TEXT PRIMARY KEY, result_type TEXT, result_id TEXT, session_id TEXT, turn_id TEXT)"
         )
@@ -415,6 +423,7 @@ class TestMigration:
         )
         conn.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY)")
         conn.execute("CREATE TABLE turns (id TEXT PRIMARY KEY)")
+        _create_assessments_migration_stub(conn)
         conn.execute(
             "CREATE TABLE decision_outcomes ("
             "id TEXT PRIMARY KEY, decision_id TEXT NOT NULL, retrieval_selection_id TEXT, "
@@ -481,6 +490,7 @@ class TestMigration:
         conn = get_memory_db()
         conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
         conn.execute("INSERT INTO schema_version (version, description) VALUES (14, 'v14')")
+        _create_assessments_migration_stub(conn)
         # ranking_snapshots FK target
         conn.execute(
             "CREATE TABLE retrieval_events (id TEXT PRIMARY KEY, session_id TEXT, search_type TEXT, "

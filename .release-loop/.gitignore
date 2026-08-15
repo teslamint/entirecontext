@@ -1,3 +1,7 @@
 briefs/
 reports/
 reviews/
+
+# Local pre-mutation package archives: rollback aids, not durable records.
+# The provenance text files beside them carry the committed evidence.
+evidence/**/pre-install-*.tgz

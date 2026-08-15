@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -202,6 +202,9 @@ CREATE TABLE IF NOT EXISTS assessments (
 CREATE INDEX IF NOT EXISTS idx_assessments_verdict ON assessments(verdict);
 CREATE INDEX IF NOT EXISTS idx_assessments_created ON assessments(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_assessments_checkpoint ON assessments(checkpoint_id);
+CREATE INDEX IF NOT EXISTS idx_assessments_feedback_recency
+    ON assessments(verdict, created_at DESC, id DESC)
+    WHERE feedback IS NOT NULL;
 """,
     "decisions": """
 CREATE TABLE IF NOT EXISTS decisions (

@@ -12,6 +12,7 @@ from .resolve import resolve_assessment_id as _resolve_assessment_id
 VALID_VERDICTS = ("expand", "narrow", "neutral")
 VALID_FEEDBACKS = ("agree", "disagree")
 VALID_RELATIONSHIP_TYPES = ("causes", "fixes", "contradicts")
+DEFAULT_LESSONS_MIN_PER_VERDICT = 5
 
 ASSESS_SYSTEM_PROMPT = """You are a futures analyst grounded in Kent Beck's "Tidy First?" philosophy.
 You evaluate code changes through the lens of software design options:
@@ -139,13 +140,87 @@ def add_feedback(conn, assessment_id: str, feedback: str, feedback_reason: str |
     )
 
 
-def get_lessons(conn, limit: int = 50) -> list[dict]:
-    """Get assessments that have feedback — these are lessons learned."""
+def _allocate_verdict_floors(limit: int, min_per_verdict: int) -> dict[str, int]:
+    """Reserve slots per verdict without letting floors dominate the budget.
+
+    Slots are handed out one verdict at a time in VALID_VERDICTS order, and
+    the total is capped at half the limit so recency keeps the majority of
+    the result. min_per_verdict <= 0 disables floors entirely.
+    """
+    floors = {verdict: 0 for verdict in VALID_VERDICTS}
+    if limit <= 0 or min_per_verdict <= 0:
+        return floors
+    remaining = min(limit // 2, min_per_verdict * len(VALID_VERDICTS))
+    for _ in range(min_per_verdict):
+        for verdict in VALID_VERDICTS:
+            if remaining == 0:
+                return floors
+            floors[verdict] += 1
+            remaining -= 1
+    return floors
+
+
+def get_lessons(
+    conn,
+    limit: int = 50,
+    *,
+    min_per_verdict: int = DEFAULT_LESSONS_MIN_PER_VERDICT,
+    since: str | None = None,
+) -> list[dict]:
+    """Get assessments that have feedback — these are lessons learned.
+
+    Selection first limits candidates to ``since`` when provided, then reserves
+    a bounded per-verdict floor before filling the rest by recency, so a run of
+    one verdict cannot evict every lesson of another. ``limit`` remains a total
+    cap on the rows returned.
+    """
+    if limit <= 0:
+        return []
+
+    since_clause = " AND created_at >= ?" if since is not None else ""
+    floors = _allocate_verdict_floors(limit, min_per_verdict)
+    candidate_ctes = [
+        f"""verdict_{index} AS (
+            SELECT * FROM assessments
+            WHERE feedback IS NOT NULL AND verdict = ?{since_clause}
+            ORDER BY created_at DESC, id DESC
+            LIMIT ?
+        )"""
+        for index, _verdict in enumerate(VALID_VERDICTS)
+    ]
+    candidate_selects = [f"SELECT * FROM verdict_{index}" for index, _verdict in enumerate(VALID_VERDICTS)]
+    parameters = tuple(
+        value
+        for verdict in VALID_VERDICTS
+        for value in ((verdict, since, limit) if since is not None else (verdict, limit))
+    )
     rows = conn.execute(
-        "SELECT * FROM assessments WHERE feedback IS NOT NULL ORDER BY created_at DESC LIMIT ?",
-        (limit,),
+        f"WITH {', '.join(candidate_ctes)} {' UNION ALL '.join(candidate_selects)}",
+        parameters,
     ).fetchall()
-    return [dict(r) for r in rows]
+
+    def _recency_key(item: dict) -> tuple[str, str]:
+        return (item.get("created_at") or "", item.get("id") or "")
+
+    candidates_by_verdict: dict[str, list[dict]] = {verdict: [] for verdict in VALID_VERDICTS}
+    for row in rows:
+        item = dict(row)
+        candidates_by_verdict[item["verdict"]].append(item)
+    for candidates in candidates_by_verdict.values():
+        candidates.sort(key=_recency_key, reverse=True)
+
+    reserved: list[dict] = []
+    overflow: list[dict] = []
+    for verdict in VALID_VERDICTS:
+        candidates = candidates_by_verdict[verdict]
+        floor = floors[verdict]
+        reserved.extend(candidates[:floor])
+        overflow.extend(candidates[floor:])
+
+    overflow.sort(key=_recency_key, reverse=True)
+    selected = reserved + overflow[: max(0, limit - len(reserved))]
+    selected.sort(key=_recency_key, reverse=True)
+    return selected
 
 
 def distill_lessons(assessments: list[dict]) -> str:
@@ -201,7 +276,10 @@ def auto_distill_lessons(repo_path: str | Path) -> bool:
 
     conn = get_db(str(repo_path))
     try:
-        lessons = get_lessons(conn)
+        lessons = get_lessons(
+            conn,
+            min_per_verdict=config.get("futures", {}).get("lessons_min_per_verdict", DEFAULT_LESSONS_MIN_PER_VERDICT),
+        )
     finally:
         conn.close()
 

@@ -25,7 +25,9 @@ def _seed_v9_decision_repo(repo_path, *, decision_id: str | None = None) -> str:
     conn = get_db(str(repo_path))
     conn.execute("CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at TEXT, description TEXT)")
     conn.execute("INSERT INTO schema_version (version, description) VALUES (9, 'v9')")
-    conn.execute("CREATE TABLE assessments (id TEXT PRIMARY KEY)")
+    conn.execute(
+        "CREATE TABLE assessments (id TEXT PRIMARY KEY, verdict TEXT NOT NULL, feedback TEXT, created_at TEXT)"
+    )
     conn.execute("CREATE TABLE checkpoints (id TEXT PRIMARY KEY)")
     conn.execute(
         "CREATE TABLE retrieval_selections (id TEXT PRIMARY KEY, result_type TEXT, result_id TEXT, session_id TEXT, turn_id TEXT)"
