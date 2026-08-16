@@ -222,7 +222,7 @@ if printf '%s\n' "$name_status" | grep -Eq '^[DMR]'; then
 fi
 ```
 
-Expected: the Python check prints `active traceability targets resolve: 68 checked; Markdown destinations: 5; bold references: 8; labels: 25`; the name-status output contains no `D`, `M`, or `R` entry.
+Expected: the Python check prints `active traceability targets resolve:` and meets every asserted coverage floor. This retro closure reports `74 checked; Markdown destinations: 5; bold references: 9; labels: 27`; counts may increase as current tracked documents grow. The name-status output contains no `D`, `M`, or `R` entry.
 
 - [ ] **Step 5: Run documentation checks and inspect the full diff**
 
