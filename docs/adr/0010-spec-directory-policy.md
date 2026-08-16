@@ -1,7 +1,7 @@
 # 0010. Use `docs/specs/` as the Active Specification Directory
 
-**Status:** accepted  
-**Date:** 2026-08-16  
+**Status:** accepted
+**Date:** 2026-08-16
 **EC Decision:** `0aaa4fa6-6974-4dcf-bf2f-e1ce7d44308b`
 
 ## Context
