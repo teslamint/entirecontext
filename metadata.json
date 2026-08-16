@@ -1,0 +1,39 @@
+{
+  "cli_version": "0.10.0",
+  "checkpoint_id": "01M05FR2RHZ3ZR60MHZJ3273P2",
+  "strategy": "manual-commit",
+  "branch": "docs/spec-directory-policy-retro",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "README.md",
+    "ROADMAP.md",
+    "docs/adr/0011-build-provenance-hook.md",
+    "docs/spec.md",
+    "docs/specs/2026-08-16-build-sha-provenance-design.md",
+    "docs/superpowers/plans/2026-08-16-003-build-sha-provenance-plan.md",
+    "hatch_build.py",
+    "pyproject.toml",
+    "src/entirecontext/_build_provenance.py",
+    "src/entirecontext/cli/project_cmds.py",
+    "tests/test_build_provenance.py",
+    "tests/test_project_cmds.py",
+    "uv.lock"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 67799,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 415488,
+    "output_tokens": 6732,
+    "api_call_count": 10
+  }
+}
