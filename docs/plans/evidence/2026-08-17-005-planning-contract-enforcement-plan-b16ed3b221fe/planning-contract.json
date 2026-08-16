@@ -1,0 +1,16 @@
+{
+  "actual_status": 0,
+  "check_id": "planning-contract",
+  "command": "set -euo pipefail\nuv run ruff check scripts/validate_plan.py tests/test_validate_plan.py\nuv run pytest -q tests/test_validate_plan.py\nec decision show eb3bc2e9-fe02-44db-9a1f-29cea6ef05a0 >/dev/null\n",
+  "command_sha256": "6f7905fecd2fd2431042319ea7e29b56e24ea289cf3bc831ea7fba04510d6e89",
+  "expected_status": 0,
+  "output": "All checks passed!\n............                                                             [100%]\n12 passed in 6.60s\n",
+  "output_sha256": "bc6dded4d5e6f5ff3b68eb235352bc087edbff56be1d2e7309b425965ba7c4b8",
+  "plan": "docs/superpowers/plans/2026-08-17-005-planning-contract-enforcement-plan.md",
+  "plan_sha256": "f20fa2ba82ae5563683135e785163e73e8f2f4bb624856c311cc23b6313ae40d",
+  "record_sha256": "1b27ee6ee7cdad1811bb613420b742230f619a79455302d07fa5938a1178017b",
+  "recorded_at": "2026-08-16T16:25:24.049983+00:00",
+  "schema": "plan-check/v1",
+  "spec": "docs/specs/2026-08-17-planning-contract-enforcement-design.md",
+  "spec_sha256": "127a31cfa803dcfbeced5b113a4f45965e4c32be5757142d2ffb72f74a42ff3f"
+}

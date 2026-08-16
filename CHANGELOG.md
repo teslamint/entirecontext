@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Build-SHA provenance** — wheel and source-distribution builds now carry the source checkout Git SHA and tracked-file dirty state. `ec doctor` warns when an installed executable is unavailable, dirty, or stale relative to an EntireContext checkout and provides the exact reinstall command.
+- **Executable Plan contracts** — repository authors can compare Specification-named tests with explicit Plan dispositions, classify every shell fence with required rationale, reject inline verification commands, execute exact fail-closed checks, and persist Plan/check-owned byte-preserved output/status evidence with `scripts/validate_plan.py`. Anchored nonblocking no-follow writes, duplicate-key rejection, and individual plus canonical-record hashes fail closed on unsafe or partial evidence mutation.
 
 ### Changed
 

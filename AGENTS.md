@@ -48,6 +48,15 @@ Skip only for pure documentation, config, or CI-only changes. State when skipped
 
 Rationale: v0.8.1 showed that building features without pre-existing measurement leads to formula bugs that ship undetected across multiple releases.
 
+## Planning Contract Enforcement
+
+New behavior-changing Plans must be checked against their governing Specification with `scripts/validate_plan.py`. Historical Plans are not retroactively governed.
+
+1. Add a `## Spec Test Disposition` table with exactly one `retained`, `merged`, or `dropped` row for every test identifier named in the Specification's `## Testing` section. Merged and dropped rows require rationale.
+2. Classify every column-zero Plan shell fence as `bash implementation-only reason=<lowercase-slug>` or `bash plan-check ...`; reject whitespace-indented or Markdown-container-prefixed shell fences and do not leave command-shaped verification code inline. A `plan-check` declares `id`, `expected-status`, and the validator-derived Plan/check-owned JSON path under `docs/plans/evidence/`, and its first nonblank LF-delimited line after ASCII space/tab removal is `set -euo pipefail`.
+3. Before Plan approval, run `python scripts/validate_plan.py record --plan <plan> --spec <spec>`. This executes the exact check blocks and records byte-preserved combined output, status, timestamp, individual hashes, and a canonical whole-record hash through anchored no-follow file operations.
+4. Before commit and review, run `python scripts/validate_plan.py validate --plan <plan> --spec <spec>`. Commit the evidence JSON with the Plan and do not edit the Plan or Specification after recording without recording again.
+
 ## Architecture Decision Records (ADR)
 
 Decisions with cross-cutting or long-lived impact go into `docs/adr/` using the template in `docs/adr/README.md`.
