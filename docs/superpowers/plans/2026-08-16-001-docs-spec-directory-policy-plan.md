@@ -71,30 +71,159 @@ Replace the unchecked `ROADMAP.md:355` entry with a checked entry stating that `
 - [ ] **Step 4: Run the focused reference checks**
 
 ```bash
+set -euo pipefail
+
 python - <<'PY'
 from pathlib import Path
+import os
 import re
+import subprocess
 
 assert "docs/specs/" in Path("AGENTS.md").read_text()
 assert "docs/superpowers/specs/" not in Path("AGENTS.md").read_text()
 adr = Path("docs/adr/0010-spec-directory-policy.md").read_text()
-assert "Status: accepted" in adr
+assert "**Status:** accepted" in adr
 assert "0aaa4fa6-6974-4dcf-bf2f-e1ce7d44308b" in adr
-for path in Path("docs").rglob("*.md"):
-    if ".release-loop/archive" in str(path):
+checked = 0
+markdown_links = 0
+bold_references = 0
+labels = set()
+structural_labels = {
+    "create",
+    "modify",
+    "test",
+    "interfaces",
+    "consumes",
+    "produces",
+    "measured by",
+    "branch",
+    "base",
+    "feature",
+}
+label_pattern = re.compile(
+    r"(?i)(?P<bold>\*\*)?(?P<label>\b[A-Za-z][A-Za-z _-]*?)(?:\*\*)?\s*:\s*(?P<value>.*)$"
+)
+docs_target_pattern = re.compile(
+    r"(?<![\w/])(?P<target>docs/[A-Za-z0-9._/-]*\.md)(?![\w/-])"
+)
+markdown_link_pattern = re.compile(
+    r"\[[^\]]*?docs/[^\s`\])]+[^\]]*\]\((?P<link>[^)\s]+)\)"
+)
+reference_link_pattern = re.compile(
+    r"\[[^\]]*?docs/[^\s`\])]+[^\]]*\]\[(?P<reference>[^\]]+)\]"
+)
+reference_definition_pattern = re.compile(
+    r"^\s*\[(?P<reference>[^\]]+)\]:\s*(?:<(?P<angle>[^>]+)>|(?P<bare>\S+))"
+)
+fence_pattern = re.compile(r"^\s*(?P<fence>`{3,}|~{3,})")
+checkout = Path.cwd().resolve()
+
+
+def normalized_reference(reference: str) -> str:
+    return " ".join(reference.split()).casefold()
+
+
+def assert_checkout_file(candidate: Path, description: str) -> None:
+    resolved = candidate.resolve()
+    assert resolved.is_relative_to(checkout), (
+        f"target escapes checkout: {description} from {candidate}"
+    )
+    assert resolved.is_file(), f"missing target file {description} from {candidate}"
+
+
+markdown_paths = [
+    Path(os.fsdecode(raw_path))
+    for raw_path in subprocess.run(
+        ["git", "ls-files", "-z", "--", "*.md"],
+        check=True,
+        stdout=subprocess.PIPE,
+    ).stdout.split(b"\0")
+    if raw_path
+]
+companion_adr = Path("docs/adr/0010-spec-directory-policy.md")
+assert_checkout_file(companion_adr, str(companion_adr))
+if companion_adr not in markdown_paths:
+    markdown_paths.append(companion_adr)
+for path in markdown_paths:
+    if ".release-loop/archive/" in path.as_posix():
         continue
-    text = path.read_text()
-    for match in re.finditer(r"(?:origin|Spec|spec):[` ]+([^`\\s)]+)", text):
-        target = match.group(1).rstrip("`;")
-        if target.startswith("docs/"):
-            assert Path(target).exists(), f"missing target {target} from {path}"
-print("active traceability targets resolve")
+    active_lines = []
+    active_fence = None
+    for line in path.read_text().splitlines():
+        fence = fence_pattern.match(line)
+        if fence:
+            marker = fence.group("fence")[0]
+            if active_fence is None:
+                active_fence = marker
+            elif marker == active_fence:
+                active_fence = None
+            continue
+        if active_fence is None:
+            active_lines.append(line)
+    references = {}
+    for line in active_lines:
+        definition = reference_definition_pattern.match(line)
+        if definition:
+            target = definition.group("angle") or definition.group("bare")
+            references[normalized_reference(definition.group("reference"))] = target
+    for line in active_lines:
+        for field in label_pattern.finditer(line):
+            label = field.group("label").strip().lower()
+            if label in structural_labels:
+                continue
+            value = field.group("value")
+            for target_match in docs_target_pattern.finditer(value):
+                target = target_match.group("target")
+                checked += 1
+                labels.add(label)
+                assert_checkout_file(Path(target), target)
+                if field.group("bold"):
+                    bold_references += 1
+            for link_match in markdown_link_pattern.finditer(value):
+                markdown_links += 1
+                link_target = link_match.group("link").split("#", 1)[0]
+                if link_target.startswith(("http://", "https://")):
+                    continue
+                assert_checkout_file(path.parent / link_target, link_target)
+            for link_match in reference_link_pattern.finditer(value):
+                markdown_links += 1
+                reference = normalized_reference(link_match.group("reference"))
+                assert reference in references, (
+                    f"missing reference-style link definition [{reference}] from {path}"
+                )
+                link_target = references[reference].split("#", 1)[0]
+                if link_target.startswith(("http://", "https://")):
+                    continue
+                assert_checkout_file(path.parent / link_target, link_target)
+assert checked >= 10, f"unexpectedly low traceability coverage: {checked}"
+assert markdown_links >= 4, f"unexpectedly low Markdown-link coverage: {markdown_links}"
+assert bold_references >= 3, f"unexpectedly low bold-reference coverage: {bold_references}"
+assert {
+    "spec",
+    "plan",
+    "deviation",
+    "adr",
+    "approved matrix",
+    "previous retro",
+    "current reference",
+} <= labels, f"missing traceability labels: {labels}"
+print(
+    f"active traceability targets resolve: {checked} checked; "
+    f"Markdown destinations: {markdown_links}; bold references: {bold_references}; "
+    f"labels: {len(labels)}"
+)
 PY
 
-git diff --name-status -- docs/specs docs/superpowers/specs
+name_status=$(git diff HEAD --name-status -- docs/specs docs/superpowers/specs)
+printf '%s\n' "$name_status"
+if printf '%s\n' "$name_status" | grep -Eq '^[DMR]'; then
+  echo "Specification content edit, rename, or delete detected" >&2
+  exit 1
+fi
 ```
 
-Expected: the Python check prints `active traceability targets resolve`; the name-status output is empty.
+Expected: the Python check prints `active traceability targets resolve: 68 checked; Markdown destinations: 5; bold references: 8; labels: 25`; the name-status output contains no `D`, `M`, or `R` entry.
+
 - [ ] **Step 5: Run documentation checks and inspect the full diff**
 
 Run the repository-configured documentation/lint checks if present, then:
