@@ -4,11 +4,13 @@
 
 **Goal:** Make `docs/specs/` the sole active Specification path and close the registered roadmap drift without rewriting historical release evidence.
 
-**Architecture:** Update the repository policy and current traceability pointers in place. Keep all Specification files where they already exist; distinguish current policy/reference files from `.release-loop/archive/` evidence. Validate the resulting graph with repository-relative path checks rather than runtime code changes.
+**Architecture:** Add a companion ADR recording why `docs/specs/` is the sole active path, then update the repository policy, roadmap, and current traceability pointers in place. Keep all Specification files where they already exist; distinguish current policy/reference files from `.release-loop/archive/` evidence. Validate the resulting graph with repository-relative path checks rather than runtime code changes.
 
 **Tech Stack:** Markdown, Git path inspection, POSIX shell, Python standard library for deterministic reference validation.
 
 **Spec:** `docs/specs/2026-08-16-spec-directory-policy-design.md`
+
+**Decision:** EC decision `0aaa4fa6-6974-4dcf-bf2f-e1ce7d44308b`; companion ADR `docs/adr/0010-spec-directory-policy.md`
 
 ## Global Constraints
 
@@ -24,6 +26,7 @@
 ### Task 1: Align policy and current traceability references
 
 **Files:**
+- Create: `docs/adr/0010-spec-directory-policy.md`
 - Modify: `AGENTS.md:20`
 - Modify: `docs/adr/0005-init-installs-integrations.md:91`
 - Modify: `docs/adr/0008-overload-include-warnings-keyword-only.md:57`
@@ -57,9 +60,9 @@ PY
 
 Expected: PASS with `baseline policy drift reproduced`.
 
-- [ ] **Step 2: Update the policy and current references**
+- [ ] **Step 2: Create the companion ADR and update current references**
 
-Change `AGENTS.md` to state `Spec (`docs/specs/`) → ADR...`. Update current ADR, deviation, and Plan links whose target files are under `docs/specs/`. Do not change links to the nine older Specifications that genuinely remain under `docs/superpowers/specs/`. Update the init and cross-repo Plan prose so their path examples and verification commands describe the official active directory without changing their historical execution claims.
+Create `docs/adr/0010-spec-directory-policy.md` with status `accepted`, the date, EC decision `0aaa4fa6-6974-4dcf-bf2f-e1ce7d44308b`, the rejected move/dual-path alternatives, and the consequences of preserving historical paths. Change `AGENTS.md` to state `Spec (`docs/specs/`) → ADR...`. Update current ADR, deviation, and Plan links whose target files are under `docs/specs/`. Do not change links to the nine older Specifications that genuinely remain under `docs/superpowers/specs/`. Update the init and cross-repo Plan prose so their path examples and verification commands describe the official active directory without changing their historical execution claims.
 
 - [ ] **Step 3: Close the roadmap row with the exact decision**
 
@@ -74,6 +77,9 @@ import re
 
 assert "docs/specs/" in Path("AGENTS.md").read_text()
 assert "docs/superpowers/specs/" not in Path("AGENTS.md").read_text()
+adr = Path("docs/adr/0010-spec-directory-policy.md").read_text()
+assert "Status: accepted" in adr
+assert "0aaa4fa6-6974-4dcf-bf2f-e1ce7d44308b" in adr
 for path in Path("docs").rglob("*.md"):
     if ".release-loop/archive" in str(path):
         continue
@@ -89,7 +95,6 @@ git diff --name-status -- docs/specs docs/superpowers/specs
 ```
 
 Expected: the Python check prints `active traceability targets resolve`; the name-status output is empty.
-
 - [ ] **Step 5: Run documentation checks and inspect the full diff**
 
 Run the repository-configured documentation/lint checks if present, then:
@@ -104,11 +109,11 @@ Expected: no whitespace errors, no Specification rename/delete, and no content c
 - [ ] **Step 6: Commit the coherent documentation change**
 
 ```bash
-git add AGENTS.md ROADMAP.md docs/adr docs/deviations docs/plans
- git commit -m "docs(roadmap): align active specification path"
+git add AGENTS.md ROADMAP.md docs/adr/0010-spec-directory-policy.md docs/adr docs/deviations docs/plans
+git commit -m "docs(roadmap): align active specification path"
 ```
 
-Expected: one commit containing only the active policy, traceability references, and roadmap closure.
+Expected: one commit containing the companion ADR, active policy, traceability references, and roadmap closure.
 
 ## Verification Matrix
 

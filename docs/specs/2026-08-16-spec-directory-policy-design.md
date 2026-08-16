@@ -59,11 +59,11 @@ A maintainer searches active policy and traceability documents for `docs/superpo
 
 ## Architecture
 
-The repository has one policy source for Specification placement: `AGENTS.md`. Active artifacts use repository-relative paths and must resolve against the checkout. Historical artifacts remain immutable evidence and are not rewritten as part of this change.
+The repository has one policy source for Specification placement: `AGENTS.md`, with the rationale recorded in ADR 0010 and EC decision `0aaa4fa6-6974-4dcf-bf2f-e1ce7d44308b`. Active artifacts use repository-relative paths and must resolve against the checkout. Historical artifacts remain immutable evidence and are not rewritten as part of this change.
 
 The resulting traceability chain is:
 
-`docs/specs/` → `docs/adr/` → `docs/plans/` → implementation → `docs/retros/`
+`docs/specs/` → `docs/adr/` → `docs/superpowers/plans/` or `docs/plans/` → implementation → `docs/retros/`
 
 No runtime module, database table, CLI command, or public API changes.
 
