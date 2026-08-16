@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.0",
+  "checkpoint_id": "01M05W0DK3S06FP7YAJHNPXG7H",
+  "session_id": "01a00b7e-4838-78e2-939a-5e9c59ab6be9",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-16T18:05:42.451223Z",
+  "branch": "feat/decision-file-rename-lineage",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "CHANGELOG.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "53094b000dc3",
+  "checkpoint_transcript_start": 190,
+  "transcript_lines_at_start": 190,
+  "compact_transcript_start": 38,
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-16T18:05:42.423188Z",
+    "agent_lines": 0,
+    "agent_removed": 0,
+    "human_added": 1424,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 1424,
+    "total_lines_changed": 1435,
+    "agent_percentage": 0,
+    "metric_version": 2
+  }
+}
