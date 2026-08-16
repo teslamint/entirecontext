@@ -201,7 +201,7 @@ The `capture→distill→retrieve→intervene` loop has stalled at `distill=0` f
 
 - [x] **Auto-assess on checkpoint create** (primary trigger) — `ec checkpoint create` automatically triggers `auto_assess_checkpoint()` (rule-based assessment) before the command returns; no session ends with a checkpoint and zero assessments. PR #157.
 - [x] **SessionEnd safety net + AAR** — SessionEnd hook backfills un-assessed checkpoints (safety net via `_maybe_backfill_assessments`), SessionStart catches up crashed sessions (`_maybe_catchup_assessments`), then emits a structured AAR (After-Action Report): decisions surfaced, PDI retrieve→intervene delta, assessments created. AAR written to `.entirecontext/aar-{session_id}.json` and printed to stdout. Config: `[capture] emit_aar` (default true).
-- [ ] **Maturity ≥75 (Closed Loop)** — distill automation remains off zero (`distill=17` in fresh 2026-08-16 telemetry); sustained dogfooding target requires measurement over multiple sessions.
+- [ ] **Maturity ≥75 (Closed Loop)** — current maturity is 71 (`capture=17`, `distill=17`, `retrieve=25`, `intervene=12`); distill automation and lesson reuse are sustained. The remaining discrete score gate is `applied_context_rate ≥10%`, currently 8/1,159 ended sessions with a retrieval selection (0.7%). Closure needs genuine applications in 108 already-counted selection-bearing sessions if the denominator stays fixed, or 120 new selection-bearing sessions when each new session increases both numerator and denominator; no synthetic backfill.
 
 ### Signal Assembly
 
@@ -262,7 +262,7 @@ Close retro carry-forward debt, activate lesson-reuse path for maturity 75, add 
 - [x] **Lesson surfacing: PDI** — narrow-context lesson injection into `additionalContext`; decisions priority, lessons fill remaining token budget; timeout-isolated (100ms)
 - [x] **Auto-apply lesson extension** — lesson/assessment file-overlap detection at SessionEnd using checkpoint `files_snapshot`; drives `lesson_reuse_rate` for intervene score
 - [x] **Git-evidence outcome inference: Layer 2** — `refined`/`replaced` classification via new-decision gate + diff pattern; `infer_outcome_type` config (default true)
-- [ ] **Maturity ≥ 75** — measurement outcome, requires sufficient session volume with lesson surfacing active
+- [ ] **Maturity ≥ 75** — current maturity is 71 after lesson reuse reached 21%. Closure now depends on the v0.13.0 `applied_context_rate ≥10%` dogfooding gate rather than missing lesson-surfacing infrastructure.
 - Out-of-band: ghost release cleanup (1a), `auto_extract` production verification (1e)
 
 ## v0.11.0 — Hypothesis Validation Infrastructure (Shipped 2026-07-07)
@@ -297,8 +297,8 @@ Carry-forward to v0.13.0:
 Theme: close the 91% file-link gap via retroactive git archaeology, push intervene past the 10% applied_context_rate threshold, and analyze experiment data.
 
 ### Intervene graduation
-- [ ] **applied_context_rate ≥ 10%** — current 1% (session-based, fresh 2026-08-16 telemetry). Continue explicit `ec context apply` usage. No code change — dogfooding discipline only.
-- [ ] **lesson_reuse_rate progress** — current 19% (fresh 2026-08-16 telemetry). Continue recording lesson-typed applications when past lessons influence current work; the target is sustained upward reuse, not a one-snapshot threshold.
+- [ ] **applied_context_rate ≥ 10%** — current 1% (8/1,159 ended sessions with a retrieval selection; exact rate 0.7%). Closure needs genuine applications in 108 already-counted selection-bearing sessions if the denominator stays fixed, or 120 new selection-bearing sessions when each new session increases both numerator and denominator. No code change or synthetic historical backfill — dogfooding discipline only.
+- [x] **lesson_reuse_rate progress** — reached 21% (21/102 context applications) after recording past lessons that materially guided current work, up from the v0.13.0 baseline of 2% (1/40). The stated steady-upward-trend target is met; the 20% intervene threshold is also crossed.
 
 ### Experiment analysis
 - [x] **7/21 experiment validity analysis** — VERDICT: insufficient data for hypothesis testing. Block 1 (ON) started 7/5, 6 days elapsed, only 2/5 qualifying sessions reached. Zero crossover (no flip to OFF ever occurred). 64 ranking_snapshots accumulated, cron active (625 log entries), infra healthy. Root cause: low session frequency post-v0.11.0 (63 total qualifying sessions, but only 2 since experiment start). Options: (a) lower N from 5→3, (b) wait for natural session accumulation, (c) pause experiment and revisit when session volume recovers. Carry-forward: experiment remains active but deprioritized — focus shifts to Git Archaeology which has immediate impact.
@@ -333,7 +333,7 @@ Theme: close every concrete v0.13.1 archaeology carry-forward and lock productio
 - [x] **Source-filter and compatibility proof** — `--source archaeology`, read-only v16 dry-runs, circuit recovery, and live counter conservation are covered.
 
 Carry-forward after v0.14.0:
-- [ ] **Maturity 75 dogfooding** — use `ec context apply` when retrieved decisions or lessons materially influence work, then remeasure `applied_context_rate` and `lesson_reuse_rate`. _(measurement, ongoing)_
+- [x] **Maturity 75 dogfooding carry-forward** — remeasured at maturity 71, `applied_context_rate=1%` (8/1,159), and `lesson_reuse_rate=21%` (21/102). Lesson reuse crossed its threshold; the still-open applied-context work is re-registered once at v0.15.0 line 382 and quantified at v0.13.0 line 300. _(measurement carry-forward registered)_
 - [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
@@ -380,7 +380,7 @@ Carry-forward after v0.15.0:
 - [ ] **Post-squash archaeology convergence** — with explicit repository-content export authorization, process squash commit `11fb9ad`; measure completion by intersecting reachable non-merge SHAs with `archaeology_processed` rather than comparing raw counts. _(process/measurement, P3)_
 - [x] **TQL `--until` for semantic search** — upper bound enforced in local semantic path. _(feature gap, P3; completed by commits `7b74b84..1bdfe5c`)_
 - [x] **TQL `--until` for global search** — upper bound propagated through cross-repo search. _(feature gap, P3; completed by commits `a5ad64d..1bdfe5c`)_
-- [ ] **Maturity 75 dogfooding** — continue explicit `ec context apply` usage; fresh 2026-08-16 telemetry is `applied_context_rate=1%`, `lesson_reuse_rate=19%`, maturity 64 (`capture=17`, `distill=17`, `retrieve=25`, `intervene=5`). The target remains open; component movement alone does not establish a cause without raw intervene-event measurement. _(measurement, ongoing)_
+- [ ] **Maturity 75 dogfooding** — continue explicit `ec context apply` usage across distinct selection-bearing sessions; current telemetry is `applied_context_rate=1%` (8/1,159), `lesson_reuse_rate=21%` (21/102), maturity 71. Lesson reuse is no longer the blocker; this row converges with the v0.13.0 applied-context gate. _(measurement, ongoing)_
 - [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
