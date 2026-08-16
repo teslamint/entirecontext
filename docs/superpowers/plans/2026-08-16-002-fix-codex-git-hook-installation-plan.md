@@ -30,6 +30,8 @@
 - Modify: `src/entirecontext/cli/project_cmds.py:497-543`
 - Modify: `tests/test_project_cmds.py:758-790,1005-1025`
 - Modify: `CHANGELOG.md:8-17`
+- Modify: `README.md:536-559`
+- Modify: `docs/spec.md:184-189`
 - Modify: `ROADMAP.md:353`
 
 **Interfaces:**
@@ -60,9 +62,9 @@ Do not change `_install_git_hooks()` itself.
 
 Extend the existing Codex `--no-git-hooks` test to assert that neither repository hook path exists. This assertion must pass both before and after the source change; it protects the boundary affected by moving the call.
 
-- [ ] **Step 4: Close the roadmap item and record the user-facing fix**
+- [ ] **Step 4: Close the roadmap item and align the user-facing contract**
 
-Change `ROADMAP.md:353` to checked. Record the shared call site, the preserved Claude/Codex separation, the retained opt-out, and the focused module test result. Add an Unreleased changelog entry describing the corrected Codex default and unchanged opt-out.
+Change `ROADMAP.md:353` to checked. Record the shared call site, the preserved Claude/Codex separation, the retained opt-out, and the focused module test result. Add an Unreleased changelog entry describing the corrected Codex default and unchanged opt-out. Update `README.md` and `docs/spec.md` so both state that Codex-only setup installs agent-neutral repository git hooks without installing Claude Code hooks. Preserve the approved Scope/Out by documenting the current `ec disable --agent codex` cleanup asymmetry rather than changing disable behavior in this unit.
 
 - [ ] **Step 5: Verify the full changed contract**
 
@@ -75,6 +77,25 @@ uv run pytest -q tests/test_project_cmds.py
 Expected: Ruff exits 0 and the module reports 77 passing tests.
 
 Authoring-time observations (2026-08-16): Ruff format reported `1 file reformatted, 1 file left unchanged`; Ruff check reported `All checks passed!`; the module test reported `77 passed in 8.25s`.
+
+Validate the documentation contract:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+
+readme = Path("README.md").read_text()
+spec = Path("docs/spec.md").read_text()
+assert "installs the `post-commit` and `pre-push` git hooks" in readme
+assert "`--agent codex` installs them without installing Claude Code hooks" in spec
+assert "installs no git hooks" not in readme
+assert "installs no git hooks" not in spec
+assert "currently removes Codex notify but leaves the repository hooks" in readme
+print("hook documentation matches shared installation contract")
+PY
+```
+
+Authoring-time observation (2026-08-16): exit 0; `hook documentation matches shared installation contract`.
 
 Smoke-test the checkout-local `.venv/bin/ec` rather than the separately installed `ec` command. In an isolated temporary Git repository and temporary `HOME`, run `ec enable --agent codex`; require both Git hooks, Codex notify, and no Claude agent settings.
 

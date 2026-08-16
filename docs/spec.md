@@ -183,7 +183,7 @@ Exit codes:
 
 ## 4.4 Git hooks `[Implemented]`
 
-Installed by `ec init` (or `ec enable`) only when the target agent is `claude` or `both`, and only when `--no-git-hooks` is not passed. `--agent codex` installs no git hooks, and `ec init --no-hooks` skips them along with everything else:
+Installed by `ec init` (or `ec enable`) for every target agent (`claude`, `codex`, or `both`) unless `--no-git-hooks` is passed. The git hooks are agent-neutral: `--agent codex` installs them without installing Claude Code hooks, while `ec init --no-hooks` skips them along with every other integration:
 
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
 - `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`

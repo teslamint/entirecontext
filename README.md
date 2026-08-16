@@ -535,7 +535,7 @@ Tools that expose a `repos` parameter use `null` for the current repo, `["*"]` f
 
 ## Hook System
 
-`ec init` installs two kinds of hooks automatically on the default `--agent claude` path. No manual intervention required. `ec enable` reinstalls the same set. `--agent codex` writes only the Codex notify entry and the MCP registration — it installs neither the Claude Code hooks nor the git hooks.
+`ec init` installs agent-specific capture hooks plus agent-neutral repository git hooks automatically. `ec enable` reinstalls the same set. The default `--agent claude` path writes Claude Code hooks and the MCP registration; `--agent codex` writes Codex notify and the MCP registration, installs the `post-commit` and `pre-push` git hooks, and does not write Claude Code hooks. Pass `--no-git-hooks` to suppress only the repository git hooks.
 
 ### Claude Code Hooks (`.claude/settings.local.json`)
 
@@ -556,7 +556,7 @@ Hook protocol: stdin JSON, exit code 0 = success, 2 = block.
 | `post-commit` | `git commit` | Create checkpoint tied to the new commit if a session is active |
 | `pre-push` | `git push` | Run `ec sync` if `auto_sync_on_push` is enabled |
 
-Skip git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. Both hooks are removed by `ec disable`.
+Skip git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. `ec disable` (the default `--agent claude` path) and `ec disable --agent both` remove both repository hooks. The matching `ec disable --agent codex` path currently removes Codex notify but leaves the repository hooks; use `--agent both` for complete agent-hook cleanup until the tracked disable asymmetry is resolved (`ROADMAP.md` v0.16.0).
 
 ## Configuration
 
