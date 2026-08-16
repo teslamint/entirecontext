@@ -3,7 +3,7 @@
   "checkpoint_id": "01M05W0DK3S06FP7YAJHNPXG7H",
   "strategy": "manual-commit",
   "branch": "feat/decision-file-rename-lineage",
-  "checkpoints_count": 4,
+  "checkpoints_count": 6,
   "files_touched": [
     "CHANGELOG.md",
     "CLAUDE.md",
@@ -37,13 +37,20 @@
       "compact_transcript": "/2/transcript.jsonl",
       "content_hash": "/2/content_hash.txt",
       "prompt": "/2/prompt.txt"
+    },
+    {
+      "metadata": "/3/metadata.json",
+      "transcript": "/3/full.jsonl",
+      "compact_transcript": "/3/transcript.jsonl",
+      "content_hash": "/3/content_hash.txt",
+      "prompt": "/3/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 221351,
+    "input_tokens": 392299,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 4211712,
-    "output_tokens": 21591,
-    "api_call_count": 58
+    "cache_read_tokens": 9875200,
+    "output_tokens": 41094,
+    "api_call_count": 115
   }
 }
