@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Verdict-balanced lesson selection** — `get_lessons`, the CLI, MCP, and automatic distillation reserve a bounded per-verdict floor before global-recency top-up. Configure `futures.lessons_min_per_verdict` (default `5`); set it to `0` for pure recency. CLI `--since` now scopes the eligible pool before floor allocation.
 - **Lesson-selection query index (schema v18)** — adds an ordered partial index for feedback-bearing assessments so verdict-floor selection stays bounded by the requested candidate window as assessment history grows.
 
+### Fixed
+
+- **Codex repository hooks** — `ec init --agent codex` and `ec enable --agent codex` now install the agent-neutral `post-commit` checkpoint and `pre-push` sync hooks by default. `--no-git-hooks` still suppresses them, and Claude agent hooks remain disabled for Codex-only setups.
+
 ## [0.14.0] - 2026-07-12
 
 Archaeology carry-forward completion: retryable PR-body enrichment, exact path parsing, and production-scale regression proof.

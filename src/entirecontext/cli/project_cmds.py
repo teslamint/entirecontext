@@ -533,10 +533,10 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
         settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
         console.print("[green]Hooks installed[/green] in .claude/settings.local.json")
 
-        if not no_git_hooks:
-            installed = _install_git_hooks(repo_path)
-            if installed:
-                console.print(f"[green]Git hooks installed:[/green] {', '.join(installed)}")
+    if not no_git_hooks:
+        installed = _install_git_hooks(repo_path)
+        if installed:
+            console.print(f"[green]Git hooks installed:[/green] {', '.join(installed)}")
 
     if agent in {"codex", "both"}:
         _enable_codex_notify(repo_path)

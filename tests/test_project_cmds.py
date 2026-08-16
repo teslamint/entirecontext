@@ -770,9 +770,11 @@ class TestCodexIntegration:
         content = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
         assert "codex-notify" in content
         assert not (repo / ".codex" / "config.toml").exists()
+        assert not (repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (repo / ".git" / "hooks" / "pre-push").exists()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_codex_skips_claude_and_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
+    def test_enable_codex_installs_git_hooks_without_claude_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
@@ -782,8 +784,10 @@ class TestCodexIntegration:
         result = runner.invoke(app, ["enable", "--agent", "codex"])
         assert result.exit_code == 0
         assert not (repo / ".claude" / "settings.local.json").exists()
-        assert not (repo / ".git" / "hooks" / "post-commit").exists()
-        assert not (repo / ".git" / "hooks" / "pre-push").exists()
+        for name in ("post-commit", "pre-push"):
+            hook_path = repo / ".git" / "hooks" / name
+            assert hook_path.exists()
+            assert "EntireContext" in hook_path.read_text(encoding="utf-8")
         user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
         assert "entirecontext" in user_settings["mcpServers"]
 
@@ -1003,7 +1007,7 @@ class TestInitInstallsIntegrations:
         assert not (git_repo / ".git" / "hooks" / "pre-push").exists()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_init_agent_codex_skips_claude_and_git_hooks(
+    def test_init_agent_codex_installs_git_hooks_without_claude_hooks(
         self, mock_git_root, git_repo, isolated_global_db, tmp_path, monkeypatch
     ):
         fake_home = tmp_path / "fakehome"
@@ -1015,8 +1019,10 @@ class TestInitInstallsIntegrations:
 
         assert "codex-notify" in (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
         assert not (git_repo / ".claude" / "settings.local.json").exists()
-        assert not (git_repo / ".git" / "hooks" / "post-commit").exists()
-        assert not (git_repo / ".git" / "hooks" / "pre-push").exists()
+        for name in ("post-commit", "pre-push"):
+            hook_path = git_repo / ".git" / "hooks" / name
+            assert hook_path.exists()
+            assert "EntireContext" in hook_path.read_text(encoding="utf-8")
         user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
         assert "entirecontext" in user_settings["mcpServers"]
 
