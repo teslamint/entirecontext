@@ -296,6 +296,40 @@ class TestGitHooksInstallation:
         content = other_hook.read_text()
         assert "other" in content
 
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_preserves_foreign_git_hook_mentioning_entirecontext(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        foreign_hook = repo / ".git" / "hooks" / "post-commit"
+        original = (
+            "#!/bin/sh\n"
+            "# EntireContext command composed with a foreign action\n"
+            "ec hook handle --type PostCommit\n"
+            "echo other\n"
+        )
+        foreign_hook.write_text(original)
+
+        result = runner.invoke(app, ["disable", "--agent", "codex"])
+        assert result.exit_code == 0
+        assert foreign_hook.read_text() == original
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_removes_python_fallback_git_hooks(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
+        monkeypatch.setattr(project_cmds.shutil, "which", lambda _: None)
+        assert runner.invoke(app, ["enable", "--agent", "codex"]).exit_code == 0
+
+        result = runner.invoke(app, ["disable", "--agent", "codex"])
+
+        assert result.exit_code == 0
+        assert not (repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (repo / ".git" / "hooks" / "pre-push").exists()
+
     def test_install_git_hooks_no_git_dir(self, tmp_path):
         repo = tmp_path / "repo"
         repo.mkdir()
@@ -418,7 +452,9 @@ class TestGitHooksInstallation:
         repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         hook = repo / ".git" / "hooks" / "post-commit"
-        hook.write_text("#!/bin/sh\n# EntireContext: create checkpoint on commit\n")
+        hook.write_text(
+            "#!/bin/sh\n# EntireContext: create checkpoint on commit if active session\nec hook handle --type PostCommit\n"
+        )
         hook.chmod(0o644)
 
         _install_git_hooks(str(repo))
@@ -779,23 +815,133 @@ class TestEnableDisableRoundTrip:
     """Enable then disable should cleanly remove all EC hooks."""
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_enable_disable_cleans_up(self, mock_git_root, tmp_path, monkeypatch):
+    def test_enable_disable_claude_with_explicit_mcp_cleanup(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)
         fake_home = tmp_path / "fakehome"
-        fake_home.mkdir()
         monkeypatch.setenv("HOME", str(fake_home))
+        user_settings_path = fake_home / ".claude" / "settings.json"
+        user_settings_path.parent.mkdir(parents=True)
+        original_user_settings = {
+            "theme": "dark",
+            "mcpServers": {"sibling": {"command": "sibling-mcp", "args": ["serve"], "type": "stdio"}},
+        }
+        user_settings_path.write_text(json.dumps(original_user_settings), encoding="utf-8")
 
-        runner.invoke(app, ["enable"])
-        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
-        assert len(settings["hooks"]) > 0
+        enable = runner.invoke(app, ["enable"])
+        disable = runner.invoke(app, ["disable", "--remove-mcp"])
 
-        runner.invoke(app, ["disable"])
-        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
-        assert len(settings.get("hooks", {})) == 0
+        assert enable.exit_code == 0
+        assert disable.exit_code == 0
+        local_settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
+        assert not any(_is_ec_hook(entry) for entries in local_settings.get("hooks", {}).values() for entry in entries)
         assert not (repo / ".git" / "hooks" / "post-commit").exists()
         assert not (repo / ".git" / "hooks" / "pre-push").exists()
+        assert json.loads(user_settings_path.read_text(encoding="utf-8")) == original_user_settings
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_disable_codex_removes_codex_and_repo_integrations_only(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        claude_enable = runner.invoke(app, ["enable", "--agent", "claude", "--no-git-hooks"])
+        codex_enable = runner.invoke(app, ["enable", "--agent", "codex"])
+        disable = runner.invoke(app, ["disable", "--agent", "codex"])
+
+        assert claude_enable.exit_code == 0
+        assert codex_enable.exit_code == 0
+        assert disable.exit_code == 0
+        local_settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
+        assert any(_is_ec_hook(entry) for entries in local_settings["hooks"].values() for entry in entries)
+        codex_config = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "codex-notify" not in codex_config
+        assert not (repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (repo / ".git" / "hooks" / "pre-push").exists()
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "entirecontext" in user_settings["mcpServers"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_disable_both_with_explicit_mcp_cleanup(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        enable = runner.invoke(app, ["enable", "--agent", "both"])
+        disable = runner.invoke(app, ["disable", "--agent", "both", "--remove-mcp"])
+
+        assert enable.exit_code == 0
+        assert disable.exit_code == 0
+        local_settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
+        assert not any(_is_ec_hook(entry) for entries in local_settings.get("hooks", {}).values() for entry in entries)
+        codex_config = (fake_home / ".codex" / "config.toml").read_text(encoding="utf-8")
+        assert "codex-notify" not in codex_config
+        assert not (repo / ".git" / "hooks" / "post-commit").exists()
+        assert not (repo / ".git" / "hooks" / "pre-push").exists()
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        assert "entirecontext" not in user_settings["mcpServers"]
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_preserves_unrecognized_entirecontext_mcp_registration(
+        self, mock_git_root, git_repo, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+        user_settings_path = fake_home / ".claude" / "settings.json"
+        user_settings_path.parent.mkdir(parents=True)
+        original_settings = {
+            "theme": "dark",
+            "mcpServers": {
+                "entirecontext": {
+                    "command": "custom-entirecontext-mcp",
+                    "args": ["serve"],
+                    "type": "stdio",
+                },
+                "sibling": {"command": "sibling-mcp"},
+            },
+        }
+        user_settings_path.write_text(json.dumps(original_settings), encoding="utf-8")
+
+        result = runner.invoke(app, ["disable", "--remove-mcp"])
+
+        assert result.exit_code == 0
+        assert json.loads(user_settings_path.read_text(encoding="utf-8")) == original_settings
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_removes_generated_python_module_mcp_registration(
+        self, mock_git_root, git_repo, tmp_path, monkeypatch
+    ):
+        mock_git_root.return_value = str(git_repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+        user_settings_path = fake_home / ".claude" / "settings.json"
+        user_settings_path.parent.mkdir(parents=True)
+        user_settings_path.write_text(
+            json.dumps(
+                {
+                    "mcpServers": {
+                        "entirecontext": {
+                            "command": sys.executable,
+                            "args": ["-m", "entirecontext.cli", "mcp", "serve"],
+                            "type": "stdio",
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = runner.invoke(app, ["disable", "--remove-mcp"])
+
+        assert result.exit_code == 0
+        user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+        assert "entirecontext" not in user_settings["mcpServers"]
 
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_preserves_existing_hooks(self, mock_git_root, tmp_path, monkeypatch):

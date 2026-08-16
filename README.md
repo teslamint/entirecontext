@@ -462,7 +462,7 @@ ec init      # initializes the repo, installs hooks AND configures MCP server
 ec doctor    # verify MCP config is present
 ```
 
-`ec enable` does the same registration without the database work, so either command gets you there. Both are idempotent — a repeat run skips the MCP entry if it already exists. `ec disable` removes hooks but preserves the MCP config (other repos may use it).
+`ec enable` does the same registration without the database work, so either command gets you there. Both are idempotent — a repeat run skips the MCP entry if it already exists. `ec disable` removes the selected agent integration and both EntireContext repository Git hooks but preserves the global MCP config by default because other repos or agents may use it. Add `--remove-mcp` to explicitly remove a standard EntireContext MCP entry; this also removes an identical standard entry that was configured manually.
 
 ### Manual Setup
 
@@ -480,14 +480,15 @@ To configure manually, add to `~/.claude/settings.json`:
 }
 ```
 
-### Manual Removal
+### MCP Removal
 
-To remove the MCP server, delete the `entirecontext` key from `~/.claude/settings.json`:
+To disable the default Claude integration and also remove the standard user-level MCP entry:
 
 ```bash
-# Remove MCP config (use jq or edit manually)
-jq 'del(.mcpServers.entirecontext)' ~/.claude/settings.json > tmp.json && mv tmp.json ~/.claude/settings.json
+ec disable --remove-mcp
 ```
+
+Choose `--agent codex` or `--agent both` when disabling those agent integrations. The command preserves sibling MCP servers and nonstandard `entirecontext` entries. To remove only MCP without disabling the current repository integrations, delete the `mcpServers.entirecontext` key from `~/.claude/settings.json` manually.
 
 ### Standalone Server
 
@@ -556,7 +557,7 @@ Hook protocol: stdin JSON, exit code 0 = success, 2 = block.
 | `post-commit` | `git commit` | Create checkpoint tied to the new commit if a session is active |
 | `pre-push` | `git push` | Run `ec sync` if `auto_sync_on_push` is enabled |
 
-Skip git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. `ec disable` (the default `--agent claude` path) and `ec disable --agent both` remove both repository hooks. The matching `ec disable --agent codex` path currently removes Codex notify but leaves the repository hooks; use `--agent both` for complete agent-hook cleanup until the tracked disable asymmetry is resolved (`ROADMAP.md` v0.16.0).
+Skip Git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. The hooks are agent-neutral, so `ec disable` removes both EntireContext repository hooks for `--agent claude`, `codex`, and `both`; agent-specific Claude hooks and Codex notify remain controlled by `--agent`.
 
 ### Installed-tool provenance
 

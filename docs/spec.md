@@ -176,6 +176,8 @@ Install location and format:
 - Claude Code hooks are installed by `ec init` into `.claude/settings.local.json` using Claude hook object format with `matcher` + nested `hooks`. `ec enable` performs the same installation and exists as the re-install path.
 - User-level MCP config is installed by `ec init` into `~/.claude/settings.json` under `mcpServers.entirecontext`, and by `ec enable` on the same terms.
 
+`ec disable` removes the selected agent integration and the agent-neutral repository Git hooks. It preserves the shared user-level MCP entry by default. `--remove-mcp` explicitly removes only a standard `entirecontext` stdio entry while preserving sibling servers, unrelated settings, and nonstandard entries; an identical standard entry configured manually is also eligible because the explicit flag authorizes global cleanup.
+
 Exit codes:
 
 - `0` success
@@ -187,6 +189,8 @@ Installed by `ec init` (or `ec enable`) for every target agent (`claude`, `codex
 
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
 - `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`
+
+`ec disable` removes these EntireContext-owned repository hooks for every target agent. Existing ownership guards preserve foreign hooks and configured shared hook paths.
 
 ## 4.5 Installed-tool build provenance `[Implemented]`
 

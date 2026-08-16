@@ -436,6 +436,36 @@ def _resolve_hooks_dir(repo_path: str, create: bool = False) -> Path | None:
     return hooks_dir if hooks_dir.is_dir() else None
 
 
+def _is_ec_git_hook(content: str, hook_name: str) -> bool:
+    """Return whether a hook file exactly matches the EC-owned script shape."""
+    expected_args = {
+        "post-commit": ["hook", "handle", "--type", "PostCommit"],
+        "pre-push": ["sync", "--if-enabled"],
+    }.get(hook_name)
+    lines = content.splitlines()
+    if (
+        expected_args is None
+        or len(lines) != 3
+        or lines[0] != "#!/bin/sh"
+        or not lines[1].startswith("# EntireContext:")
+    ):
+        return False
+
+    for tokens in _tokenizations(lines[2]):
+        executable = _executable_name(tokens[0])
+        if executable == "ec":
+            args = tokens[1:]
+        elif re.fullmatch(r"(?:python(?:\d+(?:\.\d+)*)?|pypy\d*)", executable) is not None:
+            if tokens[1:3] != ["-m", "entirecontext.cli"]:
+                continue
+            args = tokens[3:]
+        else:
+            continue
+        if args == expected_args:
+            return True
+    return False
+
+
 def _install_git_hooks(repo_path: str) -> list[str]:
     """Install git hooks (post-commit, pre-push). Returns list of installed hook names."""
     if _has_custom_hooks_path(repo_path):
@@ -463,7 +493,7 @@ def _install_git_hooks(repo_path: str) -> list[str]:
         hook_path = hooks_dir / name
         if hook_path.exists():
             content = hook_path.read_text(encoding="utf-8")
-            if "EntireContext" in content:
+            if _is_ec_git_hook(content, name):
                 hook_path.chmod(hook_path.stat().st_mode | stat.S_IEXEC)
                 continue
             console.print(f"[yellow]Warning:[/yellow] {name} hook already exists and is not ours; leaving it alone.")
@@ -489,11 +519,47 @@ def _remove_git_hooks(repo_path: str) -> list[str]:
         hook_path = hooks_dir / name
         if hook_path.exists():
             content = hook_path.read_text(encoding="utf-8")
-            if "EntireContext" in content:
+            if _is_ec_git_hook(content, name):
                 hook_path.unlink()
                 removed.append(name)
 
     return removed
+
+
+def _is_ec_mcp_server(value: object) -> bool:
+    """Return whether an MCP entry has a standard EC form eligible for explicit removal."""
+    if not isinstance(value, dict) or set(value) != {"command", "args", "type"}:
+        return False
+    command = value["command"]
+    args = value["args"]
+    if not isinstance(command, str) or value["type"] != "stdio" or not isinstance(args, list):
+        return False
+
+    executable = _executable_name(command)
+    if executable == "ec":
+        return args == ["mcp", "serve"]
+    return re.fullmatch(r"(?:python(?:\d+(?:\.\d+)*)?|pypy\d*)", executable) is not None and args == [
+        "-m",
+        "entirecontext.cli",
+        "mcp",
+        "serve",
+    ]
+
+
+def _remove_mcp_registration() -> bool:
+    """Remove only the recognized EntireContext user-level MCP entry."""
+    settings_path = Path.home() / ".claude" / "settings.json"
+    if not settings_path.exists():
+        return False
+
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    mcp_servers = settings.get("mcpServers")
+    if not isinstance(mcp_servers, dict) or not _is_ec_mcp_server(mcp_servers.get("entirecontext")):
+        return False
+
+    del mcp_servers["entirecontext"]
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> None:
@@ -579,8 +645,9 @@ def enable(
 
 def disable(
     agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
+    remove_mcp: bool = typer.Option(False, "--remove-mcp", help="Also remove the standard user-level EC MCP entry"),
 ):
-    """Disable auto-capture by removing agent hooks."""
+    """Disable auto-capture by removing selected repository and agent integrations."""
     from ..core.project import find_git_root
 
     agent = _parse_agent_option(agent)
@@ -618,15 +685,20 @@ def disable(
         else:
             console.print("No EntireContext hooks found.")
 
-        removed = _remove_git_hooks(repo_path)
-        if removed:
-            console.print(f"[yellow]Git hooks removed:[/yellow] {', '.join(removed)}")
+    removed = _remove_git_hooks(repo_path)
+    if removed:
+        console.print(f"[yellow]Git hooks removed:[/yellow] {', '.join(removed)}")
 
     if agent in {"codex", "both"}:
         if _disable_codex_notify(repo_path):
             console.print("[yellow]Codex notify removed[/yellow] from ~/.codex/config.toml")
         else:
             console.print("No Codex notify integration found.")
+    if remove_mcp:
+        if _remove_mcp_registration():
+            console.print("[yellow]MCP server removed[/yellow] from ~/.claude/settings.json")
+        else:
+            console.print("No standard EntireContext MCP registration found.")
 
 
 def status(

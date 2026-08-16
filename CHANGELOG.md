@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Codex repository hooks** — `ec init --agent codex` and `ec enable --agent codex` now install the agent-neutral `post-commit` checkpoint and `pre-push` sync hooks by default. `--no-git-hooks` still suppresses them, and Claude agent hooks remain disabled for Codex-only setups.
+- **Symmetric disable cleanup** — `ec disable` now removes EntireContext repository Git hooks for Claude, Codex, and both-agent modes while preserving agent-specific boundaries. Codex notify is removed for Codex modes, and `--remove-mcp` explicitly removes a standard global MCP entry without touching sibling or nonstandard servers.
 
 ## [0.14.0] - 2026-07-12
 
