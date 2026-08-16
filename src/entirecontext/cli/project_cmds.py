@@ -16,6 +16,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from .._build_provenance import BUILD_DIRTY, BUILD_SHA
+
 console = Console()
 
 _AGENT_CHOICES = {"claude", "codex", "both"}
@@ -707,6 +709,53 @@ def config(
     console.print(f"[green]Set[/green] {key} = {value}")
 
 
+def _is_entirecontext_checkout(repo_path: str) -> bool:
+    root = Path(repo_path)
+    try:
+        with (root / "pyproject.toml").open("rb") as file:
+            project = tomllib.load(file).get("project")
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    return (
+        isinstance(project, dict)
+        and project.get("name") == "entirecontext"
+        and (root / "src" / "entirecontext").is_dir()
+    )
+
+
+def _running_from_checkout_source(repo_path: str) -> bool:
+    expected = Path(repo_path) / "src" / "entirecontext" / "cli" / "project_cmds.py"
+    return Path(__file__).resolve() == expected.resolve()
+
+
+def _build_provenance_warning(repo_path: str) -> str | None:
+    if not _is_entirecontext_checkout(repo_path) or _running_from_checkout_source(repo_path):
+        return None
+
+    from ..core.git_utils import get_current_commit
+
+    checkout_sha = get_current_commit(repo_path)
+    reinstall = "Run 'uv tool install --force .' from this checkout."
+    if checkout_sha is None:
+        return (
+            "Build provenance unavailable: could not resolve checkout HEAD. "
+            "Create or check out a commit before rebuilding the installed ec executable."
+        )
+    if BUILD_SHA is None:
+        return f"Build provenance unavailable for the installed ec executable. {reinstall}"
+    if BUILD_DIRTY:
+        return (
+            f"Build provenance is dirty at {BUILD_SHA[:7]} and cannot prove checkout equivalence. "
+            f"Commit or restore tracked changes, then {reinstall.lower()}"
+        )
+    if BUILD_SHA != checkout_sha:
+        return (
+            f"Build provenance mismatch: installed build {BUILD_SHA[:7]} "
+            f"does not match checkout {checkout_sha[:7]}. {reinstall}"
+        )
+    return None
+
+
 def doctor(
     agent: str = typer.Option("claude", "--agent", help="Validate claude|codex|both integrations"),
 ):
@@ -721,6 +770,10 @@ def doctor(
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+
+    provenance_warning = _build_provenance_warning(repo_path)
+    if provenance_warning is not None:
+        warnings.append(provenance_warning)
 
     ec_dir = Path(repo_path) / ".entirecontext"
     if not ec_dir.exists():

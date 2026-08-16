@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from entirecontext.cli import app
+from entirecontext.cli import app, project_cmds
 from entirecontext.cli.project_cmds import (
     _install_git_hooks,
     _is_ec_hook,
@@ -651,6 +651,128 @@ class TestDoctorMCPCheck:
 
         result = runner.invoke(app, ["doctor"])
         assert "mcp server not configured" not in result.output.lower()
+
+
+def _mark_entirecontext_checkout(repo: Path) -> Path:
+    (repo / "pyproject.toml").write_text(
+        '[project]\nname = "entirecontext"\nversion = "0.0.0"\n',
+        encoding="utf-8",
+    )
+    project_cmd = repo / "src" / "entirecontext" / "cli" / "project_cmds.py"
+    project_cmd.parent.mkdir(parents=True)
+    project_cmd.write_text("", encoding="utf-8")
+    return project_cmd
+
+
+class TestDoctorBuildProvenance:
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_accepts_matching_build_sha(self, mock_git_root, ec_repo, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        _mark_entirecontext_checkout(ec_repo)
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ec_repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        monkeypatch.setattr(project_cmds, "BUILD_SHA", head)
+        monkeypatch.setattr(project_cmds, "BUILD_DIRTY", False)
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert "build provenance" not in result.output.lower()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_warns_for_stale_build_sha(self, mock_git_root, ec_repo, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        _mark_entirecontext_checkout(ec_repo)
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ec_repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        monkeypatch.setattr(project_cmds, "BUILD_SHA", "0" * 40)
+        monkeypatch.setattr(project_cmds, "BUILD_DIRTY", False)
+
+        result = runner.invoke(app, ["doctor"])
+        output = " ".join(result.output.lower().split())
+        assert "installed build 0000000" in output
+        assert f"checkout {head[:7]}" in output
+        assert "uv tool install --force ." in output
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_warns_for_dirty_build(self, mock_git_root, ec_repo, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        _mark_entirecontext_checkout(ec_repo)
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ec_repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        monkeypatch.setattr(project_cmds, "BUILD_SHA", head)
+        monkeypatch.setattr(project_cmds, "BUILD_DIRTY", True)
+
+        result = runner.invoke(app, ["doctor"])
+        output = " ".join(result.output.lower().split())
+
+        assert "build provenance is dirty" in output
+        assert "commit or restore tracked changes" in output
+        assert "uv tool install --force ." in output
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_warns_for_unavailable_build_sha(self, mock_git_root, ec_repo, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        _mark_entirecontext_checkout(ec_repo)
+        monkeypatch.setattr(project_cmds, "BUILD_SHA", None)
+        monkeypatch.setattr(project_cmds, "BUILD_DIRTY", False)
+
+        result = runner.invoke(app, ["doctor"])
+        output = " ".join(result.output.lower().split())
+
+        assert "build provenance unavailable" in output
+        assert "uv tool install --force ." in output
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_warns_for_unavailable_checkout_head(self, mock_git_root, ec_repo, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        _mark_entirecontext_checkout(ec_repo)
+        monkeypatch.setattr(project_cmds, "BUILD_SHA", "a" * 40)
+        monkeypatch.setattr(project_cmds, "BUILD_DIRTY", False)
+        monkeypatch.setattr("entirecontext.core.git_utils.get_current_commit", lambda _: None)
+
+        result = runner.invoke(app, ["doctor"])
+        output = " ".join(result.output.lower().split())
+
+        assert "could not resolve checkout head" in output
+        assert "create or check out a commit" in output
+        assert "uv tool install --force ." not in output
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_accepts_checkout_source_execution(self, mock_git_root, ec_repo, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        project_cmd = _mark_entirecontext_checkout(ec_repo)
+        monkeypatch.setattr(project_cmds, "__file__", str(project_cmd))
+        monkeypatch.setattr(project_cmds, "BUILD_SHA", None)
+        monkeypatch.setattr(project_cmds, "BUILD_DIRTY", False)
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert "build provenance" not in result.output.lower()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_skips_build_sha_check_for_consumer_repo(self, mock_git_root, ec_repo, monkeypatch):
+        mock_git_root.return_value = str(ec_repo)
+        monkeypatch.setattr(project_cmds, "BUILD_SHA", "0" * 40)
+        monkeypatch.setattr(project_cmds, "BUILD_DIRTY", True)
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert "build provenance" not in result.output.lower()
 
 
 class TestEnableDisableRoundTrip:

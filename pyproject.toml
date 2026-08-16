@@ -33,6 +33,7 @@ mcp = [
     "mcp>=1.0.0",
 ]
 dev = [
+    "hatchling>=1.27,<2",
     "pytest>=8.0.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.9.0",
@@ -50,11 +51,23 @@ Issues = "https://github.com/teslamint/entirecontext/issues"
 Changelog = "https://github.com/teslamint/entirecontext/blob/main/CHANGELOG.md"
 
 [build-system]
-requires = ["uv_build>=0.10.2,<0.12.0"]
-build-backend = "uv_build"
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
 
-[tool.uv.build-backend]
-source-include = ["LICENSE", "CHANGELOG.md"]
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/entirecontext"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/CHANGELOG.md",
+    "/LICENSE",
+    "/README.md",
+    "/hatch_build.py",
+    "/src/entirecontext",
+]
 
 [tool.ruff]
 target-version = "py312"

@@ -558,6 +558,18 @@ Hook protocol: stdin JSON, exit code 0 = success, 2 = block.
 
 Skip git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. `ec disable` (the default `--agent claude` path) and `ec disable --agent both` remove both repository hooks. The matching `ec disable --agent codex` path currently removes Codex notify but leaves the repository hooks; use `--agent both` for complete agent-hook cleanup until the tracked disable asymmetry is resolved (`ROADMAP.md` v0.16.0).
 
+### Installed-tool provenance
+
+Distribution builds stamp the checkout Git SHA and tracked-file dirty state into the `ec` package. When an installed `ec doctor` runs inside an EntireContext source checkout, it compares that stamp with the checkout's current `HEAD`. A missing or mismatched stamp directs the operator to reinstall from the checkout:
+
+```bash
+uv tool install --force .
+```
+
+A dirty stamp directs the operator to commit or restore tracked changes before reinstalling. If the checkout has no resolvable `HEAD`, create or check out a commit before rebuilding the installed executable.
+
+Editable and direct source executions skip this comparison because they already run the checkout code. Consumer repositories also skip it; the check applies only when the current repository identifies itself as the EntireContext source project.
+
 ## Configuration
 
 Config merges in order: **defaults** ← **global** (`~/.entirecontext/config.toml`) ← **per-repo** (`.entirecontext/config.toml`).

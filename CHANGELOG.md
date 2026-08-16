@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Build-SHA provenance** — wheel and source-distribution builds now carry the source checkout Git SHA and tracked-file dirty state. `ec doctor` warns when an installed executable is unavailable, dirty, or stale relative to an EntireContext checkout and provides the exact reinstall command.
+
 ### Changed
 
 - **Verdict-balanced lesson selection** — `get_lessons`, the CLI, MCP, and automatic distillation reserve a bounded per-verdict floor before global-recency top-up. Configure `futures.lessons_min_per_verdict` (default `5`); set it to `0` for pure recency. CLI `--since` now scopes the eligible pool before floor allocation.

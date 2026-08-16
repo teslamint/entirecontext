@@ -188,6 +188,12 @@ Installed by `ec init` (or `ec enable`) for every target agent (`claude`, `codex
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
 - `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`
 
+## 4.5 Installed-tool build provenance `[Implemented]`
+
+Wheel and source-distribution builds contain a generated `entirecontext._build_provenance` module with the source checkout's full Git SHA and tracked-file dirty state. A wheel rebuilt from an unpacked source distribution preserves the source distribution's stamp even though `.git` is unavailable.
+
+When `ec doctor` is executing from an installed distribution inside the EntireContext source checkout, it compares the stamped SHA with the checkout's current `HEAD`. It warns when provenance is unavailable, the build was made from a dirty tracked tree, or the SHA differs. Missing or mismatched installed stamps direct the operator to run `uv tool install --force .`; dirty stamps first require committing or restoring tracked changes; an unresolved checkout `HEAD` requires creating or checking out a commit before rebuilding. Direct checkout/editable execution and unrelated consumer repositories do not receive this warning.
+
 ---
 
 ## 5. Search
