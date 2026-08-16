@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Verdict-balanced lesson selection** — `get_lessons`, the CLI, MCP, and automatic distillation reserve a bounded per-verdict floor before global-recency top-up. Configure `futures.lessons_min_per_verdict` (default `5`); set it to `0` for pure recency. CLI `--since` now scopes the eligible pool before floor allocation.
 - **Lesson-selection query index (schema v18)** — adds an ordered partial index for feedback-bearing assessments so verdict-floor selection stays bounded by the requested candidate window as assessment history grows.
+- **Verdict-balanced assessment enrichment** — candidate batches now interleave available rule verdicts before global recency, use deterministic timestamp/ID ordering, and exclude feedback-bearing rule assessments so measurement cannot overwrite recorded outcomes.
 
 ### Fixed
 

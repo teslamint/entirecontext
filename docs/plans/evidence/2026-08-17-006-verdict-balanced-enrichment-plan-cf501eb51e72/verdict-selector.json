@@ -1,0 +1,16 @@
+{
+  "actual_status": 0,
+  "check_id": "verdict-selector",
+  "command": "set -euo pipefail\nuv run pytest -q tests/test_auto_assess.py tests/test_verdict_accuracy.py\n",
+  "command_sha256": "ae31090f432717feef4124a91ea22f32b1be4e852b126d7de60fa8377449fce0",
+  "expected_status": 0,
+  "output": "...................................                                      [100%]\n35 passed in 2.24s\n",
+  "output_sha256": "dea1150e5cf7fa767e51d7378f7779a194ac6bea14b89e555d2839c07106dc2d",
+  "plan": "docs/superpowers/plans/2026-08-17-006-verdict-balanced-enrichment-plan.md",
+  "plan_sha256": "cae03cbabfe4d631b7c73d24ba7c4cd8f6a05e5040d04d810e2f7728ba9679c8",
+  "record_sha256": "18bbe91d7f33cd0c9d1277755fbbbc24127cc6af4debed5e65801e34570a6eb2",
+  "recorded_at": "2026-08-16T17:04:56.296808+00:00",
+  "schema": "plan-check/v1",
+  "spec": "docs/specs/2026-08-17-verdict-balanced-enrichment-design.md",
+  "spec_sha256": "2eb36679d5467ffe7f87ec8be2ec25a9013539cd1f5705773c26cfc053a25b75"
+}

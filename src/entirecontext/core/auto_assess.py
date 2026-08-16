@@ -104,17 +104,31 @@ def get_enrichment_candidates(
     conn: sqlite3.Connection, session_id: str | None = None, window_days: int = 7, limit: int = 10
 ) -> list[dict]:
     query = """
-        SELECT a.id, a.checkpoint_id, a.verdict, a.model_name, a.impact_summary,
-               c.git_commit_hash, c.diff_summary, c.session_id
-        FROM assessments a
-        JOIN checkpoints c ON a.checkpoint_id = c.id
-        WHERE a.model_name = 'rule-based' AND a.created_at >= datetime('now', ?)
+        WITH eligible AS (
+            SELECT a.id, a.checkpoint_id, a.verdict, a.model_name, a.impact_summary,
+                   a.created_at, c.git_commit_hash, c.diff_summary, c.session_id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY a.verdict
+                       ORDER BY a.created_at DESC, a.id DESC
+                   ) AS verdict_rank
+            FROM assessments a
+            JOIN checkpoints c ON a.checkpoint_id = c.id
+            WHERE a.model_name = 'rule-based'
+              AND a.feedback IS NULL
+              AND a.created_at >= datetime('now', ?)
     """
     params: list = [f"-{window_days} days"]
     if session_id:
         query += " AND c.session_id = ?"
         params.append(session_id)
-    query += " ORDER BY a.created_at DESC LIMIT ?"
+    query += """
+        )
+        SELECT id, checkpoint_id, verdict, model_name, impact_summary,
+               git_commit_hash, diff_summary, session_id
+        FROM eligible
+        ORDER BY verdict_rank, created_at DESC, id DESC
+        LIMIT ?
+    """
     params.append(limit)
 
     return [dict(row) for row in conn.execute(query, params).fetchall()]

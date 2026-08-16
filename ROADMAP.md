@@ -228,7 +228,7 @@ Theme: automate the weakest maturity dimension (intervene=5), activate deferred 
 - [x] **Signal C default ON** — `[decisions] auto_embed` flipped to `true` by default. Graceful no-op without `entirecontext[semantic]`.
 - [x] **Codex stale cleanup trigger expansion** — `close_stale_sessions()` now also triggered on SessionEnd, not just codex notify ingestion.
 - [x] **Duplicate notify regression test** — guards 150faab auto-close accuracy invariant.
-- [ ] **Rule-based verdict mapping tuning** — deferred until `ec checkpoint assess-accuracy` reports n≥30 enriched assessments with feedback (fresh 2026-08-16 check: n=24, agreement 95.8%).
+- [x] **Rule-based verdict mapping tuning** — evaluated after verdict-balanced enrichment reached n=63 with 98.4% agreement: `neutral` 59 agree / 1 disagree, `expand` 3 / 0, and no eligible `narrow` row in the seven-day backlog. No mapping change was warranted: the sole disagreement covered refactor/fix/docs commits with no `feat` or `revert` prefix, so the rule's `neutral` result matched the documented commit-prefix contract. Deterministic per-verdict selection now prevents neutral volume from hiding available minority-verdict evidence; ADR-0014.
 
 ## v0.9.1 — Measurement Calibration
 
