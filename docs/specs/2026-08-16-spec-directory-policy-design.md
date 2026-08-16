@@ -55,7 +55,7 @@ A maintainer searches active policy and traceability documents for `docs/superpo
 |---|---|---|---|---|
 | The repository has five active Specifications under `docs/specs/`. | `git ls-files 'docs/specs/*.md' | wc -l` | 2026-08-16T08:12:56Z | Isolated worktree at `71a1383` | 5 files |
 | The repository policy currently names the competing path. | `grep -n 'docs/superpowers/specs/' AGENTS.md` | 2026-08-16T08:12:56Z | Isolated worktree at `71a1383` | `AGENTS.md:20` |
-| Current ADR and traceability documents contain references to `docs/specs/`. | `git ls-files '*.md' | xargs grep -nE 'docs/(superpowers/)?specs/'` | 2026-08-16T08:12:56Z | Isolated worktree at `71a1383` | Active and archived references enumerated by command | 
+| Current ADR and traceability documents contain references to `docs/specs/`. | `git ls-files '*.md' | xargs grep -nE 'docs/(superpowers/)?specs/'` | 2026-08-16T08:12:56Z | Isolated worktree at `71a1383` | Active and archived references enumerated by command |
 
 ## Architecture
 
@@ -92,15 +92,15 @@ Validation is repository-text validation rather than runtime testing:
 
 ## Success Criteria
 
-1. `AGENTS.md` names `docs/specs/` as the sole governing active Specification path.  
+1. `AGENTS.md` names `docs/specs/` as the sole governing active Specification path.
    - **Measured by**: `grep -n 'docs/specs/' AGENTS.md` returns the policy line and `grep -n 'docs/superpowers/specs/' AGENTS.md` returns no match.
-2. Every active Specification traceability pointer resolves to an existing file.  
+2. Every active Specification traceability pointer resolves to an existing file.
    - **Measured by**: a repository script enumerates active `origin:`/`Spec:`/`spec:` paths and exits 0 after checking each target.
-3. Existing Specification files are not moved or renamed.  
+3. Existing Specification files are not moved or renamed.
    - **Measured by**: `git diff --name-status -- docs/specs docs/superpowers/specs` contains no rename or delete entries.
-4. The roadmap drift item records the selected policy and is closed.  
+4. The roadmap drift item records the selected policy and is closed.
    - **Measured by**: `ROADMAP.md` contains a checked entry documenting `docs/specs/` as the official path and historical archive preservation.
-5. Historical release evidence remains readable without path rewriting.  
+5. Historical release evidence remains readable without path rewriting.
    - **Measured by**: archived progress, ADR, Plan, and Retro files retain their original paths and their referenced historical Specification files remain present.
 
 ## Open Decisions
