@@ -96,3 +96,59 @@ class TestHandleHook:
         assert result == 0
         captured = capsys.readouterr()
         assert "EntireContext hook error (SessionStart): crash" in captured.err
+
+
+class TestSessionStartOrdering:
+    def test_syncs_rename_lineage_before_decision_ranking(self):
+        from entirecontext.hooks.handler import _handle_session_start
+
+        calls = []
+        with (
+            patch(
+                "entirecontext.hooks.session_lifecycle.on_session_start",
+                side_effect=lambda _data: calls.append("session"),
+            ),
+            patch(
+                "entirecontext.hooks.decision_hooks.maybe_sync_decision_file_lineage",
+                side_effect=lambda _data: calls.append("lineage"),
+            ),
+            patch(
+                "entirecontext.hooks.decision_hooks.on_session_start_decisions",
+                side_effect=lambda _data: calls.append("decisions"),
+                return_value=None,
+            ),
+            patch(
+                "entirecontext.hooks.handler._surface_lessons_on_start",
+                side_effect=lambda _data: calls.append("lessons"),
+            ),
+        ):
+            assert _handle_session_start({"cwd": "/repo"}) == 0
+
+        assert calls == ["session", "lineage", "decisions", "lessons"]
+
+    def test_lineage_exception_does_not_suppress_other_session_start_surfaces(self):
+        from entirecontext.hooks.handler import _handle_session_start
+
+        calls = []
+        with (
+            patch(
+                "entirecontext.hooks.session_lifecycle.on_session_start",
+                side_effect=lambda _data: calls.append("session"),
+            ),
+            patch(
+                "entirecontext.hooks.decision_hooks.maybe_sync_decision_file_lineage",
+                side_effect=RuntimeError("lineage failed"),
+            ),
+            patch(
+                "entirecontext.hooks.decision_hooks.on_session_start_decisions",
+                side_effect=lambda _data: calls.append("decisions"),
+                return_value=None,
+            ),
+            patch(
+                "entirecontext.hooks.handler._surface_lessons_on_start",
+                side_effect=lambda _data: calls.append("lessons"),
+            ),
+        ):
+            assert _handle_session_start({"cwd": "/repo"}) == 0
+
+        assert calls == ["session", "decisions", "lessons"]

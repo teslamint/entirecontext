@@ -55,6 +55,8 @@ class TestSchemaCreation:
             "decision_commits",
             "decision_checkpoints",
             "decision_files",
+            "decision_file_lineage",
+            "decision_file_lineage_state",
             "decision_assessments",
             "decision_outcomes",
             "ranking_snapshots",

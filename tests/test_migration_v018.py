@@ -6,6 +6,7 @@ import pytest
 
 from entirecontext.db.connection import get_memory_db
 from entirecontext.db.migration import apply_migrations, get_current_version, init_schema
+from entirecontext.db.schema import SCHEMA_VERSION
 
 
 @pytest.fixture
@@ -110,6 +111,6 @@ def test_fresh_schema_matches_migrated_feedback_recency_index(v17_db):
         assert migrated_sql is not None
         assert fresh_sql is not None
         assert _normalized_sql(fresh_sql) == _normalized_sql(migrated_sql)
-        assert get_current_version(conn) == 18
+        assert get_current_version(conn) == SCHEMA_VERSION
     finally:
         conn.close()
