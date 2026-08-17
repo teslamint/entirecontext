@@ -416,7 +416,7 @@ All PR #205 carry-forwards are registered under v0.16.0 above.
   - EC handles surfacing only; enforcement is out of scope (CI/linter/review bot territory)
   - Capture recurring team preferences and architectural constraints as decisions, not policies
 
-- [x] **Decision file rename tracking** — schema v19 persists committed Git rename lineage and a per-repository synchronization watermark. `SessionStart` scans only newly reachable commits after the first history scan, materializes destination links transitively into `decision_files`, and leaves historical links intact so exact lookup, ranking, outcomes, stale checks, and unlinking keep their existing contracts.
+- [x] **Decision file rename tracking** — schema v19 persists committed Git rename lineage and a per-repository synchronization watermark; schema v20 persists explicit per-decision path suppressions. `SessionStart` scans only newly reachable commits after the first history scan, materializes destination links transitively into `decision_files`, and leaves historical links intact. A successful file unlink survives replay until an explicit relink, so exact lookup, ranking, outcomes, and stale checks retain their existing contracts without reversing user intent.
 
 ## Done Foundations
 

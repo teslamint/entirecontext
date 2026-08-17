@@ -56,6 +56,7 @@ class TestSchemaCreation:
             "decision_checkpoints",
             "decision_files",
             "decision_file_lineage",
+            "decision_file_lineage_suppressions",
             "decision_file_lineage_state",
             "decision_assessments",
             "decision_outcomes",

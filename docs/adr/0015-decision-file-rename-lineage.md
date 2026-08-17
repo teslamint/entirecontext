@@ -2,7 +2,7 @@
 
 **Status:** accepted
 **Date:** 2026-08-17
-**EC Decision:** `235ba317-fd3b-4682-b8c9-52fccf0ba78c`
+**EC Decisions:** `235ba317-fd3b-4682-b8c9-52fccf0ba78c`, `841ee79c-f7d3-4c10-b39e-2e72cb8ce10d`
 
 ## Context
 
@@ -14,9 +14,11 @@ Git already detects renames, but EntireContext's rename-aware uncommitted-diff p
 
 Add repository-local schema v19 storage for Git-proven committed rename edges and a scan watermark. At SessionStart, before decision ranking, scan reachable Git history incrementally with NUL-delimited `--name-status -M --diff-filter=R` output. Persist each `(old_path, new_path, commit_sha)` edge, recursively materialize all reachable destination paths into `decision_files`, preserve historical links, and advance the watermark in the same transaction.
 
+Schema v20 adds per-decision path suppressions. A successful explicit file unlink deletes the requested `decision_files` row and records its suppression atomically. Propagation still traverses suppressed intermediate paths but excludes each exact suppressed destination from final materialization; an explicit link clears the matching suppression atomically. Same-HEAD replay remains enabled so decisions linked after an earlier history scan still receive known destinations.
+
 The first synchronization scans history reachable from `HEAD`. Later synchronizations scan `watermark..HEAD` when the watermark remains an ancestor; rewritten or divergent history triggers an idempotent full rescan. Synchronization failures use the existing fail-open hook warning path and do not advance the watermark.
 
-PostToolUse and query-time readers remain unchanged and perform no Git-history subprocesses. Copies, uncommitted renames, heuristic aliases, and public lineage-management commands are outside this decision.
+PostToolUse and query-time readers remain unchanged and perform no Git-history subprocesses. Copies, uncommitted renames, heuristic aliases, and new public lineage-management commands are outside this decision.
 
 ## Options Considered
 
@@ -41,11 +43,23 @@ PostToolUse and query-time readers remain unchanged and perform no Git-history s
 - Keeps only current paths.
 - Rejected because historical lookup and auditability would be lost.
 
+### Skip same-HEAD replay after the first scan
+
+- Avoids re-adding an explicitly removed destination.
+- Rejected because decisions linked after the scan would never receive already-known rename destinations.
+
+### Delete source and derived links during unlink
+
+- Needs no suppression state.
+- Rejected because a destination unlink would erase unrelated historical lookup and outcome evidence.
+
 ## Consequences
 
 - Decisions and their outcome history remain discoverable through old, intermediate, and current committed paths.
 - Existing public string-list contracts and query code continue to use `decision_files` without a compatibility layer.
 - The local database retains an auditable record of Git-reported rename edges and the commit that supplied each edge.
+- Explicit unlink remains durable across SessionStart replay, explicit relink restores normal propagation, and transactional failures preserve the prior link/suppression pair.
+- Schema v20 adds one internal suppression table without changing CLI, MCP, or decision return shapes.
 - The first SessionStart after migration can perform a full-history metadata scan; failure delays lineage repair but does not block the session or corrupt the watermark.
 - Git's `-M` similarity decision is authoritative. EntireContext does not infer moves that Git does not report.
 - Old path links intentionally accumulate. A future pruning policy would require a separate decision because it changes historical lookup semantics.

@@ -138,7 +138,7 @@ def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str
     try:
         import json
 
-        from .futures import ASSESS_SYSTEM_PROMPT, VALID_VERDICTS, add_feedback
+        from .futures import ASSESS_SYSTEM_PROMPT, VALID_VERDICTS
         from .llm import get_backend, strip_markdown_fences
 
         futures_config = config["futures"]
@@ -163,11 +163,18 @@ def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str
         tidy_suggestion = payload.get("tidy_suggestion", assessment.get("tidy_suggestion"))
         backend_name = f"{backend_key}-cli"
 
-        conn.execute(
+        feedback = "agree" if new_verdict == original_verdict else "disagree"
+        feedback_reason = (
+            "auto:llm-confirmed"
+            if feedback == "agree"
+            else f"auto:revised:{original_verdict}->{new_verdict}"
+        )
+        cursor = conn.execute(
             """
             UPDATE assessments
-            SET verdict = ?, impact_summary = ?, roadmap_alignment = ?, tidy_suggestion = ?, model_name = ?
-            WHERE id = ?
+            SET verdict = ?, impact_summary = ?, roadmap_alignment = ?,
+                tidy_suggestion = ?, model_name = ?, feedback = ?, feedback_reason = ?
+            WHERE id = ? AND model_name = 'rule-based' AND feedback IS NULL
             """,
             (
                 new_verdict,
@@ -175,15 +182,12 @@ def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str
                 roadmap_alignment,
                 tidy_suggestion,
                 backend_name,
+                feedback,
+                feedback_reason,
                 assessment["id"],
             ),
         )
-
-        if new_verdict == original_verdict:
-            add_feedback(conn, assessment["id"], "agree", "auto:llm-confirmed")
-        else:
-            add_feedback(conn, assessment["id"], "disagree", f"auto:revised:{original_verdict}->{new_verdict}")
-        return True
+        return cursor.rowcount > 0
     except Exception:
         return False
 

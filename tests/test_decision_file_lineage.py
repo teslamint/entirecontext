@@ -18,6 +18,7 @@ from entirecontext.core.decisions import (
     create_decision,
     get_decision,
     link_decision_to_file,
+    unlink_decision_from_file,
     rank_related_decisions,
     record_decision_outcome,
 )
@@ -226,6 +227,59 @@ def test_sync_same_head_replays_lineage_for_later_decision(ec_repo, ec_db):
     stored = get_decision(ec_db, decision["id"])
     assert stored is not None
     assert set(stored["files"]) == {"./src/old.py", "src/middle.py", "src/new.py"}
+
+
+def test_unlink_suppresses_lineage_replay_until_explicit_relink(ec_repo, ec_db):
+    _commit_file(ec_repo, "src/old.py")
+    decision = create_decision(ec_db, title="Explicit unlink survives rename replay")
+    link_decision_to_file(ec_db, decision["id"], "src/old.py")
+    _commit_rename(ec_repo, "src/old.py", "src/new.py")
+    sync_decision_file_lineage(ec_db, str(ec_repo))
+
+    assert unlink_decision_from_file(ec_db, decision["id"], "src/new.py") is True
+    suppression_count = ec_db.execute(
+        """SELECT COUNT(*) FROM decision_file_lineage_suppressions
+        WHERE decision_id = ? AND file_path = ?""",
+        (decision["id"], "src/new.py"),
+    ).fetchone()[0]
+    assert suppression_count == 1
+    replay = sync_decision_file_lineage(ec_db, str(ec_repo))
+
+    assert replay.links_added == 0
+    unlinked = get_decision(ec_db, decision["id"])
+    assert unlinked is not None
+    assert unlinked["files"] == ["src/old.py"]
+
+    link_decision_to_file(ec_db, decision["id"], "src/new.py")
+    suppression_count = ec_db.execute(
+        """SELECT COUNT(*) FROM decision_file_lineage_suppressions
+        WHERE decision_id = ? AND file_path = ?""",
+        (decision["id"], "src/new.py"),
+    ).fetchone()[0]
+    assert suppression_count == 0
+    again = sync_decision_file_lineage(ec_db, str(ec_repo))
+
+    assert again.links_added == 0
+    relinked = get_decision(ec_db, decision["id"])
+    assert relinked is not None
+    assert set(relinked["files"]) == {"src/old.py", "src/new.py"}
+
+
+def test_suppressed_intermediate_does_not_block_later_destination(ec_repo, ec_db):
+    _commit_file(ec_repo, "src/old.py")
+    decision = create_decision(ec_db, title="Suppressed intermediate remains traversable")
+    link_decision_to_file(ec_db, decision["id"], "src/old.py")
+    _commit_rename(ec_repo, "src/old.py", "src/middle.py")
+    sync_decision_file_lineage(ec_db, str(ec_repo))
+    assert unlink_decision_from_file(ec_db, decision["id"], "src/middle.py") is True
+
+    _commit_rename(ec_repo, "src/middle.py", "src/new.py")
+    result = sync_decision_file_lineage(ec_db, str(ec_repo))
+
+    assert result.links_added == 1
+    stored = get_decision(ec_db, decision["id"])
+    assert stored is not None
+    assert set(stored["files"]) == {"src/old.py", "src/new.py"}
 
 
 def test_sync_full_rescans_when_watermark_is_not_an_ancestor(ec_repo, ec_db):

@@ -11,7 +11,7 @@ _Created 2026-08-17. Approved by the user on 2026-08-17._
 
 ## Overview
 
-Preserve path-based decision retrieval after committed Git renames. EntireContext will store Git-proven old-to-new path edges and, at SessionStart, add every reachable destination path to each affected decision without deleting its historical links.
+Preserve path-based decision retrieval after committed Git renames. EntireContext will store Git-proven old-to-new path edges and, at SessionStart, add every reachable destination path to each affected decision without deleting historical links automatically. An explicit file unlink remains durable across later lineage replay until an explicit relink.
 
 Decision outcomes already attach to decision IDs; this change repairs the path-to-decision lookup used by ranking, surfacing, staleness checks, auto-apply inference, and extraction feedback.
 
@@ -33,15 +33,21 @@ If the stored scan watermark is no longer an ancestor of `HEAD`, the next Sessio
 
 A timeout, malformed Git output, missing repository, or database error does not block SessionStart. The hook records a warning, leaves the prior watermark unchanged, and retries on a later SessionStart.
 
+### S5: Preserve explicit unlink intent across replay
+
+After synchronization adds `src/new.py`, a user explicitly unlinks that destination. A same-HEAD SessionStart does not restore it. Linking `src/new.py` explicitly clears the suppression; a later unlink and replay suppresses it again.
+
 ## Scope
 
 ### In
 
 - Add schema v19 tables for committed rename edges and the repository-local scan watermark.
+- Add schema v20 storage for explicit per-decision destination suppressions.
 - Parse NUL-delimited `git log --name-status -M --diff-filter=R` output without flattening old/new identity.
 - Scan all commits reachable from `HEAD` on first use; scan `watermark..HEAD` thereafter when the watermark remains an ancestor.
 - Fall back to a full reachable-history scan after rewritten or divergent history.
-- Materialize transitive destination paths into `decision_files` in one database transaction while preserving every prior path.
+- Materialize transitive destination paths into `decision_files` in one database transaction while preserving every path not explicitly suppressed.
+- Make file unlink create a suppression and explicit file link clear it in the same transaction as the existing link mutation.
 - Run synchronization during SessionStart before decision ranking.
 - Keep PostToolUse free of Git subprocesses.
 - Close `ROADMAP.md`'s decision-file rename tracking row after the measured contract passes.
@@ -50,7 +56,7 @@ A timeout, malformed Git output, missing repository, or database error does not 
 
 - Uncommitted working-tree rename persistence.
 - Copy tracking (`C` status), heuristic aliases, directory-prefix rewrites, or path inference without Git rename evidence.
-- Rewriting or deleting historical `decision_files` rows.
+- Automated rewriting or deletion of historical `decision_files` rows; explicit user unlink remains authorized.
 - New CLI or MCP commands for viewing or editing lineage.
 - Case-folding, symlink resolution, Unicode normalization, or changing the existing `./` and backslash normalization contract.
 - Background workers, polling, or a configurable rename detector.
@@ -75,7 +81,9 @@ Schema v19 adds:
 - `decision_file_lineage_state(id = 1, last_scanned_commit)` as the repository-local watermark.
 - Indexes on lineage `old_path` and `new_path` for propagation and future inspection.
 
-`decision_files` remains the read model consumed by existing ranking, hook, extraction, and outcome code. Synchronization adds destination rows to that table; no existing reader or public return shape changes.
+Schema v20 adds `decision_file_lineage_suppressions(decision_id, file_path)` with a composite primary key and a cascading decision foreign key.
+
+`decision_files` remains the read model consumed by existing ranking, hook, extraction, and outcome code. Synchronization adds unsuppressed destination rows to that table; no existing reader or public return shape changes.
 
 ### Synchronization
 
@@ -83,10 +91,14 @@ Schema v19 adds:
 2. Read the prior watermark.
 3. If no watermark exists, scan reachable `HEAD` history. If it is an ancestor, scan `watermark..HEAD`. Otherwise rescan reachable history.
 4. Parse only Git `R<score>` records and retain each record's commit SHA.
-5. In one transaction, insert new lineage edges, recursively propagate destination paths into `decision_files`, and advance the watermark.
+5. In one transaction, insert new lineage edges, recursively propagate unsuppressed destination paths into `decision_files`, and advance the watermark.
 6. On any failure, roll back database changes and let SessionStart continue through the existing warning path.
 
-The recursive propagation starts from normalized stored decision paths, follows all persisted edges, uses set semantics to terminate cycles, and inserts destinations with `INSERT OR IGNORE`. This preserves old links, supports transitive renames, and makes replay safe.
+The recursive propagation starts from normalized stored decision paths, follows all persisted edges with set semantics to terminate cycles, traverses suppressed intermediate paths, and applies exact suppressions only to the final `decision_files` insertion. Remaining destinations use `INSERT OR IGNORE`. This preserves old links, supports transitive renames beyond an unlinked intermediate path, and makes replay safe.
+
+### Explicit link and unlink
+
+A successful file unlink deletes the exact `decision_files` row and inserts its suppression in one transaction. An explicit file link inserts the exact row and deletes its suppression in one transaction. Suppressions affect automated destination materialization only; source links and lineage provenance remain available for historical lookup.
 
 ### Hook placement
 
@@ -112,12 +124,41 @@ Rejected. A copy does not retire the source identity; automatically propagating 
 
 ## Testing
 
-1. Migration tests prove fresh-schema/migrated-schema parity, replay of canonical objects, incompatible-object rejection, and transactional schema-version rollback.
-2. Parser tests cover multiple commits, spaces, malformed records, and NUL framing.
-3. Real-Git integration commits `old.py -> middle.py -> new.py`, runs synchronization, closes/reopens the database, and verifies both old and destination links.
-4. The integration test verifies exact ranking remains `3.0` and outcome statistics are identical for old and final paths.
-5. Incremental, idempotent, and divergent-watermark tests verify scan-range and retry behavior.
-6. Hook tests verify synchronization runs before SessionStart ranking, failures are swallowed with a warning, and PostToolUse makes no lineage call.
+1. `test_fresh_schema_matches_migrated_v19_objects`,
+   `test_v19_accepts_matching_existing_objects`,
+   `test_v19_rejects_mismatched_existing_table`,
+   `test_v19_rejects_mismatched_existing_index`, and
+   `test_v19_rolls_back_objects_when_version_insert_fails` cover schema v19 parity,
+   canonical replay, incompatible objects, and rollback.
+2. `test_v20_adds_lineage_suppression_table`,
+   `test_v20_accepts_matching_existing_table`,
+   `test_v20_rejects_mismatched_existing_table`,
+   `test_v20_rolls_back_table_when_version_insert_fails`, and
+   `test_fresh_schema_matches_migrated_v20_table` cover strict schema v20 replay,
+   incompatibility rejection, rollback, and fresh/migrated parity.
+3. `test_parse_rename_log_preserves_commit_and_exact_paths` and
+   `test_parse_rename_log_rejects_malformed_or_unpersistable_records` cover
+   multiple commits, spaces, malformed records, path encoding, and NUL framing.
+4. `test_sync_preserves_ranking_outcomes_and_all_transitive_paths` commits
+   `old.py -> middle.py -> new.py`, reopens the database, and verifies historical
+   links, exact ranking, and unchanged outcome statistics.
+5. `test_sync_uses_incremental_range_after_initial_watermark`,
+   `test_sync_same_head_replays_lineage_for_later_decision`,
+   `test_sync_full_rescans_when_watermark_is_not_an_ancestor`, and
+   `test_db_error_rolls_back_lineage_links_and_watermark` cover incremental,
+   idempotent, divergent-watermark, and transactional retry behavior.
+6. `test_unlink_suppresses_lineage_replay_until_explicit_relink`,
+   `test_suppressed_intermediate_does_not_block_later_destination`,
+   `test_unlink_file_rolls_back_when_suppression_insert_fails`, and
+   `test_relink_file_rolls_back_when_suppression_delete_fails` cover durable
+   unlink, same-HEAD replay, traversal beyond a suppressed intermediate,
+   explicit relink, a second unlink/replay cycle, and atomic rollback of both
+   explicit link/unlink state transitions.
+7. `test_syncs_rename_lineage_before_decision_ranking`,
+   `test_lineage_exception_does_not_suppress_other_session_start_surfaces`,
+   `test_failure_records_warning_and_closes_database`, and
+   `test_post_tool_use_never_invokes_rename_synchronizer` cover ordering,
+   fail-open warnings, database cleanup, and PostToolUse isolation.
 
 ## Success Criteria
 
@@ -127,7 +168,8 @@ Rejected. A copy does not retire the source identity; automatically propagating 
 4. **Idempotence:** rerunning synchronization at the same `HEAD` records zero new lineage edges and zero new decision-file links.
 5. **Recovery:** a non-ancestor watermark causes a full reachable-history rescan and advances only after a successful transaction.
 6. **Hook isolation:** SessionStart synchronization occurs before ranking; PostToolUse performs zero rename-synchronization or Git-history calls.
-7. **Schema safety:** schema v19 bootstrap and v18 migration produce equivalent canonical tables/indexes; incompatible pre-existing objects fail without advancing `schema_version`.
+7. **Schema safety:** schema v19/v20 bootstrap and v18 migration produce equivalent canonical tables/indexes; incompatible pre-existing objects fail without advancing `schema_version`.
+8. **Unlink durability:** an explicitly unlinked destination remains absent after same-HEAD synchronization, does not block propagation to a later unsuppressed descendant, explicit relink restores it and clears suppression, a later unlink is durable again, and failures roll back both sides of either link/suppression transition.
 
 ## Risks
 
@@ -136,7 +178,8 @@ Rejected. A copy does not retire the source identity; automatically propagating 
 - **Concurrent SessionStart hooks:** two sessions may scan the same range. Mitigation: unique lineage keys, `INSERT OR IGNORE`, transactional propagation, and idempotent replay.
 - **History rewrites:** a stale watermark can become unreachable. Mitigation: ancestor check and full reachable-history rescan.
 - **Unsupported path bytes:** SQLite text cannot represent surrogate code points. Mitigation: fail the scan rather than advancing past unpersistable evidence.
+- **Stale suppression:** an old explicit unlink can continue to block automated materialization. Mitigation: explicit relink is the authoritative, atomic way to clear the exact suppression.
 
 ## Open Decisions
 
-None. The user approved committed Git lineage, additive materialization, first-run history scanning, and SessionStart placement on 2026-08-17.
+None. The user approved committed Git lineage, additive materialization, first-run history scanning, SessionStart placement, and additive explicit-unlink suppression on 2026-08-17.

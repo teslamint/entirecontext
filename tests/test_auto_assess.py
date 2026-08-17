@@ -459,6 +459,48 @@ def test_enrich_assessment_updates_model_name(ec_repo, ec_db, monkeypatch):
     assert "revised" in row["feedback_reason"]
 
 
+def test_enrich_assessment_preserves_feedback_written_during_llm_call(ec_repo, ec_db, monkeypatch):
+    session_id = _create_test_session(ec_db)
+    cp = create_checkpoint(ec_db, session_id, _get_head(ec_repo))
+    assessment = create_assessment(ec_db, checkpoint_id=cp["id"], verdict="neutral", model_name="rule-based")
+    mock_response = json.dumps(
+        {
+            "verdict": "expand",
+            "impact_summary": "Generated after manual review",
+            "roadmap_alignment": "Would overwrite manual state",
+            "tidy_suggestion": "None",
+        }
+    )
+
+    class ManualFeedbackBackend:
+        def complete(self, system, user):
+            ec_db.execute(
+                "UPDATE assessments SET feedback = ?, feedback_reason = ? WHERE id = ?",
+                ("agree", "manual review", assessment["id"]),
+            )
+            return mock_response
+
+    monkeypatch.setattr(
+        "entirecontext.core.llm.get_backend",
+        lambda *args, **kwargs: ManualFeedbackBackend(),
+    )
+    config = {"futures": {"default_backend": "claude", "default_model": ""}}
+
+    ok = enrich_assessment(ec_db, assessment, str(ec_repo), config)
+
+    assert ok is False
+    row = ec_db.execute(
+        "SELECT model_name, verdict, feedback, feedback_reason FROM assessments WHERE id = ?",
+        (assessment["id"],),
+    ).fetchone()
+    assert dict(row) == {
+        "model_name": "rule-based",
+        "verdict": "neutral",
+        "feedback": "agree",
+        "feedback_reason": "manual review",
+    }
+
+
 def test_enrich_assessment_agree_when_same_verdict(ec_repo, ec_db, monkeypatch):
     session_id = _create_test_session(ec_db)
     cp = create_checkpoint(ec_db, session_id, _get_head(ec_repo))

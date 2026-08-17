@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -270,6 +270,15 @@ CREATE TABLE IF NOT EXISTS decision_file_lineage (
 );
 CREATE INDEX IF NOT EXISTS idx_decision_file_lineage_old_path ON decision_file_lineage(old_path);
 CREATE INDEX IF NOT EXISTS idx_decision_file_lineage_new_path ON decision_file_lineage(new_path);
+""",
+    "decision_file_lineage_suppressions": """
+CREATE TABLE IF NOT EXISTS decision_file_lineage_suppressions (
+    decision_id TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    suppressed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (decision_id, file_path),
+    FOREIGN KEY (decision_id) REFERENCES decisions(id) ON DELETE CASCADE
+);
 """,
     "decision_file_lineage_state": """
 CREATE TABLE IF NOT EXISTS decision_file_lineage_state (

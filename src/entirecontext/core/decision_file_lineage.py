@@ -241,7 +241,14 @@ def _propagate_destination_links(conn: sqlite3.Connection) -> int:
               )
         )
         INSERT OR IGNORE INTO decision_files (decision_id, file_path)
-        SELECT decision_id, file_path FROM propagated"""
+        SELECT propagated.decision_id, propagated.file_path
+        FROM propagated
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM decision_file_lineage_suppressions AS suppression
+            WHERE suppression.decision_id = propagated.decision_id
+              AND suppression.file_path = propagated.file_path
+        )"""
     )
     row = conn.execute("SELECT changes() AS count").fetchone()
     return int(row["count"] if row else 0)

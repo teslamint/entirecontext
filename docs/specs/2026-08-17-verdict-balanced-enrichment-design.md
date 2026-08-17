@@ -36,7 +36,7 @@ A repository has recent unfeedbacked rule-based assessments across multiple verd
 
 ### S2. Existing outcomes remain authoritative
 
-A rule-based assessment already has manual or automatic feedback. Candidate selection excludes it, so enrichment cannot overwrite the recorded outcome.
+A rule-based assessment already has manual or automatic feedback. Candidate selection excludes it, so enrichment cannot overwrite the recorded outcome. If feedback arrives after selection while the LLM call is running, the enrichment write detects the changed row and leaves its model, verdict, and feedback unchanged.
 
 ### S3. Sparse backlogs still make progress
 
@@ -57,13 +57,16 @@ Eligible rows receive a one-based rank within their verdict, ordered by `created
 
 The returned row shape and the caller contract remain unchanged.
 
+`enrich_assessment()` persists the enriched fields and automatic feedback in one `UPDATE` guarded by `id`, `model_name = 'rule-based'`, and `feedback IS NULL`. A zero-row update means eligibility changed during the LLM call; the function reports no update and does not retry or overwrite the newer state.
+
 ## Acceptance Evidence
 
 - **AE1:** With four neutral, two expand, and one narrow candidate, `limit=3` returns one row from each verdict; `limit=5` returns the three rank-1 rows before any rank-2 row.
 - **AE2:** Within a verdict, newer `created_at` wins and `id DESC` breaks timestamp ties.
 - **AE3:** Feedback-bearing and non-rule-based assessments are absent from the result.
 - **AE4:** Session, time-window, sparse-backlog, and global-limit behavior remain intact.
-- **AE5:** A post-change dogfood measurement records total enriched sample size, agreement rate, and per-verdict support; the ROADMAP row is closed with the actual measured result rather than an assumed mapping change.
+- **AE5:** Feedback written during the LLM call remains byte-for-byte authoritative; enrichment reports no update.
+- **AE6:** A post-change dogfood measurement records total enriched sample size, agreement rate, and per-verdict support; the ROADMAP row is closed with the actual measured result rather than an assumed mapping change.
 
 ## Testing
 
@@ -71,6 +74,7 @@ The returned row shape and the caller contract remain unchanged.
 - `test_get_enrichment_candidates_orders_each_verdict_deterministically`
 - `test_get_enrichment_candidates_excludes_feedbacked_rows`
 - `test_get_enrichment_candidates_preserves_session_window_and_limit`
+- `test_enrich_assessment_preserves_feedback_written_during_llm_call`
 
 ## Risks and Mitigations
 
@@ -78,13 +82,13 @@ The returned row shape and the caller contract remain unchanged.
 |---|---|
 | A high-volume verdict still dominates after the first round | Rank by per-verdict ordinal before global recency, so each available verdict receives rank-1 priority. |
 | Nondeterministic ties produce unstable batches | Use `created_at DESC, id DESC` in both the partition and final ordering. |
-| Existing human feedback is overwritten | Add `feedback IS NULL` to eligibility and regression-test it. |
+| Existing human feedback is overwritten before or during enrichment | Filter `feedback IS NULL` during selection, then atomically compare-and-set enrichment plus automatic feedback after the LLM call. |
 | SQL window behavior diverges from the existing interface | Keep the function signature and selected columns unchanged; run the full owning module tests. |
 | Balanced selection is mistaken for balanced accuracy | Report actual per-verdict support; do not claim quality for verdicts with zero measured rows. |
 
 ## Success Criteria
 
-- The four Specification-named tests pass and fail against the pre-change selector for the intended reasons.
+- The five Specification-named tests pass and fail against the relevant pre-change selector or unconditional enrichment write for the intended reasons.
 - Existing `tests/test_auto_assess.py` and `tests/test_verdict_accuracy.py` pass unchanged apart from additive coverage.
 - The post-change accuracy report has at least 30 enriched assessments and explicitly reports support for every verdict that the recent eligible backlog can supply.
 - ROADMAP line 231 is closed with the observed result and any remaining evidence limitation.

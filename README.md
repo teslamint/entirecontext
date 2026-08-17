@@ -708,7 +708,7 @@ mcp/server.py + mcp/tools/* expose the agent-facing MCP interface.
 
 ### Data Model
 
-Schema version: **14** (`src/entirecontext/db/schema.py`).
+Schema version: **20** (`src/entirecontext/db/schema.py`).
 
 | Table | Purpose |
 |-------|---------|
@@ -722,6 +722,7 @@ Schema version: **14** (`src/entirecontext/db/schema.py`).
 | `assessments`, `assessment_relationships` | Futures assessment results and typed assessment links |
 | `decisions` | Decision memory records, staleness, rejected alternatives, and supersession pointers |
 | `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments` | Evidence links from decisions to git/code/assessment context |
+| `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state` | Committed rename provenance, explicit-unlink suppressions, and the repository scan watermark |
 | `decision_outcomes` | Usage feedback for decisions (`accepted`, `ignored`, `contradicted`, `refined`, `replaced`) |
 | `decision_candidates` | Auto-extracted candidate decisions before review/promotion |
 | `retrieval_events`, `retrieval_selections`, `context_applications` | Retrieval telemetry and context-application tracking |

@@ -11,13 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Build-SHA provenance** — wheel and source-distribution builds now carry the source checkout Git SHA and tracked-file dirty state. `ec doctor` warns when an installed executable is unavailable, dirty, or stale relative to an EntireContext checkout and provides the exact reinstall command.
 - **Executable Plan contracts** — repository authors can compare Specification-named tests with explicit Plan dispositions, classify every shell fence with required rationale, reject inline verification commands, execute exact fail-closed checks, and persist Plan/check-owned byte-preserved output/status evidence with `scripts/validate_plan.py`. Anchored nonblocking no-follow writes, duplicate-key rejection, and individual plus canonical-record hashes fail closed on unsafe or partial evidence mutation.
-- **Decision-file rename lineage (schema v19)** — `SessionStart` records committed Git renames, incrementally materializes transitive destination paths into `decision_files`, and preserves historical path links for lookup and outcome trails. Rename synchronization is fail-open and bounded outside the latency-sensitive `PostToolUse` path.
+- **Decision-file rename lineage (schema v19 and schema v20)** — `SessionStart` records committed Git renames, incrementally materializes transitive destination paths into `decision_files`, and preserves historical path links for lookup and outcome trails. Explicit file unlinking now suppresses lineage replay until an explicit relink, while synchronization remains fail-open and bounded outside the latency-sensitive `PostToolUse` path.
 
 ### Changed
 
 - **Verdict-balanced lesson selection** — `get_lessons`, the CLI, MCP, and automatic distillation reserve a bounded per-verdict floor before global-recency top-up. Configure `futures.lessons_min_per_verdict` (default `5`); set it to `0` for pure recency. CLI `--since` now scopes the eligible pool before floor allocation.
 - **Lesson-selection query index (schema v18)** — adds an ordered partial index for feedback-bearing assessments so verdict-floor selection stays bounded by the requested candidate window as assessment history grows.
-- **Verdict-balanced assessment enrichment** — candidate batches now interleave available rule verdicts before global recency, use deterministic timestamp/ID ordering, and exclude feedback-bearing rule assessments so measurement cannot overwrite recorded outcomes.
+- **Verdict-balanced assessment enrichment** — candidate batches now interleave available rule verdicts before global recency, use deterministic timestamp/ID ordering, and exclude feedback-bearing rule assessments. Enrichment and automatic feedback commit through one conditional write, so feedback recorded while the LLM is running remains authoritative.
 
 ### Fixed
 

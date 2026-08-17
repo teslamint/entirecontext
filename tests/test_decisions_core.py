@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 import pytest
 
 from entirecontext.core.decisions import (
@@ -601,6 +603,57 @@ class TestUnlinkDecision:
     def test_unlink_nonexistent_returns_false(self, ec_db):
         d = create_decision(ec_db, title="Test")
         assert unlink_decision_from_file(ec_db, d["id"], "nonexistent.py") is False
+
+    def test_unlink_file_rolls_back_when_suppression_insert_fails(self, ec_db):
+        decision = create_decision(ec_db, title="Atomic unlink")
+        link_decision_to_file(ec_db, decision["id"], "src/a.py")
+        ec_db.execute(
+            """
+            CREATE TRIGGER fail_suppression_insert
+            BEFORE INSERT ON decision_file_lineage_suppressions
+            BEGIN
+                SELECT RAISE(ABORT, 'suppression insert failed');
+            END
+            """
+        )
+
+        with pytest.raises(sqlite3.IntegrityError, match="suppression insert failed"):
+            unlink_decision_from_file(ec_db, decision["id"], "src/a.py")
+
+        stored = get_decision(ec_db, decision["id"])
+        assert stored is not None
+        assert stored["files"] == ["src/a.py"]
+        suppression_count = ec_db.execute(
+            "SELECT COUNT(*) FROM decision_file_lineage_suppressions WHERE decision_id = ?",
+            (decision["id"],),
+        ).fetchone()[0]
+        assert suppression_count == 0
+
+    def test_relink_file_rolls_back_when_suppression_delete_fails(self, ec_db):
+        decision = create_decision(ec_db, title="Atomic relink")
+        link_decision_to_file(ec_db, decision["id"], "src/a.py")
+        assert unlink_decision_from_file(ec_db, decision["id"], "src/a.py") is True
+        ec_db.execute(
+            """
+            CREATE TRIGGER fail_suppression_delete
+            BEFORE DELETE ON decision_file_lineage_suppressions
+            BEGIN
+                SELECT RAISE(ABORT, 'suppression delete failed');
+            END
+            """
+        )
+
+        with pytest.raises(sqlite3.IntegrityError, match="suppression delete failed"):
+            link_decision_to_file(ec_db, decision["id"], "src/a.py")
+
+        stored = get_decision(ec_db, decision["id"])
+        assert stored is not None
+        assert stored["files"] == []
+        suppression_count = ec_db.execute(
+            "SELECT COUNT(*) FROM decision_file_lineage_suppressions WHERE decision_id = ?",
+            (decision["id"],),
+        ).fetchone()[0]
+        assert suppression_count == 1
 
     def test_unlink_commit(self, ec_db):
         d = create_decision(ec_db, title="Test")
