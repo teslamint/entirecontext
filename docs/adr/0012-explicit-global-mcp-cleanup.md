@@ -1,7 +1,7 @@
 # 0012. Require Explicit Global MCP Cleanup During Disable
 
 **Status:** accepted
-**Date:** 2026-08-16
+**Date:** 2026-08-17
 **EC Decision:** `30f75661-044d-49e3-a434-b3ca93989be1`
 
 ## Context

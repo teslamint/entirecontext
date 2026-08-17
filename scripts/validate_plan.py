@@ -190,8 +190,29 @@ def _section(text: str, heading: str) -> str:
         raise ContractError(f"missing required section: {heading}") from exc
 
     end = len(lines)
+    fence_marker: str | None = None
+    fence_minimum_length = 0
     for index in range(start, len(lines)):
-        if re.match(r"^#{1,2}\s+", lines[index]):
+        line = lines[index]
+        if fence_marker is not None:
+            if (
+                re.fullmatch(
+                    rf" {{0,3}}{re.escape(fence_marker)}{{{fence_minimum_length},}}[ \t]*",
+                    line,
+                )
+                is not None
+            ):
+                fence_marker = None
+            continue
+
+        opening = FENCE_PATTERN.match(line)
+        if opening is not None:
+            fence = opening.group("fence")
+            fence_marker = fence[0]
+            fence_minimum_length = len(fence)
+            continue
+
+        if re.match(r"^#{1,2}\s+", line):
             end = index
             break
     return "\n".join(lines[start:end])
@@ -338,6 +359,23 @@ def _looks_like_shell_command(value: str, *, imperative: bool) -> bool:
     return False
 
 
+def _looks_like_shell_fence_command(value: str) -> bool:
+    stripped = value.strip()
+    if not stripped or stripped.startswith("#"):
+        return False
+    try:
+        tokens = shlex.split(stripped)
+    except ValueError:
+        return False
+    while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]) is not None:
+        tokens.pop(0)
+    if not tokens:
+        return False
+    command = tokens[0]
+    command_name = Path(command).name.casefold()
+    return command_name in SHELL_COMMANDS or command_name.endswith(".sh") or command.startswith(("./", "../"))
+
+
 def _reject_inline_shell_commands(lines: list[str]) -> None:
     prose = "\n".join(line for line in lines if not line.startswith(("    ", "\t")))
     for match in INLINE_CODE_PATTERN.finditer(prose):
@@ -392,6 +430,7 @@ def _plan_checks(root: Path, plan_relative: str, plan_text: str) -> tuple[PlanCh
             index += 1
         if index == len(lines):
             raise ContractError(f"unclosed Markdown fence with info string: {info or '<empty>'}")
+        content = lines[content_start:index]
 
         try:
             tokens = shlex.split(info)
@@ -405,7 +444,6 @@ def _plan_checks(root: Path, plan_relative: str, plan_text: str) -> tuple[PlanCh
                 if len(tokens) != 3 or REASON_PATTERN.fullmatch(tokens[2]) is None:
                     raise ContractError("implementation-only requires exactly reason=<lowercase-slug>")
             elif classification == "plan-check":
-                content = lines[content_start:index]
                 command = "\n".join(content) + ("\n" if content else "")
                 check = _parse_check_info(root, plan_relative, tokens, command)
                 if check.check_id in seen_ids:
@@ -417,6 +455,8 @@ def _plan_checks(root: Path, plan_relative: str, plan_text: str) -> tuple[PlanCh
                 checks.append(check)
             else:
                 raise ContractError(f"unclassified shell fence: {classification}")
+        elif not tokens and any(_looks_like_shell_fence_command(line) for line in content):
+            raise ContractError("unclassified shell fence")
         index += 1
 
     _reject_inline_shell_commands(outside_lines)

@@ -49,8 +49,8 @@ A user runs either command with `--no-git-hooks`. Codex notify and MCP registrat
 
 | Claim | Command | Observed at | Observed result | Evidence source |
 |---|---|---|---|---|
-| The shipped integration helper installs Git hooks only inside the Claude branch. | `git show ea66322:src/entirecontext/cli/project_cmds.py | sed -n '497,543p'` | 2026-08-16 | `_install_git_hooks()` is nested under `agent in {"claude", "both"}`. | commit `ea66322` |
-| Existing Codex enable and init tests encode the omission. | `git show ea66322:tests/test_project_cmds.py | sed -n '774,786p;1005,1021p'` | 2026-08-16 | Both tests assert that the Git-hook files do not exist for `--agent codex`. | commit `ea66322` |
+| The shipped integration helper installs Git hooks only inside the Claude branch. | `git show ea66322:src/entirecontext/cli/project_cmds.py \| sed -n '497,543p'` | 2026-08-16 | `_install_git_hooks()` is nested under `agent in {"claude", "both"}`. | commit `ea66322` |
+| Existing Codex enable and init tests encode the omission. | `git show ea66322:tests/test_project_cmds.py \| sed -n '774,786p;1005,1021p'` | 2026-08-16 | Both tests assert that the Git-hook files do not exist for `--agent codex`. | commit `ea66322` |
 | The hook writer already handles ownership, executable bits, linked worktrees, and custom hook paths. | `uv run pytest -q tests/test_project_cmds.py -k 'install_git_hooks'` | 2026-08-16 | Existing focused hook-writer tests pass. | `tests/test_project_cmds.py` |
 
 ## Architecture

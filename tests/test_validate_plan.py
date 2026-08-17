@@ -127,6 +127,31 @@ def test_validate_rejects_merged_test_without_rationale(tmp_path: Path) -> None:
     assert "merged disposition requires rationale: test_behavior" in result.stderr
 
 
+def test_validate_ignores_headings_inside_testing_fences(tmp_path: Path) -> None:
+    plan, spec, _ = _contract(tmp_path)
+    spec.write_text(
+        """# Sample Design
+
+## Testing
+
+```bash
+# setup
+```
+
+1. `test_behavior`
+
+## Success Criteria
+
+1. Behavior is covered.
+""",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path, "record", plan, spec)
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_validate_rejects_unclassified_shell_fence(tmp_path: Path) -> None:
     plan, spec, _ = _contract(tmp_path, fence_info="bash")
 
@@ -200,6 +225,29 @@ def test_validate_rejects_unclassified_shell_fence(tmp_path: Path) -> None:
     invalid_info = _run(tmp_path, "record", plan, spec)
     assert invalid_info.returncode != 0
     assert "backtick fence info string must not contain backticks" in invalid_info.stderr
+
+
+def test_validate_rejects_command_in_untagged_fence(tmp_path: Path) -> None:
+    plan, spec, _ = _contract(
+        tmp_path,
+        extra_plan="\n```\nuv run pytest tests/test_hidden.py\n```\n",
+    )
+
+    result = _run(tmp_path, "validate", plan, spec)
+
+    assert result.returncode != 0
+    assert "unclassified shell fence" in result.stderr
+
+
+def test_validate_allows_non_shell_fence(tmp_path: Path) -> None:
+    plan, spec, _ = _contract(
+        tmp_path,
+        extra_plan="\n```python\npython = Path('example')\n```\n",
+    )
+
+    result = _run(tmp_path, "record", plan, spec)
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_validate_rejects_plan_check_without_fail_closed_prefix(tmp_path: Path) -> None:

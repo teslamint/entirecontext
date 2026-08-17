@@ -333,7 +333,7 @@ Theme: close every concrete v0.13.1 archaeology carry-forward and lock productio
 - [x] **Source-filter and compatibility proof** — `--source archaeology`, read-only v16 dry-runs, circuit recovery, and live counter conservation are covered.
 
 Carry-forward after v0.14.0:
-- [x] **Maturity 75 dogfooding carry-forward** — remeasured at maturity 71, `applied_context_rate=1%` (8/1,159), and `lesson_reuse_rate=21%` (21/102). Lesson reuse crossed its threshold; the still-open applied-context work is re-registered once at v0.15.0 line 382 and quantified at v0.13.0 line 300. _(measurement carry-forward registered)_
+- [x] **Maturity 75 dogfooding carry-forward** — remeasured at maturity 71, `applied_context_rate=1%` (8/1,159), and `lesson_reuse_rate=21%` (21/102). Lesson reuse crossed its threshold; the still-open applied-context work is re-registered once under the v0.15.0 **Maturity 75 dogfooding** carry-forward and quantified at v0.13.0 line 300. _(measurement carry-forward registered)_
 - [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
