@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 from uuid import uuid4
+from datetime import datetime, timedelta, timezone
 
 from entirecontext.core.auto_assess import (
     apply_git_evidence_feedback,
@@ -129,6 +130,32 @@ def _create_test_session(conn, repo_path=None):
     return sid
 
 
+def _create_enrichment_candidate(
+    conn,
+    session_id: str,
+    git_commit_hash: str,
+    verdict: str,
+    created_at: datetime,
+    *,
+    assessment_id: str | None = None,
+    feedback: str | None = None,
+    model_name: str = "rule-based",
+) -> str:
+    checkpoint = create_checkpoint(conn, session_id, git_commit_hash)
+    assessment = create_assessment(
+        conn,
+        checkpoint_id=checkpoint["id"],
+        verdict=verdict,
+        model_name=model_name,
+    )
+    candidate_id = assessment_id or assessment["id"]
+    conn.execute(
+        "UPDATE assessments SET id = ?, created_at = ?, feedback = ? WHERE id = ?",
+        (candidate_id, created_at.isoformat(), feedback, assessment["id"]),
+    )
+    return candidate_id
+
+
 def test_auto_assess_creates_assessment(ec_repo, ec_db):
     session_id = _create_test_session(ec_db, str(ec_repo))
     subprocess.run(["git", "commit", "--allow-empty", "-m", "feat: add endpoint"], cwd=ec_repo, capture_output=True)
@@ -245,6 +272,162 @@ def test_get_enrichment_candidates_only_rule_based(ec_repo, ec_db):
     assert candidates[0]["model_name"] == "rule-based"
 
 
+def test_get_enrichment_candidates_balances_available_verdicts(ec_repo, ec_db):
+    session_id = _create_test_session(ec_db)
+    head = _get_head(ec_repo)
+    now = datetime.now(timezone.utc)
+    candidate_ids = {
+        "neutral-1": _create_enrichment_candidate(ec_db, session_id, head, "neutral", now - timedelta(minutes=1)),
+        "expand-1": _create_enrichment_candidate(ec_db, session_id, head, "expand", now - timedelta(minutes=2)),
+        "neutral-2": _create_enrichment_candidate(ec_db, session_id, head, "neutral", now - timedelta(minutes=3)),
+        "narrow-1": _create_enrichment_candidate(ec_db, session_id, head, "narrow", now - timedelta(minutes=4)),
+        "neutral-3": _create_enrichment_candidate(ec_db, session_id, head, "neutral", now - timedelta(minutes=5)),
+        "expand-2": _create_enrichment_candidate(ec_db, session_id, head, "expand", now - timedelta(minutes=6)),
+        "neutral-4": _create_enrichment_candidate(ec_db, session_id, head, "neutral", now - timedelta(minutes=7)),
+    }
+
+    first_round = get_enrichment_candidates(ec_db, limit=3)
+    second_round = get_enrichment_candidates(ec_db, limit=5)
+
+    assert [row["id"] for row in first_round] == [
+        candidate_ids["neutral-1"],
+        candidate_ids["expand-1"],
+        candidate_ids["narrow-1"],
+    ]
+    assert [row["id"] for row in second_round] == [
+        candidate_ids["neutral-1"],
+        candidate_ids["expand-1"],
+        candidate_ids["narrow-1"],
+        candidate_ids["neutral-2"],
+        candidate_ids["expand-2"],
+    ]
+    assert set(first_round[0]) == {
+        "id",
+        "checkpoint_id",
+        "verdict",
+        "model_name",
+        "impact_summary",
+        "git_commit_hash",
+        "diff_summary",
+        "session_id",
+    }
+
+
+def test_get_enrichment_candidates_orders_each_verdict_deterministically(ec_repo, ec_db):
+    session_id = _create_test_session(ec_db)
+    head = _get_head(ec_repo)
+    created_at = datetime.now(timezone.utc)
+    neutral_second_id = _create_enrichment_candidate(
+        ec_db,
+        session_id,
+        head,
+        "neutral",
+        created_at,
+        assessment_id="00000000-0000-0000-0000-000000000002",
+    )
+    neutral_first_id = _create_enrichment_candidate(
+        ec_db,
+        session_id,
+        head,
+        "neutral",
+        created_at,
+        assessment_id="00000000-0000-0000-0000-000000000003",
+    )
+    expand_first_id = _create_enrichment_candidate(
+        ec_db,
+        session_id,
+        head,
+        "expand",
+        created_at,
+        assessment_id="00000000-0000-0000-0000-000000000001",
+    )
+
+    candidates = get_enrichment_candidates(ec_db, limit=3)
+
+    assert [row["id"] for row in candidates] == [
+        neutral_first_id,
+        expand_first_id,
+        neutral_second_id,
+    ]
+
+
+def test_get_enrichment_candidates_excludes_feedbacked_rows(ec_repo, ec_db):
+    session_id = _create_test_session(ec_db)
+    head = _get_head(ec_repo)
+    now = datetime.now(timezone.utc)
+    _create_enrichment_candidate(
+        ec_db,
+        session_id,
+        head,
+        "expand",
+        now,
+        feedback="agree",
+    )
+    _create_enrichment_candidate(
+        ec_db,
+        session_id,
+        head,
+        "narrow",
+        now - timedelta(seconds=30),
+        feedback="disagree",
+    )
+    eligible_id = _create_enrichment_candidate(
+        ec_db,
+        session_id,
+        head,
+        "neutral",
+        now - timedelta(minutes=1),
+    )
+
+    candidates = get_enrichment_candidates(ec_db)
+
+    assert [row["id"] for row in candidates] == [eligible_id]
+
+
+def test_get_enrichment_candidates_preserves_session_window_and_limit(ec_repo, ec_db):
+    selected_session = _create_test_session(ec_db)
+    other_session = _create_test_session(ec_db)
+    head = _get_head(ec_repo)
+    now = datetime.now(timezone.utc)
+    selected_id = _create_enrichment_candidate(
+        ec_db,
+        selected_session,
+        head,
+        "neutral",
+        now - timedelta(minutes=1),
+    )
+    _create_enrichment_candidate(
+        ec_db,
+        selected_session,
+        head,
+        "expand",
+        now - timedelta(days=8),
+    )
+    _create_enrichment_candidate(
+        ec_db,
+        other_session,
+        head,
+        "narrow",
+        now,
+    )
+
+    candidates = get_enrichment_candidates(
+        ec_db,
+        session_id=selected_session,
+        window_days=7,
+        limit=10,
+    )
+    limited_candidates = get_enrichment_candidates(
+        ec_db,
+        session_id=selected_session,
+        window_days=30,
+        limit=1,
+    )
+
+    assert [row["id"] for row in candidates] == [selected_id]
+    assert [row["id"] for row in limited_candidates] == [selected_id]
+
+
 def test_enrich_assessment_updates_model_name(ec_repo, ec_db, monkeypatch):
     session_id = _create_test_session(ec_db)
     cp = create_checkpoint(ec_db, session_id, _get_head(ec_repo))
@@ -274,6 +457,48 @@ def test_enrich_assessment_updates_model_name(ec_repo, ec_db, monkeypatch):
     assert row["verdict"] == "expand"
     assert row["feedback"] == "disagree"
     assert "revised" in row["feedback_reason"]
+
+
+def test_enrich_assessment_preserves_feedback_written_during_llm_call(ec_repo, ec_db, monkeypatch):
+    session_id = _create_test_session(ec_db)
+    cp = create_checkpoint(ec_db, session_id, _get_head(ec_repo))
+    assessment = create_assessment(ec_db, checkpoint_id=cp["id"], verdict="neutral", model_name="rule-based")
+    mock_response = json.dumps(
+        {
+            "verdict": "expand",
+            "impact_summary": "Generated after manual review",
+            "roadmap_alignment": "Would overwrite manual state",
+            "tidy_suggestion": "None",
+        }
+    )
+
+    class ManualFeedbackBackend:
+        def complete(self, system, user):
+            ec_db.execute(
+                "UPDATE assessments SET feedback = ?, feedback_reason = ? WHERE id = ?",
+                ("agree", "manual review", assessment["id"]),
+            )
+            return mock_response
+
+    monkeypatch.setattr(
+        "entirecontext.core.llm.get_backend",
+        lambda *args, **kwargs: ManualFeedbackBackend(),
+    )
+    config = {"futures": {"default_backend": "claude", "default_model": ""}}
+
+    ok = enrich_assessment(ec_db, assessment, str(ec_repo), config)
+
+    assert ok is False
+    row = ec_db.execute(
+        "SELECT model_name, verdict, feedback, feedback_reason FROM assessments WHERE id = ?",
+        (assessment["id"],),
+    ).fetchone()
+    assert dict(row) == {
+        "model_name": "rule-based",
+        "verdict": "neutral",
+        "feedback": "agree",
+        "feedback_reason": "manual review",
+    }
 
 
 def test_enrich_assessment_agree_when_same_verdict(ec_repo, ec_db, monkeypatch):

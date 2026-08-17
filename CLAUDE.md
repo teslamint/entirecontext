@@ -35,6 +35,7 @@ cli/             business    SQLite     Claude Code   shadow branch
   event_cmds     hybrid_search
   import_cmds    async_worker
   compact_cmds   compact
+                 decision_file_lineage
   mcp_cmds
   archaeology_cmds
 ```
@@ -45,9 +46,9 @@ cli/             business    SQLite     Claude Code   shadow branch
 
 **Per-repo DB**: `.entirecontext/db/local.db`
 **Global DB**: `~/.entirecontext/db/ec.db`
-**Schema version**: 16
+**Schema version**: 20
 
-Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments`, `decision_outcomes`, `ranking_snapshots`, `archaeology_processed`
+Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state`, `decision_assessments`, `decision_outcomes`, `ranking_snapshots`, `archaeology_processed`
 
 FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates` (auto-synced via triggers)
 
@@ -58,6 +59,8 @@ Hybrid storage: SQLite for metadata/search, JSONL content files referenced by `t
 Claude Code hooks integration via stdin JSON protocol. Entry: `hooks/handler.py` → dispatches to handlers.
 
 5 hook types: `SessionStart`, `UserPromptSubmit`, `Stop`, `PostToolUse`, `SessionEnd`
+
+Decision-file rename synchronization runs only at `SessionStart`, before decision ranking. It preserves historical `decision_files` rows and additively materializes committed destinations; query paths and `PostToolUse` must not invoke Git.
 
 Return codes: 0=success, 2=block.
 

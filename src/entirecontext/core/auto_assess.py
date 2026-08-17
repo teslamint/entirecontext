@@ -104,17 +104,31 @@ def get_enrichment_candidates(
     conn: sqlite3.Connection, session_id: str | None = None, window_days: int = 7, limit: int = 10
 ) -> list[dict]:
     query = """
-        SELECT a.id, a.checkpoint_id, a.verdict, a.model_name, a.impact_summary,
-               c.git_commit_hash, c.diff_summary, c.session_id
-        FROM assessments a
-        JOIN checkpoints c ON a.checkpoint_id = c.id
-        WHERE a.model_name = 'rule-based' AND a.created_at >= datetime('now', ?)
+        WITH eligible AS (
+            SELECT a.id, a.checkpoint_id, a.verdict, a.model_name, a.impact_summary,
+                   a.created_at, c.git_commit_hash, c.diff_summary, c.session_id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY a.verdict
+                       ORDER BY a.created_at DESC, a.id DESC
+                   ) AS verdict_rank
+            FROM assessments a
+            JOIN checkpoints c ON a.checkpoint_id = c.id
+            WHERE a.model_name = 'rule-based'
+              AND a.feedback IS NULL
+              AND a.created_at >= datetime('now', ?)
     """
     params: list = [f"-{window_days} days"]
     if session_id:
         query += " AND c.session_id = ?"
         params.append(session_id)
-    query += " ORDER BY a.created_at DESC LIMIT ?"
+    query += """
+        )
+        SELECT id, checkpoint_id, verdict, model_name, impact_summary,
+               git_commit_hash, diff_summary, session_id
+        FROM eligible
+        ORDER BY verdict_rank, created_at DESC, id DESC
+        LIMIT ?
+    """
     params.append(limit)
 
     return [dict(row) for row in conn.execute(query, params).fetchall()]
@@ -124,7 +138,7 @@ def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str
     try:
         import json
 
-        from .futures import ASSESS_SYSTEM_PROMPT, VALID_VERDICTS, add_feedback
+        from .futures import ASSESS_SYSTEM_PROMPT, VALID_VERDICTS
         from .llm import get_backend, strip_markdown_fences
 
         futures_config = config["futures"]
@@ -149,11 +163,16 @@ def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str
         tidy_suggestion = payload.get("tidy_suggestion", assessment.get("tidy_suggestion"))
         backend_name = f"{backend_key}-cli"
 
-        conn.execute(
+        feedback = "agree" if new_verdict == original_verdict else "disagree"
+        feedback_reason = (
+            "auto:llm-confirmed" if feedback == "agree" else f"auto:revised:{original_verdict}->{new_verdict}"
+        )
+        cursor = conn.execute(
             """
             UPDATE assessments
-            SET verdict = ?, impact_summary = ?, roadmap_alignment = ?, tidy_suggestion = ?, model_name = ?
-            WHERE id = ?
+            SET verdict = ?, impact_summary = ?, roadmap_alignment = ?,
+                tidy_suggestion = ?, model_name = ?, feedback = ?, feedback_reason = ?
+            WHERE id = ? AND model_name = 'rule-based' AND feedback IS NULL
             """,
             (
                 new_verdict,
@@ -161,15 +180,12 @@ def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str
                 roadmap_alignment,
                 tidy_suggestion,
                 backend_name,
+                feedback,
+                feedback_reason,
                 assessment["id"],
             ),
         )
-
-        if new_verdict == original_verdict:
-            add_feedback(conn, assessment["id"], "agree", "auto:llm-confirmed")
-        else:
-            add_feedback(conn, assessment["id"], "disagree", f"auto:revised:{original_verdict}->{new_verdict}")
-        return True
+        return cursor.rowcount > 0
     except Exception:
         return False
 

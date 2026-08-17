@@ -83,6 +83,27 @@ def _load_decisions_config(repo_path: str) -> dict:
     return config.get("decisions", {})
 
 
+def maybe_sync_decision_file_lineage(data: dict[str, Any]) -> Any | None:
+    """Synchronize committed rename lineage at SessionStart. Never raises."""
+    cwd = data.get("cwd", ".")
+    repo_path = _find_ec_repo_root(cwd) or _find_git_root(cwd)
+    if not repo_path:
+        return None
+
+    try:
+        from ..core.decision_file_lineage import sync_decision_file_lineage
+        from ..db import get_db
+
+        conn = get_db(repo_path)
+        try:
+            return sync_decision_file_lineage(conn, repo_path)
+        finally:
+            conn.close()
+    except Exception as exc:
+        _record_hook_warning(repo_path, "decision_file_lineage_sync", exc)
+        return None
+
+
 def maybe_check_stale_decisions(repo_path: str) -> None:
     """Auto-detect stale decisions on SessionEnd. Never raises."""
     try:
@@ -424,10 +445,10 @@ def _gather_exact_file_matches(conn: sqlite3.Connection, normalized_files: list[
 def _find_ec_repo_root(start: str) -> str | None:
     """Walk up from ``start`` looking for ``.entirecontext/db/local.db``.
 
-    Used by ``on_post_tool_use_decisions`` to recover the repo root without
-    invoking ``git`` (which is too expensive inside the 3-second PostToolUse
-    hook budget — ``_find_git_root`` has its own 5-second subprocess timeout
-    that would blow the budget). Pure filesystem walk; no subprocess.
+    Hook paths use this initialized-repository marker to avoid Git subprocess
+    latency during repository discovery. ``PostToolUse`` requires the pure
+    filesystem path; ``SessionStart`` falls back to ``_find_git_root`` only
+    before a repository database exists.
     """
     from pathlib import Path as _Path
 

@@ -67,7 +67,7 @@ Storage
 
 ## 3. Data Model
 
-Schema version: **14**.
+Schema version: **20**.
 Minimum SQLite version: **3.38.0+**.
 
 Reference:
@@ -80,7 +80,7 @@ Reference:
 - `checkpoints`, `events`, `event_sessions`, `event_checkpoints`
 - `attributions`, `embeddings`, `ast_symbols`
 - `assessments`, `assessment_relationships`
-- `decisions`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments`, `decision_outcomes`
+- `decisions`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state`, `decision_assessments`, `decision_outcomes`
 - `retrieval_events`, `retrieval_selections`, `context_applications`
 - `operation_events`, `decision_candidates`
 - `sync_metadata`
@@ -176,6 +176,8 @@ Install location and format:
 - Claude Code hooks are installed by `ec init` into `.claude/settings.local.json` using Claude hook object format with `matcher` + nested `hooks`. `ec enable` performs the same installation and exists as the re-install path.
 - User-level MCP config is installed by `ec init` into `~/.claude/settings.json` under `mcpServers.entirecontext`, and by `ec enable` on the same terms.
 
+`ec disable` removes the selected agent integration and the agent-neutral repository Git hooks. It preserves the shared user-level MCP entry by default. `--remove-mcp` explicitly removes only a standard `entirecontext` stdio entry while preserving sibling servers, unrelated settings, and nonstandard entries; an identical standard entry configured manually is also eligible because the explicit flag authorizes global cleanup.
+
 Exit codes:
 
 - `0` success
@@ -183,10 +185,18 @@ Exit codes:
 
 ## 4.4 Git hooks `[Implemented]`
 
-Installed by `ec init` (or `ec enable`) only when the target agent is `claude` or `both`, and only when `--no-git-hooks` is not passed. `--agent codex` installs no git hooks, and `ec init --no-hooks` skips them along with everything else:
+Installed by `ec init` (or `ec enable`) for every target agent (`claude`, `codex`, or `both`) unless `--no-git-hooks` is passed. The git hooks are agent-neutral: `--agent codex` installs them without installing Claude Code hooks, while `ec init --no-hooks` skips them along with every other integration:
 
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
 - `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`
+
+`ec disable` removes these EntireContext-owned repository hooks for every target agent. Existing ownership guards preserve foreign hooks and configured shared hook paths.
+
+## 4.5 Installed-tool build provenance `[Implemented]`
+
+Wheel and source-distribution builds contain a generated `entirecontext._build_provenance` module with the source checkout's full Git SHA and tracked-file dirty state. A wheel rebuilt from an unpacked source distribution preserves the source distribution's stamp even though `.git` is unavailable.
+
+When `ec doctor` is executing from an installed distribution inside the EntireContext source checkout, it compares the stamped SHA with the checkout's current `HEAD`. It warns when provenance is unavailable, the build was made from a dirty tracked tree, or the SHA differs. Missing or mismatched installed stamps direct the operator to run `uv tool install --force .`; dirty stamps first require committing or restoring tracked changes; an unresolved checkout `HEAD` requires creating or checking out a commit before rebuilding. Direct checkout/editable execution and unrelated consumer repositories do not receive this warning.
 
 ---
 

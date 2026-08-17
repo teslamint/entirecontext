@@ -760,6 +760,10 @@ def link_decision_to_file(conn, decision_id: str, file_path: str) -> dict:
             "INSERT OR IGNORE INTO decision_files (decision_id, file_path) VALUES (?, ?)",
             (full_decision_id, file_path),
         )
+        conn.execute(
+            "DELETE FROM decision_file_lineage_suppressions WHERE decision_id = ? AND file_path = ?",
+            (full_decision_id, file_path),
+        )
         conn.execute("UPDATE decisions SET updated_at = ? WHERE id = ?", (_now_iso(), full_decision_id))
     row = conn.execute(
         "SELECT decision_id, file_path, added_at FROM decision_files WHERE decision_id = ? AND file_path = ?",
@@ -947,8 +951,19 @@ def unlink_decision_from_file(conn, decision_id: str, file_path: str) -> bool:
     full_id = _resolve_decision_id(conn, decision_id)
     if full_id is None:
         return False
-    cursor = conn.execute("DELETE FROM decision_files WHERE decision_id = ? AND file_path = ?", (full_id, file_path))
-    return cursor.rowcount > 0
+    with transaction(conn):
+        cursor = conn.execute(
+            "DELETE FROM decision_files WHERE decision_id = ? AND file_path = ?",
+            (full_id, file_path),
+        )
+        removed = cursor.rowcount > 0
+        if removed:
+            conn.execute(
+                """INSERT OR IGNORE INTO decision_file_lineage_suppressions
+                (decision_id, file_path) VALUES (?, ?)""",
+                (full_id, file_path),
+            )
+    return removed
 
 
 def unlink_decision_from_commit(conn, decision_id: str, commit_sha: str) -> bool:

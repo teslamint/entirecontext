@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 20
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -257,6 +257,35 @@ CREATE TABLE IF NOT EXISTS decision_files (
 );
 CREATE INDEX IF NOT EXISTS idx_decision_files_decision_id ON decision_files(decision_id);
 CREATE INDEX IF NOT EXISTS idx_decision_files_file_path ON decision_files(file_path);
+""",
+    "decision_file_lineage": """
+CREATE TABLE IF NOT EXISTS decision_file_lineage (
+    old_path TEXT NOT NULL,
+    new_path TEXT NOT NULL,
+    commit_sha TEXT NOT NULL,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (old_path, new_path, commit_sha),
+    CHECK (old_path <> new_path),
+    CHECK (length(commit_sha) IN (40, 64))
+);
+CREATE INDEX IF NOT EXISTS idx_decision_file_lineage_old_path ON decision_file_lineage(old_path);
+CREATE INDEX IF NOT EXISTS idx_decision_file_lineage_new_path ON decision_file_lineage(new_path);
+""",
+    "decision_file_lineage_suppressions": """
+CREATE TABLE IF NOT EXISTS decision_file_lineage_suppressions (
+    decision_id TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    suppressed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (decision_id, file_path),
+    FOREIGN KEY (decision_id) REFERENCES decisions(id) ON DELETE CASCADE
+);
+""",
+    "decision_file_lineage_state": """
+CREATE TABLE IF NOT EXISTS decision_file_lineage_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_scanned_commit TEXT,
+    CHECK (last_scanned_commit IS NULL OR length(last_scanned_commit) IN (40, 64))
+);
 """,
     "decision_assessments": """
 CREATE TABLE IF NOT EXISTS decision_assessments (

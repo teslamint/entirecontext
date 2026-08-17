@@ -77,6 +77,13 @@ def _handle_session_start(data: dict[str, Any]) -> int:
     on_session_start(data)
 
     try:
+        from .decision_hooks import maybe_sync_decision_file_lineage
+
+        maybe_sync_decision_file_lineage(data)
+    except Exception:
+        pass
+
+    try:
         from .decision_hooks import on_session_start_decisions
 
         result = on_session_start_decisions(data)

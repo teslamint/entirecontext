@@ -462,7 +462,7 @@ ec init      # initializes the repo, installs hooks AND configures MCP server
 ec doctor    # verify MCP config is present
 ```
 
-`ec enable` does the same registration without the database work, so either command gets you there. Both are idempotent — a repeat run skips the MCP entry if it already exists. `ec disable` removes hooks but preserves the MCP config (other repos may use it).
+`ec enable` does the same registration without the database work, so either command gets you there. Both are idempotent — a repeat run skips the MCP entry if it already exists. `ec disable` removes the selected agent integration and both EntireContext repository Git hooks but preserves the global MCP config by default because other repos or agents may use it. Add `--remove-mcp` to explicitly remove a standard EntireContext MCP entry; this also removes an identical standard entry that was configured manually.
 
 ### Manual Setup
 
@@ -480,14 +480,15 @@ To configure manually, add to `~/.claude/settings.json`:
 }
 ```
 
-### Manual Removal
+### MCP Removal
 
-To remove the MCP server, delete the `entirecontext` key from `~/.claude/settings.json`:
+To disable the default Claude integration and also remove the standard user-level MCP entry:
 
 ```bash
-# Remove MCP config (use jq or edit manually)
-jq 'del(.mcpServers.entirecontext)' ~/.claude/settings.json > tmp.json && mv tmp.json ~/.claude/settings.json
+ec disable --remove-mcp
 ```
+
+Choose `--agent codex` or `--agent both` when disabling those agent integrations. The command preserves sibling MCP servers and nonstandard `entirecontext` entries. To remove only MCP without disabling the current repository integrations, delete the `mcpServers.entirecontext` key from `~/.claude/settings.json` manually.
 
 ### Standalone Server
 
@@ -535,7 +536,7 @@ Tools that expose a `repos` parameter use `null` for the current repo, `["*"]` f
 
 ## Hook System
 
-`ec init` installs two kinds of hooks automatically on the default `--agent claude` path. No manual intervention required. `ec enable` reinstalls the same set. `--agent codex` writes only the Codex notify entry and the MCP registration — it installs neither the Claude Code hooks nor the git hooks.
+`ec init` installs agent-specific capture hooks plus agent-neutral repository git hooks automatically. `ec enable` reinstalls the same set. The default `--agent claude` path writes Claude Code hooks and the MCP registration; `--agent codex` writes Codex notify and the MCP registration, installs the `post-commit` and `pre-push` git hooks, and does not write Claude Code hooks. Pass `--no-git-hooks` to suppress only the repository git hooks.
 
 ### Claude Code Hooks (`.claude/settings.local.json`)
 
@@ -556,7 +557,19 @@ Hook protocol: stdin JSON, exit code 0 = success, 2 = block.
 | `post-commit` | `git commit` | Create checkpoint tied to the new commit if a session is active |
 | `pre-push` | `git push` | Run `ec sync` if `auto_sync_on_push` is enabled |
 
-Skip git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. Both hooks are removed by `ec disable`.
+Skip Git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. The hooks are agent-neutral, so `ec disable` removes both EntireContext repository hooks for `--agent claude`, `codex`, and `both`; agent-specific Claude hooks and Codex notify remain controlled by `--agent`.
+
+### Installed-tool provenance
+
+Distribution builds stamp the checkout Git SHA and tracked-file dirty state into the `ec` package. When an installed `ec doctor` runs inside an EntireContext source checkout, it compares that stamp with the checkout's current `HEAD`. A missing or mismatched stamp directs the operator to reinstall from the checkout:
+
+```bash
+uv tool install --force .
+```
+
+A dirty stamp directs the operator to commit or restore tracked changes before reinstalling. If the checkout has no resolvable `HEAD`, create or check out a commit before rebuilding the installed executable.
+
+Editable and direct source executions skip this comparison because they already run the checkout code. Consumer repositories also skip it; the check applies only when the current repository identifies itself as the EntireContext source project.
 
 ## Configuration
 
@@ -695,7 +708,7 @@ mcp/server.py + mcp/tools/* expose the agent-facing MCP interface.
 
 ### Data Model
 
-Schema version: **14** (`src/entirecontext/db/schema.py`).
+Schema version: **20** (`src/entirecontext/db/schema.py`).
 
 | Table | Purpose |
 |-------|---------|
@@ -709,6 +722,7 @@ Schema version: **14** (`src/entirecontext/db/schema.py`).
 | `assessments`, `assessment_relationships` | Futures assessment results and typed assessment links |
 | `decisions` | Decision memory records, staleness, rejected alternatives, and supersession pointers |
 | `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments` | Evidence links from decisions to git/code/assessment context |
+| `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state` | Committed rename provenance, explicit-unlink suppressions, and the repository scan watermark |
 | `decision_outcomes` | Usage feedback for decisions (`accepted`, `ignored`, `contradicted`, `refined`, `replaced`) |
 | `decision_candidates` | Auto-extracted candidate decisions before review/promotion |
 | `retrieval_events`, `retrieval_selections`, `context_applications` | Retrieval telemetry and context-application tracking |

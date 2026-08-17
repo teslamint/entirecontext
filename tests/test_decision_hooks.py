@@ -122,6 +122,68 @@ class TestMaybeCheckStaleDecisions:
         maybe_check_stale_decisions(str(ec_repo))
 
 
+class TestMaybeSyncDecisionFileLineage:
+    def test_syncs_repository_database(self, ec_repo, monkeypatch):
+        from entirecontext.core.decision_file_lineage import RenameSyncResult
+        from entirecontext.hooks.decision_hooks import maybe_sync_decision_file_lineage
+
+        conn = MagicMock()
+        expected = RenameSyncResult(
+            scanned_from=None,
+            head_commit="a" * 40,
+            full_scan=True,
+            renames_recorded=2,
+            links_added=3,
+        )
+        sync = MagicMock(return_value=expected)
+        find_git_root = MagicMock(side_effect=AssertionError("initialized repo invoked Git discovery"))
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._find_ec_repo_root",
+            lambda _cwd: str(ec_repo),
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._find_git_root",
+            find_git_root,
+        )
+        monkeypatch.setattr("entirecontext.db.get_db", lambda _repo: conn)
+        monkeypatch.setattr(
+            "entirecontext.core.decision_file_lineage.sync_decision_file_lineage",
+            sync,
+        )
+
+        result = maybe_sync_decision_file_lineage({"cwd": str(ec_repo)})
+
+        assert result == expected
+        sync.assert_called_once_with(conn, str(ec_repo))
+        conn.close.assert_called_once_with()
+        find_git_root.assert_not_called()
+
+    def test_failure_records_warning_and_closes_database(self, ec_repo, monkeypatch):
+        from entirecontext.hooks.decision_hooks import maybe_sync_decision_file_lineage
+
+        conn = MagicMock()
+        warnings = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._find_git_root",
+            lambda _cwd: str(ec_repo),
+        )
+        monkeypatch.setattr("entirecontext.db.get_db", lambda _repo: conn)
+        monkeypatch.setattr(
+            "entirecontext.core.decision_file_lineage.sync_decision_file_lineage",
+            MagicMock(side_effect=RuntimeError("bad history")),
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._record_hook_warning",
+            lambda repo, phase, exc: warnings.append((repo, phase, str(exc))),
+        )
+
+        result = maybe_sync_decision_file_lineage({"cwd": str(ec_repo)})
+
+        assert result is None
+        assert warnings == [(str(ec_repo), "decision_file_lineage_sync", "bad history")]
+        conn.close.assert_called_once_with()
+
+
 class TestOnSessionStartDecisions:
     def test_disabled_by_config(self, ec_repo, monkeypatch):
         monkeypatch.setattr(
@@ -460,6 +522,43 @@ class TestOnPostToolUseDecisions:
             }
         )
         assert result is None
+
+    def test_post_tool_use_never_invokes_rename_synchronizer(self, ec_repo, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        self._enable_surface_on_tool_use(monkeypatch)
+        session_id, _turn_id = self._setup_session_and_turn(ec_db)
+        decision = create_decision(ec_db, title="PostToolUse stays Git-free")
+        link_decision_to_file(ec_db, decision["id"], "src/app.py")
+        sync = MagicMock(side_effect=AssertionError("PostToolUse invoked lineage sync"))
+        monkeypatch.setattr(
+            "entirecontext.core.decision_file_lineage.sync_decision_file_lineage",
+            sync,
+        )
+        find_git_root = MagicMock(side_effect=AssertionError("PostToolUse invoked Git root discovery"))
+        git_run = MagicMock(side_effect=AssertionError("PostToolUse invoked a Git subprocess"))
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._find_git_root",
+            find_git_root,
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.subprocess.run",
+            git_run,
+        )
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(ec_repo),
+                "session_id": session_id,
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+
+        assert result is not None
+        sync.assert_not_called()
+        find_git_root.assert_not_called()
+        git_run.assert_not_called()
 
     def test_surfaces_decision_when_file_edited(self, ec_repo, ec_db, monkeypatch):
         from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions

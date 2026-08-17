@@ -80,7 +80,7 @@ class TestHookInstall:
         fake_home.mkdir()
         monkeypatch.setenv("HOME", str(fake_home))
         runner.invoke(app, ["enable"])
-        result = runner.invoke(app, ["disable"])
+        result = runner.invoke(app, ["disable", "--remove-mcp"])
         assert result.exit_code == 0
 
         settings = json.loads((ec_repo / ".claude" / "settings.local.json").read_text())
@@ -89,7 +89,7 @@ class TestHookInstall:
             assert not any(_is_ec_hook(h) for h in entries)
 
         user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
-        assert "entirecontext" in user_settings["mcpServers"]
+        assert "entirecontext" not in user_settings["mcpServers"]
 
     def test_doctor_healthy(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
