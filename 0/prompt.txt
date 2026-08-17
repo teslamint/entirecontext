@@ -1,0 +1,12 @@
+<task>Review only the current uncommitted post-integration fixes in /Users/teslamint/workspace/entirecontext. Inspect the current uncommitted diff and relevant immediate call sites. Trace schema-v20 decision_file_lineage_suppressions through explicit link/unlink transactions and same-HEAD lineage replay. Trace enrich_assessment's guarded single-statement enrichment+feedback update under concurrent feedback. Check changed tests and ADR/Spec/Plan/ROADMAP/CHANGELOG/README/schema docs for executable contract mismatches. Do not review unrelated pre-existing branch changes. Do not modify files or run project-wide validation.</task>
+<grounding_rules>Report only concrete P0-P2 defects with an executable code path and exact file:line. Do not report style, preferences, or issues already enforced by ruff/mypy. Verify caller behavior and transaction rollback before claiming a defect. If no qualifying defect, return CLEAN.</grounding_rules>
+<structured_output_contract>For each finding: severity, file:line, triggering sequence, observable impact, minimal correction. Otherwise exactly CLEAN.</structured_output_contract>
+<dig_deeper_nudge>Check second-order states: nonexistent unlink, suppression insert/delete rollback, decisions linked after a prior scan, stale LLM results, and zero-row CAS signaling.</dig_deeper_nudge>
+
+---
+
+The reported suppressed-intermediate defect was accepted and fixed. The recursive CTE now traverses all lineage nodes and applies exact suppression only in the final INSERT. Added a real-Git regression for old->middle, unlink middle, then middle->new, plus transaction rollback tests. Re-review the current uncommitted changes, including the enrichment CAS path you previously inspected. Report only remaining concrete P0-P2 findings with exact file:line and executable path; otherwise exactly CLEAN. Read-only, no project-wide commands.
+
+---
+
+The stale evidence finding was accepted. I re-recorded rename-lineage after the traversal regression fix; both executable Plan validators now pass. Perform one final targeted read-only review of the current uncommitted fixes and evidence. Report only remaining concrete P0-P2 defects with exact file:line and executable path; otherwise exactly CLEAN. Do not modify files or run project-wide commands.
