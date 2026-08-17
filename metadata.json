@@ -3,15 +3,17 @@
   "checkpoint_id": "01M08BSGYDT8PENEWCDREXA43X",
   "strategy": "manual-commit",
   "branch": "feat/roadmap-ordered-completion",
-  "checkpoints_count": 3,
+  "checkpoints_count": 4,
   "files_touched": [
+    "CHANGELOG.md",
     "docs/adr/0015-decision-file-rename-lineage.md",
     "src/entirecontext/core/decision_file_lineage.py",
     "src/entirecontext/core/decisions.py",
     "src/entirecontext/db/migrations/__init__.py",
     "src/entirecontext/db/schema.py",
     "tests/test_db_schema.py",
-    "tests/test_decision_file_lineage.py"
+    "tests/test_decision_file_lineage.py",
+    "tests/test_migration_v020.py"
   ],
   "sessions": [
     {
@@ -20,13 +22,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 182171,
+    "input_tokens": 288255,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 1843456,
-    "output_tokens": 10215,
-    "api_call_count": 19
+    "cache_read_tokens": 2392064,
+    "output_tokens": 18177,
+    "api_call_count": 29
   }
 }
