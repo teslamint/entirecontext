@@ -371,6 +371,8 @@ def _looks_like_shell_fence_command(value: str) -> bool:
         tokens.pop(0)
     if not tokens:
         return False
+    if len(tokens) > 1 and (tokens[1].startswith("=") or tokens[1].endswith("=")):
+        return False
     command = tokens[0]
     command_name = Path(command).name.casefold()
     return command_name in SHELL_COMMANDS or command_name.endswith(".sh") or command.startswith(("./", "../"))
@@ -455,7 +457,7 @@ def _plan_checks(root: Path, plan_relative: str, plan_text: str) -> tuple[PlanCh
                 checks.append(check)
             else:
                 raise ContractError(f"unclassified shell fence: {classification}")
-        elif not tokens and any(_looks_like_shell_fence_command(line) for line in content):
+        elif any(_looks_like_shell_fence_command(line) for line in content):
             raise ContractError("unclassified shell fence")
         index += 1
 
