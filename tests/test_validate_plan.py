@@ -180,6 +180,32 @@ def test_validate_ignores_target_heading_inside_earlier_fence(tmp_path: Path) ->
     assert result.returncode == 0, result.stderr
 
 
+def test_validate_ignores_indented_code_heading_before_testing(tmp_path: Path) -> None:
+    plan, spec, _ = _contract(tmp_path)
+    spec.write_text(
+        """# Sample Design
+
+## Example
+
+    ## Testing
+    1. `test_fake`
+
+## Testing
+
+1. `test_behavior`
+
+## Success Criteria
+
+1. Behavior is covered.
+""",
+        encoding="utf-8",
+    )
+
+    result = _run(tmp_path, "record", plan, spec)
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_validate_rejects_unclosed_spec_fence(tmp_path: Path) -> None:
     plan, spec, _ = _contract(tmp_path)
     spec.write_text(
@@ -307,6 +333,18 @@ def test_validate_rejects_command_in_non_shell_fence(tmp_path: Path) -> None:
     plan, spec, _ = _contract(
         tmp_path,
         extra_plan="\n```text\nuv run pytest tests/test_hidden.py\n```\n",
+    )
+
+    result = _run(tmp_path, "validate", plan, spec)
+
+    assert result.returncode != 0
+    assert "unclassified shell fence" in result.stderr
+
+
+def test_validate_rejects_command_after_shell_control_keyword(tmp_path: Path) -> None:
+    plan, spec, _ = _contract(
+        tmp_path,
+        extra_plan="\n```text\nif pytest; then\n    printf 'verified\\n'\nfi\n```\n",
     )
 
     result = _run(tmp_path, "validate", plan, spec)

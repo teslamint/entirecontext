@@ -188,6 +188,7 @@ def _section(text: str, heading: str) -> str:
     fence_marker: str | None = None
     fence_minimum_length = 0
     fence_info = ""
+    heading_pattern = re.compile(rf" {{0,3}}{re.escape(heading)}[ \t]*")
 
     for index, line in enumerate(lines):
         if fence_marker is not None:
@@ -211,11 +212,11 @@ def _section(text: str, heading: str) -> str:
             continue
 
         if start is None:
-            if line.strip() == heading:
+            if heading_pattern.fullmatch(line) is not None:
                 start = index + 1
             continue
 
-        if re.match(r"^#{1,2}\s+", line):
+        if re.match(r"^ {0,3}#{1,2}[ \t]+", line):
             return "\n".join(lines[start:index])
 
     if fence_marker is not None:
@@ -371,7 +372,10 @@ def _looks_like_shell_fence_command(value: str) -> bool:
     if not stripped or stripped.startswith("#"):
         return False
     try:
-        tokens = shlex.split(stripped)
+        lexer = shlex.shlex(stripped, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = list(lexer)
     except ValueError:
         return False
     while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]) is not None:
@@ -380,9 +384,11 @@ def _looks_like_shell_fence_command(value: str) -> bool:
         return False
     if len(tokens) > 1 and (tokens[1].startswith("=") or tokens[1].endswith("=")):
         return False
-    command = tokens[0]
-    command_name = Path(command).name.casefold()
-    return command_name in SHELL_COMMANDS or command_name.endswith(".sh") or command.startswith(("./", "../"))
+    for token in tokens:
+        command_name = Path(token).name.casefold()
+        if command_name in SHELL_COMMANDS or command_name.endswith(".sh") or token.startswith(("./", "../")):
+            return True
+    return False
 
 
 def _reject_inline_shell_commands(lines: list[str]) -> None:
