@@ -3,7 +3,7 @@
   "checkpoint_id": "01M08BSGYDT8PENEWCDREXA43X",
   "strategy": "manual-commit",
   "branch": "feat/roadmap-ordered-completion",
-  "checkpoints_count": 4,
+  "checkpoints_count": 5,
   "files_touched": [
     "CHANGELOG.md",
     "docs/adr/0015-decision-file-rename-lineage.md",
@@ -29,6 +29,13 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": "/2/prompt.txt"
     }
   ],
   "token_usage": {

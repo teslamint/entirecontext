@@ -1,0 +1,41 @@
+{
+  "cli_version": "0.10.0",
+  "checkpoint_id": "01M08BSGYDT8PENEWCDREXA43X",
+  "session_id": "01a0108e-d992-7ad1-ae7d-662d3dcf1fa7",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-17T17:20:04.436983Z",
+  "branch": "feat/roadmap-ordered-completion",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "docs/adr/0015-decision-file-rename-lineage.md",
+    "src/entirecontext/core/decision_file_lineage.py",
+    "src/entirecontext/core/decisions.py",
+    "src/entirecontext/db/migrations/__init__.py",
+    "src/entirecontext/db/schema.py",
+    "tests/test_db_schema.py",
+    "tests/test_decision_file_lineage.py",
+    "tests/test_migration_v020.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "e879999ffce6",
+  "checkpoint_transcript_start": 146,
+  "transcript_lines_at_start": 146,
+  "compact_transcript_start": 29,
+  "session_metrics": {
+    "turn_count": 1
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-17T17:20:04.411618Z",
+    "agent_lines": 439,
+    "agent_removed": 50,
+    "human_added": 324,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 763,
+    "total_lines_changed": 813,
+    "agent_percentage": 60.147601476014756,
+    "metric_version": 2
+  }
+}
