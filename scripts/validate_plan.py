@@ -58,6 +58,8 @@ SHELL_COMMANDS = {
     "time",
     "yarn",
 }
+SHELL_CONTROL_TERMINATORS = {"elif": "then", "if": "then", "until": "do", "while": "do"}
+SHELL_COMMAND_SEPARATORS = {"&&", ";", "||", "|"}
 BARE_RUNNERS = {"make", "mypy", "pytest", "ruff"}
 BARE_RUNNER_PATTERN = re.compile(rf"(?<![A-Za-z0-9_.-])(?:{'|'.join(sorted(BARE_RUNNERS))})(?![A-Za-z0-9_.-])")
 EVIDENCE_FIELDS = {
@@ -367,6 +369,20 @@ def _looks_like_shell_command(value: str, *, imperative: bool) -> bool:
     return False
 
 
+def _is_shell_command_at(tokens: Sequence[str], index: int) -> bool:
+    while index < len(tokens) and (
+        tokens[index] == "!" or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[index]) is not None
+    ):
+        index += 1
+    if index == len(tokens):
+        return False
+    if index + 1 < len(tokens) and tokens[index + 1] == "(":
+        return False
+    token = tokens[index]
+    command_name = Path(token).name.casefold()
+    return command_name in SHELL_COMMANDS or command_name.endswith(".sh") or token.startswith(("./", "../"))
+
+
 def _looks_like_shell_fence_command(value: str) -> bool:
     stripped = value.strip()
     if not stripped or stripped.startswith("#"):
@@ -378,16 +394,27 @@ def _looks_like_shell_fence_command(value: str) -> bool:
         tokens = list(lexer)
     except ValueError:
         return False
-    while tokens and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", tokens[0]) is not None:
-        tokens.pop(0)
     if not tokens:
         return False
     if len(tokens) > 1 and (tokens[1].startswith("=") or tokens[1].endswith("=")):
         return False
-    for token in tokens:
-        command_name = Path(token).name.casefold()
-        if command_name in SHELL_COMMANDS or command_name.endswith(".sh") or token.startswith(("./", "../")):
-            return True
+
+    terminator = SHELL_CONTROL_TERMINATORS.get(tokens[0].casefold())
+    if terminator is not None:
+        try:
+            terminator_index = tokens.index(terminator, 1)
+        except ValueError:
+            return False
+        if ";" not in tokens[1:terminator_index]:
+            return False
+        command_tokens = tokens[1:terminator_index]
+    else:
+        command_tokens = tokens
+
+    for index in range(len(command_tokens)):
+        if index == 0 or command_tokens[index - 1] in SHELL_COMMAND_SEPARATORS:
+            if _is_shell_command_at(command_tokens, index):
+                return True
     return False
 
 

@@ -321,7 +321,9 @@ def test_validate_rejects_command_in_untagged_fence(tmp_path: Path) -> None:
 def test_validate_allows_non_shell_fence(tmp_path: Path) -> None:
     plan, spec, _ = _contract(
         tmp_path,
-        extra_plan="\n```python\npython = Path('example')\n```\n",
+        extra_plan=(
+            "\n```python\npython = Path('example')\nif python == expected:\n    result = Path('matched')\n```\n"
+        ),
     )
 
     result = _run(tmp_path, "record", plan, spec)
