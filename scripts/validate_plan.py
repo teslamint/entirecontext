@@ -184,16 +184,12 @@ def _resolve_evidence_path(
 
 def _section(text: str, heading: str) -> str:
     lines = text.split("\n")
-    try:
-        start = next(index for index, line in enumerate(lines) if line.strip() == heading) + 1
-    except StopIteration as exc:
-        raise ContractError(f"missing required section: {heading}") from exc
-
-    end = len(lines)
+    start: int | None = None
     fence_marker: str | None = None
     fence_minimum_length = 0
-    for index in range(start, len(lines)):
-        line = lines[index]
+    fence_info = ""
+
+    for index, line in enumerate(lines):
         if fence_marker is not None:
             if (
                 re.fullmatch(
@@ -203,6 +199,7 @@ def _section(text: str, heading: str) -> str:
                 is not None
             ):
                 fence_marker = None
+                fence_info = ""
             continue
 
         opening = FENCE_PATTERN.match(line)
@@ -210,12 +207,22 @@ def _section(text: str, heading: str) -> str:
             fence = opening.group("fence")
             fence_marker = fence[0]
             fence_minimum_length = len(fence)
+            fence_info = opening.group("info").strip()
+            continue
+
+        if start is None:
+            if line.strip() == heading:
+                start = index + 1
             continue
 
         if re.match(r"^#{1,2}\s+", line):
-            end = index
-            break
-    return "\n".join(lines[start:end])
+            return "\n".join(lines[start:index])
+
+    if fence_marker is not None:
+        raise ContractError(f"unclosed Markdown fence with info string: {fence_info or '<empty>'}")
+    if start is None:
+        raise ContractError(f"missing required section: {heading}")
+    return "\n".join(lines[start:])
 
 
 def _spec_test_ids(spec_text: str) -> list[str]:
