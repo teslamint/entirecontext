@@ -165,9 +165,7 @@ def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str
 
         feedback = "agree" if new_verdict == original_verdict else "disagree"
         feedback_reason = (
-            "auto:llm-confirmed"
-            if feedback == "agree"
-            else f"auto:revised:{original_verdict}->{new_verdict}"
+            "auto:llm-confirmed" if feedback == "agree" else f"auto:revised:{original_verdict}->{new_verdict}"
         )
         cursor = conn.execute(
             """
