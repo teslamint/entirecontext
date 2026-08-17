@@ -3,7 +3,7 @@
   "checkpoint_id": "01M08BS6XK785FH9FY7TV506VB",
   "strategy": "manual-commit",
   "branch": "feat/roadmap-ordered-completion",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "scripts/validate_plan.py",
     "tests/test_validate_plan.py"
@@ -22,13 +22,20 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": "/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 216289,
+    "input_tokens": 352676,
     "cache_creation_tokens": 0,
-    "cache_read_tokens": 2532864,
-    "output_tokens": 19297,
-    "api_call_count": 36
+    "cache_read_tokens": 3540224,
+    "output_tokens": 30411,
+    "api_call_count": 49
   }
 }
