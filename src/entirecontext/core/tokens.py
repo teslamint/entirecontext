@@ -8,6 +8,7 @@ historical fallback in ``core/decision_prompt_surfacing``.
 
 from __future__ import annotations
 
+
 def _load_default_encoding() -> object | None:
     try:
         import tiktoken
