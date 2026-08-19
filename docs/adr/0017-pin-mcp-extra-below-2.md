@@ -1,6 +1,6 @@
 # 0017. Pin MCP Extra Below 2.0 and Raise on Missing SDK
 
-**Status:** accepted  
+**Status:** superseded-by-0018  
 **Date:** 2026-08-19  
 **EC Decision:** `4676448c-f2b8-4f2c-b2f5-9d75862b26e8`
 

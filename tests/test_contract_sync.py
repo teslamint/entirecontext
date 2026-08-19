@@ -18,7 +18,7 @@ drift. The parity test below is strictly stronger.
 IMPLICIT CONTRACT NOTE: the parity test assumes tools register via the
 ``mcp.tool()(fn)`` pattern with ``registered_name == fn.__name__``. The
 ``_FakeMCP.tool()`` honors an optional ``name=`` kwarg override (matching
-real ``FastMCP.tool()``'s signature) but does NOT capture ``mcp.add_tool()``
+real ``MCPServer.tool()``'s signature) but does NOT capture ``mcp.add_tool()``
 calls. If a future registration uses either of those escape hatches, update
 the fake and/or the AST extractor at that time.
 """
@@ -37,9 +37,9 @@ SERVER_PY = REPO_ROOT / "src" / "entirecontext" / "mcp" / "server.py"
 
 
 class _FakeMCP:
-    """Minimal FastMCP stand-in that captures tool-registration names.
+    """Minimal MCPServer stand-in that captures tool-registration names.
 
-    Honors the ``name=`` kwarg override like real ``FastMCP.tool()`` does,
+    Honors the ``name=`` kwarg override like real ``MCPServer.tool()`` does,
     so a future ``mcp.tool(name="ec_alias")(fn)`` registration would be
     captured under the alias, not ``fn.__name__``.
     """
