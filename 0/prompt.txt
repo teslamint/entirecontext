@@ -195,3 +195,7 @@ Fix: Rename to `_FakeMCPServer` or `_FakeMCP` with a comment noting it mimics `M
 <status>completed</status>
 <summary>Background command "90초 후 CI 재확인" completed (exit code 0)</summary>
 </task-notification>
+
+---
+
+approved
