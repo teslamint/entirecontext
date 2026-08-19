@@ -26,6 +26,9 @@ coverage.json
 .omc/*
 !.omc/RELEASE_RULE.md
 .serena/
+.entire/
+.opencode/
+.release-loop/
 agents.lock
 .agents/.gitignore
 *-export.json
