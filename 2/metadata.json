@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.1",
+  "checkpoint_id": "01M0DC97S2XAQQ6GFHARV0KCXB",
+  "session_id": "01a00ae5-41e3-71f0-91ac-279131cad514",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-19T16:04:50.243178Z",
+  "branch": "main",
+  "checkpoints_count": 2,
+  "files_touched": [
+    "LESSONS.md"
+  ],
+  "agent": "Codex",
+  "model": "gpt-5.6-sol",
+  "turn_id": "42aa6641511d",
+  "checkpoint_transcript_start": 226,
+  "transcript_lines_at_start": 226,
+  "compact_transcript_start": 44,
+  "session_metrics": {
+    "turn_count": 2
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-19T16:04:50.211315Z",
+    "agent_lines": 0,
+    "agent_removed": 105,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 408,
+    "total_committed": 97,
+    "total_lines_changed": 544,
+    "agent_percentage": 19.301470588235293,
+    "metric_version": 2
+  }
+}
