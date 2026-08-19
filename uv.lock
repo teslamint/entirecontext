@@ -503,7 +503,7 @@ dev = [
 requires-dist = [
     { name = "hatchling", marker = "extra == 'dev'", specifier = ">=1.27,<2" },
     { name = "hypothesis", marker = "extra == 'dev'", specifier = ">=6.100.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0,<2" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15.0" },
     { name = "pygments", specifier = ">=2.20.0" },
     { name = "pyjwt", specifier = ">=2.12.0" },
