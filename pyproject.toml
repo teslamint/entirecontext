@@ -30,7 +30,7 @@ semantic = [
     "sentence-transformers>=3.0.0",
 ]
 mcp = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2",
 ]
 dev = [
     "hatchling>=1.27,<2",

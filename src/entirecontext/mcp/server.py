@@ -8,12 +8,14 @@ from typing import Any
 # Declared before the import so the ImportError fallback is an assignment to an
 # existing name rather than a redefinition of the imported class.
 FastMCP: Any
+_FASTMCP_IMPORT_ERROR: ImportError | None = None
 try:
     from mcp.server.fastmcp import FastMCP as _FastMCP
 
     FastMCP = _FastMCP
-except ImportError:
+except ImportError as exc:
     FastMCP = None
+    _FASTMCP_IMPORT_ERROR = exc
 
 mcp: Any = FastMCP("entirecontext") if FastMCP is not None else None
 
@@ -132,8 +134,13 @@ if mcp:
 def run_server() -> None:
     """Run the MCP server (stdio transport)."""
     if mcp is None:
-        print("MCP not available. Install with: pip install 'entirecontext[mcp]'")
-        return
+        # Keep the original ImportError, if any, in the chain for accurate
+        # diagnosis. Raising (instead of print+return) gives a non-zero exit
+        # code and keeps stdout clean of non-JSON-RPC text.
+        raise RuntimeError(
+            "MCP SDK unavailable: 'from mcp.server.fastmcp import FastMCP' failed. "
+            "Install the extra: uv tool install --force 'entirecontext[mcp] @ <repo path>'"
+        ) from _FASTMCP_IMPORT_ERROR
     import sys
     from entirecontext import __version__
 
