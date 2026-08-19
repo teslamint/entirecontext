@@ -403,7 +403,7 @@ All PR #205 carry-forwards are registered under v0.16.0 above.
 
 - [x] **Lift the `entirecontext.mcp.*` mypy overrides** — all nine MCP modules sat under `ignore_errors = true`, hiding 127 errors across 2,261 lines. Removed in three stages: annotate `runtime.py` (127 → 106), replace the `resolve_repo` tuple-plus-error-payload shape with a raising `open_repo` (106 → 48, since 60 errors traced to the unnarrowable `Connection | None`), then annotate the remaining modules (48 → 0). `mypy src/entirecontext/` now enforces the whole package in CI. ADR 0002's override list is nine entries shorter. Surfaced by review on PR #212.
 
-- [ ] **Migrate MCP server to SDK 2.0** — `mcp>=1.0.0,<2` is pinned in PR #228 because `mcp==2.0.0` removed `mcp.server.fastmcp.FastMCP`. A deliberate migration to `mcp.server.MCPServer` (or the new high-level API) is needed before the pin can be relaxed. _(dependency, P3; carry-forward from PR #228, ADR 0017)_
+- [x] **Migrate MCP server to SDK 2.0** — `FastMCP` → `MCPServer` import migration completed; pin relaxed to `mcp>=2.0.0,<3`. _(dependency, P3; carry-forward from PR #228, ADR 0017 → superseded by ADR 0018)_
 
 - [x] **`distill_lessons` emits duplicate Markdown headings** — every `LESSONS.md` heading came from `impact_summary` alone, so repeated summaries (`Auto-assessed checkpoint` ×7, identical `chore(deps)` bumps) collided and all but the first anchor became unreachable. Fixed by appending the short assessment ID to the heading; `test_distill_lessons_headings_are_unique_per_assessment` guards it. No markdownlint config or CI step was added — the unit test is the enforcement point. Surfaced by CodeRabbit review on PR #206.
 

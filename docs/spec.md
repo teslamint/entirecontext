@@ -37,7 +37,7 @@ This document describes the behavior implemented in the current codebase at a re
 User / Agent
   ├─ CLI (ec, Typer)
   ├─ Claude Code Hooks
-  └─ MCP Server (stdio, FastMCP)
+  └─ MCP Server (stdio, MCPServer)
 
 Core Engine
   ├─ Capture (sessions/turns)

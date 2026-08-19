@@ -40,7 +40,7 @@ class TestMcpServe:
         """When the MCP SDK is unavailable, run_server must raise, not return."""
         with (
             patch.object(server_module, "mcp", None),
-            patch.object(server_module, "_FASTMCP_IMPORT_ERROR", ImportError("no mcp")),
+            patch.object(server_module, "_MCP_IMPORT_ERROR", ImportError("no mcp")),
         ):
             with pytest.raises(RuntimeError, match="MCP SDK unavailable"):
                 server_module.run_server()
@@ -49,7 +49,7 @@ class TestMcpServe:
         """The RuntimeError message includes install guidance but no 'MCP not available' duplicate."""
         with (
             patch.object(server_module, "mcp", None),
-            patch.object(server_module, "_FASTMCP_IMPORT_ERROR", ImportError("no mcp")),
+            patch.object(server_module, "_MCP_IMPORT_ERROR", ImportError("no mcp")),
         ):
             with pytest.raises(RuntimeError) as excinfo:
                 server_module.run_server()

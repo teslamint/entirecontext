@@ -5,19 +5,17 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-# Declared before the import so the ImportError fallback is an assignment to an
-# existing name rather than a redefinition of the imported class.
-FastMCP: Any
-_FASTMCP_IMPORT_ERROR: ImportError | None = None
+MCPServer: Any
+_MCP_IMPORT_ERROR: ImportError | None = None
 try:
-    from mcp.server.fastmcp import FastMCP as _FastMCP
+    from mcp.server import MCPServer as _MCPServer
 
-    FastMCP = _FastMCP
+    MCPServer = _MCPServer
 except ImportError as exc:
-    FastMCP = None
-    _FASTMCP_IMPORT_ERROR = exc
+    MCPServer = None
+    _MCP_IMPORT_ERROR = exc
 
-mcp: Any = FastMCP("entirecontext") if FastMCP is not None else None
+mcp: Any = MCPServer("entirecontext") if MCPServer is not None else None
 
 
 def _get_repo_db() -> tuple[sqlite3.Connection, str]:
@@ -138,9 +136,9 @@ def run_server() -> None:
         # diagnosis. Raising (instead of print+return) gives a non-zero exit
         # code and keeps stdout clean of non-JSON-RPC text.
         raise RuntimeError(
-            "MCP SDK unavailable: 'from mcp.server.fastmcp import FastMCP' failed. "
+            "MCP SDK unavailable: 'from mcp.server import MCPServer' failed. "
             "Install the extra: uv tool install --force 'entirecontext[mcp] @ <repo path>'"
-        ) from _FASTMCP_IMPORT_ERROR
+        ) from _MCP_IMPORT_ERROR
     import sys
     from entirecontext import __version__
 

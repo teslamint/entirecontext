@@ -43,10 +43,6 @@ jobs:
           enable-cache: true
           python-version: "3.12"
 
-      # mcp is installed ahead of need. Today every entirecontext.mcp module sits
-      # under ignore_errors = true (ADR 0002), so mypy reports nothing there either
-      # way. When those overrides are lifted, mypy must see the real FastMCP types
-      # rather than the FastMCP = None fallback in mcp/server.py.
       - name: Install dependencies
         run: uv sync --extra dev --extra mcp
 
