@@ -22,12 +22,10 @@ from typing import Any
 
 _FALLBACK_BASE = "decisions-context-prompt"
 
-try:
-    import tiktoken as _tiktoken_mod
-
-    _tiktoken_encoding = _tiktoken_mod.get_encoding("cl100k_base")
-except Exception:
-    _tiktoken_encoding = None
+# Kept as a module attribute (rather than hidden inside core.tokens) so tests
+# can monkeypatch the encoding per-module without touching the shared default.
+from .tokens import _ENCODING as _tiktoken_encoding  # noqa: E402
+from .tokens import estimate_tokens as _estimate_tokens_impl  # noqa: E402
 
 
 def _sanitize_id_for_path(value: str) -> str:
@@ -216,12 +214,7 @@ def _atomic_write_text(path: Path, text: str, mode: int = 0o600) -> None:
 
 
 def _estimate_tokens(text: str) -> int:
-    if _tiktoken_encoding is not None:
-        try:
-            return max(1, len(_tiktoken_encoding.encode(text, disallowed_special=())))
-        except Exception:
-            pass
-    return max(1, len(text.encode("utf-8")) // 3)
+    return _estimate_tokens_impl(text, encoding=_tiktoken_encoding)
 
 
 def _parse_file_paths_from_diff(diff_text: str | None) -> list[str]:

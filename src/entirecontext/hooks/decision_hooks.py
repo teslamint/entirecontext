@@ -383,6 +383,21 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
                 output = "\n\n".join(sections)
                 fallback_path.parent.mkdir(parents=True, exist_ok=True)
                 fallback_path.write_text(output, encoding="utf-8")
+                # Token-savings telemetry: size of the payload actually injected.
+                try:
+                    from ..core.context import transaction
+                    from ..core.telemetry import record_injection_event
+
+                    with transaction(conn):
+                        record_injection_event(
+                            conn,
+                            channel="session_start_decisions",
+                            payload=output,
+                            item_count=len(all_surfaced),
+                            session_id=data.get("session_id"),
+                        )
+                except Exception:
+                    pass
                 # Cross-channel dedup: record surfaced IDs on the session row so
                 # PostToolUse can't re-surface the same decision later in the
                 # same session (issue #42 cross-channel dedup).
@@ -793,6 +808,23 @@ def on_post_tool_use_decisions(data: dict[str, Any]) -> str | None:
             entries = [_format_decision_entry(d) for d in decisions_out]
             header = "## Related Decisions (current edit)\n\nThe file(s) you just edited are linked to the following prior decisions:\n\n"
             body = header + "\n\n".join(entries)
+
+            # Token-savings telemetry: size of the payload actually injected.
+            try:
+                from ..core.context import transaction as _transaction
+                from ..core.telemetry import record_injection_event
+
+                with _transaction(conn):
+                    record_injection_event(
+                        conn,
+                        channel="post_tool_use",
+                        payload=body,
+                        item_count=len(decisions_out),
+                        session_id=session_id,
+                        turn_id=turn_id,
+                    )
+            except Exception:
+                pass
 
             # Write the PostToolUse-specific fallback file.
             from pathlib import Path as _Path

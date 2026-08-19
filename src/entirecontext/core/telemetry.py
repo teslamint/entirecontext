@@ -201,6 +201,55 @@ def record_context_application(
     }
 
 
+INJECTION_OPERATION_NAME = "context_injection"
+
+VALID_INJECTION_CHANNELS = (
+    "session_start_decisions",
+    "session_start_lessons",
+    "user_prompt",
+    "post_tool_use",
+)
+
+
+def record_injection_event(
+    conn,
+    *,
+    channel: str,
+    payload: str,
+    item_count: int,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+    latency_ms: int = 0,
+) -> dict:
+    """Record the size of a proactively injected context payload.
+
+    Stored as an ``operation_events`` row (operation_name
+    ``context_injection``, phase = channel) with token/char counts in
+    ``metadata`` so the token-savings experiment can aggregate injection
+    overhead without a schema migration.
+    """
+    if channel not in VALID_INJECTION_CHANNELS:
+        raise ValueError(f"Invalid channel '{channel}'. Must be one of: {VALID_INJECTION_CHANNELS}")
+
+    from .tokens import estimate_tokens
+
+    return record_operation_event(
+        conn,
+        source="hook",
+        operation_name=INJECTION_OPERATION_NAME,
+        phase=channel,
+        status="ok",
+        latency_ms=latency_ms,
+        session_id=session_id,
+        turn_id=turn_id,
+        metadata={
+            "injected_tokens": estimate_tokens(payload),
+            "injected_chars": len(payload),
+            "item_count": item_count,
+        },
+    )
+
+
 def record_operation_event(
     conn,
     *,

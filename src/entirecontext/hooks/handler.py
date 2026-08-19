@@ -205,6 +205,21 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
         output = "## Relevant Lessons\n\n" + "\n\n".join(entries)
         print(output)
 
+        # Token-savings telemetry: size of the payload actually injected.
+        try:
+            from ..core.telemetry import record_injection_event
+
+            with transaction(conn):
+                record_injection_event(
+                    conn,
+                    channel="session_start_lessons",
+                    payload=output,
+                    item_count=len(lessons),
+                    session_id=session_id,
+                )
+        except Exception:
+            pass
+
         # Write fallback file for agents that don't capture stdout
         from pathlib import Path
 
@@ -360,6 +375,26 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     }
                 )
             )
+
+            # Token-savings telemetry: size of the payload actually injected.
+            try:
+                from ..core.context import transaction
+                from ..core.telemetry import record_injection_event
+
+                inj_conn = get_db(repo_path)
+                try:
+                    with transaction(inj_conn):
+                        record_injection_event(
+                            inj_conn,
+                            channel="user_prompt",
+                            payload=md,
+                            item_count=len(trimmed) if trimmed else 0,
+                            session_id=session_id,
+                        )
+                finally:
+                    inj_conn.close()
+            except Exception:
+                pass
 
         if capture_snapshots and _pdi_snapshot_id:
             try:
