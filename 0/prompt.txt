@@ -1,0 +1,197 @@
+PR #221, #222 확인하고 머지해주세요
+
+---
+
+PR #222 MCP 2.0 마이그레이션 작업 시작해줘 /release-loop
+
+---
+
+<agent-message from="design-review">
+
+**VERDICT: REVISE**
+
+**Overall Assessment**: The design direction is correct — the migration is straightforward and the core decision (2.x only, new ADR, separate branch) is sound. However, the design has three gaps that would cause rework if an executor followed it as-is: an incomplete file scope, unassessed dependency landscape changes, and ambiguous change descriptions for `server.py` internals.
+
+**Pre-commitment Predictions vs Actual**:
+1. "Import path changes may be incomplete beyond server.py" → CONFIRMED: `docs/spec.md:40` missed
+2. "Decorator API compatibility is the riskiest assumption" → VERIFIED SAFE: `.tool()` and `.run()` carry over unchanged
+3. "Test mocks may reference old class names" → CONFIRMED: `tests/test_mcp_cmds.py:43,52` patches `_FASTMCP_IMPORT_ERROR`
+4. "Transitive dependency changes" → CONFIRMED: `httpx` → `httpx2`, new `opentelemetry-api`, new `mcp-types` package
+5. "Error variable naming stale" → CONFIRMED: `_FASTMCP_IMPORT_ERROR` and `FastMCP: Any` annotation remain
+
+---
+
+**Major Findings** (causes significant rework):
+
+1. **Dependency landscape not assessed — new transitive deps in MCP 2.0**
+   - Confidence: HIGH
+   - Evidence: `pip install --dry-run 'mcp>=2.0.0,<3'` reveals MCP 2.0 depends on `httpx2` (replacing `httpx`), adds `opentelemetry-api>=1.28.0` (entirely new), and adds `mcp-types==2.0.0` (extracted types package). Also drops `httpx-sse` and `pydantic-settings`.
+   - Why this matters: While the MCP extra is isolated (installed via `uv tool install`), these changes alter the dependency tree significantly. The `httpx` → `httpx2` transition is a Python ecosystem-wide shift that could cause conflicts if users have other packages in the same venv expecting `httpx`. The `opentelemetry-api` adds weight. These should be acknowledged in the ADR so future maintainers understand the dependency footprint change.
+   - Fix: Add a "Dependency Changes" section to the new ADR documenting: `httpx` → `httpx2`, new `opentelemetry-api`, new `mcp-types`, dropped `httpx-sse` and `pydantic-settings`. Note that isolation via `uv tool install` mitigates conflict risk.
+
+2. **No explicit verification step in the plan**
+   - Confidence: HIGH
+   - Evidence: The design asks `"Should we verify that MCPServer.tool() decorator works identically to FastMCP.tool()?"` — acknowledging uncertainty — but doesn't include a verification protocol as a plan step.
+   - Why this matters: The migration guide confirms API compatibility, but the project has 119+ MCP tool tests that serve as the ground truth. Without an explicit "install mcp 2.0 in test env, run full test suite" step, the executor may skip empirical verification.
+   - Fix: Add a verification step: (a) create a temporary venv or branch with `mcp>=2.0.0,<3`, (b) run `pytest tests/test_mcp.py tests/test_mcp_cmds.py tests/test_contract_sync.py -v`, (c) confirm all pass. This step should come AFTER the code changes and BEFORE the ADR/docs updates.
+
+3. **Incomplete enumeration of `server.py` changes**
+   - Confidence: HIGH
+   - Evidence: The design says `"Change import, update class name, update error message"` for server.py. But `server.py` contains FIVE distinct references that need updating:
+     - Line 10: `FastMCP: Any` type annotation → `MCPServer: Any`
+     - Line 11: `_FASTMCP_IMPORT_ERROR` variable name → should rename (e.g., `_MCP_IMPORT_ERROR`)
+     - Lines 13-15: import path (covered by design)
+     - Line 17-18: `FastMCP = None` / `_FASTMCP_IMPORT_ERROR = exc` → update names
+     - Line 20: `FastMCP("entirecontext")` → `MCPServer("entirecontext")` (covered by design)
+     - Line 141: error message string referencing `'from mcp.server.fastmcp import FastMCP'` (covered by design)
+     - Line 143: `from _FASTMCP_IMPORT_ERROR` → update if variable renamed
+   - Why this matters: An executor reading "update class name" might change only line 20 and miss lines 10, 11, 17-18. The variable `_FASTMCP_IMPORT_ERROR` is referenced by tests (`test_mcp_cmds.py:43,52`), so renaming it requires coordinated test updates.
+   - Fix: Enumerate all five change sites explicitly. If `_FASTMCP_IMPORT_ERROR` is renamed, list `tests/test_mcp_cmds.py:43,52` as a coordinated change.
+
+---
+
+**Minor Findings** (suboptimal but functional):
+
+1. `docs/spec.md:40` — architecture diagram says `MCP Server (stdio, FastMCP)`, needs updating to `MCPServer`. Not listed in the design's file scope.
+2. `tests/test_contract_sync.py:40-44` — `_FakeMCP` class name and docstrings reference `FastMCP.tool()`. Functionally correct (the fake captures `.tool()()` calls identically), but cosmetically stale.
+3. `uv.lock` — committed lock file will need regeneration via `uv lock` after the `pyproject.toml` pin change. Standard practice but worth calling out for the executor.
+4. Historical documents (`docs/retros/2026-08-19-mcp-serve-silent-failure-retro.md`, `docs/plans/2026-08-19-001-fix-mcp-serve-silent-failure-plan.md`) reference `FastMCP`. These are point-in-time records and should NOT be updated — the design should explicitly scope them out to prevent an overzealous executor from touching them.
+
+---
+
+**What's Missing** (gaps, unhandled edge cases, unstated assumptions):
+
+- **Rollback plan**: If MCP 2.0 has a bug that breaks stdio transport, reverting is just a pin change + import revert, but this should be stated explicitly in the ADR's Consequences section.
+- **MCP 2.0 maturity risk**: `mcp==2.0.0` is the ONLY 2.x release (verified via `pip index versions mcp`). The design should acknowledge this is a .0 release and note whether the project's CI would catch regressions from future 2.x point releases.
+- **`mcp.run()` transport parameter migration**: MCP 2.0 moved transport-specific parameters from the constructor to `run()`. The current code calls `mcp.run()` with no arguments (stdio is default), so this is safe — but the design should explicitly confirm this assumption so the executor doesn't wonder.
+
+---
+
+**Ambiguity Risks**:
+
+- `"update class name"` → Interpretation A: change only line 20 (`FastMCP("entirecontext")` → `MCPServer("entirecontext")`). Interpretation B: change all `FastMCP` references including the type annotation at line 10 and the variable at line 11.
+  - Risk if Interpretation A chosen: stale variable names, confusing code. Tests at `test_mcp_cmds.py:43,52` still work but reference a misleadingly named variable.
+
+- `"Update any mock patterns if needed"` → Interpretation A: check test_mcp.py mocks (no changes needed). Interpretation B: also check test_mcp_cmds.py patches of `_FASTMCP_IMPORT_ERROR` and test_contract_sync.py's `_FakeMCP`.
+  - Risk if only Interpretation A checked: `_FASTMCP_IMPORT_ERROR` patches in test_mcp_cmds.py silently pass because the variable was NOT renamed (a consistency miss, not a test failure).
+
+---
+
+**Multi-Perspective Notes**:
+
+- **Executor**: "Can I do each step with only what's written here?" — No. The server.py change description is too compressed. I'd need to read the file myself to discover the `_FASTMCP_IMPORT_ERROR` variable, the type annotation, and the specific lines. The test change description ("update any mock patterns if needed") gives me no guidance on WHICH test files to check.
+- **Stakeholder**: The scope is appropriate for the stated goal (migrate to MCP 2.0). The 2.x-only decision is correct for an optional extra. Success criteria should include: all MCP tests pass with mcp 2.0, `ec mcp serve` starts and responds to a tool call.
+- **Skeptic**: The strongest argument against this approach right now is timing — `mcp==2.0.0` is the ONLY 2.x release. Pinning `>=2.0.0,<3` on a .0 release of a dependency means accepting any 2.x point release's potential breakage. Counter: the `<3` upper bound is standard semver practice, and the existing `>=1.0.0,<2` pin followed the same pattern. The risk is acceptable.
+
+---
+
+**Verdict Justification**: REVISE, not REJECT, because the design direction is correct and the core decisions are sound. The three MAJOR findings are scope/completeness gaps, not directional errors. Addressing them requires adding detail to existing steps, not rethinking the approach. Review operated in THOROUGH mode throughout — the three MAJOR findings do not indicate systemic issues, just insufficient granularity for a hand-off-to-executor plan. Realist Check: none of the MAJOR findings risk data loss or runtime failure — they risk rework and stale naming, which is enough for REVISE but not REJECT.
+
+**What would upgrade this to ACCEPT**: (1) Enumerate all change sites in `server.py` explicitly (lines 10-11, 13-18, 20, 141, 143). (2) Add a verification step (run MCP tests against mcp 2.0). (3) Add a dependency-changes note to the ADR. (4) Explicitly scope out historical docs. (5) List `docs/spec.md:40` in the file scope.
+
+---
+
+**Open Questions (unscored)**:
+
+- Should `_FASTMCP_IMPORT_ERROR` be renamed to `_MCP_IMPORT_ERROR` or `_MCPSERVER_IMPORT_ERROR`? This is a style decision, but the choice affects test_mcp_cmds.py. If kept as-is, no test changes needed but the name is misleading. I'd recommend renaming to `_MCP_IMPORT_ERROR` (shorter, class-name-agnostic in case of future renames).
+- The `httpx` → `httpx2` transition: is the project's CI environment clean enough that this won't conflict? Since CI presumably installs the `[mcp]` extra in isolation, this should be fine, but worth a quick check.
+- MCP 2.0's sync-handler-on-worker-thread change: all EntireContext tool functions are `async def` (verified across all 7 tool modules, 28 functions), so this change has no effect. Worth noting in the ADR for future reference if sync tools are ever added.
+
+</agent-message>
+
+---
+
+approved
+
+---
+
+<agent-message from="impl-review">
+## Code Review Summary — MCP SDK 2.0 Migration
+
+**Scope:** `git diff HEAD` on `feat/mcp-sdk-2-migration` branch — 8 modified files + 1 untracked (ADR 0018)
+**Files Reviewed:** 9
+**Total Issues:** 3
+
+### By Severity
+- CRITICAL: 0
+- HIGH: 0
+- MEDIUM: 2
+- LOW: 1
+
+---
+
+### Stage 1 — Spec Compliance
+
+The migration covers all stated objectives:
+1. `FastMCP` import replaced with `MCPServer` from `mcp.server` — verified in source
+2. `pyproject.toml` pin updated `mcp>=2.0.0,<3` — correct
+3. All test patch targets updated (`_MCP_IMPORT_ERROR`) — verified
+4. `docs/spec.md` architecture diagram updated — correct
+5. ADR 0017 status set to `superseded-by-0018` — correct
+6. ADR 0018 created with decision rationale — present
+7. ROADMAP item checked off — correct
+8. `uv.lock` regenerated — verified
+
+Zero stale `FastMCP`/`fastmcp`/`FASTMCP` references remain in `src/` or `tests/` (confirmed via repo-wide grep).
+
+**Runtime verification:**
+- `MCPServer` imports and instantiates successfully against `mcp==2.0.0`
+- `MCPServer.run()` signature: `(transport='stdio', **kwargs)` — stdio default confirmed, `run_server()` behavior unchanged
+- `MCPServer.tool()` method exists — all 28 `mcp.tool()(fn)` registrations complete without error on module import
+
+**Stage 1 verdict: PASS**
+
+---
+
+### Stage 2 — Issues
+
+**[MEDIUM] Stale FastMCP comment in CI workflow — missed blast radius**
+File: `.github/workflows/ci.yml:48-49`
+Confidence: HIGH
+Issue: Comment reads "mypy must see the real FastMCP types rather than the FastMCP = None fallback in mcp/server.py". This is doubly stale: (a) `FastMCP` is now `MCPServer`, and (b) the `ignore_errors = true` overrides referenced were already lifted in a previous PR (per ROADMAP). The comment no longer describes reality.
+Fix: Rewrite the comment to reflect current state — the MCP modules are now fully type-checked, and the fallback variable is `MCPServer = None` / `_MCP_IMPORT_ERROR`.
+
+**[MEDIUM] ADR 0018 dependency table incomplete**
+File: `docs/adr/0018-migrate-mcp-server-to-sdk-2.md:33-38`
+Confidence: HIGH
+Issue: The "Added" column lists `httpx2`, `mcp-types`, `opentelemetry-api`, `truststore`. Actual `uv.lock` diff shows two additional additions: `httpcore2` and `httpx2-jsfetch`. These are transitive deps of `httpx2` but the table implicitly claims completeness.
+Fix: Add `httpcore2` and `httpx2-jsfetch` to the Added column, or add a note that the table lists direct additions only.
+
+**[LOW] `_FakeMCP` test helper class name not renamed**
+File: `tests/test_contract_sync.py:39`
+Confidence: HIGH
+Issue: Class is still `_FakeMCP` while its docstrings were updated to say "MCPServer stand-in". Naming inconsistency — the informative parts (docstrings) are correct, but the identifier lags behind.
+Fix: Rename to `_FakeMCPServer` or `_FakeMCP` with a comment noting it mimics `MCPServer`. Optional — no functional impact.
+
+---
+
+### Operational Note
+
+**ADR 0018 is untracked** (`git status` shows `??`). It must be `git add`-ed before commit or the ADR chain ships broken (0017 references a superseding 0018 that doesn't exist in the tree).
+
+---
+
+### Positive Observations
+
+- **Complete reference sweep:** All FastMCP references in production code and tests are updated. The grep coverage is thorough.
+- **Defensive import pattern preserved:** The `try/except ImportError` with `_MCP_IMPORT_ERROR` chain gives clear diagnostics on missing SDK — same quality as the pre-migration pattern.
+- **ADR chain well-structured:** 0017 → superseded-by-0018 with rollback instructions is clean decision lineage.
+- **Test coverage maintained:** Both `test_mcp_cmds.py` and `test_contract_sync.py` patches correctly target the new variable names. The contract-sync parity test is particularly valuable — it catches registration drift that would otherwise be silent.
+- **Runtime-verified migration:** 2297 tests pass, mypy clean, and direct Python verification confirms MCPServer instantiation, stdio default, and tool registration all work.
+
+---
+
+### Recommendation
+
+**COMMENT** — No blocking issues. Two MEDIUM findings (CI comment and ADR table accuracy) are documentation-quality improvements, not correctness risks. The migration itself is mechanically correct and runtime-verified. The untracked ADR 0018 file needs staging before commit.
+</agent-message>
+
+---
+
+<task-notification>
+<task-id>b5lzdl62v</task-id>
+<tool-use-id>toolu_01UkvLigKCNJf8gppu1UvbBP</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-teslamint-workspace-entirecontext/d29c2adb-9a9e-45ac-b435-bce63d920d59/tasks/b5lzdl62v.output</output-file>
+<status>completed</status>
+<summary>Background command "90초 후 CI 재확인" completed (exit code 0)</summary>
+</task-notification>
