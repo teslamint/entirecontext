@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Optional
 
 import typer
@@ -1135,7 +1136,7 @@ def decision_verify_docs(
                     list(unique_missing),
                     target_schema_version=target_version,
                 )
-            except ValueError as exc:
+            except (ValueError, sqlite3.Error) as exc:
                 console.print(f"[red]{exc}[/red]")
                 raise typer.Exit(1)
             finally:

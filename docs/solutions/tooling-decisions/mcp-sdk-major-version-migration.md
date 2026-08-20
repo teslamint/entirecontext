@@ -44,8 +44,10 @@ stopgap after discovering the break during an unrelated investigation.
 3. **Rename fallback variables to be class-name-agnostic.**
    `_FASTMCP_IMPORT_ERROR` was renamed to `_MCP_IMPORT_ERROR` — shorter and
    survives the next rename. Test patches that reference the old variable
-   name break silently (they patch a nonexistent attribute and the original
-   fallback stays `None`).
+   name raise `AttributeError` by default (`monkeypatch.setattr` with
+   `raising=True`, `mock.patch.object` with `create=False`). Only
+   `raising=False` or `create=True` would silently patch a nonexistent
+   attribute.
 
 4. **Document transitive dependency changes in the ADR.** MCP 2.0 brought
    `httpx` → `httpx2`, added `opentelemetry-api` and `mcp-types`, dropped
