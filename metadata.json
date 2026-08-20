@@ -3,7 +3,7 @@
   "checkpoint_id": "01M0ECGBYHW01X966V0YSVCA3N",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 14,
+  "checkpoints_count": 17,
   "files_touched": [
     "LESSONS.md"
   ],
@@ -91,13 +91,20 @@
       "compact_transcript": "/11/transcript.jsonl",
       "content_hash": "/11/content_hash.txt",
       "prompt": "/11/prompt.txt"
+    },
+    {
+      "metadata": "/12/metadata.json",
+      "transcript": "/12/full.jsonl",
+      "compact_transcript": "/12/transcript.jsonl",
+      "content_hash": "/12/content_hash.txt",
+      "prompt": "/12/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 183111,
-    "cache_creation_tokens": 269779,
-    "cache_read_tokens": 2874222,
-    "output_tokens": 16621,
-    "api_call_count": 41
+    "input_tokens": 183999,
+    "cache_creation_tokens": 618922,
+    "cache_read_tokens": 12114694,
+    "output_tokens": 51716,
+    "api_call_count": 133
   }
 }
