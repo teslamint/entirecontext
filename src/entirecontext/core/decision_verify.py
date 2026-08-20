@@ -12,6 +12,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import quote
 
 _UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
@@ -49,6 +50,8 @@ def scan_doc_decision_refs(
     refs: list[DocRef] = []
 
     for d in dirs:
+        if Path(d).is_absolute():
+            raise ValueError(f"Scan directory must be relative to repo root: {d}")
         dir_path = root / d
         if not dir_path.is_dir():
             continue
@@ -58,6 +61,8 @@ def scan_doc_decision_refs(
             _scan_file(f, root, refs)
 
     for fname in files:
+        if Path(fname).is_absolute():
+            raise ValueError(f"Scan file must be relative to repo root: {fname}")
         fpath = root / fname
         if fpath.is_file():
             _scan_file(fpath, root, refs)
@@ -101,7 +106,8 @@ def open_source_db_readonly(db_path: str | Path) -> sqlite3.Connection:
     p = Path(db_path)
     if not p.is_file():
         raise FileNotFoundError(f"Source DB not found: {p}")
-    conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+    encoded = quote(str(p), safe="/")
+    conn = sqlite3.connect(f"file:{encoded}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -110,7 +116,7 @@ def _get_source_schema_version(conn: sqlite3.Connection) -> int:
     try:
         row = conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
         return row[0] if row and row[0] is not None else 0
-    except sqlite3.OperationalError:
+    except sqlite3.Error:
         return 0
 
 

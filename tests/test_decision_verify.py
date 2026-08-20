@@ -72,6 +72,14 @@ class TestScanDocDecisionRefs:
         refs = scan_doc_decision_refs(str(ec_repo), dirs=("custom",))
         assert len(refs) == 1
 
+    def test_absolute_dir_rejected(self, ec_repo):
+        with pytest.raises(ValueError, match="relative to repo root"):
+            scan_doc_decision_refs(str(ec_repo), dirs=("/srv/docs",))
+
+    def test_absolute_file_rejected(self, ec_repo):
+        with pytest.raises(ValueError, match="relative to repo root"):
+            scan_doc_decision_refs(str(ec_repo), files=("/etc/passwd",))
+
 
 class TestVerifyDecisions:
     def test_all_found(self, ec_db):
@@ -115,6 +123,31 @@ class TestOpenSourceDbReadonly:
         try:
             with pytest.raises(sqlite3.OperationalError):
                 conn.execute("CREATE TABLE test_rw (id TEXT)")
+        finally:
+            conn.close()
+
+    def test_hash_in_path(self, ec_repo, tmp_path):
+        db_path = ec_repo / ".entirecontext" / "db" / "local.db"
+        hash_dir = tmp_path / "repo#2"
+        hash_dir.mkdir()
+        dest = hash_dir / "local.db"
+        import shutil
+
+        shutil.copy2(db_path, dest)
+        conn = open_source_db_readonly(dest)
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                conn.execute("CREATE TABLE test_rw (id TEXT)")
+        finally:
+            conn.close()
+
+    def test_corrupt_file(self, tmp_path):
+        corrupt = tmp_path / "corrupt.db"
+        corrupt.write_text("not a database")
+        conn = open_source_db_readonly(corrupt)
+        try:
+            with pytest.raises(sqlite3.DatabaseError):
+                conn.execute("SELECT 1 FROM sqlite_master")
         finally:
             conn.close()
 
