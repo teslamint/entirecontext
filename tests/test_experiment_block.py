@@ -37,11 +37,22 @@ class TestExperimentBlockOff:
         an actual repo, and seeds a stale decision so the un-suppressed path
         would produce non-None output. Without both, `result is None` would
         pass vacuously — either because there's no git root, or because a
-        fresh repo has no decisions to surface regardless of the block."""
+        fresh repo has no decisions to surface regardless of the block.
+
+        Also seeds a stale `decisions-context.md` fallback file and asserts
+        it is cleaned up — the OFF path must not just skip writing a new
+        one, it must remove any leftover from a prior (unblocked) session.
+        """
+        from pathlib import Path
+
         from entirecontext.core.decisions import create_decision
         from entirecontext.hooks.decision_hooks import on_session_start_decisions
 
         create_decision(ec_db, title="Stale one", staleness_status="stale")
+
+        fallback_path = Path(str(ec_repo)) / ".entirecontext" / "decisions-context.md"
+        fallback_path.parent.mkdir(parents=True, exist_ok=True)
+        fallback_path.write_text("stale decisions from a prior session", encoding="utf-8")
 
         decisions_cfg = _decisions_config("off")
         with patch("entirecontext.hooks.decision_hooks._load_decisions_config", return_value=decisions_cfg):
@@ -52,6 +63,7 @@ class TestExperimentBlockOff:
                 }
             )
         assert result is None
+        assert not fallback_path.exists()
 
     def test_post_tool_use_suppressed(self):
         """Assert the block fires before any DB query, not merely that the

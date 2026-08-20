@@ -242,6 +242,52 @@ def test_session_start_lesson_surfacing_records_telemetry(lesson_setup, monkeypa
     assert len(selections) >= 1
 
 
+def test_session_start_lesson_surfacing_respects_experiment_block_off(lesson_setup, capsys, monkeypatch):
+    """experiment_block='off' must suppress SessionStart lesson surfacing.
+
+    Regression test: the session_start_lessons channel didn't check
+    is_experiment_off, unlike the other 3 injection channels, so OFF-arm
+    experiment blocks were still contaminated with injected lessons.
+    """
+    from pathlib import Path
+
+    import entirecontext.core.config as config_mod
+
+    ctx = lesson_setup
+    monkeypatch.setattr(
+        config_mod,
+        "load_config",
+        lambda *a, **kw: {
+            "capture": {"auto_capture": True, "surface_lessons_on_start": True},
+            "decisions": {"injection": {"experiment_block": "off"}},
+        },
+    )
+
+    # Stale fallback file from a previous (unblocked) session — must be
+    # cleaned up, not just left un-written, when the experiment is OFF.
+    fallback_path = Path(ctx["repo_path"]) / ".entirecontext" / "lessons-context.md"
+    fallback_path.parent.mkdir(parents=True, exist_ok=True)
+    fallback_path.write_text("stale lessons from a prior session", encoding="utf-8")
+
+    from entirecontext.hooks.handler import _handle_session_start
+
+    data = {
+        "cwd": ctx["repo_path"],
+        "session_id": ctx["session_id"],
+    }
+    _handle_session_start(data)
+
+    captured = capsys.readouterr()
+    assert "Relevant Lessons" not in captured.out
+    assert not fallback_path.exists()
+
+    conn = ctx["conn"]
+    events = conn.execute(
+        "SELECT * FROM operation_events WHERE operation_name = 'context_injection' AND phase = 'session_start_lessons'",
+    ).fetchall()
+    assert len(events) == 0
+
+
 def test_pdi_lesson_failure_does_not_suppress_decisions(lesson_setup, capsys, monkeypatch):
     """If lesson ranking throws, decisions still appear in output."""
     import entirecontext.core.config as config_mod

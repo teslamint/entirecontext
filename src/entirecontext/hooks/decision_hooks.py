@@ -205,6 +205,7 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
         from ..core.config import is_experiment_off
 
         if is_experiment_off(config):
+            _cleanup_session_start_fallback(repo_path)
             return None
         if not config.get("show_related_on_start", False):
             return None

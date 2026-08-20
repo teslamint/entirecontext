@@ -111,7 +111,7 @@ def _cleanup_lesson_fallback(repo_path: str) -> None:
 
 def _surface_lessons_on_start(data: dict[str, Any]) -> None:
     """Surface relevant lessons at SessionStart. Never raises to caller."""
-    from ..core.config import load_config
+    from ..core.config import is_experiment_off, load_config
     from ..core.project import find_git_root
 
     cwd = data.get("cwd", ".")
@@ -120,6 +120,9 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
         return
 
     config = load_config(repo_path)
+    if is_experiment_off(config.get("decisions", {})):
+        _cleanup_lesson_fallback(repo_path)
+        return
     if not config.get("capture", {}).get("surface_lessons_on_start", True):
         _cleanup_lesson_fallback(repo_path)
         return
