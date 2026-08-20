@@ -44,6 +44,7 @@ Work through in order. Items marked [auto] can be CI-enforced; [manual] require 
 ### 3. Pre-Tag Verification
 - [ ] [auto] Version sync: `pyproject.toml` == `__init__.py` == tag (`vX.Y.Z`)
 - [ ] [auto] CHANGELOG section `[X.Y.Z] - YYYY-MM-DD` exists
+- [ ] [auto] `uv run ec decision verify-docs` — all doc decision UUIDs resolve (if releasing from a worktree: `--promote-from <worktree>/.entirecontext/db/local.db` first)
 - [ ] [manual] `uv run ec dashboard` — record maturity score in retro/CHANGELOG
 - [ ] [manual] Check known measurement health: lesson_reuse_rate, applied_context_rate, experiment status
 

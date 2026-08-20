@@ -7,22 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-08-20
+
+Hook installation correctness, MCP SDK 2.0, self-archaeology + annotated blame, and decision verify-docs gate. Includes all v0.15.0 features (never tagged separately).
+
 ### Added
 
-- **Build-SHA provenance** — wheel and source-distribution builds now carry the source checkout Git SHA and tracked-file dirty state. `ec doctor` warns when an installed executable is unavailable, dirty, or stale relative to an EntireContext checkout and provides the exact reinstall command.
-- **Executable Plan contracts** — repository authors can compare Specification-named tests with explicit Plan dispositions, classify every shell fence with required rationale, reject inline verification commands, execute exact fail-closed checks, and persist Plan/check-owned byte-preserved output/status evidence with `scripts/validate_plan.py`. Fence-aware section parsing preserves test identifiers after fenced examples, and command-shaped lines in untagged or non-shell-language fences fail closed. Anchored nonblocking no-follow writes, duplicate-key rejection, and individual plus canonical-record hashes fail closed on unsafe or partial evidence mutation.
-- **Decision-file rename lineage (schema v19 and schema v20)** — `SessionStart` records committed Git renames, incrementally materializes transitive destination paths into `decision_files`, and preserves historical path links for lookup and outcome trails. Explicit file unlinking now suppresses lineage replay until an explicit relink, while synchronization remains fail-open and bounded outside the latency-sensitive `PostToolUse` path.
+- **Self-archaeology + decision-annotated blame** — `ec archaeologize` bootstraps the repository's decision history from git log patches. `ec blame` annotates file ranges with linked decisions, supporting mixed linked/unlinked ranges, binary-safe porcelain parsing, SHA-1/SHA-256 headers, and abbreviated-link resolution.
+- **Temporal Query Language (TQL)** — `--since`/`--until` filters for search commands. Upper bound enforced in local semantic and cross-repo global search paths.
+- **`ec init` installs hooks by default** — `ec init` and `ec enable` now install Claude Code hooks during project setup instead of requiring a separate enable step.
+- **Decision verify-docs gate** — `ec decision verify-docs` scans `docs/adr/`, `docs/specs/`, `docs/plans/`, and `ROADMAP.md` for decision UUIDs and verifies each resolves in the local DB. `--promote-from` copies missing records from a worktree DB with two-pass insert for self-referential FK safety. Exit 0 = all resolved.
+- **MCP SDK 2.0 migration** — `FastMCP` → `MCPServer` import migration; pin relaxed to `mcp>=2.0.0,<3`.
+- **Build-SHA provenance** — wheel and source-distribution builds carry the source checkout Git SHA and tracked-file dirty state. `ec doctor` warns when an installed executable is unavailable, dirty, or stale relative to an EntireContext checkout.
+- **Executable Plan contracts** — `scripts/validate_plan.py` compares Specification-named tests with explicit Plan dispositions, classifies shell fences with required rationale, and persists byte-preserved output/status evidence with individual and canonical-record hashes.
+- **Decision-file rename lineage (schema v19 and v20)** — `SessionStart` records committed Git renames, incrementally materializes transitive destination paths into `decision_files`, and preserves historical path links. Explicit file unlinking suppresses lineage replay until relink.
 
 ### Changed
 
-- **Verdict-balanced lesson selection** — `get_lessons`, the CLI, MCP, and automatic distillation reserve a bounded per-verdict floor before global-recency top-up. Configure `futures.lessons_min_per_verdict` (default `5`); set it to `0` for pure recency. CLI `--since` now scopes the eligible pool before floor allocation.
-- **Lesson-selection query index (schema v18)** — adds an ordered partial index for feedback-bearing assessments so verdict-floor selection stays bounded by the requested candidate window as assessment history grows.
-- **Verdict-balanced assessment enrichment** — candidate batches now interleave available rule verdicts before global recency, use deterministic timestamp/ID ordering, and exclude feedback-bearing rule assessments. Enrichment and automatic feedback commit through one conditional write, so feedback recorded while the LLM is running remains authoritative.
+- **Cross-repo `@overload` typing** — 22 overload stubs across 11 `include_warnings` functions, 4 MCP `cast` calls removed. mypy resolves literal argument types without workarounds.
+- **MCP package fully typed** — all 9 `ignore_errors = true` mypy overrides lifted across the `entirecontext.mcp` package. `resolve_repo` replaced with raising `open_repo`.
+- **Verdict-balanced lesson selection** — `get_lessons`, CLI, MCP, and distillation reserve a bounded per-verdict floor before global-recency top-up. Configure `futures.lessons_min_per_verdict` (default `5`); `0` restores pure recency.
+- **Lesson-selection query index (schema v18)** — ordered partial index for feedback-bearing assessments keeps verdict-floor selection bounded as assessment history grows.
+- **Verdict-balanced assessment enrichment** — candidate batches interleave available rule verdicts before global recency with deterministic timestamp/ID ordering.
+- **PR enrichment state transitions** — consolidated into `_ProcessingState.action()` and `resolve_pr_completion()` with `_CommitAction` dataclass.
 
 ### Fixed
 
-- **Codex repository hooks** — `ec init --agent codex` and `ec enable --agent codex` now install the agent-neutral `post-commit` checkpoint and `pre-push` sync hooks by default. `--no-git-hooks` still suppresses them, and Claude agent hooks remain disabled for Codex-only setups.
-- **Symmetric disable cleanup** — `ec disable` now removes EntireContext repository Git hooks for Claude, Codex, and both-agent modes while preserving agent-specific boundaries. Codex notify is removed for Codex modes, and `--remove-mcp` explicitly removes a standard global MCP entry without touching sibling or nonstandard servers.
+- **`ec mcp serve` silent success on missing SDK** — previously exited 0 when `mcp` package was not installed; now reports the error and exits nonzero.
+- **`_strip_ec_hooks` drops pre-existing empty hook groups** — `ec init`/`ec enable`/`ec disable` no longer discard user-owned matcher entries whose hooks list was already empty.
+- **`disable` deletes empty group keys when sibling triggers rewrite** — `else: del hooks[hook_name]` removed keys whose value was `[]` when a sibling group triggered the rewrite path.
+- **`distill_lessons` duplicate Markdown headings** — assessment ID appended to heading to prevent anchor collision on repeated `impact_summary` values.
+- **Blame SHA lookup complexity** — exact SHA queries batched, abbreviated candidates scanned once per width and filtered before Git resolution.
+- **Codex repository hooks** — `ec init --agent codex` and `ec enable --agent codex` now install agent-neutral `post-commit` checkpoint and `pre-push` sync hooks by default.
+- **Symmetric disable cleanup** — `ec disable` removes EntireContext Git hooks for Claude, Codex, and both-agent modes. `--remove-mcp` removes only a standard EC stdio form.
+
+### Documented
+
+- **ADR 0019** — `py.typed` marker deferred until stable status.
+- **ADR 0018** — MCP SDK 2.0 migration decision (supersedes ADR 0017).
+- **ADR 0016** — required resolved review conversations on main.
 
 ## [0.14.0] - 2026-07-12
 

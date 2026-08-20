@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Optional
 
 import typer
@@ -1055,6 +1056,118 @@ def alternatives_set(
 
 
 decision_app.add_typer(alternatives_app, name="alternatives")
+
+
+@decision_app.command("verify-docs")
+def decision_verify_docs(
+    promote_from: Optional[str] = typer.Option(
+        None,
+        "--promote-from",
+        help="Path to a source .db file (e.g. worktree's .entirecontext/db/local.db) to copy missing decisions from",
+    ),
+    dirs: Optional[list[str]] = typer.Option(
+        None,
+        "--dir",
+        help="Override default scan directories (default: docs/adr, docs/specs, docs/plans)",
+    ),
+    files: Optional[list[str]] = typer.Option(
+        None,
+        "--file",
+        help="Override default scan files (default: ROADMAP.md)",
+    ),
+):
+    """Verify that decision UUIDs in docs resolve in the local DB.
+
+    Scans docs/adr, docs/specs, docs/plans, and ROADMAP.md for full UUID
+    strings and checks each against the local decisions table. Any UUID
+    pattern match is treated as a decision reference — if a non-decision
+    UUID appears in docs, it will be reported as missing.
+
+    Exit code 0 means every doc UUID resolves. Nonzero means misses remain.
+    Use --promote-from to copy missing decisions from a worktree DB before
+    the worktree is removed.
+    """
+    from ..core.decision_verify import (
+        PromoteResult,
+        open_source_db_readonly,
+        promote_decisions,
+        scan_doc_decision_refs,
+        verify_decisions,
+    )
+    from ..db.migration import get_current_version
+
+    conn, repo_path = get_repo_connection()
+    try:
+        scan_dirs = tuple(dirs) if dirs else ("docs/adr", "docs/specs", "docs/plans")
+        scan_files = tuple(files) if files else ("ROADMAP.md",)
+        refs = scan_doc_decision_refs(repo_path, dirs=scan_dirs, files=scan_files)
+
+        if not refs:
+            console.print("[dim]No UUIDs found in scanned documents.[/dim]")
+            return
+
+        result = verify_decisions(conn, refs)
+        unique_found = {r.uuid for r in result.found}
+        unique_missing = {r.uuid for r in result.missing}
+
+        console.print(f"Scanned {len(refs)} UUID reference(s) across documents.")
+        console.print(f"  [green]Resolved:[/green] {len(unique_found)} unique decision(s)")
+
+        if not result.missing:
+            console.print("[green]All decision references verified.[/green]")
+            return
+
+        console.print(f"  [red]Missing:[/red] {len(unique_missing)} unique decision(s)")
+        for ref in result.missing:
+            console.print(f"    {ref.file}:{ref.line}  {ref.uuid}")
+
+        if promote_from:
+            target_version = get_current_version(conn)
+            try:
+                source_conn = open_source_db_readonly(promote_from)
+            except FileNotFoundError as exc:
+                console.print(f"[red]{exc}[/red]")
+                raise typer.Exit(1)
+
+            try:
+                promote_result: PromoteResult = promote_decisions(
+                    source_conn,
+                    conn,
+                    list(unique_missing),
+                    target_schema_version=target_version,
+                )
+            except (ValueError, sqlite3.Error) as exc:
+                console.print(f"[red]{exc}[/red]")
+                raise typer.Exit(1)
+            finally:
+                source_conn.close()
+
+            if promote_result.promoted:
+                console.print(f"[green]Promoted {len(promote_result.promoted)} decision(s).[/green]")
+            if promote_result.already_present:
+                console.print(f"[dim]Already present: {len(promote_result.already_present)}[/dim]")
+            if promote_result.missing_in_source:
+                console.print(
+                    f"[yellow]Not found in source DB: "
+                    f"{', '.join(d[:12] for d in promote_result.missing_in_source)}[/yellow]"
+                )
+            if promote_result.errors:
+                for err in promote_result.errors:
+                    console.print(f"[red]Error: {err}[/red]")
+
+            re_result = verify_decisions(conn, refs)
+            re_missing = {r.uuid for r in re_result.missing}
+            if not re_missing:
+                console.print("[green]All decision references now verified after promotion.[/green]")
+                return
+            console.print(f"[red]Still missing after promotion: {len(re_missing)} decision(s)[/red]")
+            for ref in re_result.missing:
+                console.print(f"    {ref.file}:{ref.line}  {ref.uuid}")
+            raise typer.Exit(1)
+
+        raise typer.Exit(1)
+    finally:
+        conn.close()
 
 
 def register(app: typer.Typer) -> None:
