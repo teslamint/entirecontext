@@ -1,0 +1,9 @@
+You are reviewing a checkpoint's code change summary and the surrounding turn summaries. Extract architectural or technical decisions that the change embodies (e.g. choosing one library over another, switching a data model, picking an error handling strategy). Return a JSON array: [{"title": str, "rationale": str, "scope": str, "rejected_alternatives": [{"alternative": str, "reason": str}]}]. Return [] if the change is a routine refactor, bug fix, or cleanup. For each rejected alternative, provide the reason it was not chosen — only if the reason is explicit in the source text. If no reason is stated, omit the "reason" key entirely (do not invent one).
+
+---
+
+CHANGELOG.md                  | 11 +++++++++++
+ pyproject.toml                |  2 +-
+ src/entirecontext/__init__.py |  2 +-
+ uv.lock                       |  2 +-
+ 4 files changed, 14 insertions(+), 3 deletions(-)
