@@ -30,3 +30,19 @@ tail -f scripts/experiments/output/flip-cron.log
 ```bash
 crontab -l | grep -v flip_block | crontab -
 ```
+
+## Token Savings Analysis
+
+Estimate token overhead of context injection and net per-session savings from the
+ON/OFF block experiment. Reads `operation_events` (`context_injection` rows) for
+injected-token totals and `turn_content` transcript sizes for session footprint.
+Pairs ON/OFF blocks (via `experiment-blocks.jsonl`) into per-pair deltas.
+
+```bash
+python scripts/experiments/token_savings.py --summary   # whole-DB baseline (no blocks)
+python scripts/experiments/token_savings.py             # per-block A/B analysis
+python scripts/experiments/token_savings.py --json       # machine-readable output
+```
+
+`--bytes-per-token` defaults to `4.0`. Fewer than 4 ON/OFF pairs and sub-80%
+turn-content coverage emit warnings rather than failure.
