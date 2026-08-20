@@ -5,6 +5,9 @@ token consumption? This protocol turns the existing injection ON/OFF block
 experiment (`scripts/experiments/flip_block.py`) into a token-denominated
 measurement.
 
+Current state, measured baseline, and next steps for whoever picks this up:
+[token-savings-experiment-handoff.md](token-savings-experiment-handoff.md).
+
 ## Hypothesis
 
 Injecting ranked decisions/lessons at SessionStart, UserPromptSubmit (PDI),
