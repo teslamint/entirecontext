@@ -1,17 +1,5 @@
 # Experiment Scripts
 
-## Token Savings Analysis
-
-Estimates LLM token savings from context injection: injected-payload
-overhead (from `context_injection` operation events) vs cumulative session
-transcript footprint (from `turn_content.content_size`), paired over the
-ON/OFF block log. Protocol and caveats: `docs/research/token-savings-experiment.md`.
-
-```bash
-python scripts/experiments/token_savings.py --summary   # whole-DB baseline
-python scripts/experiments/token_savings.py             # per-block A/B deltas
-```
-
 ## Block Flip Automation
 
 Cron job flips `experiment_block` between ON/OFF when qualifying sessions reach N (default 5).
@@ -49,6 +37,7 @@ Estimate token overhead of context injection and net per-session savings from th
 ON/OFF block experiment. Reads `operation_events` (`context_injection` rows) for
 injected-token totals and `turn_content` transcript sizes for session footprint.
 Pairs ON/OFF blocks (via `experiment-blocks.jsonl`) into per-pair deltas.
+Protocol and caveats: `docs/research/token-savings-experiment.md`.
 
 ```bash
 python scripts/experiments/token_savings.py --summary   # whole-DB baseline (no blocks)
