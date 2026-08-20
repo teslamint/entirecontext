@@ -1,0 +1,78 @@
+{
+  "cli_version": "0.10.1",
+  "checkpoint_id": "01M0ECXJ3C2Y3ZPRQVAJMBSB6R",
+  "session_id": "da81b1d5-eb50-45b5-b9c2-a57df460d77b",
+  "strategy": "manual-commit",
+  "created_at": "2026-08-20T01:35:09.906996Z",
+  "branch": "main",
+  "checkpoints_count": 1,
+  "save_step_count": 1,
+  "files_touched": [
+    "CHANGELOG.md",
+    "pyproject.toml",
+    "src/entirecontext/__init__.py",
+    "uv.lock"
+  ],
+  "agent": "Claude Code",
+  "model": "claude-opus-4-6[1m]",
+  "turn_id": "4b198d656c37",
+  "checkpoint_transcript_start": 907,
+  "transcript_lines_at_start": 907,
+  "compact_transcript_start": 127,
+  "token_usage": {
+    "input_tokens": 1669,
+    "cache_creation_tokens": 25548,
+    "cache_read_tokens": 1496176,
+    "output_tokens": 6922,
+    "api_call_count": 19
+  },
+  "skill_events_version": 1,
+  "skill_events": [
+    {
+      "id": "prompt-skill-claude-code-lore-commit-2026-08-19T17:06:59.783164Z",
+      "event_type": "prompt_invocation",
+      "skill": {
+        "name": "lore-commit"
+      },
+      "source": {
+        "agent": "claude-code",
+        "signal": "prompt_slash_command",
+        "confidence": "explicit"
+      },
+      "turn_id": "4b198d656c37",
+      "timestamp": "2026-08-19T17:06:59.783164Z",
+      "native": {
+        "command": "/lore-commit"
+      },
+      "collapse": {
+        "target": "user_message",
+        "label": "/lore-commit",
+        "default_collapsed": true
+      }
+    }
+  ],
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-08-20T01:35:09.83677Z",
+    "agent_lines": 34,
+    "agent_removed": 11,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 34,
+    "total_lines_changed": 45,
+    "agent_percentage": 100,
+    "metric_version": 2
+  },
+  "prompt_attributions": [
+    {
+      "checkpoint_number": 1,
+      "user_lines_added": 0,
+      "user_lines_removed": 0,
+      "agent_lines_added": 0,
+      "agent_lines_removed": 0
+    }
+  ]
+}
