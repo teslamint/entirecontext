@@ -11,7 +11,7 @@ steps.
 | Piece | Where | Status |
 |---|---|---|
 | Analyzer `scripts/experiments/token_savings.py` | `main` (merged via #237) | shipped |
-| Injection telemetry (4 channels), `core/tokens.py`, tests, protocol doc | PR #232, branch `claude/llm-token-savings-experiment-w112qo` | CI green, draft, awaiting merge |
+| Injection telemetry (4 channels), `core/tokens.py`, tests, protocol doc, SessionStart lessons `experiment_block` gate fix | PR #232, branch `claude/llm-token-savings-experiment-w112qo` | telemetry commits CI green; gate fix pending CI — draft, awaiting merge |
 | Block-flip harness (`flip_block.py`, `analyze_blocks.py`) | `main` (pre-existing) | shipped |
 | ON/OFF block log | maintainer's machine, `scripts/experiments/output/experiment-blocks.jsonl` | **not yet initialized for this experiment** |
 | Dogfooding data | maintainer's machine, `.entirecontext/db/local.db` | telemetry already accumulating (branch is running locally) |
@@ -46,14 +46,22 @@ absolute bill.
 
 1. **Merge PR #232** (or keep dogfooding on its branch). Telemetry only
    accumulates where the instrumented hooks run.
-2. **Initialize the block experiment** [local]:
+2. **Initialize the block experiment** [local]. PR #232 also fixed a bug:
+   the `session_start_lessons` channel ignored `experiment_block` and kept
+   injecting lessons during OFF blocks. Pre-fix OFF blocks are contaminated
+   and must not feed the analysis. `flip_block.py --init` appends to
+   `experiment-blocks.jsonl`; it does not truncate. Move (or delete) any
+   existing `experiment-blocks.jsonl` first — do not just copy it aside and
+   leave the original in place — then re-initialize fresh:
    ```bash
    uv run python scripts/experiments/flip_block.py --init
    ```
    then install the flip cron per `scripts/experiments/README.md`. Verify
    after the first flip that `.entirecontext/config.toml` gains
    `[decisions.injection] experiment_block = "off"` and that OFF sessions
-   stop receiving `## Related Decisions` blocks.
+   stop receiving `## Related Decisions` blocks, no `## Relevant Lessons`
+   block, and that `.entirecontext/decisions-context.md` and
+   `.entirecontext/lessons-context.md` are both absent.
 3. **Accumulate ≥ 4 ON/OFF pairs** (8 blocks × 5 qualifying sessions ≈ 40
    meaningful sessions; at current dogfooding pace expect a few weeks).
    Do not change `decisions.injection` settings mid-experiment, and avoid

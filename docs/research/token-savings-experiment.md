@@ -95,3 +95,6 @@ pairs (the script warns below that).
   behavior mid-experiment).
 - **<4 pairs = directional only.** Same significance rule as the base block
   experiment.
+- **Lessons channel was ungated.** The `session_start_lessons` channel
+  ignored `experiment_block` until PR #232. OFF-block data collected
+  before the fix is contaminated. Discard it; re-initialize the block log.
