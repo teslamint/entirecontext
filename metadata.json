@@ -3,7 +3,7 @@
   "checkpoint_id": "01M0FMJK46HD7EWW78Q3DV3840",
   "strategy": "manual-commit",
   "branch": "feat/token-savings-experiment-script",
-  "checkpoints_count": 16,
+  "checkpoints_count": 17,
   "files_touched": [
     "scripts/experiments/token_savings.py"
   ],
@@ -119,13 +119,20 @@
       "compact_transcript": "/15/transcript.jsonl",
       "content_hash": "/15/content_hash.txt",
       "prompt": "/15/prompt.txt"
+    },
+    {
+      "metadata": "/16/metadata.json",
+      "transcript": "/16/full.jsonl",
+      "compact_transcript": "/16/transcript.jsonl",
+      "content_hash": "/16/content_hash.txt",
+      "prompt": "/16/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 6925,
-    "cache_creation_tokens": 301404,
-    "cache_read_tokens": 2884554,
-    "output_tokens": 17980,
-    "api_call_count": 55
+    "input_tokens": 6930,
+    "cache_creation_tokens": 312189,
+    "cache_read_tokens": 3105381,
+    "output_tokens": 19072,
+    "api_call_count": 59
   }
 }
