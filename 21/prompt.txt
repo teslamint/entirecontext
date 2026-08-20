@@ -1,0 +1,10 @@
+Summarize the user's intent and goals from this coding session in 1-2 sentences. Be specific about what they were trying to accomplish.
+
+---
+
+User: omp extension 으로 entirecontext가 로드됐나요?
+Assistant: 
+User: `flip_block.py` cron이 on/off 블록을 4쌍 이상 쌓으려면 뭘 해야 하나요?
+Assistant: 
+User: 'qualifying 세션'의 기준은 뭔가요?
+Assistant:
