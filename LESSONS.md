@@ -50,6 +50,56 @@ _Assessment: dbf3c660 | 2026-08-16T18:05:43.659730+00:00_
 
 ## 🟡 Neutral
 
+### ✅ py.typed 마커를 stable까지 명시적으로 유보하는 ADR로, 현재 옵션 공간을 변경하지 않고 기존 alpha 단계의 자유도를 문서화하여 보존한다. (f2b07586)
+
+**Roadmap alignment:** v0.16.0 ROADMAP 항목을 완료 처리하고 revisit 조건(stable 도달, 외부 소비자 요청)을 ADR에 기록하여 로드맵 추적 가능성을 유지한다. ADR 0008의 bool fallback 질문과도 정합한다.
+
+**Suggestion:** 변경 사항이 없는 체크포인트입니다. 다음 실질적 변경 시 MCP SDK 2.0 마이그레이션(2ce9805) 이후 안정화 상태와 ROADMAP 미해결 항목을 기준으로 평가하세요.
+
+**Feedback:** agree — auto:llm-confirmed
+
+_Assessment: f2b07586 | 2026-08-19T16:06:31.099426+00:00_
+
+### ✅ 빈 diff의 자동 체크포인트로, 코드 변경이 없어 미래 옵션에 영향 없음 (16f54fdb)
+
+**Roadmap alignment:** 변경 사항이 없으므로 로드맵 정렬 평가 대상 아님
+
+**Suggestion:** 변경 사항이 없는 체크포인트입니다. 다음 실질적 변경 시 MCP SDK 2.0 마이그레이션(2ce9805) 이후 안정화 상태와 ROADMAP 미해결 항목을 기준으로 평가하세요.
+
+**Feedback:** agree — auto:llm-confirmed
+
+_Assessment: 16f54fdb | 2026-08-19T11:24:51.077787+00:00_
+
+### ✅ 빈 diff의 자동 체크포인트로, 코드 변경이 없어 미래 옵션에 영향 없음 (1f8da8ff)
+
+**Roadmap alignment:** 변경 사항이 없으므로 로드맵 정렬 평가 대상 아님
+
+**Suggestion:** 변경 사항이 없는 체크포인트입니다. 다음 실질적 변경 시 MCP SDK 2.0 마이그레이션(2ce9805) 이후 안정화 상태와 ROADMAP 미해결 항목을 기준으로 평가하세요.
+
+**Feedback:** agree — auto:llm-confirmed
+
+_Assessment: 1f8da8ff | 2026-08-19T11:24:34.814303+00:00_
+
+### ✅ LESSONS.md에 새 neutral 평가 3건을 추가하고 오래된 빈-diff 체크포인트 3건을 제거한 문서 유지보수 변경으로, 코드 구조나 미래 설계 옵션에 영향 없음 (56d0886b)
+
+**Roadmap alignment:** 변경 사항이 없는 체크포인트입니다. 다음 실질적 변경 시 MCP SDK 2.0 마이그레이션(2ce9805) 이후 안정화 상태와 ROADMAP 미해결 항목을 기준으로 평가하세요.
+
+**Suggestion:** 빈 diff 체크포인트의 반복 패턴이 계속되고 있다. 빈 diff를 LESSONS.md에 기록하지 않는 필터를 자동화 단계에서 적용하면 문서 잡음을 줄이고 실질적 평가의 신호 대비 잡음 비율을 개선할 수 있다.
+
+**Feedback:** agree — auto:llm-confirmed
+
+_Assessment: 56d0886b | 2026-08-19T11:24:19.348135+00:00_
+
+### ✅ 빈 diff의 자동 체크포인트로, 코드 변경이 없어 미래 옵션에 영향 없음 (fbf082e3)
+
+**Roadmap alignment:** 변경 사항 없음 — 로드맵 정렬 평가 대상 아님
+
+**Suggestion:** 변경 사항이 없는 체크포인트입니다. 다음 실질적 변경 시 MCP SDK 2.0 마이그레이션(2ce9805) 이후 안정화 상태와 ROADMAP 미해결 항목을 기준으로 평가하세요.
+
+**Feedback:** agree — auto:llm-confirmed
+
+_Assessment: fbf082e3 | 2026-08-19T11:24:04.132748+00:00_
+
 ### ✅ 빈 diff의 자동 체크포인트로, 코드 변경이 없어 미래 옵션에 영향 없음 (a7e9d326)
 
 **Roadmap alignment:** 코드 변경 없이 현재 상태를 기록하는 체크포인트이므로 로드맵 정렬 판단 불가
@@ -119,6 +169,16 @@ _Assessment: 01173974 | 2026-08-19T11:12:22.277008+00:00_
 **Feedback:** agree — auto:llm-confirmed
 
 _Assessment: 55da7bd5 | 2026-08-19T11:11:17.035328+00:00_
+
+### ✅ 빈 diff의 자동 체크포인트로, 코드 변경이 없어 미래 옵션에 영향 없음 (349cf5b8)
+
+**Roadmap alignment:** 변경 사항이 없는 체크포인트입니다. 다음 실질적 변경 시 MCP SDK 2.0 마이그레이션(2ce9805) 이후 안정화 상태와 ROADMAP 미해결 항목을 기준으로 평가하세요.
+
+**Suggestion:** 변경 사항이 없는 체크포인트입니다. 다음 실질적 변경 시 MCP SDK 2.0 마이그레이션(2ce9805) 이후 안정화 상태와 ROADMAP 미해결 항목을 기준으로 평가하세요.
+
+**Feedback:** agree — auto:llm-confirmed
+
+_Assessment: 349cf5b8 | 2026-08-19T11:10:29.189641+00:00_
 
 ### ✅ Release-loop retrospective document that closes the MCP serve silent-failure fix cycle — pure process hygiene that neither expands nor narrows code-level options. (7f8f5874)
 
@@ -333,64 +393,4 @@ _Assessment: b413ee8c | 2026-08-16T16:45:41.463986+00:00_
 **Feedback:** agree — auto:llm-confirmed
 
 _Assessment: 8e1dd569 | 2026-08-16T16:45:40.609000+00:00_
-
-### ✅ No diff evidence was provided, so this checkpoint does not demonstrate a change that materially expands or narrows future software design options. (d1a9797e)
-
-**Roadmap alignment:** Alignment with the project roadmap cannot be established without changed files, behavior, or a concrete roadmap reference.
-
-**Suggestion:** Keep the neutral verdict, but attach a concrete diff summary and the relevant roadmap, specification, or decision reference so the next assessment can evaluate reversibility, coupling, and option value.
-
-**Feedback:** agree — auto:llm-confirmed
-
-_Assessment: d1a9797e | 2026-08-16T16:45:21.958774+00:00_
-
-### ✅ No diff evidence was provided, so this checkpoint does not demonstrate a material expansion or narrowing of future software design options. (bca80421)
-
-**Roadmap alignment:** Alignment cannot be established without changed files, a concrete diff summary, or a reference to the governing roadmap item, specification, plan, or decision.
-
-**Suggestion:** Keep the neutral verdict, but attach the concrete diff and its governing roadmap or decision reference so reversibility, coupling, and future option value can be assessed.
-
-**Feedback:** agree — auto:llm-confirmed
-
-_Assessment: bca80421 | 2026-08-16T16:44:46.501138+00:00_
-
-### ✅ No diff evidence was provided, so this checkpoint does not demonstrate a change that materially expands or narrows future software design options. (bfcb0ca8)
-
-**Roadmap alignment:** Alignment cannot be established without a concrete diff or references to the governing roadmap item, specification, plan, or decision.
-
-**Suggestion:** Keep the neutral verdict, but attach a concrete diff summary and governing roadmap reference so reversibility, coupling, and future option value can be assessed.
-
-**Feedback:** agree — auto:llm-confirmed
-
-_Assessment: bfcb0ca8 | 2026-08-16T16:44:22.424469+00:00_
-
-### ✅ No diff evidence was provided, so this checkpoint does not demonstrate a change that materially expands or narrows future software design options. (81fee0f9)
-
-**Roadmap alignment:** Alignment cannot be established without a concrete diff and its governing roadmap, specification, plan, or decision reference.
-
-**Suggestion:** Keep the neutral verdict, but attach a concrete diff summary and governing roadmap reference so reversibility, coupling, and future option value can be assessed.
-
-**Feedback:** agree — auto:llm-confirmed
-
-_Assessment: 81fee0f9 | 2026-08-16T16:44:14.457252+00:00_
-
-### ✅ No diff evidence was provided, so this checkpoint does not demonstrate a change that materially expands or narrows future software design options. (a1acc816)
-
-**Roadmap alignment:** Alignment cannot be established without changed files or a concrete diff linking the checkpoint to ROADMAP.md, a specification, plan, or governing decision.
-
-**Suggestion:** Keep the neutral verdict, but attach a concrete diff summary and the governing roadmap, specification, plan, or decision reference so reversibility, coupling, and future option value can be assessed.
-
-**Feedback:** agree — auto:llm-confirmed
-
-_Assessment: a1acc816 | 2026-08-16T16:44:00.804691+00:00_
-
-### ✅ No diff evidence was provided, so this checkpoint does not demonstrate a change that materially expands or narrows future software design options. (11dcaf43)
-
-**Roadmap alignment:** Alignment cannot be established without a concrete diff summary and a governing roadmap, specification, plan, or decision reference.
-
-**Suggestion:** Keep the neutral verdict, but attach the changed files and behavioral diff plus the relevant roadmap or decision reference so reversibility, coupling, and future option value can be assessed.
-
-**Feedback:** agree — auto:llm-confirmed
-
-_Assessment: 11dcaf43 | 2026-08-16T16:43:57.075002+00:00_
 
