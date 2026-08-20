@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-08-20
+
+Patch release: verify-docs gate edge-case hardening.
+
+### Fixed
+
+- **URI encoding for DB paths with special characters** — `open_source_db_readonly` now percent-encodes `#`, `?`, `%` in file paths before passing to SQLite URI mode, preventing silent `mode=ro` loss.
+- **Absolute path rejection in doc scanning** — `scan_doc_decision_refs` raises `ValueError` on absolute `--dir`/`--file` paths instead of silently escaping the repo root via `pathlib` join semantics.
+- **Broader exception handling for corrupt source DBs** — `_get_source_schema_version` catches `sqlite3.Error` (not just `OperationalError`); CLI `promote_decisions` path catches `sqlite3.Error` for clean user-facing error messages.
+- **MCP SDK migration doc correction** — fixed inaccurate claim about `monkeypatch.setattr` silent patching; default `raising=True` raises `AttributeError`.
+
 ## [0.16.0] - 2026-08-20
 
 Hook installation correctness, MCP SDK 2.0, self-archaeology + annotated blame, and decision verify-docs gate. Includes all v0.15.0 features (never tagged separately).
