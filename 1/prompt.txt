@@ -1,0 +1,121 @@
+/reviewing
+
+---
+
+<task-notification>
+<task-id>a3870284a18629ca1</task-id>
+<tool-use-id>REDACTED</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-teslamint-workspace-entirecontext/d29c2adb-9a9e-45ac-b435-bce63d920d59/tasks/a3870284a18629ca1.output</output-file>
+<status>completed</status>
+<summary>Agent "Tests + Architecture + Standards lanes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>All 27 tests pass. Here's the complete review:
+
+---
+
+## Tests + Architecture + Standards Review — release/v0.16.0
+
+### No P0 or P1 findings.
+
+### P2 findings: none.
+
+### P3 findings (substantive):
+
+**P3 | tests | `scripts/experiments/token_savings.py` | No tests for experiment script | If `session_token_stats` or `_aggregate_sessions` has a division bug (e.g. `sum(p["turns"])` is 0 in an edge case with empty `covered` but non-empty `per_session`), it ships silently. However, this is an internal analysis script under `scripts/experiments/`, not production code — the existing sibling `analyze_blocks.py` also has no tests. Consistent with the codebase convention for experiment scripts. Not actionable.**
+
+**P3 | tests | `tests/test_decision_verify.py:129` | `import shutil` inside method body | Unusual placement, but consistent with one other test in the suite (`tests/test_sync_engine.py` does the same at module level). Inside the method body is fine — it avoids polluting the module namespace for a single-test utility and pytest collects it correctly. Not actionable.**
+
+**P3 | tests | `tests/test_decision_verify.py:144` | `test_corrupt_file` tests the right layer | The test creates a corrupt file, opens the connection (which succeeds — SQLite defers validation), then asserts `DatabaseError` on the first query. This matches real-world behavior: `sqlite3.connect` with URI mode doesn't immediately validate the file. The test correctly exercises the actual failure mode. Not actionable.**
+
+**P3 | architecture | `scripts/experiments/token_savings.py:39` | `sys.path.insert(0, ...)` and importing `_connect` (private) | `sys.path` manipulation is the established pattern in this `scripts/experiments/` directory (all scripts are standalone CLI tools, not library code). Importing the private `_connect` couples the two scripts, but `_connect` is a 3-line `sqlite3.connect` + `row_factory` wrapper — duplicating it would be worse than sharing it. The same pairing logic (`zip(on_blocks, off_blocks)`) is also lifted from `analyze_blocks.py`, keeping the experiment scripts internally consistent. Acceptable for experiment tooling. Not actionable.**
+
+**P3 | standards | Commit messages | Both commits follow conventional format correctly — `fix(decisions):` and `fix(review):` with imperative mood. Clean.**
+
+**P3 | standards | `docs/solutions/tooling-decisions/mcp-sdk-major-version-migration.md` | Factual correction is accurate — `monkeypatch.setattr` defaults to `raising=True` and `mock.patch.object` defaults to `create=False`. The original text's claim that patching a nonexistent attribute "stays None" was wrong for default settings. Correction is precise.**
+
+### Summary
+
+All 27 `test_decision_verify.py` tests pass. The 4 new tests adequately cover the 3 edge-case hardening changes (absolute path rejection × 2 inputs, `#` in path, corrupt DB). Import placement and experiment script architecture follow established codebase conventions. No test coverage gaps that warrant blocking.
+
+**Verdict: clean** — no P0-P2 findings.</result>
+<usage><subagent_tokens>107335</subagent_tokens><tool_uses>15</tool_uses><duration_ms>111944</duration_ms></usage>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>a6bb5f48a96280779</task-id>
+<tool-use-id>toolu_011A2y3S9LTNi3r2KoktoiYv</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-teslamint-workspace-entirecontext/d29c2adb-9a9e-45ac-b435-bce63d920d59/tasks/a6bb5f48a96280779.output</output-file>
+<status>completed</status>
+<summary>Agent "Correctness + Security review lanes" finished</summary>
+<note>A task-notification fires each time this agent stops with no live background children of its own. The user can send it another message and resume it, so the same task-id may notify more than once.</note>
+<result>I already have the full file from the earlier read. Lines 123-126 confirm `_PROMOTE_TABLES` is a hardcoded tuple `("decision_files", "decision_commits")` — not user-controlled. The f-string SQL at line 227-229 uses these hardcoded table names plus parameterized `?` for the value. No injection risk.
+
+Now I have enough to report.
+
+---
+
+## Correctness + Security Review — release/v0.16.0
+
+### No P0 or P1 findings.
+
+### P2 Findings: None.
+
+### P3 Findings (substantive observations):
+
+**P3 | correctness | `scripts/experiments/token_savings.py`:248 | `--summary` always prints JSON before the human-readable summary; `--json` flag only suppresses the human part**
+
+When `--summary` is used *without* `--json`, the output is JSON blob followed by `--- Summary ---`. When `--summary --json` is used, only the JSON blob prints. This is intentional per the code, but the CLI UX is slightly odd: `--json` doesn't switch output format, it removes the non-JSON suffix from an already-JSON output. No data corruption, just a minor ergonomic surprise. Same pattern on lines 259-270 for the non-summary path.
+
+Failure scenario: A user piping `--summary` output to `jq` without `--json` gets a parse error from the trailing human-readable lines.
+
+**P3 | security | `src/entirecontext/core/decision_verify.py`:53-54 | Absolute path check does not catch relative traversal (`../../etc/passwd`)**
+
+`Path(d).is_absolute()` rejects `/etc/passwd` but not `../../etc/passwd`. However, the API surface is the local CLI (`ec decision verify-docs --dir`) invoked by the repo owner — this is a same-privilege-level operation where the user already has filesystem access. The `root / d` join resolves within the filesystem namespace the user controls. No privilege escalation. The absolute check is a reasonable guardrail against accidental misuse (e.g., pasting a full path when a relative one was intended), not a security boundary. Not a real vulnerability, just noting the scope of the defense.
+
+**P3 | correctness | `src/entirecontext/core/decision_verify.py`:119 | Broadened `sqlite3.Error` catch masks more failure modes, but acceptably**
+
+`_get_source_schema_version` now catches `sqlite3.Error` (base class) instead of `sqlite3.OperationalError`. This means `sqlite3.DatabaseError` (corrupt file), `sqlite3.InterfaceError`, `sqlite3.ProgrammingError` all return `0` instead of propagating. Given the function's purpose (graceful degradation when schema_version table is absent or unreadable), returning `0` for all these cases is reasonable — the caller (`promote_decisions`) then fails on the schema version mismatch check, producing a clear error. The broader catch aligns with the new `test_corrupt_file` test case.
+
+### Verified clean:
+
+1. **URI encoding** (`quote(str(p), safe="/")`) — correct for SQLite URI mode. Tested: `#` → `%23`, `?` → `%3F`, space → `%20`, `%` → `%2520` (double-encode prevents misparse). SQLite's URI parser decodes %-sequences before opening the file. The `safe="/"` preserves path separators correctly.
+
+2. **SQL injection** — all f-string SQL uses either hardcoded table/column names from `_PROMOTE_TABLES` tuple or `noqa: S608`-marked queries where user values go through `?` parameterization. No injection surface.
+
+3. **`?mode=ro` enforcement** — SQLite URI mode `ro` opens the database read-only at the VFS level. The `test_opens_readonly` and `test_hash_in_path` tests both verify writes raise `sqlite3.OperationalError`. Sufficient.
+
+4. **`session_injection_stats` row access** — uses `row["metadata"]` and `row["phase"]` (dict-style), which requires `row_factory = sqlite3.Row`. The connection comes from `_connect()` in `analyze_blocks.py` (line 31-34), which sets `conn.row_factory = sqlite3.Row`. Correct.
+
+5. **`sys.path.insert(0, ...)`** in `token_savings.py` — inserts the script's own parent directory to import the sibling `analyze_blocks` module. Standard pattern for scripts in a non-package directory. The path is derived from `__file__`, not user input. No risk.
+
+6. **Doc correction** (`mcp-sdk-major-version-migration.md`) — factually accurate. `monkeypatch.setattr` defaults to `raising=True`, `mock.patch.object` defaults to `create=False`. Both raise on nonexistent attributes by default.</result>
+<usage><subagent_tokens>108989</subagent_tokens><tool_uses>15</tool_uses><duration_ms>127601</duration_ms></usage>
+</task-notification>
+
+---
+
+PR 머지하죠
+
+---
+
+v0.16.0 릴리즈 상태는 어떤가요?
+
+---
+
+v0.16.1 패치 릴리즈 진행해주세요
+
+---
+
+<task-notification>
+<task-id>bwtyaikrf</task-id>
+<tool-use-id>toolu_01PPLQhmf594okAjc3YuBhtx</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-teslamint-workspace-entirecontext/d29c2adb-9a9e-45ac-b435-bce63d920d59/tasks/bwtyaikrf.output</output-file>
+<status>completed</status>
+<summary>Background command "테스트 실행" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+/retrospective
