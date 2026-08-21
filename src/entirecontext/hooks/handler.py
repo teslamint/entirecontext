@@ -345,6 +345,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         # Best-effort lesson surfacing — spend only the remaining time
         # budget so total PDI latency stays within inject_timeout_ms.
         lesson_timeout = max(0.01, timeout_s - decision_elapsed)
+        injected_lesson_count = 0
         try:
             remaining_tokens = max_tokens - _estimate_tokens(md)
             _lesson_result: list[tuple[str, list[dict]] | None] = []
@@ -363,6 +364,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
             if not lt.is_alive() and _lesson_result and _lesson_result[0]:
                 lesson_md, surviving_lessons = _lesson_result[0]
                 md = (md + "\n\n" + lesson_md) if md else lesson_md
+                injected_lesson_count = len(surviving_lessons)
                 _record_pdi_lesson_telemetry(repo_path, session_id, surviving_lessons)
         except Exception:
             pass
@@ -391,7 +393,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                             inj_conn,
                             channel="user_prompt",
                             payload=md,
-                            item_count=len(trimmed) if trimmed else 0,
+                            item_count=(len(trimmed) if trimmed else 0) + injected_lesson_count,
                             session_id=session_id,
                         )
                 finally:

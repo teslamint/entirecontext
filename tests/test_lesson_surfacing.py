@@ -393,3 +393,88 @@ def test_pdi_success_path_includes_lessons_in_output(lesson_setup, capsys, monke
             continue
 
     assert False, "Expected both 'Related Decisions' and 'Relevant Lessons' in additionalContext"
+
+
+def _pdi_config() -> dict:
+    return {
+        "capture": {"auto_capture": True, "surface_lessons_on_start": True},
+        "decisions": {
+            "injection": {
+                "inject_on_user_prompt": True,
+                "top_k": 5,
+                "max_tokens": 2000,
+                "min_confidence": 0.0,
+                "inject_timeout_ms": 5000,
+            },
+        },
+    }
+
+
+def _latest_user_prompt_injection_meta(conn) -> dict | None:
+    row = conn.execute(
+        "SELECT metadata FROM operation_events"
+        " WHERE operation_name = 'context_injection' AND phase = 'user_prompt'"
+        " ORDER BY rowid DESC LIMIT 1"
+    ).fetchone()
+    return json.loads(row["metadata"]) if row else None
+
+
+def test_pdi_injection_telemetry_counts_decisions_and_lessons(lesson_setup, capsys, monkeypatch):
+    """user_prompt context_injection item_count covers decisions plus injected lessons."""
+    import pathlib
+    import subprocess
+
+    import entirecontext.core.config as config_mod
+    from entirecontext.core.decisions import create_decision, link_decision_to_file
+
+    ctx = lesson_setup
+    conn = ctx["conn"]
+
+    decision = create_decision(conn, title="Auth decision", rationale="JWT approach")
+    link_decision_to_file(conn, decision["id"], "src/auth.py")
+
+    (pathlib.Path(ctx["repo_path"]) / "src").mkdir(exist_ok=True)
+    (pathlib.Path(ctx["repo_path"]) / "src" / "auth.py").write_text("# auth\n")
+    subprocess.run(["git", "-C", ctx["repo_path"], "add", "src/auth.py"], capture_output=True)
+
+    monkeypatch.setattr(config_mod, "load_config", lambda *a, **kw: _pdi_config())
+
+    from entirecontext.hooks.handler import _handle_user_prompt
+
+    data = {
+        "cwd": ctx["repo_path"],
+        "session_id": ctx["session_id"],
+        "prompt": "fix auth token refresh",
+    }
+    _handle_user_prompt(data)
+    capsys.readouterr()
+
+    meta = _latest_user_prompt_injection_meta(conn)
+    assert meta is not None, "Expected a user_prompt context_injection event"
+    assert meta["item_count"] == 2  # 1 decision + 1 lesson
+
+
+def test_pdi_injection_telemetry_counts_lesson_only_path(lesson_setup, capsys, monkeypatch):
+    """Lesson-only PDI injection (no matching decisions) records item_count for lessons."""
+    import entirecontext.core.config as config_mod
+
+    ctx = lesson_setup
+    conn = ctx["conn"]
+
+    monkeypatch.setattr(config_mod, "load_config", lambda *a, **kw: _pdi_config())
+
+    from entirecontext.hooks.handler import _handle_user_prompt
+
+    data = {
+        "cwd": ctx["repo_path"],
+        "session_id": ctx["session_id"],
+        "prompt": "fix auth token refresh",
+    }
+    _handle_user_prompt(data)
+    captured = capsys.readouterr()
+    if "Relevant Lessons" not in captured.out:
+        pytest.skip("lesson surfacing did not fire within PDI budget")
+
+    meta = _latest_user_prompt_injection_meta(conn)
+    assert meta is not None, "Expected a user_prompt context_injection event"
+    assert meta["item_count"] == 1  # 0 decisions + 1 lesson
