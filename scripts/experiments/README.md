@@ -37,6 +37,7 @@ Estimate token overhead of context injection and net per-session savings from th
 ON/OFF block experiment. Reads `operation_events` (`context_injection` rows) for
 injected-token totals and `turn_content` transcript sizes for session footprint.
 Pairs ON/OFF blocks (via `experiment-blocks.jsonl`) into per-pair deltas.
+Protocol and caveats: `docs/research/token-savings-experiment.md`.
 
 ```bash
 python scripts/experiments/token_savings.py --summary   # whole-DB baseline (no blocks)

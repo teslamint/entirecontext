@@ -111,7 +111,7 @@ def _cleanup_lesson_fallback(repo_path: str) -> None:
 
 def _surface_lessons_on_start(data: dict[str, Any]) -> None:
     """Surface relevant lessons at SessionStart. Never raises to caller."""
-    from ..core.config import load_config
+    from ..core.config import is_experiment_off, load_config
     from ..core.project import find_git_root
 
     cwd = data.get("cwd", ".")
@@ -120,6 +120,9 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
         return
 
     config = load_config(repo_path)
+    if is_experiment_off(config.get("decisions", {})):
+        _cleanup_lesson_fallback(repo_path)
+        return
     if not config.get("capture", {}).get("surface_lessons_on_start", True):
         _cleanup_lesson_fallback(repo_path)
         return
@@ -204,6 +207,21 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
         entries = [format_lesson_entry(lesson, i + 1) for i, lesson in enumerate(lessons)]
         output = "## Relevant Lessons\n\n" + "\n\n".join(entries)
         print(output)
+
+        # Token-savings telemetry: size of the payload actually injected.
+        try:
+            from ..core.telemetry import record_injection_event
+
+            with transaction(conn):
+                record_injection_event(
+                    conn,
+                    channel="session_start_lessons",
+                    payload=output,
+                    item_count=len(lessons),
+                    session_id=session_id,
+                )
+        except Exception:
+            pass
 
         # Write fallback file for agents that don't capture stdout
         from pathlib import Path
@@ -327,6 +345,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
         # Best-effort lesson surfacing — spend only the remaining time
         # budget so total PDI latency stays within inject_timeout_ms.
         lesson_timeout = max(0.01, timeout_s - decision_elapsed)
+        injected_lesson_count = 0
         try:
             remaining_tokens = max_tokens - _estimate_tokens(md)
             _lesson_result: list[tuple[str, list[dict]] | None] = []
@@ -345,6 +364,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
             if not lt.is_alive() and _lesson_result and _lesson_result[0]:
                 lesson_md, surviving_lessons = _lesson_result[0]
                 md = (md + "\n\n" + lesson_md) if md else lesson_md
+                injected_lesson_count = len(surviving_lessons)
                 _record_pdi_lesson_telemetry(repo_path, session_id, surviving_lessons)
         except Exception:
             pass
@@ -360,6 +380,26 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     }
                 )
             )
+
+            # Token-savings telemetry: size of the payload actually injected.
+            try:
+                from ..core.context import transaction
+                from ..core.telemetry import record_injection_event
+
+                inj_conn = get_db(repo_path)
+                try:
+                    with transaction(inj_conn):
+                        record_injection_event(
+                            inj_conn,
+                            channel="user_prompt",
+                            payload=md,
+                            item_count=(len(trimmed) if trimmed else 0) + injected_lesson_count,
+                            session_id=session_id,
+                        )
+                finally:
+                    inj_conn.close()
+            except Exception:
+                pass
 
         if capture_snapshots and _pdi_snapshot_id:
             try:
