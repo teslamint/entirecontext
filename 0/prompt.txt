@@ -15,3 +15,7 @@ Codex 세션용 대응 방안도 처리해줘
 ---
 
 /release-loop @.omc/handoffs/ec-inject-integration.md 읽고 진행
+
+---
+
+/lore-commit
