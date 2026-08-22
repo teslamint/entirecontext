@@ -1,0 +1,17 @@
+지금은 entirecontex 관련 지시문 블록을 글로벌 지시 파일(CLAUDE.md, AGENTS.md 등)에 입력하고 있는데, 그 대신에 활성화된 프로젝트에만 지시문을 주입할 방법이 있나요?
+
+---
+
+Codex 세션용 대응 방안도 처리해줘
+
+---
+
+그럼 `ec enable`하면 훅들이 자동으로 추가되나요?
+
+---
+
+그러면 entirecontext가 설치되어 처음 실행되는 환경에서는 앞서 추가한 스크립트와 지시문은 어떻게 설정하죠?
+
+---
+
+/release-loop @.omc/handoffs/ec-inject-integration.md 읽고 진행
