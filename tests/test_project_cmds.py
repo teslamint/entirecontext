@@ -17,9 +17,11 @@ from entirecontext.cli import app, project_cmds
 from entirecontext.cli.project_cmds import (
     _install_git_hooks,
     _is_ec_hook,
+    _is_ec_inject_hook,
     _remove_git_hooks,
     _resolve_ec_command,
     _strip_ec_hooks,
+    _strip_ec_inject_hooks,
 )
 
 runner = CliRunner()
@@ -905,7 +907,7 @@ class TestEnableDisableRoundTrip:
         user_settings_path.write_text(json.dumps(original_user_settings), encoding="utf-8")
 
         enable = runner.invoke(app, ["enable"])
-        disable = runner.invoke(app, ["disable", "--remove-mcp"])
+        disable = runner.invoke(app, ["disable", "--remove-mcp", "--remove-guidance"])
 
         assert enable.exit_code == 0
         assert disable.exit_code == 0
@@ -1422,3 +1424,265 @@ class TestInitInstallsIntegrations:
         result = runner.invoke(app, ["init", "--no-git-hooks"])
         assert result.exit_code == 0
         assert "ec enable --agent claude --no-git-hooks" in result.output
+
+
+class TestIsEcInjectHook:
+
+    def test_flat_command(self):
+        assert _is_ec_inject_hook({"command": 'sh "$HOME/.claude/hooks/ec-inject.sh"', "timeout": 5})
+
+    def test_nested_hooks(self):
+        entry = {"hooks": [{"type": "command", "command": 'sh "$HOME/.claude/hooks/ec-inject.sh"', "timeout": 5}]}
+        assert _is_ec_inject_hook(entry)
+
+    def test_non_inject_hook(self):
+        assert not _is_ec_inject_hook({"command": "ec hook handle --type SessionStart", "timeout": 5})
+
+    def test_empty_entry(self):
+        assert not _is_ec_inject_hook({})
+
+
+class TestStripEcInjectHooks:
+
+    def test_removes_inject_entry(self):
+        entry = {"hooks": [{"type": "command", "command": 'sh "$HOME/.claude/hooks/ec-inject.sh"', "timeout": 5}]}
+        assert _strip_ec_inject_hooks([entry]) == []
+
+    def test_preserves_non_inject_entry(self):
+        entry = {"hooks": [{"type": "command", "command": "other-tool run", "timeout": 5}]}
+        assert _strip_ec_inject_hooks([entry]) == [entry]
+
+    def test_preserves_sibling_in_same_entry(self):
+        entry = {
+            "hooks": [
+                {"type": "command", "command": 'sh "$HOME/.claude/hooks/ec-inject.sh"', "timeout": 5},
+                {"type": "command", "command": "other-tool run", "timeout": 5},
+            ],
+        }
+        result = _strip_ec_inject_hooks([entry])
+        assert len(result) == 1
+        assert [h["command"] for h in result[0]["hooks"]] == ["other-tool run"]
+
+
+class TestGuidanceInjection:
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_installs_guidance_files(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["enable", "--no-git-hooks"])
+        assert result.exit_code == 0
+
+        guidance = fake_home / ".claude" / "hooks" / "entirecontext-guidance.md"
+        inject = fake_home / ".claude" / "hooks" / "ec-inject.sh"
+        assert guidance.exists()
+        assert inject.exists()
+        assert inject.stat().st_mode & stat.S_IEXEC
+        assert "# EntireContext:" in inject.read_text(encoding="utf-8")
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_registers_guidance_hook_in_global_settings(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--no-git-hooks"])
+
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        session_start = user_settings["hooks"]["SessionStart"]
+        assert any(_is_ec_inject_hook(e) for e in session_start)
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_idempotent_no_duplicate_guidance_hooks(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--no-git-hooks"])
+        runner.invoke(app, ["enable", "--no-git-hooks"])
+
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        inject_count = sum(1 for e in user_settings["hooks"]["SessionStart"] if _is_ec_inject_hook(e))
+        assert inject_count == 1
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_preserves_existing_guidance_content(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        guidance = fake_home / ".claude" / "hooks" / "entirecontext-guidance.md"
+        guidance.parent.mkdir(parents=True)
+        guidance.write_text("custom guidance content\n", encoding="utf-8")
+
+        runner.invoke(app, ["enable", "--no-git-hooks"])
+
+        assert guidance.read_text(encoding="utf-8") == "custom guidance content\n"
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_preserves_non_ec_inject_script(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        inject = fake_home / ".claude" / "hooks" / "ec-inject.sh"
+        inject.parent.mkdir(parents=True)
+        inject.write_text("#!/bin/sh\necho foreign script\n", encoding="utf-8")
+
+        runner.invoke(app, ["enable", "--no-git-hooks"])
+
+        assert inject.read_text(encoding="utf-8") == "#!/bin/sh\necho foreign script\n"
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_preserves_guidance_hooks_by_default(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--no-git-hooks"])
+        runner.invoke(app, ["disable"])
+
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        session_start = user_settings.get("hooks", {}).get("SessionStart", [])
+        assert any(_is_ec_inject_hook(e) for e in session_start)
+        assert (fake_home / ".claude" / "hooks" / "ec-inject.sh").exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_remove_guidance_cleans_up(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--no-git-hooks"])
+        result = runner.invoke(app, ["disable", "--remove-guidance"])
+
+        assert result.exit_code == 0
+        user_settings = json.loads((fake_home / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        session_start = user_settings.get("hooks", {}).get("SessionStart", [])
+        assert not any(_is_ec_inject_hook(e) for e in session_start)
+        assert not (fake_home / ".claude" / "hooks" / "ec-inject.sh").exists()
+        assert not (fake_home / ".claude" / "hooks" / "entirecontext-guidance.md").exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_remove_guidance_preserves_other_session_start_hooks(
+        self, mock_git_root, tmp_path, monkeypatch
+    ):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--no-git-hooks"])
+        user_settings_path = fake_home / ".claude" / "settings.json"
+        settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+        settings["hooks"]["SessionStart"].insert(0, {"hooks": [{"type": "command", "command": "other-hook"}]})
+        user_settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+        runner.invoke(app, ["disable", "--remove-guidance"])
+
+        after = json.loads(user_settings_path.read_text(encoding="utf-8"))
+        assert len(after["hooks"]["SessionStart"]) == 1
+        assert after["hooks"]["SessionStart"][0]["hooks"][0]["command"] == "other-hook"
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_registers_guidance_in_codex_hooks(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--agent", "both", "--no-git-hooks"])
+
+        codex_hooks = json.loads((fake_home / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+        session_start = codex_hooks["hooks"]["SessionStart"]
+        assert any(_is_ec_inject_hook(e) for e in session_start)
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_remove_guidance_both_cleans_codex_hooks(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--agent", "both", "--no-git-hooks"])
+        runner.invoke(app, ["disable", "--agent", "both", "--remove-guidance"])
+
+        codex_hooks = json.loads((fake_home / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+        session_start = codex_hooks.get("hooks", {}).get("SessionStart", [])
+        assert not any(_is_ec_inject_hook(e) for e in session_start)
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_only_registers_codex_guidance_hook(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+
+        codex_hooks = json.loads((fake_home / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+        session_start = codex_hooks["hooks"]["SessionStart"]
+        assert any(_is_ec_inject_hook(e) for e in session_start)
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_claude_only_no_codex_guidance_hook(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--agent", "claude", "--no-git-hooks"])
+
+        codex_hooks_path = fake_home / ".codex" / "hooks.json"
+        assert not codex_hooks_path.exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_windows_skips_guidance(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+        monkeypatch.setattr(project_cmds.sys, "platform", "win32")
+        monkeypatch.setattr(project_cmds.shutil, "which", lambda _: None)
+
+        result = runner.invoke(app, ["enable", "--no-git-hooks"])
+        assert result.exit_code == 0
+        assert "skipping on Windows" in result.output
+        assert not (fake_home / ".claude" / "hooks" / "ec-inject.sh").exists()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_remove_guidance_cleans_codex_even_with_claude_agent(self, mock_git_root, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        runner.invoke(app, ["enable", "--agent", "both", "--no-git-hooks"])
+        runner.invoke(app, ["disable", "--remove-guidance"])
+
+        codex_hooks = json.loads((fake_home / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+        session_start = codex_hooks.get("hooks", {}).get("SessionStart", [])
+        assert not any(_is_ec_inject_hook(e) for e in session_start)

@@ -22,6 +22,76 @@ console = Console()
 
 _AGENT_CHOICES = {"claude", "codex", "both"}
 
+_INJECT_HOOK_COMMAND = 'sh "$HOME/.claude/hooks/ec-inject.sh"'
+
+_INJECT_SCRIPT = """\
+#!/bin/sh
+# EntireContext: inject guidance into SessionStart when .entirecontext/ exists at git root.
+set -e
+command -v jq >/dev/null 2>&1 || exit 0
+payload=$(cat)
+cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
+[ -n "$cwd" ] || cwd="${CLAUDE_PROJECT_DIR:-$PWD}"
+root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -d "$root/.entirecontext" ] || exit 0
+guidance="$HOME/.claude/hooks/entirecontext-guidance.md"
+[ -f "$guidance" ] || exit 0
+jq -n --rawfile body "$guidance" \\
+  '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$body}}'
+"""
+
+_GUIDANCE_CONTENT = """\
+## EntireContext - Proactive Memory Reuse
+
+Proactively use EntireContext before answering questions about existing code,
+prior decisions, debugging context, historical implementation details,
+repeated regressions, or earlier agent work.
+Do not wait for the user to explicitly ask for a memory lookup.
+
+Prefer EntireContext first for repository-scoped memory such as decisions,
+assessments, lessons, checkpoints, attribution, sessions, and turns.
+
+Scenarios to proactively use EntireContext:
+- User asks "why was X implemented this way?" or asks for prior rationale
+- User is debugging behavior that may have previous fixes, regressions, or lessons
+- User references a function, file, subsystem, checkpoint, session, or decision
+  that may already exist in memory
+- The task changes behavior, policy, schema, interface, lifecycle, sync, ranking,
+  hooks, telemetry, or other long-lived system behavior
+- You need prior assessments, lessons, attribution, or related turns before
+  proposing non-trivial changes
+
+Preferred retrieval order:
+1. Decision-specific lookup (`ec_decision_related`, `ec_decision_list`,
+   `ec_decision_get`)
+2. Broader repo memory lookup (`ec_related`, `ec_search`,
+   `ec_session_context`)
+3. Deep inspection (`ec_turn_content`, `ec_checkpoint_list`,
+   `ec_attribution`, `ec_lessons`, `ec_assess_trends`)
+
+If no relevant EntireContext records exist, state that explicitly before
+proceeding with new reasoning.
+
+### Decision Capture
+
+Proactively **create** decision records during the session, not only at the end.
+
+When to record a decision (`ec_decision_create`):
+- You compared alternatives and chose one (record what was rejected and why)
+- You changed architecture, module boundaries, data flow, or public interfaces
+- You established a convention, policy, or constraint that future work should follow
+- A debugging session revealed a root cause that changes how the system should behave
+
+When to record a decision outcome (`ec_decision_outcome`):
+- Completed work confirmed, contradicted, refined, or replaced a prior decision
+- A decision was applied and the result validated or invalidated its rationale
+
+Capture timing:
+- Record **during** the session as decisions happen
+- SessionEnd auto-extraction is a fallback, not the primary path
+- If you realize a past session made an unrecorded decision, record it retroactively
+"""
+
 
 def _parse_agent_option(agent: str) -> str:
     value = (agent or "claude").strip().lower()
@@ -357,6 +427,113 @@ def _strip_ec_hooks(entries: list) -> list:
     return kept
 
 
+def _is_ec_inject_hook(entry: dict) -> bool:
+    cmd = entry.get("command", "")
+    if "ec-inject.sh" in cmd:
+        return True
+    return any("ec-inject.sh" in h.get("command", "") for h in entry.get("hooks", []))
+
+
+def _strip_ec_inject_hooks(entries: list) -> list:
+    kept = []
+    for entry in entries:
+        if "ec-inject.sh" in entry.get("command", ""):
+            continue
+        inner = entry.get("hooks")
+        if isinstance(inner, list):
+            remaining = [h for h in inner if "ec-inject.sh" not in h.get("command", "")]
+            if inner and not remaining:
+                continue
+            if len(remaining) != len(inner):
+                entry = {**entry, "hooks": remaining}
+        kept.append(entry)
+    return kept
+
+
+def _install_guidance_files() -> None:
+    hooks_dir = Path.home() / ".claude" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+
+    guidance_path = hooks_dir / "entirecontext-guidance.md"
+    if not guidance_path.exists():
+        guidance_path.write_text(_GUIDANCE_CONTENT, encoding="utf-8")
+
+    inject_path = hooks_dir / "ec-inject.sh"
+    should_write = not inject_path.exists()
+    if inject_path.exists():
+        content = inject_path.read_text(encoding="utf-8")
+        if "# EntireContext:" in content:
+            should_write = True
+    if should_write:
+        inject_path.write_text(_INJECT_SCRIPT, encoding="utf-8")
+        inject_path.chmod(inject_path.stat().st_mode | stat.S_IEXEC)
+
+
+def _register_guidance_hook_codex() -> None:
+    codex_hooks_path = Path.home() / ".codex" / "hooks.json"
+    codex_hooks_path.parent.mkdir(parents=True, exist_ok=True)
+    codex_hooks: dict = {}
+    if codex_hooks_path.exists():
+        try:
+            codex_hooks = json.loads(codex_hooks_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            console.print("[yellow]Warning:[/yellow] ~/.codex/hooks.json is malformed; skipping guidance registration.")
+            return
+    hooks_section = codex_hooks.setdefault("hooks", {})
+    session_start = hooks_section.get("SessionStart", [])
+    session_start = _strip_ec_inject_hooks(session_start)
+    session_start.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
+    hooks_section["SessionStart"] = session_start
+    codex_hooks_path.write_text(json.dumps(codex_hooks, indent=2) + "\n", encoding="utf-8")
+
+
+def _remove_guidance_injection() -> None:
+    user_settings_path = Path.home() / ".claude" / "settings.json"
+    if user_settings_path.exists():
+        settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+        hooks = settings.get("hooks", {})
+        session_start = hooks.get("SessionStart", [])
+        stripped = _strip_ec_inject_hooks(session_start)
+        if len(stripped) != len(session_start):
+            if stripped:
+                hooks["SessionStart"] = stripped
+            elif "SessionStart" in hooks:
+                del hooks["SessionStart"]
+            if not hooks and "hooks" in settings:
+                del settings["hooks"]
+            user_settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+            console.print("[yellow]Guidance hook removed[/yellow] from ~/.claude/settings.json")
+
+    codex_hooks_path = Path.home() / ".codex" / "hooks.json"
+    if codex_hooks_path.exists():
+        try:
+            codex_hooks = json.loads(codex_hooks_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            codex_hooks = None
+        if codex_hooks is not None:
+            hooks_section = codex_hooks.get("hooks", {})
+            session_start = hooks_section.get("SessionStart", [])
+            stripped = _strip_ec_inject_hooks(session_start)
+            if len(stripped) != len(session_start):
+                if stripped:
+                    hooks_section["SessionStart"] = stripped
+                elif "SessionStart" in hooks_section:
+                    del hooks_section["SessionStart"]
+                codex_hooks_path.write_text(json.dumps(codex_hooks, indent=2) + "\n", encoding="utf-8")
+                console.print("[yellow]Guidance hook removed[/yellow] from ~/.codex/hooks.json")
+
+    hooks_dir = Path.home() / ".claude" / "hooks"
+    for name in ("ec-inject.sh", "entirecontext-guidance.md"):
+        path = hooks_dir / name
+        if path.exists():
+            if name == "ec-inject.sh":
+                content = path.read_text(encoding="utf-8")
+                if "# EntireContext:" not in content:
+                    continue
+            path.unlink()
+            console.print(f"[yellow]Removed[/yellow] ~/.claude/hooks/{name}")
+
+
 def init(
     no_hooks: bool = typer.Option(False, "--no-hooks", help="Skip hook and MCP installation"),
     no_git_hooks: bool = typer.Option(False, "--no-git-hooks", help="Skip git hook installation"),
@@ -615,6 +792,8 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
     user_settings: dict = {}
     if user_settings_path.exists():
         user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+
+    user_settings_changed = False
     mcp_servers = user_settings.setdefault("mcpServers", {})
     if "entirecontext" not in mcp_servers:
         ec_bin = shutil.which("ec")
@@ -623,8 +802,27 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
             "args": ["mcp", "serve"] if ec_bin else ["-m", "entirecontext.cli", "mcp", "serve"],
             "type": "stdio",
         }
-        user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
+        user_settings_changed = True
         console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
+
+    if sys.platform == "win32":
+        console.print("[yellow]Warning:[/yellow] Guidance injection hook requires sh; skipping on Windows.")
+    else:
+        _install_guidance_files()
+        user_hooks = user_settings.setdefault("hooks", {})
+        session_start = user_hooks.get("SessionStart", [])
+        session_start = _strip_ec_inject_hooks(session_start)
+        session_start.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
+        user_hooks["SessionStart"] = session_start
+        user_settings_changed = True
+        console.print("[green]Guidance hook registered[/green] in ~/.claude/settings.json")
+
+    if user_settings_changed:
+        user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
+
+    if sys.platform != "win32" and agent in {"codex", "both"}:
+        _register_guidance_hook_codex()
+        console.print("[green]Guidance hook registered[/green] in ~/.codex/hooks.json")
 
 
 def enable(
@@ -646,6 +844,9 @@ def enable(
 def disable(
     agent: str = typer.Option("claude", "--agent", help="Target agent integration (claude|codex|both)"),
     remove_mcp: bool = typer.Option(False, "--remove-mcp", help="Also remove the standard user-level EC MCP entry"),
+    remove_guidance: bool = typer.Option(
+        False, "--remove-guidance", help="Also remove the global guidance injection hook and files"
+    ),
 ):
     """Disable auto-capture by removing selected repository and agent integrations."""
     from ..core.project import find_git_root
@@ -699,6 +900,8 @@ def disable(
             console.print("[yellow]MCP server removed[/yellow] from ~/.claude/settings.json")
         else:
             console.print("No standard EntireContext MCP registration found.")
+    if remove_guidance:
+        _remove_guidance_injection()
 
 
 def status(
