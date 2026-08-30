@@ -239,10 +239,14 @@ uv add entirecontext
 
 ```bash
 # 1B. Global install (optional, recommended for non-Python repos)
-uv tool install entirecontext
+uv tool install --managed-python --python 3.13 entirecontext
 # alternative:
 pipx install entirecontext
 ```
+
+`--managed-python` keeps the tool environment bound to a uv-managed interpreter.
+It avoids mutable system or Conda interpreter paths changing Python minor versions
+behind an existing environment.
 
 Tagged GitHub releases also include the built wheel and source tarball as release assets. PyPI remains the primary install path.
 
@@ -464,6 +468,11 @@ ec doctor    # verify MCP config is present
 
 `ec enable` does the same registration without the database work, so either command gets you there. Both are idempotent — a repeat run skips the MCP entry if it already exists. `ec disable` removes the selected agent integration and both EntireContext repository Git hooks but preserves the global MCP config by default because other repos or agents may use it. Add `--remove-mcp` to explicitly remove a standard EntireContext MCP entry; this also removes an identical standard entry that was configured manually.
 
+Package health and MCP activation are separate checks. A successful `ec --help`
+or package reinstall does not enable a Codex MCP registration whose
+`~/.codex/config.toml` entry has `enabled = false`. Enable that registration in
+Codex configuration after verifying the package when MCP startup remains absent.
+
 ### Manual Setup
 
 To configure manually, add to `~/.claude/settings.json`:
@@ -570,6 +579,41 @@ uv tool install --force .
 A dirty stamp directs the operator to commit or restore tracked changes before reinstalling. If the checkout has no resolvable `HEAD`, create or check out a commit before rebuilding the installed executable.
 
 Editable and direct source executions skip this comparison because they already run the checkout code. Consumer repositories also skip it; the check applies only when the current repository identifies itself as the EntireContext source project.
+
+### Recovering a drifted uv tool environment
+
+If `ec` fails with `ModuleNotFoundError: No module named 'entirecontext'`, use
+`uv` to recreate the tool environment before invoking `ec`:
+
+```bash
+uv tool uninstall entirecontext
+uv tool install --managed-python --python 3.13 entirecontext
+```
+
+For an install from an EntireContext checkout, run the second command from the
+checkout with `.` as the target:
+
+```bash
+uv tool install --managed-python --python 3.13 .
+```
+
+These commands replace the tool environment but preserve the EntireContext
+database under `~/.entirecontext` and repository data under `.entirecontext`.
+Do not use `uv tool install --force` as the interpreter-drift repair. It can
+restore package files without replacing a stale interpreter binding.
+
+Verify the recreated environment:
+
+```bash
+ec --help
+ec doctor
+python_path=$(head -1 "$(command -v ec)" | sed 's/^#!//')
+"$python_path" -c 'import pathlib, sys; print(pathlib.Path(sys.prefix, "pyvenv.cfg").read_text())'
+"$python_path" -c 'import entirecontext; print(entirecontext.__file__)'
+```
+
+`ec doctor` reports the configured and active Python major-minor versions when
+they differ and prints the clean recreation commands.
 
 ## Configuration
 

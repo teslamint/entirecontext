@@ -828,6 +828,38 @@ def _build_provenance_warning(repo_path: str) -> str | None:
     return None
 
 
+def _active_python_version() -> tuple[int, int]:
+    return sys.version_info[:2]
+
+
+def _configured_python_version() -> tuple[int, int] | None:
+    try:
+        config = (Path(sys.prefix) / "pyvenv.cfg").read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    match = re.search(r"(?m)^version_info\s*=\s*(\d+)\.(\d+)(?:\.\d+)?\s*$", config)
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def _python_interpreter_drift_warning(repo_path: str) -> str | None:
+    configured = _configured_python_version()
+    active = _active_python_version()
+    if configured is None or configured == active:
+        return None
+
+    install_target = "." if _is_entirecontext_checkout(repo_path) else "entirecontext"
+    return (
+        f"Python interpreter drift: virtual environment configured {configured[0]}.{configured[1]}, "
+        f"active {active[0]}.{active[1]}. Recreate the tool environment; "
+        "'uv tool install --force' can leave the stale interpreter binding in place. "
+        "Run 'uv tool uninstall entirecontext', then "
+        f"'uv tool install --managed-python --python 3.13 {install_target}'."
+    )
+
+
 def doctor(
     agent: str = typer.Option("claude", "--agent", help="Validate claude|codex|both integrations"),
 ):
@@ -846,6 +878,10 @@ def doctor(
     provenance_warning = _build_provenance_warning(repo_path)
     if provenance_warning is not None:
         warnings.append(provenance_warning)
+
+    interpreter_warning = _python_interpreter_drift_warning(repo_path)
+    if interpreter_warning is not None:
+        warnings.append(interpreter_warning)
 
     ec_dir = Path(repo_path) / ".entirecontext"
     if not ec_dir.exists():

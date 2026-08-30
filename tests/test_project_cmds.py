@@ -811,6 +811,58 @@ class TestDoctorBuildProvenance:
         assert "build provenance" not in result.output.lower()
 
 
+class TestDoctorPythonInterpreterDrift:
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_accepts_matching_virtualenv_and_runtime_versions(
+        self, mock_git_root, ec_repo, monkeypatch, tmp_path
+    ):
+        mock_git_root.return_value = str(ec_repo)
+        prefix = tmp_path / "venv"
+        prefix.mkdir()
+        (prefix / "pyvenv.cfg").write_text("version_info = 3.13.12\n", encoding="utf-8")
+        monkeypatch.setattr(project_cmds.sys, "prefix", str(prefix))
+        monkeypatch.setattr(project_cmds, "_active_python_version", lambda: (3, 13))
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert "interpreter drift" not in result.output.lower()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_warns_for_virtualenv_major_minor_drift(
+        self, mock_git_root, ec_repo, monkeypatch, tmp_path
+    ):
+        mock_git_root.return_value = str(ec_repo)
+        prefix = tmp_path / "venv"
+        prefix.mkdir()
+        (prefix / "pyvenv.cfg").write_text("version_info = 3.13.12\n", encoding="utf-8")
+        monkeypatch.setattr(project_cmds.sys, "prefix", str(prefix))
+        monkeypatch.setattr(project_cmds, "_active_python_version", lambda: (3, 14))
+
+        result = runner.invoke(app, ["doctor"])
+        output = " ".join(result.output.split())
+
+        assert "Python interpreter drift" in output
+        assert "configured 3.13" in output
+        assert "active 3.14" in output
+        assert "uv tool uninstall entirecontext" in output
+        assert "uv tool install --managed-python --python 3.13 entirecontext" in output
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_skips_unavailable_virtualenv_metadata(
+        self, mock_git_root, ec_repo, monkeypatch, tmp_path
+    ):
+        mock_git_root.return_value = str(ec_repo)
+        prefix = tmp_path / "venv-without-metadata"
+        prefix.mkdir()
+        monkeypatch.setattr(project_cmds.sys, "prefix", str(prefix))
+        monkeypatch.setattr(project_cmds, "_active_python_version", lambda: (3, 14))
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert result.exit_code == 0
+        assert "interpreter drift" not in result.output.lower()
+
+
 class TestEnableDisableRoundTrip:
     """Enable then disable should cleanly remove all EC hooks."""
 
