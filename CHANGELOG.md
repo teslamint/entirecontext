@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **uv tool interpreter drift diagnostics** — `ec doctor` now reports mismatched configured and active Python minor versions and provides clean uv-managed environment recreation commands. Installation and recovery guidance now avoids mutable Conda interpreter bindings.
+
 ## [0.16.1] - 2026-08-20
 
 Patch release: verify-docs gate edge-case hardening.
