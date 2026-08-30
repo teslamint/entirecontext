@@ -828,9 +828,7 @@ class TestDoctorPythonInterpreterDrift:
         assert "interpreter drift" not in result.output.lower()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_doctor_warns_for_virtualenv_major_minor_drift(
-        self, mock_git_root, ec_repo, monkeypatch, tmp_path
-    ):
+    def test_doctor_warns_for_virtualenv_major_minor_drift(self, mock_git_root, ec_repo, monkeypatch, tmp_path):
         mock_git_root.return_value = str(ec_repo)
         prefix = tmp_path / "venv"
         prefix.mkdir()
@@ -848,9 +846,7 @@ class TestDoctorPythonInterpreterDrift:
         assert "uv tool install --managed-python --python 3.13 entirecontext" in output
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_doctor_skips_unavailable_virtualenv_metadata(
-        self, mock_git_root, ec_repo, monkeypatch, tmp_path
-    ):
+    def test_doctor_skips_unavailable_virtualenv_metadata(self, mock_git_root, ec_repo, monkeypatch, tmp_path):
         mock_git_root.return_value = str(ec_repo)
         prefix = tmp_path / "venv-without-metadata"
         prefix.mkdir()
