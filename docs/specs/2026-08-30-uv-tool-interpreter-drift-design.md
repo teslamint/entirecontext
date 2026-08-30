@@ -65,6 +65,8 @@ binding.
 1. `test_doctor_accepts_matching_virtualenv_and_runtime_versions`
 2. `test_doctor_warns_for_virtualenv_major_minor_drift`
 3. `test_doctor_skips_unavailable_virtualenv_metadata`
+4. `test_doctor_skips_invalid_utf8_virtualenv_metadata`
+5. `test_doctor_skips_unparseable_numeric_virtualenv_metadata`
 
 The complete `tests/test_project_cmds.py` module must remain green.
 

@@ -858,6 +858,33 @@ class TestDoctorPythonInterpreterDrift:
         assert result.exit_code == 0
         assert "interpreter drift" not in result.output.lower()
 
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_skips_invalid_utf8_virtualenv_metadata(self, mock_git_root, ec_repo, monkeypatch, tmp_path):
+        mock_git_root.return_value = str(ec_repo)
+        prefix = tmp_path / "venv"
+        prefix.mkdir()
+        (prefix / "pyvenv.cfg").write_bytes(b"version_info = 3.13.12\n\xff")
+        monkeypatch.setattr(project_cmds.sys, "prefix", str(prefix))
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert result.exit_code == 0
+        assert "interpreter drift" not in result.output.lower()
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_skips_unparseable_numeric_virtualenv_metadata(self, mock_git_root, ec_repo, monkeypatch, tmp_path):
+        mock_git_root.return_value = str(ec_repo)
+        prefix = tmp_path / "venv"
+        prefix.mkdir()
+        version = "9" * 5000
+        (prefix / "pyvenv.cfg").write_text(f"version_info = {version}.13.1\n", encoding="utf-8")
+        monkeypatch.setattr(project_cmds.sys, "prefix", str(prefix))
+
+        result = runner.invoke(app, ["doctor"])
+
+        assert result.exit_code == 0
+        assert "interpreter drift" not in result.output.lower()
+
 
 class TestEnableDisableRoundTrip:
     """Enable then disable should cleanly remove all EC hooks."""

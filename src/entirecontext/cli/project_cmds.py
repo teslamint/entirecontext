@@ -835,13 +835,12 @@ def _active_python_version() -> tuple[int, int]:
 def _configured_python_version() -> tuple[int, int] | None:
     try:
         config = (Path(sys.prefix) / "pyvenv.cfg").read_text(encoding="utf-8")
-    except OSError:
+        match = re.search(r"(?m)^version_info\s*=\s*(\d+)\.(\d+)(?:\.\d+)?\s*$", config)
+        if match is None:
+            return None
+        return int(match.group(1)), int(match.group(2))
+    except (OSError, UnicodeError, ValueError):
         return None
-
-    match = re.search(r"(?m)^version_info\s*=\s*(\d+)\.(\d+)(?:\.\d+)?\s*$", config)
-    if match is None:
-        return None
-    return int(match.group(1)), int(match.group(2))
 
 
 def _python_interpreter_drift_warning(repo_path: str) -> str | None:
