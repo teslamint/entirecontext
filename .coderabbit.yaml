@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+code_generation:
+  docstrings:
+    language: en-US
+    path_instructions:
+      - path: "src/**/*.py"
+        instructions: |
+          Follow the existing repository docstring style.
+          Use concise imperative summaries.
+          Add Google-style Args and Returns sections only when they add information.
+          Do not repeat type annotations in docstrings.
+          Keep Typer command docstrings to concise user-facing summaries because
+          Typer displays them in CLI help.
+          Run `uv run ruff format --check .` and `uv run ruff check .` before
+          opening a pull request.
+
+reviews:
+  auto_title_instructions: |
+    Use Conventional Commit format.
+    Use `docs(scope): summary` for docstring-only changes.
+    Do not use emoji prefixes.
