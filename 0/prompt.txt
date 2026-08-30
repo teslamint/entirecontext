@@ -1,0 +1,55 @@
+/goal 이슈 243번 해결
+
+---
+
+PR 만들어주세요
+
+---
+
+권한 상승해서 재실행해주세요
+
+---
+
+CI lint가 실패하네요
+
+---
+
+PR #244에 추가된 CodeRabbit 리뷰 스레드를 검토해주세요
+
+---
+
+수정하세요
+
+---
+
+merge해도 되나요?
+
+---
+
+merge하세요
+
+---
+
+PR 245번 검토해주세요
+
+---
+
+리뷰 스레드 추가해서 CodeRabbit이 수정하게 해야 하나요, 아니면 그냥 close해야 하나요?
+
+---
+
+CodeRabbit이 convention을 따르지 않은 건 별도로 지침을 안줘서 그런거니 코딩 가이드라인 파일을 만들고 CodeRabbit이 이를 참조하게 설정해야겠네요
+
+---
+
+`AGENTS.md` 파일은 기본적으로 포함되니 `.coderabbit.yaml`에 필요한 지침만 넣으면 되겠네요.
+
+---
+
+리포지터리 설정을 보니 이렇게 반영되어 있네요
+
+[Attached image "image.png" is saved at: /Users/teslamint/.t3/userdata/attachments/41a13620-7fa9-417e-ba80-301794530731-0a8daf5b-a385-4d55-b2ed-e3d1d4756b37.png]
+
+---
+
+PR 245는 닫았으니 설정만 적용하죠
