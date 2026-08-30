@@ -801,6 +801,14 @@ def _running_from_checkout_source(repo_path: str) -> bool:
 
 
 def _build_provenance_warning(repo_path: str) -> str | None:
+    """Build a warning when the installed executable's provenance cannot be verified against the checkout.
+    
+    Parameters:
+        repo_path (str): Path to the EntireContext checkout.
+    
+    Returns:
+        str | None: A provenance warning message, or `None` when provenance is verified or the path is not an applicable checkout.
+    """
     if not _is_entirecontext_checkout(repo_path) or _running_from_checkout_source(repo_path):
         return None
 
@@ -829,10 +837,16 @@ def _build_provenance_warning(repo_path: str) -> str | None:
 
 
 def _active_python_version() -> tuple[int, int]:
+    """Return the active Python interpreter's major and minor version numbers."""
     return sys.version_info[:2]
 
 
 def _configured_python_version() -> tuple[int, int] | None:
+    """Read the configured Python major and minor version from the active virtual environment.
+    
+    Returns:
+    	tuple[int, int] | None: The configured major and minor version, or `None` if it cannot be read or parsed.
+    """
     try:
         config = (Path(sys.prefix) / "pyvenv.cfg").read_text(encoding="utf-8")
         match = re.search(r"(?m)^version_info\s*=\s*(\d+)\.(\d+)(?:\.\d+)?\s*$", config)
@@ -844,6 +858,15 @@ def _configured_python_version() -> tuple[int, int] | None:
 
 
 def _python_interpreter_drift_warning(repo_path: str) -> str | None:
+    """
+    Detects whether the active Python interpreter differs from the configured virtual-environment interpreter.
+    
+    Parameters:
+        repo_path (str): Repository path used to determine the installation target.
+    
+    Returns:
+        str | None: A warning message with remediation instructions when interpreter versions differ; `None` when they match or the configured version is unavailable.
+    """
     configured = _configured_python_version()
     active = _active_python_version()
     if configured is None or configured == active:
@@ -862,7 +885,12 @@ def _python_interpreter_drift_warning(repo_path: str) -> str | None:
 def doctor(
     agent: str = typer.Option("claude", "--agent", help="Validate claude|codex|both integrations"),
 ):
-    """Diagnose EntireContext issues."""
+    """
+    Diagnose the current Git repository and report EntireContext configuration, integration, and synchronization issues.
+    
+    Parameters:
+    	agent (str): Integration to validate: `claude`, `codex`, or `both`.
+    """
     from ..core.project import find_git_root
 
     agent = _parse_agent_option(agent)
