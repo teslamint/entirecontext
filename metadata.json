@@ -3,7 +3,7 @@
   "checkpoint_id": "01M18AZD9RCSVQNQG6G2YJQV6G",
   "strategy": "manual-commit",
   "branch": "fix/243-uv-tool-interpreter-drift",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "CHANGELOG.md",
     "README.md",
@@ -25,13 +25,20 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": "/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 284743,
-    "cache_creation_tokens": 34421,
-    "cache_read_tokens": 4634524,
-    "output_tokens": 16353,
-    "api_call_count": 54
+    "input_tokens": 284745,
+    "cache_creation_tokens": 64529,
+    "cache_read_tokens": 4653617,
+    "output_tokens": 16583,
+    "api_call_count": 55
   }
 }
