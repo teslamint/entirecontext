@@ -191,3 +191,56 @@ def test_generate_embeddings_import_error():
     with patch.dict("sys.modules", {"sentence_transformers": None}):
         with pytest.raises(ImportError, match="sentence-transformers is required"):
             generate_embeddings(db, "/tmp/test-repo")
+
+
+@pytest.mark.parametrize("filter_kwargs", [{"file_filter": "match.py"}, {"since": "2026-01-01"}])
+def test_semantic_filter_limit(conn, monkeypatch, filter_kwargs):
+    import struct
+
+    from entirecontext.core import embedding
+
+    db, session_id = conn
+    query_vector = struct.pack("2f", 1.0, 0.0)
+    for index in range(6):
+        turn_id = str(uuid4())
+        db.execute(
+            "INSERT INTO turns (id, session_id, turn_number, user_message, content_hash, timestamp) "
+            "VALUES (?, ?, ?, 'message', ?, '2025-01-01')",
+            (turn_id, session_id, index + 1, str(index)),
+        )
+        db.execute(
+            "UPDATE turns SET files_touched = ?, timestamp = ? WHERE id = ?",
+            ('["match.py"]' if index == 5 else '["other.py"]', "2026-01-01" if index == 5 else "2025-01-01", turn_id),
+        )
+        db.execute(
+            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+            "VALUES (?, 'turn', ?, 'all-MiniLM-L6-v2', ?, 2, 'hash')",
+            (str(uuid4()), turn_id, struct.pack("2f", 1.0, float(index))),
+        )
+    monkeypatch.setattr(embedding, "embed_text", lambda *args: query_vector)
+
+    results = embedding.semantic_search(db, "query", limit=1, **filter_kwargs)
+
+    assert [result["id"] for result in results] == [turn_id]
+
+
+@pytest.mark.parametrize("target", ["turn", "session"])
+def test_semantic_target(conn, monkeypatch, target):
+    import struct
+
+    from entirecontext.core import embedding
+
+    db, session_id = conn
+    turn_id = _seed_turn(db, session_id)
+    vector = struct.pack("2f", 1.0, 0.0)
+    for source_type, source_id in [("session", session_id), ("turn", turn_id)]:
+        db.execute(
+            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+            "VALUES (?, ?, ?, 'all-MiniLM-L6-v2', ?, 2, 'hash')",
+            (str(uuid4()), source_type, source_id, vector),
+        )
+    monkeypatch.setattr(embedding, "embed_text", lambda *args: vector)
+
+    results = embedding.semantic_search(db, "query", target=target, limit=1)
+
+    assert [result["source_type"] for result in results] == [target]
