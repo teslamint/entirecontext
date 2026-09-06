@@ -1,24 +1,97 @@
-내 [@GitHub](plugin://github@openai-curated-remote) 리포지토리의 코드를 검토하고 리팩터링해줘. 먼저 코드베이스에서 어느 부분에 집중할지 물어봐줘.
+[$lore-commit](/Users/teslamint/.agents/skills/lore-commit/SKILL.md)
 
 ---
 
-entirecontext
-
+<skill>
+<name>lore-commit</name>
+<path>/Users/teslamint/.agents/skills/lore-commit/SKILL.md</path>
+---
+name: lore-commit
+description: Commit protocol — partition work into logical commits, run the validation gate, and write each message as a decision record using git-native trailers (Constraint, Rejected, Confidence, Scope-risk, Directive, Tested, Not-tested, Assisted-by). Use for every request to commit changes, stage and commit, split work into commits, amend a message, or draft/review a commit message — including "커밋해줘" — before running any git add or git commit.
 ---
 
-전체 진단
+# Lore Commit Protocol
 
----
+One commit = one concern, gated by verification, recorded as a decision.
 
-# Response annotations:
-Each item contains text selected from an earlier Codex response and may include a user comment. Treat items as Annotation 1, Annotation 2, and so on in array order. Use every selection as context and address every comment. For every annotation you address, include its inline directive `:codex-annotation{index="N"}`, where N is its one-based array position (for example, `:codex-annotation{index="1"}`). Do not use unstructured annotation labels.
-<response-annotations>
-[{"text":"동기화 도중 생성된 기록의 누락 가능성","source":{"messageId":"msg_0bc1f76eb67597c6016a9d68fa874c87d0a1a6133849efd313","startOffset":261,"endOffset":282}}]
-</response-annotations>
+## Procedure
 
-## My request:
-이걸 조사해주세요
+1. **Inventory.** `git status --short` and `git diff --stat`. Read unfamiliar hunks
+   with `git diff <path>` before staging anything.
+2. **Partition.** One concern per commit. A doc change that documents a code change
+   in the same unit belongs with it. Announce the planned commit list before staging.
+3. **Validation gate — run ONCE before the first commit and paste the tail of its
+   output.** A red gate blocks all commits. Detect in this order:
+   - `scripts/validate.sh` exists → `bash scripts/validate.sh`
+   - Node project → `node --test` or `pnpm vitest run`; TS also `pnpm exec tsc --noEmit`
+   - Python/uv project → `UV_CACHE_DIR=.uv-cache uv run pytest -q`
+   - Diff touches only docs/markdown → gate skipped; say so explicitly.
+4. **Stage explicitly.** `git add <paths>` — never `git add -A` / `git add .`.
+5. **Commit** with one `-m` per paragraph and one for the trailer block. Never embed
+   literal `\n`; never open an interactive editor.
+6. **Verify.** `git log --oneline -<n>` matches the announced plan; `git status --short`
+   is clean, or leftover files are listed with a reason.
+7. **Push only when explicitly asked.**
 
----
+## Message format
 
-버그를 수정하고 전체 기록을 다시 내보내죠
+```
+<type>(<scope>): <intent — why the change was made, not what changed>
+
+<optional body: constraints and approach rationale>
+
+Constraint: <external constraint that shaped the decision>
+Rejected: <alternative considered> | <reason for rejection>
+Confidence: <low|medium|high>
+Scope-risk: <narrow|moderate|broad>
+Directive: <forward-looking warning for future modifiers>
+Tested: <what was verified>
+Not-tested: <known gaps in verification>
+Assisted-by: <Model Name> with <Tool Name>
+```
+
+- Subject carries intent, not a restatement of the diff. `fix(retry): stop dropping
+  jobs under backpressure`, not `fix(retry): change loop condition`.
+- Imperative present tense, ≤70 characters, no trailing period. `!` before `:` for a
+  breaking change. Keep every line under 100 characters.
+- Trailers are optional individually — use one only when it adds decision context.
+  `Assisted-by:` is the exception: always present on AI-assisted commits
+  (e.g. `Assisted-by: Claude Opus 4.6 with Claude Code`).
+- Never `Co-authored-by:` for AI attribution — reserve it for human co-authors.
+- `Rejected:` records alternatives future agents should not re-explore.
+  `Constraint:` records external forces. `Not-tested:` records verification gaps —
+  it is the honest counterpart to `Tested:`, not an optional confession.
+- Never include customer or organization names, user emails, ticket contents,
+  secrets, or PII. Describe the technical symptom instead.
+- Teams may add domain-specific trailers without breaking compatibility.
+
+```sh
+git commit -m "fix(api): return 404 for deleted accounts instead of leaking 500s" \
+  -m "The upstream user service returns null rather than an error for tombstoned
+rows, so the null reached the serializer." \
+  -m "Rejected: patching the serializer | hides the null at the wrong layer
+Confidence: high
+Scope-risk: narrow
+Tested: unit test for the deleted-account path
+Not-tested: no integration test against the live user service
+Assisted-by: Claude Opus 4.6 with Claude Code"
+```
+
+## Repository conventions override this
+
+In a Sentry repository, apply the `commit` skill's additions on top of this format:
+the restricted type list (`ref`, `meta`, …), `Fixes <issue>` / `Refs <issue>`
+footers, and the guard against committing directly to `main`/`master`.
+Where any repository documents its own commit convention, that convention wins for
+the subject line and footers; the `Assisted-by:` rule still applies.
+
+## Common mistakes
+
+- Committing without running the existing `scripts/validate.sh` — the gate exists to
+  be run, not discovered later
+- Subject-only commit with no rationale and no `Assisted-by:` trailer
+- Staging with `-A` and inheriting unrelated files — explicit paths only
+- One mega-commit spanning concerns — repartition before staging
+- Listing `Tested:` while omitting a known `Not-tested:` gap
+
+</skill>
