@@ -11,6 +11,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from entirecontext.cli import app, project_cmds
@@ -1427,7 +1428,6 @@ class TestInitInstallsIntegrations:
 
 
 class TestIsEcInjectHook:
-
     def test_flat_command(self):
         assert _is_ec_inject_hook({"command": 'sh "$HOME/.claude/hooks/ec-inject.sh"', "timeout": 5})
 
@@ -1443,7 +1443,6 @@ class TestIsEcInjectHook:
 
 
 class TestStripEcInjectHooks:
-
     def test_removes_inject_entry(self):
         entry = {"hooks": [{"type": "command", "command": 'sh "$HOME/.claude/hooks/ec-inject.sh"', "timeout": 5}]}
         assert _strip_ec_inject_hooks([entry]) == []
@@ -1465,6 +1464,39 @@ class TestStripEcInjectHooks:
 
 
 class TestGuidanceInjection:
+    @pytest.mark.parametrize("settings_file", [".claude/settings.json", ".codex/hooks.json"])
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_remove_guidance_preserves_sibling_in_same_group(
+        self, mock_git_root, tmp_path, monkeypatch, settings_file
+    ):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+        settings_path = fake_home / settings_file
+        settings_path.parent.mkdir(parents=True)
+        sibling = {"type": "command", "command": "other-tool run", "timeout": 5}
+        settings = {
+            "hooks": {
+                "SessionStart": [
+                    {
+                        "matcher": "startup",
+                        "hooks": [
+                            {"type": "command", "command": project_cmds._INJECT_HOOK_COMMAND},
+                            sibling,
+                        ],
+                    }
+                ],
+            },
+        }
+        settings_path.write_text(json.dumps(settings), encoding="utf-8")
+
+        result = runner.invoke(app, ["disable", "--remove-guidance"])
+
+        assert result.exit_code == 0
+        after = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert after["hooks"]["SessionStart"] == [{"matcher": "startup", "hooks": [sibling]}]
 
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_installs_guidance_files(self, mock_git_root, tmp_path, monkeypatch):
@@ -1580,9 +1612,7 @@ class TestGuidanceInjection:
         assert not (fake_home / ".claude" / "hooks" / "entirecontext-guidance.md").exists()
 
     @patch("entirecontext.core.project.find_git_root")
-    def test_disable_remove_guidance_preserves_other_session_start_hooks(
-        self, mock_git_root, tmp_path, monkeypatch
-    ):
+    def test_disable_remove_guidance_preserves_other_session_start_hooks(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
         mock_git_root.return_value = str(repo)

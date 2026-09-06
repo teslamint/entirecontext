@@ -494,7 +494,7 @@ def _remove_guidance_injection() -> None:
         hooks = settings.get("hooks", {})
         session_start = hooks.get("SessionStart", [])
         stripped = _strip_ec_inject_hooks(session_start)
-        if len(stripped) != len(session_start):
+        if stripped != session_start:
             if stripped:
                 hooks["SessionStart"] = stripped
             elif "SessionStart" in hooks:
@@ -514,7 +514,7 @@ def _remove_guidance_injection() -> None:
             hooks_section = codex_hooks.get("hooks", {})
             session_start = hooks_section.get("SessionStart", [])
             stripped = _strip_ec_inject_hooks(session_start)
-            if len(stripped) != len(session_start):
+            if stripped != session_start:
                 if stripped:
                     hooks_section["SessionStart"] = stripped
                 elif "SessionStart" in hooks_section:
