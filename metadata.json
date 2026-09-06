@@ -1,0 +1,29 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VJJFV6CCYFAYK5D6S51F7T",
+  "strategy": "manual-commit",
+  "branch": "codex/repository-audit-fixes",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/entirecontext/core/decision_prompt_surfacing.py",
+    "src/entirecontext/core/git_utils.py",
+    "src/entirecontext/hooks/decision_hooks.py",
+    "tests/test_git_utils.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 645,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 417536,
+    "output_tokens": 185,
+    "api_call_count": 2
+  }
+}
