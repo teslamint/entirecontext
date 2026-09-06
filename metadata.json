@@ -1,0 +1,33 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VJHCTCENEQC9N0H9AER5YG",
+  "strategy": "manual-commit",
+  "branch": "codex/repository-audit-fixes",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/entirecontext/cli/search_cmds.py",
+    "src/entirecontext/core/cross_repo.py",
+    "src/entirecontext/core/embedding.py",
+    "src/entirecontext/mcp/tools/search.py",
+    "tests/test_cross_repo.py",
+    "tests/test_e2e_search.py",
+    "tests/test_embedding.py",
+    "tests/test_mcp.py"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": ""
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 895,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 415744,
+    "output_tokens": 195,
+    "api_call_count": 2
+  }
+}

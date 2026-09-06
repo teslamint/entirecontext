@@ -1,0 +1,47 @@
+{
+  "cli_version": "0.10.5",
+  "checkpoint_id": "01M1VJHCTCENEQC9N0H9AER5YG",
+  "session_id": "01a076d2-dd9b-7fc3-9791-dc593d1b795e",
+  "strategy": "manual-commit",
+  "created_at": "2026-09-06T14:39:12.005093Z",
+  "branch": "codex/repository-audit-fixes",
+  "checkpoints_count": 5,
+  "files_touched": [
+    "src/entirecontext/cli/search_cmds.py",
+    "src/entirecontext/core/cross_repo.py",
+    "src/entirecontext/core/embedding.py",
+    "src/entirecontext/mcp/tools/search.py",
+    "tests/test_cross_repo.py",
+    "tests/test_e2e_search.py",
+    "tests/test_embedding.py",
+    "tests/test_mcp.py"
+  ],
+  "agent": "Codex",
+  "model": "gpt-6-astra",
+  "turn_id": "dd461782ac82",
+  "checkpoint_transcript_start": 926,
+  "transcript_lines_at_start": 926,
+  "compact_transcript_start": 118,
+  "token_usage": {
+    "input_tokens": 895,
+    "cache_creation_tokens": 0,
+    "cache_read_tokens": 415744,
+    "output_tokens": 195,
+    "api_call_count": 2
+  },
+  "session_metrics": {
+    "turn_count": 5
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-09-06T14:39:11.921539Z",
+    "agent_lines": 130,
+    "agent_removed": 5,
+    "human_added": 0,
+    "human_modified": 0,
+    "human_removed": 0,
+    "total_committed": 130,
+    "total_lines_changed": 135,
+    "agent_percentage": 100,
+    "metric_version": 2
+  }
+}
