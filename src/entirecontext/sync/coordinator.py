@@ -129,9 +129,6 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
     if not shadow_branch_exists(repo_path):
         init_shadow_branch(repo_path)
 
-    row = conn.execute("SELECT last_export_at FROM sync_metadata WHERE id = 1").fetchone()
-    last_export = row["last_export_at"] if row else None
-
     try:
         phase_start = time.perf_counter()
         worktree_path = create_worktree(repo_path, SHADOW_BRANCH, "ec-sync-")
@@ -143,7 +140,7 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
         )
 
         phase_start = time.perf_counter()
-        export_result = run_export(conn, repo_path, worktree_path, last_export=last_export, config=config)
+        export_result = run_export(conn, repo_path, worktree_path, config=config)
         result.exported_sessions = export_result.exported_sessions
         result.exported_checkpoints = export_result.exported_checkpoints
         result.committed = export_result.committed
