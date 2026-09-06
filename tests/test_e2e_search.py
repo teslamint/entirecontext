@@ -156,6 +156,28 @@ class TestSemanticSearch:
         conn.close()
         return seeded_repo
 
+    @pytest.mark.parametrize("target", ["turn", "session"])
+    def test_semantic_target_cli(self, seeded_with_embeddings, monkeypatch, target):
+        import struct
+
+        from entirecontext.core import embedding
+
+        monkeypatch.chdir(seeded_with_embeddings)
+        conn = get_db(str(seeded_with_embeddings))
+        vector = struct.pack("3f", 1.0, 1.0, 1.0)
+        conn.execute(
+            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+            "VALUES ('session-embedding', 'session', 'search-session', 'all-MiniLM-L6-v2', ?, 3, 'hash')",
+            (vector,),
+        )
+        conn.close()
+        monkeypatch.setattr(embedding, "embed_text", lambda *args: vector)
+
+        result = runner.invoke(app, ["search", "auth", "--semantic", "-t", target])
+
+        assert result.exit_code == 0, result.output
+        assert f"({2 if target == 'turn' else 1} results)" in result.output
+
     def test_semantic_search_returns_results(self, seeded_with_embeddings):
         import struct
         from unittest.mock import patch

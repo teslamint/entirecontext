@@ -101,6 +101,7 @@ async def ec_search(
                     results = semantic_search(
                         conn,
                         query,
+                        target="turn",
                         file_filter=file_filter,
                         commit_filter=commit_filter,
                         agent_filter=agent_filter,

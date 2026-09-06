@@ -97,6 +97,7 @@ def search(
                     results = semantic_search(
                         conn,
                         query,
+                        target=target,
                         file_filter=file,
                         commit_filter=commit,
                         agent_filter=agent,
