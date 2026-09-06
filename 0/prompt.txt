@@ -1,0 +1,24 @@
+내 [@GitHub](plugin://github@openai-curated-remote) 리포지토리의 코드를 검토하고 리팩터링해줘. 먼저 코드베이스에서 어느 부분에 집중할지 물어봐줘.
+
+---
+
+entirecontext
+
+---
+
+전체 진단
+
+---
+
+# Response annotations:
+Each item contains text selected from an earlier Codex response and may include a user comment. Treat items as Annotation 1, Annotation 2, and so on in array order. Use every selection as context and address every comment. For every annotation you address, include its inline directive `:codex-annotation{index="N"}`, where N is its one-based array position (for example, `:codex-annotation{index="1"}`). Do not use unstructured annotation labels.
+<response-annotations>
+[{"text":"동기화 도중 생성된 기록의 누락 가능성","source":{"messageId":"msg_0bc1f76eb67597c6016a9d68fa874c87d0a1a6133849efd313","startOffset":261,"endOffset":282}}]
+</response-annotations>
+
+## My request:
+이걸 조사해주세요
+
+---
+
+버그를 수정하고 전체 기록을 다시 내보내죠
