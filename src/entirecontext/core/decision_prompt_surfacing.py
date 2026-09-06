@@ -19,6 +19,9 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .git_utils import get_recent_commit_shas as _get_recent_commit_shas
+from .git_utils import get_uncommitted_diff as _get_uncommitted_diff
+
 
 _FALLBACK_BASE = "decisions-context-prompt"
 
@@ -31,28 +34,6 @@ from .tokens import estimate_tokens as _estimate_tokens_impl  # noqa: E402
 def _sanitize_id_for_path(value: str) -> str:
     """Strip filesystem-unsafe characters from an identifier."""
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in value or "unknown")
-
-
-def _get_uncommitted_diff(repo_path: str) -> str | None:
-    """Return uncommitted diff text, truncated to 8192 bytes. ``None`` on failure.
-
-    Inlined from ``hooks.decision_hooks`` to avoid a core → hooks reverse
-    dependency. The behavior must match the SessionStart signal exactly so
-    the ranker sees the same shape across all three surfacing channels.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "diff", "HEAD"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout[:8192]
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    return None
 
 
 def _get_uncommitted_file_paths(repo_path: str) -> list[str]:
@@ -106,23 +87,6 @@ def _parse_name_status_z(raw: str) -> list[str]:
         else:
             break
     return paths
-
-
-def _get_recent_commit_shas(repo_path: str, limit: int = 5) -> list[str]:
-    """Return recent commit SHAs. Empty list on failure."""
-    try:
-        result = subprocess.run(
-            ["git", "log", "--format=%H", f"-{limit}"],
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return [s for s in result.stdout.strip().split("\n") if s]
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    return []
 
 
 def _get_recent_commit_file_paths(repo_path: str, limit: int = 5) -> list[str]:
