@@ -93,7 +93,7 @@ def on_session_start(data: dict[str, Any]) -> None:
             row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE sessions SET ended_at = NULL, last_activity_at = ?, updated_at = ? WHERE id = ?",
                     (now, now, session_id),
                 )
                 return
@@ -186,6 +186,7 @@ def _populate_session_summary(conn, session_id: str) -> None:
 
 def _maybe_generate_intent_summary(conn, session_id: str) -> None:
     """Generate intent summary via LLM if enabled. No-op on config disabled or LLM failure."""
+    project = None
     try:
         from ..core.config import load_config
 
