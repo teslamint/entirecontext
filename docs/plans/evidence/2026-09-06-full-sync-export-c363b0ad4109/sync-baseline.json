@@ -1,0 +1,16 @@
+{
+  "actual_status": 0,
+  "check_id": "sync-baseline",
+  "command": "set -euo pipefail\nUV_CACHE_DIR=/tmp/ec-audit-uv-cache .venv/bin/pytest tests/test_sync.py tests/test_sync_engine.py -q\n",
+  "command_sha256": "7e228be4c782682f42dc1fe49db0d1794d557884dd7c9b4c9fbde88150322e09",
+  "expected_status": 0,
+  "output": "..................................................                       [100%]\n50 passed in 3.21s\n",
+  "output_sha256": "3e7604ad5bf72ed132c2f502da2f600a115a902e7d590fd1b70e2d9abb7f488c",
+  "plan": "docs/plans/2026-09-06-full-sync-export.md",
+  "plan_sha256": "0642484a0804fb0e3cb1f2c20cc6114e83b158676c9e9fa1f565a8a63f78521f",
+  "record_sha256": "222b4823005c85d2c9bb14aadef46ec73a16f6f4027dbac09ed2f6e5f1f5748d",
+  "recorded_at": "2026-09-06T13:47:40.040680+00:00",
+  "schema": "plan-check/v1",
+  "spec": "docs/specs/2026-09-06-full-sync-export.md",
+  "spec_sha256": "2b441ea92cc615863141d4a0fbabae3f2fe70bfe303aa62b38b017076f96d167"
+}
