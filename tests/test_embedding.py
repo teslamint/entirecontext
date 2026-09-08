@@ -244,3 +244,23 @@ def test_semantic_target(conn, monkeypatch, target):
     results = embedding.semantic_search(db, "query", target=target, limit=1)
 
     assert [result["source_type"] for result in results] == [target]
+
+
+def test_semantic_session_result_includes_total_turns(conn, monkeypatch):
+    import struct
+
+    from entirecontext.core import embedding
+
+    db, session_id = conn
+    vector = struct.pack("2f", 1.0, 0.0)
+    db.execute("UPDATE sessions SET total_turns = 3 WHERE id = ?", (session_id,))
+    db.execute(
+        "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+        "VALUES (?, 'session', ?, 'all-MiniLM-L6-v2', ?, 2, 'hash')",
+        (str(uuid4()), session_id, vector),
+    )
+    monkeypatch.setattr(embedding, "embed_text", lambda *args: vector)
+
+    results = embedding.semantic_search(db, "query", target="session", limit=1)
+
+    assert results[0]["total_turns"] == 3

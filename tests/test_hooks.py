@@ -415,6 +415,27 @@ class TestAutoCleanupNoChanges:
 
 
 class TestIntentSummary:
+    def test_intent_summary_lookup_failure_does_not_open_unknown_db(self, db):
+        import sqlite3
+
+        from entirecontext.hooks.session_lifecycle import _maybe_generate_intent_summary
+
+        db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        db.set_authorizer(
+            lambda action, table, *_: (
+                sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ and table == "sessions" else sqlite3.SQLITE_OK
+            )
+        )
+        try:
+            with patch("entirecontext.db.get_db") as get_db:
+                _maybe_generate_intent_summary(db, "s1")
+            get_db.assert_not_called()
+        finally:
+            db.set_authorizer(None)
+
     @pytest.mark.parametrize("denied_table", ["sessions", "projects"])
     def test_intent_summary_tolerates_lookup_failure(self, db, denied_table):
         import sqlite3
