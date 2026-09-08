@@ -247,14 +247,19 @@ def test_export_redaction(ec_db, tmp_path, monkeypatch, enabled, patterns, struc
         (secret, secret, session["id"]),
     )
     create_turn(ec_db, session["id"], turn_number=1, user_message=secret, assistant_summary=secret)
-    metadata = {"nested": [secret, {"description": secret}], "count": 3, "missing": None}
+    metadata = {
+        "nested": [secret, {"description": secret}],
+        "token=audit_value": {"description": secret},
+        "count": 3,
+        "missing": None,
+    }
     checkpoint = create_checkpoint(
         ec_db,
         session["id"],
         "abc123",
         diff_summary=secret,
         metadata=metadata,
-        files_snapshot={"example.py": {"description": secret}},
+        files_snapshot={"token=audit_value": {"description": secret}},
     )
     agent_state = json.dumps(metadata) if structured_state else secret
     ec_db.execute("UPDATE checkpoints SET agent_state = ? WHERE id = ?", (agent_state, checkpoint["id"]))
@@ -272,13 +277,25 @@ def test_export_redaction(ec_db, tmp_path, monkeypatch, enabled, patterns, struc
     assert meta["session_title"] == meta["session_summary"] == expected
     assert turn["user_message"] == turn["assistant_summary"] == expected
     assert exported["diff_summary"] == expected
-    expected_metadata = {"nested": [expected, {"description": expected}], "count": 3, "missing": None}
+    expected_key = expected if enabled else "token=audit_value"
+    expected_metadata = {
+        "nested": [expected, {"description": expected}],
+        expected_key: {"description": expected},
+        "count": 3,
+        "missing": None,
+    }
     assert json.loads(exported["metadata"]) == expected_metadata
     if structured_state:
-        assert json.loads(exported["agent_state"]) == expected_metadata
+        expected_agent_state = {
+            "nested": [expected, {"description": expected}],
+            "token=audit_value": {"description": expected},
+            "count": 3,
+            "missing": None,
+        }
+        assert json.loads(exported["agent_state"]) == expected_agent_state
     else:
         assert exported["agent_state"] == expected
-    assert json.loads(exported["files_snapshot"]) == {"example.py": {"description": expected}}
+    assert json.loads(exported["files_snapshot"]) == {"token=audit_value": {"description": expected}}
     assert exported["id"] == checkpoint["id"]
     assert exported["session_id"] == meta["id"] == session["id"]
     assert exported["git_commit_hash"] == "abc123"

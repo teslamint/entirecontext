@@ -29,7 +29,7 @@ def _find_git_root(cwd: str) -> str | None:
     return None
 
 
-def _record_hook_warning(repo_path: str, phase: str, exc: Exception) -> None:
+def _record_hook_warning(repo_path: str | None, phase: str, exc: Exception) -> None:
     if not repo_path:
         return
     try:
@@ -230,7 +230,7 @@ def _maybe_generate_intent_summary(conn, session_id: str) -> None:
 
         conn.execute("UPDATE sessions SET session_summary = ? WHERE id = ?", (summary[:500], session_id))
     except Exception as exc:
-        _record_hook_warning(project["repo_path"] if project else "unknown", "intent_summary", exc)
+        _record_hook_warning(project["repo_path"] if project else None, "intent_summary", exc)
 
 
 def on_session_end(data: dict[str, Any]) -> None:

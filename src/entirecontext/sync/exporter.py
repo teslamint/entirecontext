@@ -19,22 +19,27 @@ def _utc_datetime(value: str) -> datetime:
     return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
 
 
-def _filter_value(value: Any, patterns: list[str] | None) -> Any:
+def _filter_value(value: Any, patterns: list[str] | None, *, filter_keys: bool = False) -> Any:
     if isinstance(value, str):
         return filter_export_data(value, patterns)
     if isinstance(value, list):
-        return [_filter_value(item, patterns) for item in value]
+        return [_filter_value(item, patterns, filter_keys=filter_keys) for item in value]
     if isinstance(value, dict):
-        return {key: _filter_value(item, patterns) for key, item in value.items()}
+        return {
+            _filter_value(key, patterns, filter_keys=filter_keys) if filter_keys else key: _filter_value(
+                item, patterns, filter_keys=filter_keys
+            )
+            for key, item in value.items()
+        }
     return value
 
 
-def _filter_json_text(value: str, patterns: list[str] | None) -> str:
+def _filter_json_text(value: str, patterns: list[str] | None, *, filter_keys: bool = False) -> str:
     try:
         parsed = json.loads(value)
     except json.JSONDecodeError:
         return filter_export_data(value, patterns)
-    filtered = _filter_value(parsed, patterns)
+    filtered = _filter_value(parsed, patterns, filter_keys=filter_keys)
     return json.dumps(filtered) if filtered != parsed else value
 
 
@@ -129,7 +134,7 @@ def export_checkpoints(
             cp["diff_summary"] = _filter_value(cp.get("diff_summary"), filter_patterns)
             for field in ("files_snapshot", "agent_state", "metadata"):
                 if cp.get(field):
-                    cp[field] = _filter_json_text(cp[field], filter_patterns)
+                    cp[field] = _filter_json_text(cp[field], filter_patterns, filter_keys=field == "metadata")
         cp_path = checkpoints_dir / f"{cp['id']}.json"
         cp_path.write_text(json.dumps(cp, indent=2), encoding="utf-8")
         count += 1

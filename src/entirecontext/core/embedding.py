@@ -118,7 +118,7 @@ def semantic_search(
                 continue
         elif item["source_type"] == "session":
             session = conn.execute(
-                "SELECT id, session_title, session_summary, started_at, "
+                "SELECT id, session_title, session_summary, started_at, total_turns, "
                 "datetime(started_at) AS normalized_timestamp FROM sessions WHERE id = ?",
                 (item["source_id"],),
             ).fetchone()
@@ -126,6 +126,7 @@ def semantic_search(
                 result["session_title"] = session["session_title"]
                 result["session_summary"] = session["session_summary"]
                 result["started_at"] = session["started_at"]
+                result["total_turns"] = session["total_turns"]
                 normalized_timestamp = session["normalized_timestamp"]
             else:
                 continue
