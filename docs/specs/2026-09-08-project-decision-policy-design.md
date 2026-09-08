@@ -9,8 +9,9 @@ schema: spec/v1
 
 ## Overview
 
-Help projects choose which decisions to record and when implementation needs a plan or verification evidence.
+Help projects choose which decisions to record and when their own workflow calls for a plan or verification evidence.
 Provide an optional policy template that each project owns after adoption.
+Projects can use EC and change code without adopting this template, subject to their existing instructions and contribution rules.
 This documentation fulfills [issue #250](https://github.com/teslamint/entirecontext/issues/250).
 
 ## User Scenarios
@@ -27,11 +28,19 @@ A developer records why an existing parser remains in use.
 The example project allows this rationale record without a companion implementation plan.
 The record itself does not grant permission to change code.
 
-### S3: Authorize an implementation
+### S3: Record an implementation decision under an adopted policy
 
 A maintainer approves a retry-behavior change under their chosen project policy.
 The example links the decision to a short plan, a measurable retry bound, and verification evidence.
 Those requirements belong to the example project and are not EC decision fields.
+The project's approval grants authority; EC preserves the decision and its rationale.
+
+### S4: Continue without adopting the policy
+
+A maintainer declines the template and requests the same retry-behavior change through the project's existing workflow.
+The developer follows those instructions and any existing approval or verification requirements.
+EC can still record and retrieve the decision; template adoption adds no prerequisite for the change.
+Declining the template does not waive existing project rules.
 
 ## Scope
 
@@ -42,6 +51,7 @@ Those requirements belong to the example project and are not EC decision fields.
 - Cover recording scope, canonical authority, implementation criteria, optional approvals and exceptions, and decision review or replacement.
 - Label every project choice and optional section explicitly.
 - Include the contrasting S2 and S3 examples as examples, outside the copyable policy block.
+- Explain S4 alongside the examples: declining the template leaves existing project authority and workflows in place.
 - Explain how this template complements the existing decision and lesson reuse template.
 - Clarify adoption in the existing user template without changing its copied workflow requirements.
 
@@ -49,7 +59,8 @@ Those requirements belong to the example project and are not EC decision fields.
 
 - Runtime, schema, CLI, MCP, dependency, or mandatory decision-field changes.
 - Rejecting decisions because a policy, approval, or plan is absent.
-- Universal compound-loop gates or automatic installation of policy text.
+- Imposing common approval or planning requirements on all consuming projects.
+- Automatic installation of policy text or requiring adoption before code changes.
 - Changes to EntireContext's own development requirements or historical evidence.
 - A general documentation validator, new test framework, release version, or package publication.
 
@@ -64,7 +75,7 @@ Those requirements belong to the example project and are not EC decision fields.
 ## Architecture
 
 This is documentation-only work. README guidance introduces the project-owned policy and distinguishes EC maintainer rules from consumer guidance.
-The new template contains adoption instructions, a self-contained policy block, and two short examples.
+The new template contains adoption instructions, a self-contained policy block, and two contrasting examples with a short non-adoption explanation.
 The existing user template links to it and explains that copied requirements apply after project adoption.
 No new ADR is needed: this change explains the existing enforcement boundary without establishing an EC-wide development rule.
 
@@ -72,11 +83,16 @@ No new ADR is needed: this change explains the existing enforcement boundary wit
 
 The project chooses the policy's canonical location and how decision records reference it.
 Plain repository paths or existing decision evidence links suffice; the template must not invent a policy-registration command.
-The copyable block defines rationale records and implementation-authorizing decisions without assuming either requires a particular tool.
+The copyable block distinguishes rationale records from decisions that authorize implementation under the project's own workflow.
+An EC record documents that authorization; creating the record neither grants nor restricts permission to change code.
 It asks the project to select plan, success-criteria, and evidence requirements based on the change.
 Approval roles and exception handling are optional project choices.
 The project chooses how to review decisions, revise them, and preserve links to replacements.
 Adoption and enforcement remain project responsibilities; EC does not enforce this template.
+If a project declines adoption, its existing instructions, approvals, and contribution rules continue to govern changes.
+This includes the retry-behavior change in S3; the optional template is not a prerequisite for it.
+Do not infer approval from absent policy text or infer a prohibition from non-adoption.
+Express all consumer guidance without requiring a particular development tool or workflow framework.
 
 ## Testing
 
@@ -84,9 +100,10 @@ Adoption and enforcement remain project responsibilities; EC does not enforce th
   Require local destinations to exist as files; inspect anchors when present.
 - T2: Extract the policy block into a temporary consumer repository and complete every project choice for an example project.
   Remove optional sections, then verify the policy still explains recording scope, canonical authority, implementation criteria, and decision maintenance.
-  Require no unresolved placeholders, broken local links, EC-internal file dependencies, or compound-loop dependency in the adopted policy.
-- T3: Review both examples against the policy contract and all six issue acceptance criteria.
-  Reject mandatory EC fields, universal approval gates, or wording that treats decision creation as implementation permission.
+  Require no unresolved placeholders, broken local links, EC-internal file dependencies, or required development-tool dependencies in the adopted policy.
+- T3: Review both examples and the non-adoption explanation against S1-S4, the policy contract, and all six issue acceptance criteria.
+  Reject mandatory EC fields, universal approval gates, or wording that makes template adoption a prerequisite for code changes.
+  Reject wording that treats decision creation as permission or treats non-adoption as a waiver of existing requirements.
 - T4: Check the final diff excludes source, schema, dependency, and existing workflow-rule changes.
   Run `git diff --check`; retain the baseline and relevant existing verification results separately.
 
@@ -99,6 +116,7 @@ Use the existing Markdown parser if an executable check needs parsing; do not ad
 - Copied examples could imply universal requirements. Label them as one project's choices and keep them outside the policy block.
 - Relative links could break after copying. Keep EC cross-links outside the policy block and test the adopted document independently.
 - Existing mandatory wording could obscure optional adoption. Clarify this boundary in both README guidance and the user template introduction.
+- An implementation example could imply that policy adoption enables code changes. Include S4 and identify the project's existing source of authority.
 
 ## Success Criteria
 
@@ -109,11 +127,13 @@ Use the existing Markdown parser if an executable check needs parsing; do not ad
 3. The rationale and implementation examples show distinct treatment under one explicit example policy.
    - Measured by T3: rationale needs no plan; implementation includes a plan, success criterion, and evidence reference.
 4. Consumers can distinguish EC development rules from their own adoption and enforcement choices.
-   - Measured by T3: README and both user-facing templates state the boundary consistently.
+   - Measured by T3: README and both user-facing templates state the boundary consistently, without requiring specific development tools.
 5. An adopted policy stands alone in a consumer repository.
    - Measured by T2: zero unresolved choices, broken local links, or required EC-internal dependencies after adaptation.
 6. The change introduces no runtime or mandatory workflow changes.
    - Measured by T4 and direct comparison of the existing template's copied workflow block.
+7. Readers understand that non-adoption permits normal project work without waiving existing requirements.
+   - Measured by T3: the non-adoption explanation allows the same retry change under existing authority and rejects EC-created permission.
 
 ## Open Decisions
 
