@@ -4,6 +4,14 @@ Use this template in projects that have installed and enabled EntireContext and 
 
 It is intentionally workflow-neutral. It works for solo repositories, small teams, PR-based workflows, direct-to-main workflows, TDD, and non-TDD processes.
 
+Adoption is optional. The copied requirements apply when your project adopts them; your project owns and enforces that policy.
+EntireContext maintainer rules do not become requirements for your project.
+Existing project instructions and contribution rules govern changes, including when you decline this template.
+
+The [project decision policy template](entirecontext-project-decision-policy-template.md) complements this reuse workflow.
+It helps your project choose what to record and when plans or evidence are needed.
+Creating an EC record does not grant permission to change code.
+
 ## Suggested Insertion
 
 ```md
