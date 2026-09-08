@@ -41,6 +41,7 @@ jq -n --rawfile body "$guidance" \\
 """
 
 _GUIDANCE_CONTENT = """\
+<!-- EntireContext: managed guidance -->
 ## EntireContext - Proactive Memory Reuse
 
 Proactively use EntireContext before answering questions about existing code,
@@ -450,7 +451,7 @@ def _strip_ec_inject_hooks(entries: list) -> list:
     return kept
 
 
-def _install_guidance_files() -> None:
+def _install_guidance_files() -> bool:
     hooks_dir = Path.home() / ".claude" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
 
@@ -467,6 +468,7 @@ def _install_guidance_files() -> None:
     if should_write:
         inject_path.write_text(_INJECT_SCRIPT, encoding="utf-8")
         inject_path.chmod(inject_path.stat().st_mode | stat.S_IEXEC)
+    return should_write
 
 
 def _register_guidance_hook_codex() -> None:
@@ -530,6 +532,8 @@ def _remove_guidance_injection() -> None:
                 content = path.read_text(encoding="utf-8")
                 if "# EntireContext:" not in content:
                     continue
+            elif path.read_text(encoding="utf-8") != _GUIDANCE_CONTENT:
+                continue
             path.unlink()
             console.print(f"[yellow]Removed[/yellow] ~/.claude/hooks/{name}")
 
@@ -787,40 +791,43 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
         _enable_codex_notify(repo_path)
         console.print("[green]Codex notify installed[/green] in ~/.codex/config.toml")
 
-    user_settings_path = Path.home() / ".claude" / "settings.json"
-    user_settings_path.parent.mkdir(parents=True, exist_ok=True)
-    user_settings: dict = {}
-    if user_settings_path.exists():
-        user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
-
-    user_settings_changed = False
-    mcp_servers = user_settings.setdefault("mcpServers", {})
-    if "entirecontext" not in mcp_servers:
-        ec_bin = shutil.which("ec")
-        mcp_servers["entirecontext"] = {
-            "command": str(Path(ec_bin).resolve()) if ec_bin else sys.executable,
-            "args": ["mcp", "serve"] if ec_bin else ["-m", "entirecontext.cli", "mcp", "serve"],
-            "type": "stdio",
-        }
-        user_settings_changed = True
-        console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
-
     if sys.platform == "win32":
         console.print("[yellow]Warning:[/yellow] Guidance injection hook requires sh; skipping on Windows.")
     else:
-        _install_guidance_files()
-        user_hooks = user_settings.setdefault("hooks", {})
-        session_start = user_hooks.get("SessionStart", [])
-        session_start = _strip_ec_inject_hooks(session_start)
-        session_start.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
-        user_hooks["SessionStart"] = session_start
-        user_settings_changed = True
-        console.print("[green]Guidance hook registered[/green] in ~/.claude/settings.json")
+        inject_script_owned = _install_guidance_files()
 
-    if user_settings_changed:
-        user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
+    if agent in {"claude", "both"}:
+        user_settings_path = Path.home() / ".claude" / "settings.json"
+        user_settings_path.parent.mkdir(parents=True, exist_ok=True)
+        user_settings: dict = {}
+        if user_settings_path.exists():
+            user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
 
-    if sys.platform != "win32" and agent in {"codex", "both"}:
+        user_settings_changed = False
+        mcp_servers = user_settings.setdefault("mcpServers", {})
+        if "entirecontext" not in mcp_servers:
+            ec_bin = shutil.which("ec")
+            mcp_servers["entirecontext"] = {
+                "command": str(Path(ec_bin).resolve()) if ec_bin else sys.executable,
+                "args": ["mcp", "serve"] if ec_bin else ["-m", "entirecontext.cli", "mcp", "serve"],
+                "type": "stdio",
+            }
+            user_settings_changed = True
+            console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
+
+        if sys.platform != "win32" and inject_script_owned:
+            user_hooks = user_settings.setdefault("hooks", {})
+            session_start = user_hooks.get("SessionStart", [])
+            session_start = _strip_ec_inject_hooks(session_start)
+            session_start.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
+            user_hooks["SessionStart"] = session_start
+            user_settings_changed = True
+            console.print("[green]Guidance hook registered[/green] in ~/.claude/settings.json")
+
+        if user_settings_changed:
+            user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
+
+    if sys.platform != "win32" and inject_script_owned and agent in {"codex", "both"}:
         _register_guidance_hook_codex()
         console.print("[green]Guidance hook registered[/green] in ~/.codex/hooks.json")
 
