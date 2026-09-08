@@ -2,10 +2,11 @@
 schema: plan/v1
 title: Optional Project Decision Policy Guidance
 type: docs
-status: draft
+status: approved
 date: 2026-09-08
 execution: non-code
 origin: docs/specs/2026-09-08-project-decision-policy-design.md
+body_seal: 53f8ae03d809b8079fd8dfbd65d1501dc3dba7dd5f3f6a61aa1d534edcbe0d61
 ---
 
 # Optional Project Decision Policy Plan
