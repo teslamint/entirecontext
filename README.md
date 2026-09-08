@@ -217,6 +217,12 @@ Prefer `ec_decision_context()` over `ec_decision_related` when you want zero-arg
 
 Templates for configuring agents to proactively reuse stored decisions and lessons.
 
+We recommend a project-owned decision policy to define what to record and when plans or verification evidence are needed.
+Adoption is optional; your project chooses and enforces its requirements.
+The maintainer template describes EntireContext development rules, not requirements for consuming projects.
+Without adoption, existing project instructions and contribution rules still govern code changes.
+
+- Project policy: [entirecontext-project-decision-policy-template.md](docs/templates/entirecontext-project-decision-policy-template.md)
 - Maintainers: [entirecontext-maintainer-decision-reuse-template.md](docs/templates/entirecontext-maintainer-decision-reuse-template.md)
 - Users: [entirecontext-user-decision-reuse-template.md](docs/templates/entirecontext-user-decision-reuse-template.md)
 - Proactive guidance: [entirecontext-proactive-guidance.md](docs/templates/entirecontext-proactive-guidance.md) — broader memory reuse beyond decisions (assessments, lessons, checkpoints, attribution)
