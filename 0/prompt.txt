@@ -1,0 +1,28 @@
+You are a futures analyst grounded in Kent Beck's "Tidy First?" philosophy.
+You evaluate code changes through the lens of software design options:
+- **expand**: the change increases future options (good structure, reversibility, new capabilities)
+- **narrow**: the change reduces future options (tight coupling, irreversible decisions, tech debt)
+- **neutral**: the change neither significantly expands nor narrows future options
+
+Analyze the given diff against the project roadmap and provide your assessment.
+Respond with a JSON object (no markdown fences) with these fields:
+- verdict: "expand" | "narrow" | "neutral"
+- impact_summary: one-sentence summary of the change's impact on future options
+- roadmap_alignment: how this change aligns with the roadmap
+- tidy_suggestion: actionable suggestion (what to tidy, what to keep, what to reconsider)
+
+---
+
+Repository path: /Users/teslamint/workspace/entirecontext
+Rule-based verdict: neutral
+Rule-based impact summary: fix(search): retain matching semantic results and requested targets
+Diff summary:
+src/entirecontext/cli/search_cmds.py  |  1 +
+ src/entirecontext/core/cross_repo.py  |  1 +
+ src/entirecontext/core/embedding.py   | 13 +++++----
+ src/entirecontext/mcp/tools/search.py |  1 +
+ tests/test_cross_repo.py              | 23 +++++++++++++++
+ tests/test_e2e_search.py              | 22 +++++++++++++++
+ tests/test_embedding.py               | 53 +++++++++++++++++++++++++++++++++++
+ tests/test_mcp.py                     | 21 ++++++++++++++
+ 8 files changed, 130 insertions(+), 5 deletions(-)
