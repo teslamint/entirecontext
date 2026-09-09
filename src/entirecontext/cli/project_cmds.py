@@ -23,6 +23,7 @@ console = Console()
 _AGENT_CHOICES = {"claude", "codex", "both"}
 
 _INJECT_HOOK_COMMAND = 'sh "$HOME/.claude/hooks/ec-inject.sh"'
+_GUIDANCE_MARKER = "<!-- EntireContext: managed guidance -->"
 
 _INJECT_SCRIPT = """\
 #!/bin/sh
@@ -456,7 +457,7 @@ def _install_guidance_files() -> bool:
     hooks_dir.mkdir(parents=True, exist_ok=True)
 
     guidance_path = hooks_dir / "entirecontext-guidance.md"
-    if not guidance_path.exists():
+    if not guidance_path.exists() or _GUIDANCE_MARKER in guidance_path.read_text(encoding="utf-8"):
         guidance_path.write_text(_GUIDANCE_CONTENT, encoding="utf-8")
 
     inject_path = hooks_dir / "ec-inject.sh"
@@ -492,19 +493,24 @@ def _register_guidance_hook_codex() -> None:
 def _remove_guidance_injection() -> None:
     user_settings_path = Path.home() / ".claude" / "settings.json"
     if user_settings_path.exists():
-        settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
-        hooks = settings.get("hooks", {})
-        session_start = hooks.get("SessionStart", [])
-        stripped = _strip_ec_inject_hooks(session_start)
-        if stripped != session_start:
-            if stripped:
-                hooks["SessionStart"] = stripped
-            elif "SessionStart" in hooks:
-                del hooks["SessionStart"]
-            if not hooks and "hooks" in settings:
-                del settings["hooks"]
-            user_settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-            console.print("[yellow]Guidance hook removed[/yellow] from ~/.claude/settings.json")
+        try:
+            settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            console.print("[yellow]Warning:[/yellow] ~/.claude/settings.json is malformed; skipping guidance removal.")
+            settings = None
+        if settings is not None:
+            hooks = settings.get("hooks", {})
+            session_start = hooks.get("SessionStart", [])
+            stripped = _strip_ec_inject_hooks(session_start)
+            if stripped != session_start:
+                if stripped:
+                    hooks["SessionStart"] = stripped
+                elif "SessionStart" in hooks:
+                    del hooks["SessionStart"]
+                if not hooks and "hooks" in settings:
+                    del settings["hooks"]
+                user_settings_path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+                console.print("[yellow]Guidance hook removed[/yellow] from ~/.claude/settings.json")
 
     codex_hooks_path = Path.home() / ".codex" / "hooks.json"
     if codex_hooks_path.exists():
@@ -532,7 +538,7 @@ def _remove_guidance_injection() -> None:
                 content = path.read_text(encoding="utf-8")
                 if "# EntireContext:" not in content:
                     continue
-            elif path.read_text(encoding="utf-8") != _GUIDANCE_CONTENT:
+            elif _GUIDANCE_MARKER not in path.read_text(encoding="utf-8"):
                 continue
             path.unlink()
             console.print(f"[yellow]Removed[/yellow] ~/.claude/hooks/{name}")
@@ -795,37 +801,49 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
         console.print("[yellow]Warning:[/yellow] Guidance injection hook requires sh; skipping on Windows.")
     else:
         inject_script_owned = _install_guidance_files()
+        if not inject_script_owned:
+            console.print(
+                "[yellow]Warning:[/yellow] ~/.claude/hooks/ec-inject.sh exists and is not ours; "
+                "skipping guidance hook registration."
+            )
 
     if agent in {"claude", "both"}:
         user_settings_path = Path.home() / ".claude" / "settings.json"
         user_settings_path.parent.mkdir(parents=True, exist_ok=True)
         user_settings: dict = {}
         if user_settings_path.exists():
-            user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+            try:
+                user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                console.print(
+                    "[yellow]Warning:[/yellow] ~/.claude/settings.json is malformed; skipping Claude settings update."
+                )
+                user_settings = None
 
-        user_settings_changed = False
-        mcp_servers = user_settings.setdefault("mcpServers", {})
-        if "entirecontext" not in mcp_servers:
-            ec_bin = shutil.which("ec")
-            mcp_servers["entirecontext"] = {
-                "command": str(Path(ec_bin).resolve()) if ec_bin else sys.executable,
-                "args": ["mcp", "serve"] if ec_bin else ["-m", "entirecontext.cli", "mcp", "serve"],
-                "type": "stdio",
-            }
-            user_settings_changed = True
-            console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
+        if user_settings is not None:
+            user_settings_changed = False
+            mcp_servers = user_settings.setdefault("mcpServers", {})
+            if "entirecontext" not in mcp_servers:
+                ec_bin = shutil.which("ec")
+                mcp_servers["entirecontext"] = {
+                    "command": str(Path(ec_bin).resolve()) if ec_bin else sys.executable,
+                    "args": ["mcp", "serve"] if ec_bin else ["-m", "entirecontext.cli", "mcp", "serve"],
+                    "type": "stdio",
+                }
+                user_settings_changed = True
+                console.print("[green]MCP server configured[/green] in ~/.claude/settings.json")
 
-        if sys.platform != "win32" and inject_script_owned:
-            user_hooks = user_settings.setdefault("hooks", {})
-            session_start = user_hooks.get("SessionStart", [])
-            session_start = _strip_ec_inject_hooks(session_start)
-            session_start.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
-            user_hooks["SessionStart"] = session_start
-            user_settings_changed = True
-            console.print("[green]Guidance hook registered[/green] in ~/.claude/settings.json")
+            if sys.platform != "win32" and inject_script_owned:
+                user_hooks = user_settings.setdefault("hooks", {})
+                session_start = user_hooks.get("SessionStart", [])
+                session_start = _strip_ec_inject_hooks(session_start)
+                session_start.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
+                user_hooks["SessionStart"] = session_start
+                user_settings_changed = True
+                console.print("[green]Guidance hook registered[/green] in ~/.claude/settings.json")
 
-        if user_settings_changed:
-            user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
+            if user_settings_changed:
+                user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
 
     if sys.platform != "win32" and inject_script_owned and agent in {"codex", "both"}:
         _register_guidance_hook_codex()
