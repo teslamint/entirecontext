@@ -1617,9 +1617,10 @@ class TestGuidanceInjection:
         assert result.exit_code == 0
         assert guidance.read_text(encoding="utf-8") == "custom guidance content\n"
 
+    @pytest.mark.parametrize("malformed", ["{not valid json", "null", "[]", '"text"'])
     @patch("entirecontext.core.project.find_git_root")
     def test_disable_remove_guidance_continues_after_malformed_claude_settings(
-        self, mock_git_root, tmp_path, monkeypatch
+        self, mock_git_root, tmp_path, monkeypatch, malformed
     ):
         repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
@@ -1629,7 +1630,6 @@ class TestGuidanceInjection:
 
         settings_path = fake_home / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True)
-        malformed = "{not valid json"
         settings_path.write_text(malformed, encoding="utf-8")
         guidance = fake_home / ".claude" / "hooks" / "entirecontext-guidance.md"
         guidance.parent.mkdir(parents=True, exist_ok=True)
@@ -1640,6 +1640,31 @@ class TestGuidanceInjection:
         assert result.exit_code == 0
         assert "malformed" in result.output
         assert settings_path.read_text(encoding="utf-8") == malformed
+        assert not guidance.exists()
+
+    @pytest.mark.parametrize("settings_file", [".claude/settings.json", ".codex/hooks.json"])
+    @pytest.mark.parametrize("non_object", ["null", "[]", '"text"', "1"])
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_remove_guidance_skips_non_object_settings(
+        self, mock_git_root, tmp_path, monkeypatch, settings_file, non_object
+    ):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        settings_path = fake_home / settings_file
+        settings_path.parent.mkdir(parents=True)
+        settings_path.write_text(non_object, encoding="utf-8")
+        guidance = fake_home / ".claude" / "hooks" / "entirecontext-guidance.md"
+        guidance.parent.mkdir(parents=True, exist_ok=True)
+        guidance.write_text(project_cmds._GUIDANCE_CONTENT, encoding="utf-8")
+
+        result = runner.invoke(app, ["disable", "--remove-guidance"])
+
+        assert result.exit_code == 0
+        assert settings_path.read_text(encoding="utf-8") == non_object
         assert not guidance.exists()
 
     @patch("entirecontext.core.project.find_git_root")
@@ -1740,9 +1765,10 @@ class TestGuidanceInjection:
         assert any(_is_ec_inject_hook(e) for e in session_start)
         assert not (fake_home / ".claude" / "settings.json").exists()
 
+    @pytest.mark.parametrize("malformed", ["{not valid json", "null", "[]", '"text"'])
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_both_continues_codex_registration_after_malformed_claude_settings(
-        self, mock_git_root, tmp_path, monkeypatch
+        self, mock_git_root, tmp_path, monkeypatch, malformed
     ):
         repo = tmp_path / "repo"
         subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
@@ -1752,7 +1778,6 @@ class TestGuidanceInjection:
 
         settings_path = fake_home / ".claude" / "settings.json"
         settings_path.parent.mkdir(parents=True)
-        malformed = "{not valid json"
         settings_path.write_text(malformed, encoding="utf-8")
 
         result = runner.invoke(app, ["enable", "--agent", "both", "--no-git-hooks"])
@@ -1761,6 +1786,25 @@ class TestGuidanceInjection:
         assert "malformed" in result.output
         assert settings_path.read_text(encoding="utf-8") == malformed
         assert (fake_home / ".codex" / "hooks.json").exists()
+
+    @pytest.mark.parametrize("non_object", ["null", "[]", '"text"', "1"])
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_skips_non_object_guidance_hooks(self, mock_git_root, tmp_path, monkeypatch, non_object):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        hooks_path = fake_home / ".codex" / "hooks.json"
+        hooks_path.parent.mkdir(parents=True)
+        hooks_path.write_text(non_object, encoding="utf-8")
+
+        result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+
+        assert result.exit_code == 0
+        assert "malformed" in result.output
+        assert hooks_path.read_text(encoding="utf-8") == non_object
 
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_claude_only_no_codex_guidance_hook(self, mock_git_root, tmp_path, monkeypatch):

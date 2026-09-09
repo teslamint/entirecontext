@@ -452,6 +452,14 @@ def _strip_ec_inject_hooks(entries: list) -> list:
     return kept
 
 
+def _read_json_object(path: Path) -> dict | None:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
 def _install_guidance_files() -> bool:
     hooks_dir = Path.home() / ".claude" / "hooks"
     hooks_dir.mkdir(parents=True, exist_ok=True)
@@ -477,9 +485,8 @@ def _register_guidance_hook_codex() -> None:
     codex_hooks_path.parent.mkdir(parents=True, exist_ok=True)
     codex_hooks: dict = {}
     if codex_hooks_path.exists():
-        try:
-            codex_hooks = json.loads(codex_hooks_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        codex_hooks = _read_json_object(codex_hooks_path)
+        if codex_hooks is None:
             console.print("[yellow]Warning:[/yellow] ~/.codex/hooks.json is malformed; skipping guidance registration.")
             return
     hooks_section = codex_hooks.setdefault("hooks", {})
@@ -493,12 +500,10 @@ def _register_guidance_hook_codex() -> None:
 def _remove_guidance_injection() -> None:
     user_settings_path = Path.home() / ".claude" / "settings.json"
     if user_settings_path.exists():
-        try:
-            settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+        settings = _read_json_object(user_settings_path)
+        if settings is None:
             console.print("[yellow]Warning:[/yellow] ~/.claude/settings.json is malformed; skipping guidance removal.")
-            settings = None
-        if settings is not None:
+        else:
             hooks = settings.get("hooks", {})
             session_start = hooks.get("SessionStart", [])
             stripped = _strip_ec_inject_hooks(session_start)
@@ -514,10 +519,7 @@ def _remove_guidance_injection() -> None:
 
     codex_hooks_path = Path.home() / ".codex" / "hooks.json"
     if codex_hooks_path.exists():
-        try:
-            codex_hooks = json.loads(codex_hooks_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            codex_hooks = None
+        codex_hooks = _read_json_object(codex_hooks_path)
         if codex_hooks is not None:
             hooks_section = codex_hooks.get("hooks", {})
             session_start = hooks_section.get("SessionStart", [])
@@ -810,15 +812,13 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
     if agent in {"claude", "both"}:
         user_settings_path = Path.home() / ".claude" / "settings.json"
         user_settings_path.parent.mkdir(parents=True, exist_ok=True)
-        user_settings: dict = {}
+        user_settings: dict | None = {}
         if user_settings_path.exists():
-            try:
-                user_settings = json.loads(user_settings_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
+            user_settings = _read_json_object(user_settings_path)
+            if user_settings is None:
                 console.print(
                     "[yellow]Warning:[/yellow] ~/.claude/settings.json is malformed; skipping Claude settings update."
                 )
-                user_settings = None
 
         if user_settings is not None:
             user_settings_changed = False
