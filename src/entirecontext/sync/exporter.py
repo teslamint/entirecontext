@@ -25,12 +25,18 @@ def _filter_value(value: Any, patterns: list[str] | None, *, filter_keys: bool =
     if isinstance(value, list):
         return [_filter_value(item, patterns, filter_keys=filter_keys) for item in value]
     if isinstance(value, dict):
-        return {
-            _filter_value(key, patterns, filter_keys=filter_keys) if filter_keys else key: _filter_value(
-                item, patterns, filter_keys=filter_keys
-            )
-            for key, item in value.items()
-        }
+        filtered: dict[Any, Any] = {}
+        for key, item in value.items():
+            filtered_key = _filter_value(key, patterns, filter_keys=filter_keys) if filter_keys else key
+            if filtered_key in filtered:
+                suffix = 1
+                candidate = f"{filtered_key}__{suffix}"
+                while candidate in filtered:
+                    suffix += 1
+                    candidate = f"{filtered_key}__{suffix}"
+                filtered_key = candidate
+            filtered[filtered_key] = _filter_value(item, patterns, filter_keys=filter_keys)
+        return filtered
     return value
 
 
