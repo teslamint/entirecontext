@@ -300,3 +300,32 @@ def test_export_redaction(ec_db, tmp_path, monkeypatch, enabled, patterns, struc
     assert exported["session_id"] == meta["id"] == session["id"]
     assert exported["git_commit_hash"] == "abc123"
     assert json.loads(ec_db.execute("SELECT metadata FROM checkpoints").fetchone()["metadata"]) == metadata
+
+
+def test_export_redaction_preserves_colliding_metadata_keys(ec_db, tmp_path, monkeypatch):
+    from entirecontext.core.checkpoint import create_checkpoint
+    from entirecontext.core.session import create_session
+    from entirecontext.sync.export_flow import run_export
+
+    project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+    session = create_session(ec_db, project_id)
+    metadata = {
+        "token=audit_value": {"value": "first"},
+        "token=[REDACTED]": {"value": "second"},
+    }
+    checkpoint = create_checkpoint(ec_db, session["id"], "abc123", metadata=metadata)
+    monkeypatch.setattr("entirecontext.sync.export_flow.commit_if_changed", lambda *args: False)
+
+    run_export(
+        ec_db,
+        str(tmp_path),
+        str(tmp_path),
+        config={"security": {"filter_secrets": True, "patterns": ["audit_value"]}},
+    )
+
+    exported = json.loads((tmp_path / "checkpoints" / f"{checkpoint['id']}.json").read_text())
+    filtered = json.loads(exported["metadata"])
+    assert len(filtered) == 2
+    assert {item["value"] for item in filtered.values()} == {"first", "second"}
+    assert "token=[REDACTED]" in filtered
+    assert any(key.startswith("token=[REDACTED]__") for key in filtered)
