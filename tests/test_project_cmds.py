@@ -1785,7 +1785,9 @@ class TestGuidanceInjection:
         assert result.exit_code == 0
         assert "malformed" in result.output
         assert settings_path.read_text(encoding="utf-8") == malformed
-        assert (fake_home / ".codex" / "hooks.json").exists()
+        codex_hooks = json.loads((fake_home / ".codex" / "hooks.json").read_text(encoding="utf-8"))
+        session_start = codex_hooks.get("hooks", {}).get("SessionStart", [])
+        assert any(_is_ec_inject_hook(entry) for entry in session_start)
 
     @pytest.mark.parametrize("non_object", ["null", "[]", '"text"', "1"])
     @patch("entirecontext.core.project.find_git_root")
