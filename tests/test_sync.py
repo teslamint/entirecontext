@@ -203,3 +203,129 @@ class TestSecurityFilter:
         enabled, patterns = get_security_config(config)
         assert enabled is False
         assert patterns == ["custom"]
+
+
+@pytest.mark.parametrize(
+    ("created_at", "since", "expected"),
+    [
+        ("2026-09-06 12:00:00", "2026-09-06T10:00:00+00:00", 1),
+        ("2026-09-06 10:00:00", "2026-09-06T10:00:00+00:00", 0),
+        ("2026-09-06 09:00:00", "2026-09-06T10:00:00+00:00", 0),
+        ("2026-09-06T19:00:00+09:00", "2026-09-06T10:00:00+00:00", 0),
+        ("2026-09-06T10:00:00.000002+00:00", "2026-09-06T10:00:00.000001+00:00", 1),
+        ("2026-09-06T10:00:00.000001+00:00", "2026-09-06T10:00:00.000002+00:00", 0),
+    ],
+)
+def test_checkpoint_timestamp(ec_db, tmp_path, created_at, since, expected):
+    from entirecontext.core.checkpoint import create_checkpoint
+    from entirecontext.core.session import create_session
+    from entirecontext.sync.exporter import export_checkpoints
+
+    project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+    session = create_session(ec_db, project_id)
+    checkpoint = create_checkpoint(ec_db, session["id"], "abc123")
+    ec_db.execute("UPDATE checkpoints SET created_at = ? WHERE id = ?", (created_at, checkpoint["id"]))
+
+    assert export_checkpoints(ec_db, str(tmp_path), since=since) == expected
+    assert (tmp_path / "checkpoints" / f"{checkpoint['id']}.json").exists() == bool(expected)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+@pytest.mark.parametrize("patterns", [None, ["audit_value"]])
+@pytest.mark.parametrize("structured_state", [True, False])
+def test_export_redaction(ec_db, tmp_path, monkeypatch, enabled, patterns, structured_state):
+    from entirecontext.core.checkpoint import create_checkpoint
+    from entirecontext.core.session import create_session
+    from entirecontext.core.turn import create_turn
+    from entirecontext.sync.export_flow import run_export
+
+    secret = "token=audit_value"
+    project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+    session = create_session(ec_db, project_id)
+    ec_db.execute(
+        "UPDATE sessions SET session_title = ?, session_summary = ? WHERE id = ?",
+        (secret, secret, session["id"]),
+    )
+    create_turn(ec_db, session["id"], turn_number=1, user_message=secret, assistant_summary=secret)
+    metadata = {
+        "nested": [secret, {"description": secret}],
+        "token=audit_value": {"description": secret},
+        "count": 3,
+        "missing": None,
+    }
+    checkpoint = create_checkpoint(
+        ec_db,
+        session["id"],
+        "abc123",
+        diff_summary=secret,
+        metadata=metadata,
+        files_snapshot={"token=audit_value": {"description": secret}},
+    )
+    agent_state = json.dumps(metadata) if structured_state else secret
+    ec_db.execute("UPDATE checkpoints SET agent_state = ? WHERE id = ?", (agent_state, checkpoint["id"]))
+    monkeypatch.setattr("entirecontext.sync.export_flow.commit_if_changed", lambda *args: False)
+    security = {"filter_secrets": enabled}
+    if patterns is not None:
+        security["patterns"] = patterns
+
+    run_export(ec_db, str(tmp_path), str(tmp_path), config={"security": security})
+
+    meta = json.loads((tmp_path / "sessions" / session["id"] / "meta.json").read_text())
+    turn = json.loads((tmp_path / "sessions" / session["id"] / "transcript.jsonl").read_text())
+    exported = json.loads((tmp_path / "checkpoints" / f"{checkpoint['id']}.json").read_text())
+    expected = ("[REDACTED]" if patterns is None else "token=[REDACTED]") if enabled else secret
+    assert meta["session_title"] == meta["session_summary"] == expected
+    assert turn["user_message"] == turn["assistant_summary"] == expected
+    assert exported["diff_summary"] == expected
+    expected_key = expected if enabled else "token=audit_value"
+    expected_metadata = {
+        "nested": [expected, {"description": expected}],
+        expected_key: {"description": expected},
+        "count": 3,
+        "missing": None,
+    }
+    assert json.loads(exported["metadata"]) == expected_metadata
+    if structured_state:
+        expected_agent_state = {
+            "nested": [expected, {"description": expected}],
+            "token=audit_value": {"description": expected},
+            "count": 3,
+            "missing": None,
+        }
+        assert json.loads(exported["agent_state"]) == expected_agent_state
+    else:
+        assert exported["agent_state"] == expected
+    assert json.loads(exported["files_snapshot"]) == {"token=audit_value": {"description": expected}}
+    assert exported["id"] == checkpoint["id"]
+    assert exported["session_id"] == meta["id"] == session["id"]
+    assert exported["git_commit_hash"] == "abc123"
+    assert json.loads(ec_db.execute("SELECT metadata FROM checkpoints").fetchone()["metadata"]) == metadata
+
+
+def test_export_redaction_preserves_colliding_metadata_keys(ec_db, tmp_path, monkeypatch):
+    from entirecontext.core.checkpoint import create_checkpoint
+    from entirecontext.core.session import create_session
+    from entirecontext.sync.export_flow import run_export
+
+    project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+    session = create_session(ec_db, project_id)
+    metadata = {
+        "token=audit_value": {"value": "first"},
+        "token=[REDACTED]": {"value": "second"},
+    }
+    checkpoint = create_checkpoint(ec_db, session["id"], "abc123", metadata=metadata)
+    monkeypatch.setattr("entirecontext.sync.export_flow.commit_if_changed", lambda *args: False)
+
+    run_export(
+        ec_db,
+        str(tmp_path),
+        str(tmp_path),
+        config={"security": {"filter_secrets": True, "patterns": ["audit_value"]}},
+    )
+
+    exported = json.loads((tmp_path / "checkpoints" / f"{checkpoint['id']}.json").read_text())
+    filtered = json.loads(exported["metadata"])
+    assert len(filtered) == 2
+    assert {item["value"] for item in filtered.values()} == {"first", "second"}
+    assert "token=[REDACTED]" in filtered
+    assert any(key.startswith("token=[REDACTED]__") for key in filtered)

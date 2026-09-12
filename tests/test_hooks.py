@@ -184,6 +184,33 @@ class TestHookCmdDispatch:
 
 
 class TestSessionLifecycle:
+    @patch("entirecontext.hooks.session_lifecycle._find_git_root", return_value="/tmp/test")
+    @patch("entirecontext.db.get_db")
+    def test_resume_reopens_ended_session(self, mock_get_db, mock_git_root):
+        from entirecontext.core.session import get_current_session
+        from entirecontext.hooks.session_lifecycle import on_session_start
+
+        conn = _non_closing_db()
+        try:
+            init_schema(conn)
+            conn.execute("INSERT INTO projects (id, name, repo_path) VALUES ('p1', 'test', '/tmp/test')")
+            conn.execute(
+                "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at, ended_at) "
+                "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01', '2025-01-02')"
+            )
+            mock_get_db.return_value = conn
+
+            on_session_start({"session_id": "s1", "cwd": "/tmp/test", "source": "resume"})
+
+            session = get_current_session(conn)
+            assert session is not None
+            assert session["id"] == "s1"
+            assert session["ended_at"] is None
+            assert session["started_at"] == "2025-01-01"
+            assert session["last_activity_at"] != "2025-01-01"
+        finally:
+            conn.real_close()
+
     @patch("entirecontext.hooks.session_lifecycle._find_git_root")
     @patch("entirecontext.db.get_db")
     @patch("entirecontext.db.check_and_migrate")
@@ -388,6 +415,49 @@ class TestAutoCleanupNoChanges:
 
 
 class TestIntentSummary:
+    def test_intent_summary_lookup_failure_does_not_open_unknown_db(self, db):
+        import sqlite3
+
+        from entirecontext.hooks.session_lifecycle import _maybe_generate_intent_summary
+
+        db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        db.set_authorizer(
+            lambda action, table, *_: (
+                sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ and table == "sessions" else sqlite3.SQLITE_OK
+            )
+        )
+        try:
+            with patch("entirecontext.db.get_db") as get_db:
+                _maybe_generate_intent_summary(db, "s1")
+            get_db.assert_not_called()
+        finally:
+            db.set_authorizer(None)
+
+    @pytest.mark.parametrize("denied_table", ["sessions", "projects"])
+    def test_intent_summary_tolerates_lookup_failure(self, db, denied_table):
+        import sqlite3
+
+        from entirecontext.hooks.session_lifecycle import _maybe_generate_intent_summary
+
+        db.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
+        )
+        db.set_authorizer(
+            lambda action, table, *_: (
+                sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ and table == denied_table else sqlite3.SQLITE_OK
+            )
+        )
+        try:
+            with patch("entirecontext.hooks.session_lifecycle._record_hook_warning") as warning:
+                _maybe_generate_intent_summary(db, "s1")
+            assert isinstance(warning.call_args.args[2], sqlite3.DatabaseError)
+        finally:
+            db.set_authorizer(None)
+
     def test_intent_summary_calls_llm_when_enabled(self, db):
         db.execute(
             "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "

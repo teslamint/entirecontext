@@ -103,3 +103,37 @@ def get_tracked_files_snapshot(repo_path: str) -> dict[str, str]:
     except (subprocess.TimeoutExpired, FileNotFoundError):
         pass
     return {}
+
+
+def get_uncommitted_diff(repo_path: str) -> str | None:
+    """Return uncommitted diff text, truncated to 8192 characters. Returns None on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "HEAD"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout[:8192]
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return None
+
+
+def get_recent_commit_shas(repo_path: str, limit: int = 5) -> list[str]:
+    """Return recent commit SHAs. Returns empty list on failure."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%H", f"-{limit}"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return [s for s in result.stdout.strip().split("\n") if s]
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+    return []

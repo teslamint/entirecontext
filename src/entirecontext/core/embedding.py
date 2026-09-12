@@ -55,20 +55,25 @@ def semantic_search(
     since: str | None = None,
     until: str | None = None,
     until_exclusive: bool = False,
+    target: str | None = None,
 ) -> list[dict]:
     """Embed query and compare against stored embeddings.
 
     Returns ranked results with similarity scores.
     Supports post-filters: file_filter, commit_filter, agent_filter, since, until.
+    An optional target restricts results to one source type.
     """
     from .tql import TQLContext
 
     tql = TQLContext.validated(since=since, until=until, until_exclusive=until_exclusive) if (since or until) else None
+    if limit <= 0:
+        return []
     query_embedding = embed_text(query, model_name)
 
     rows = conn.execute(
-        "SELECT id, source_type, source_id, vector FROM embeddings WHERE model_name = ? AND source_type != 'decision'",
-        (model_name,),
+        "SELECT id, source_type, source_id, vector FROM embeddings "
+        "WHERE model_name = ? AND source_type != 'decision' AND (? IS NULL OR source_type = ?)",
+        (model_name, target, target),
     ).fetchall()
 
     scored = []
@@ -84,11 +89,9 @@ def semantic_search(
         )
 
     scored.sort(key=lambda x: x["score"], reverse=True)
-    fetch_limit = limit * 5 if any([file_filter, commit_filter, agent_filter, since, until]) else limit
-    top = scored[:fetch_limit]
 
     results = []
-    for item in top:
+    for item in scored:
         result = {
             "source_type": item["source_type"],
             "source_id": item["source_id"],
@@ -115,7 +118,7 @@ def semantic_search(
                 continue
         elif item["source_type"] == "session":
             session = conn.execute(
-                "SELECT id, session_title, session_summary, started_at, "
+                "SELECT id, session_title, session_summary, started_at, total_turns, "
                 "datetime(started_at) AS normalized_timestamp FROM sessions WHERE id = ?",
                 (item["source_id"],),
             ).fetchone()
@@ -123,6 +126,7 @@ def semantic_search(
                 result["session_title"] = session["session_title"]
                 result["session_summary"] = session["session_summary"]
                 result["started_at"] = session["started_at"]
+                result["total_turns"] = session["total_turns"]
                 normalized_timestamp = session["normalized_timestamp"]
             else:
                 continue

@@ -84,6 +84,29 @@ class TestCrossRepoSearch:
         }
         assert all(result["timestamp"] == "2026-01-01 00:00:00" for result in results)
 
+    @pytest.mark.parametrize("target", ["turn", "session"])
+    def test_semantic_target_cross_repo(self, multi_ec_repos, monkeypatch, target):
+        from entirecontext.core import embedding
+        from entirecontext.db import get_db
+
+        vector = struct.pack("2f", 1.0, 0.0)
+        for repo in multi_ec_repos.values():
+            conn = get_db(str(repo))
+            for source_type, table in [("session", "sessions"), ("turn", "turns")]:
+                source_id = conn.execute(f"SELECT id FROM {table} LIMIT 1").fetchone()["id"]
+                conn.execute(
+                    "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+                    "VALUES (?, ?, ?, 'all-MiniLM-L6-v2', ?, 2, 'hash')",
+                    (f"embedding-{source_type}", source_type, source_id, vector),
+                )
+            conn.close()
+        monkeypatch.setattr(embedding, "embed_text", lambda *args: vector)
+
+        results = cross_repo_search("auth", search_type="semantic", target=target)
+
+        assert len(results) == 2
+        assert {result["source_type"] for result in results} == {target}
+
     def test_exclusive_until_reaches_semantic_search(self, multi_ec_repos, monkeypatch):
         from entirecontext.core import embedding
         from entirecontext.db import get_db

@@ -29,7 +29,7 @@ def _find_git_root(cwd: str) -> str | None:
     return None
 
 
-def _record_hook_warning(repo_path: str, phase: str, exc: Exception) -> None:
+def _record_hook_warning(repo_path: str | None, phase: str, exc: Exception) -> None:
     if not repo_path:
         return
     try:
@@ -93,7 +93,7 @@ def on_session_start(data: dict[str, Any]) -> None:
             row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE sessions SET last_activity_at = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE sessions SET ended_at = NULL, last_activity_at = ?, updated_at = ? WHERE id = ?",
                     (now, now, session_id),
                 )
                 return
@@ -186,6 +186,7 @@ def _populate_session_summary(conn, session_id: str) -> None:
 
 def _maybe_generate_intent_summary(conn, session_id: str) -> None:
     """Generate intent summary via LLM if enabled. No-op on config disabled or LLM failure."""
+    project = None
     try:
         from ..core.config import load_config
 
@@ -229,7 +230,7 @@ def _maybe_generate_intent_summary(conn, session_id: str) -> None:
 
         conn.execute("UPDATE sessions SET session_summary = ? WHERE id = ?", (summary[:500], session_id))
     except Exception as exc:
-        _record_hook_warning(project["repo_path"] if project else "unknown", "intent_summary", exc)
+        _record_hook_warning(project["repo_path"] if project else None, "intent_summary", exc)
 
 
 def on_session_end(data: dict[str, Any]) -> None:
