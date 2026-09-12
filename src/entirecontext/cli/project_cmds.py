@@ -429,21 +429,25 @@ def _strip_ec_hooks(entries: list) -> list:
     return kept
 
 
+def _is_inject_command(command: object) -> bool:
+    """Return whether a command is the canonical managed guidance hook."""
+    return isinstance(command, str) and command.strip() == _INJECT_HOOK_COMMAND
+
+
 def _is_ec_inject_hook(entry: dict) -> bool:
-    cmd = entry.get("command", "")
-    if "ec-inject.sh" in cmd:
+    if _is_inject_command(entry.get("command", "")):
         return True
-    return any("ec-inject.sh" in h.get("command", "") for h in entry.get("hooks", []))
+    return any(_is_inject_command(h.get("command", "")) for h in entry.get("hooks", []))
 
 
 def _strip_ec_inject_hooks(entries: list) -> list:
     kept = []
     for entry in entries:
-        if "ec-inject.sh" in entry.get("command", ""):
+        if _is_inject_command(entry.get("command", "")):
             continue
         inner = entry.get("hooks")
         if isinstance(inner, list):
-            remaining = [h for h in inner if "ec-inject.sh" not in h.get("command", "")]
+            remaining = [h for h in inner if not _is_inject_command(h.get("command", ""))]
             if inner and not remaining:
                 continue
             if len(remaining) != len(inner):
