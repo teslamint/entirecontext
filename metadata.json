@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2MHM13QM7PXBXGT7W1MDT3Y",
   "strategy": "manual-commit",
   "branch": "feat/omp-integration",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "integrations/omp/extension/index.ts",
     "integrations/omp/install.sh"
@@ -15,13 +15,20 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 14,
-    "cache_creation_tokens": 62837,
-    "cache_read_tokens": 394249,
-    "output_tokens": 3689,
-    "api_call_count": 6
+    "input_tokens": 30,
+    "cache_creation_tokens": 121058,
+    "cache_read_tokens": 845406,
+    "output_tokens": 7366,
+    "api_call_count": 14
   }
 }
