@@ -1,0 +1,15 @@
+You are reviewing a checkpoint's code change summary and the surrounding turn summaries. Extract architectural or technical decisions that the change embodies (e.g. choosing one library over another, switching a data model, picking an error handling strategy). Return a JSON array: [{"title": str, "rationale": str, "scope": str, "rejected_alternatives": [{"alternative": str, "reason": str}]}]. Return [] if the change is a routine refactor, bug fix, or cleanup. For each rejected alternative, provide the reason it was not chosen — only if the reason is explicit in the source text. If no reason is stated, omit the "reason" key entirely (do not invent one).
+
+---
+
+.gitignore                          |   3 +
+ README.md                           |   9 ++
+ integrations/omp/.mcp.json          |   9 ++
+ integrations/omp/README.md          | 150 +++++++++++++++++
+ integrations/omp/extension/index.ts | 310 ++++++++++++++++++++++++++++++++++++
+ integrations/omp/install.sh         |  42 +++++
+ integrations/omp/package-lock.json  |  47 ++++++
+ integrations/omp/package.json       |  15 ++
+ integrations/omp/tsconfig.json      |  13 ++
+ integrations/omp/verify.sh          | 170 ++++++++++++++++++++
+ 10 files changed, 768 insertions(+)
