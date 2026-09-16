@@ -16,6 +16,14 @@
 # Scenario 3 (dedup-retry-collapse): a byte-identical prompt re-fired before
 #   turn_end (the retry re-fire case extensions.md documents) must collapse
 #   to ONE turn.
+# Scenario 4 (no-ec-on-PATH): when `ec` is absent, spawn fails asynchronously
+#   (ENOENT) and `child.stdin.end()` can race with the dead pipe; the stdin
+#   'error' listener must absorb it so the driver exits cleanly instead of
+#   crashing with an unhandled 'error' event.
+# Scenario 5 (install-fresh-agent-dir): install.sh must complete on a fresh
+#   PI_CODING_AGENT_DIR where $AGENT_DIR/extensions does not exist yet (bare
+#   `find` exits non-zero under set -euo pipefail and would abort the script
+#   before the success/restart messages).
 set -euo pipefail
 
 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -166,5 +174,50 @@ print(f"PASS[{name}]")
 run_scenario main "$MAIN_DRIVE" 5 "$MAIN_ASSERT"
 run_scenario dedup-genuine-repeat "$DEDUP_REPEAT_DRIVE" 6 "$DEDUP_REPEAT_ASSERT"
 run_scenario dedup-retry-collapse "$DEDUP_RETRY_DRIVE" 4 "$DEDUP_RETRY_ASSERT"
+
+# Scenario 4: `ec` dies instantly. `child.stdin.end()` racing the dead pipe
+# emits EPIPE on the stdin stream; without the 'error' listener the Node host
+# crashes with an unhandled 'error' event (verified: reproducible 5/5 in a
+# plain probe). The driver must exit 0 with the empty-output contract intact.
+NO_EC_DIR=$(mktemp -d)
+mkdir -p "$NO_EC_DIR/bin"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$NO_EC_DIR/bin/ec"
+chmod +x "$NO_EC_DIR/bin/ec"
+NO_EC_DRIVE="$DRIVE_PRELUDE"'
+await handlers.before_agent_start({ prompt: "ec dies instantly" }, ctx);
+handlers.tool_result({ toolName: "bash", input: { command: "echo hi" } }, ctx);
+handlers.turn_end({}, ctx);
+await handlers.session_shutdown({}, ctx);
+'
+printf '%s' "$NO_EC_DRIVE" > "$NO_EC_DIR/drive.mjs"
+PATH="$NO_EC_DIR/bin:$(dirname "$(command -v bun)")" bun "$NO_EC_DIR/drive.mjs" "$SRC_DIR" /tmp "noec-$(date +%s)-$$" \
+  2>"$NO_EC_DIR/stderr.log"
+driver_status=$?
+if [[ "$driver_status" != "0" ]]; then
+  echo "FAIL[no-ec-on-PATH]: driver exited $driver_status (host crash?)" >&2
+  tail -5 "$NO_EC_DIR/stderr.log" >&2
+  rm -rf "$NO_EC_DIR"
+  exit 1
+fi
+echo "PASS[no-ec-on-PATH]"
+rm -rf "$NO_EC_DIR"
+
+# Scenario 5: install.sh on a fresh agent dir with no extensions/ subdirectory.
+INSTALL_DIR=$(mktemp -d)
+AGENT_DIR="$INSTALL_DIR/agent"
+mkdir -p "$AGENT_DIR" "$INSTALL_DIR/bin"
+cat > "$INSTALL_DIR/bin/omp" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+chmod +x "$INSTALL_DIR/bin/omp"
+if ! PATH="$INSTALL_DIR/bin:$PATH" PI_CODING_AGENT_DIR="$AGENT_DIR" \
+    "$SRC_DIR/install.sh" >/dev/null 2>&1; then
+  echo "FAIL[install-fresh-agent-dir]: install.sh aborted on fresh agent dir" >&2
+  rm -rf "$INSTALL_DIR"
+  exit 1
+fi
+echo "PASS[install-fresh-agent-dir]"
+rm -rf "$INSTALL_DIR"
 
 echo "ALL PASS"
