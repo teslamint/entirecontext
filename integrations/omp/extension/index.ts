@@ -146,6 +146,14 @@ function runEcHook(
   timer.unref?.();
 
   let stdout = "";
+  // A killed/exited child can emit EPIPE (or other) errors on stdin
+  // asynchronously, after the try/catch around `stdin.end()` below has
+  // already returned; without a listener that crashes the omp host.
+  child.stdin?.on("error", (err: Error) => {
+    warn(pi, `writing ${type} payload failed: ${err.message}`);
+    clearTimeout(timer);
+    finish("");
+  });
   child.stdout?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string) => {
     stdout += chunk;

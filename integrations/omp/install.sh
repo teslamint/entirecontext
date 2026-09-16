@@ -33,7 +33,10 @@ fi
 
 omp plugin link "$SRC_DIR"
 
-remaining=$(find "$AGENT_DIR/extensions" -maxdepth 1 -iname 'entirecontext*' 2>/dev/null | wc -l | tr -d ' ')
+remaining=0
+if [[ -d "$AGENT_DIR/extensions" ]]; then
+  remaining=$(find "$AGENT_DIR/extensions" -maxdepth 1 -iname 'entirecontext*' | wc -l | tr -d ' ')
+fi
 if [[ "$remaining" != "0" ]]; then
   echo "WARNING: $remaining entry/entries named entirecontext* still under $AGENT_DIR/extensions — check for a second install." >&2
 fi
