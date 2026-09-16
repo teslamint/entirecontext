@@ -177,15 +177,19 @@ run_scenario dedup-retry-collapse "$DEDUP_RETRY_DRIVE" 4 "$DEDUP_RETRY_ASSERT"
 
 # Scenario 4: `ec` dies instantly. `child.stdin.end()` racing the dead pipe
 # emits EPIPE on the stdin stream; without the 'error' listener the Node host
-# crashes with an unhandled 'error' event (verified: reproducible 5/5 in a
-# plain probe). The driver must exit 0 with the empty-output contract intact.
+# crashes with an unhandled 'error' event. Crash-mode evidence: 5/5 under
+# plain node; bun does not propagate stdin 'error' to an uncaughtException in
+# 10/10 probes (100KB payload, closed fd, delayed write), so this scenario
+# asserts the survival contract but cannot fail deterministically pre-fix
+# under bun.
 NO_EC_DIR=$(mktemp -d)
 mkdir -p "$NO_EC_DIR/bin"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$NO_EC_DIR/bin/ec"
 chmod +x "$NO_EC_DIR/bin/ec"
 NO_EC_DRIVE="$DRIVE_PRELUDE"'
-await handlers.before_agent_start({ prompt: "ec dies instantly" }, ctx);
-handlers.tool_result({ toolName: "bash", input: { command: "echo hi" } }, ctx);
+const big = "x".repeat(100 * 1024); // exceeds pipe buffer: write must hit the dead pipe
+await handlers.before_agent_start({ prompt: "ec dies instantly", tool_input: { data: big } }, ctx);
+handlers.tool_result({ toolName: "bash", input: { command: "echo hi", data: big } }, ctx);
 handlers.turn_end({}, ctx);
 await handlers.session_shutdown({}, ctx);
 '
