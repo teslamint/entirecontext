@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "entirecontext": {
+      "type": "stdio",
+      "command": "ec",
+      "args": ["mcp", "serve"]
+    }
+  }
+}

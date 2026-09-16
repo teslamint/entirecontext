@@ -32,3 +32,6 @@ coverage.json
 agents.lock
 .agents/.gitignore
 *-export.json
+
+# EntireContext omp plugin: dependency install artifacts
+integrations/omp/node_modules/

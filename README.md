@@ -621,6 +621,15 @@ python_path=$(head -1 "$(command -v ec)" | sed 's/^#!//')
 `ec doctor` reports the configured and active Python major-minor versions when
 they differ and prints the clean recreation commands.
 
+### omp (Oh My Pi)
+
+omp does not speak the Claude Code hook protocol; it exposes its own
+extension API instead. `integrations/omp/` ships an omp extension that maps
+omp's lifecycle events onto the same `ec hook handle --type <HookType>` calls,
+plus an `.mcp.json` for the MCP server. See
+[`integrations/omp/README.md`](integrations/omp/README.md) for the event
+mapping, install script, and verification steps.
+
 ## Configuration
 
 Config merges in order: **defaults** ← **global** (`~/.entirecontext/config.toml`) ← **per-repo** (`.entirecontext/config.toml`).
