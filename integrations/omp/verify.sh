@@ -44,7 +44,7 @@ EOF
 
 # Runs one scenario: drives $drive_script against a throwaway repo, replays
 # captures in emission order, then hands the resulting turns rows (ordered by
-# id) as JSON to $assert_script on stdin for scenario-specific assertions.
+# id) as JSON to $assert_script via argv[2] for scenario-specific assertions.
 run_scenario() {
   local name="$1" drive_script="$2" expected_captures="$3" assert_script="$4"
   local work capture_dir fakebin repo session_id count result

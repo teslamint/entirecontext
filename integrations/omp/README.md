@@ -114,7 +114,7 @@ through the real `ec hook handle` in a throwaway `ec init`-ed repo, then
 asserts the resulting turn's `user_message` and `tools_used`):
 
 ```bash
-./verify.sh   # prints PASS or a failing assertion
+./verify.sh   # prints PASS[<scenario>] per scenario, then ALL PASS
 ```
 
 Gitignore hygiene:
