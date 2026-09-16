@@ -1,0 +1,15 @@
+{
+  "name": "entirecontext-omp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "EntireContext capture bridge and MCP tools for the omp coding agent",
+  "license": "MIT",
+  "type": "module",
+  "omp": {
+    "extensions": ["./extension/index.ts"]
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "typescript": "^5.9.3"
+  }
+}

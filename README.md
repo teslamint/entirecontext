@@ -574,6 +574,15 @@ Hook protocol: stdin JSON, exit code 0 = success, 2 = block.
 
 Skip Git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. The hooks are agent-neutral, so `ec disable` removes both EntireContext repository hooks for `--agent claude`, `codex`, and `both`; agent-specific Claude hooks and Codex notify remain controlled by `--agent`.
 
+### omp (Oh My Pi)
+
+omp does not speak the Claude Code hook protocol; it exposes its own
+extension API instead. `integrations/omp/` ships an omp extension that maps
+omp's lifecycle events onto the same `ec hook handle --type <HookType>` calls,
+plus an `.mcp.json` for the MCP server. See
+[`integrations/omp/README.md`](integrations/omp/README.md) for the event
+mapping, install script, and verification steps.
+
 ### Installed-tool provenance
 
 Distribution builds stamp the checkout Git SHA and tracked-file dirty state into the `ec` package. When an installed `ec doctor` runs inside an EntireContext source checkout, it compares that stamp with the checkout's current `HEAD`. A missing or mismatched stamp directs the operator to reinstall from the checkout:
