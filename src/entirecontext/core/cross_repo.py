@@ -232,6 +232,7 @@ def cross_repo_search(
             return semantic_search(
                 conn,
                 query,
+                target=target,
                 file_filter=file_filter,
                 commit_filter=commit_filter,
                 agent_filter=agent_filter,

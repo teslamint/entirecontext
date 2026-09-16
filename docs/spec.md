@@ -237,7 +237,7 @@ Artifacts:
 
 1. Ensure shadow branch exists (create orphan branch if absent)
 2. Create temporary git worktree on local shadow branch
-3. Export sessions/checkpoints since `sync_metadata.last_export_at`
+3. Export all sessions, their turns, and checkpoints, regardless of timestamps
 4. Update `manifest.json`
 5. Commit changes when present
 6. Push when enabled by runtime config path
@@ -247,6 +247,9 @@ Artifacts:
    - merge artifacts at app level only
    - create one merge retry commit and retry push once
 8. Update `sync_metadata.last_export_at` and duration fields only after successful sync completion
+
+The export timestamp controls telemetry and automatic-sync cooldown only. It does not filter records.
+Writes after export selection appear on the next sync. See [ADR 0020](adr/0020-full-sync-export.md).
 
 ### 6.2 `ec pull` current workflow `[Implemented]`
 

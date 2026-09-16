@@ -132,3 +132,69 @@ class TestGetTrackedFilesSnapshot:
     def test_returns_empty_outside_repo(self, tmp_path):
         result = get_tracked_files_snapshot(str(tmp_path))
         assert result == {}
+
+
+class TestSharedDecisionSignals:
+    """Both surfacing channels must observe the same repository state."""
+
+    @staticmethod
+    def _collectors():
+        from entirecontext.core import decision_prompt_surfacing
+        from entirecontext.hooks import decision_hooks
+
+        return (decision_prompt_surfacing, decision_hooks)
+
+    def test_diff_includes_staged_and_unstaged_changes(self, git_repo):
+        (git_repo / "README.md").write_text("initial\n")
+        subprocess.run(["git", "add", "README.md"], cwd=git_repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "track readme"], cwd=git_repo, check=True, capture_output=True)
+        staged = git_repo / "staged.txt"
+        staged.write_text("staged signal\n")
+        subprocess.run(["git", "add", "staged.txt"], cwd=git_repo, check=True, capture_output=True)
+        (git_repo / "README.md").write_text("unstaged signal\n")
+        for module in self._collectors():
+            diff = module._get_uncommitted_diff(str(git_repo))
+            assert "staged signal" in diff
+            assert "unstaged signal" in diff
+
+    def test_diff_character_limit(self, git_repo):
+        (git_repo / "README.md").write_text("한" * 9000 + "\n")
+        subprocess.run(["git", "add", "README.md"], cwd=git_repo, check=True, capture_output=True)
+        for module in self._collectors():
+            diff = module._get_uncommitted_diff(str(git_repo))
+            assert len(diff) == 8192
+            assert "한" in diff
+
+    def test_recent_commits_newest_first_with_limit(self, git_repo):
+        original = get_current_commit(str(git_repo))
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "new signal"], cwd=git_repo, check=True, capture_output=True
+        )
+        newest = get_current_commit(str(git_repo))
+        for module in self._collectors():
+            assert module._get_recent_commit_shas(str(git_repo)) == [newest, original]
+            assert module._get_recent_commit_shas(str(git_repo), limit=1) == [newest]
+
+    def test_clean_and_nonrepository_fallbacks(self, git_repo, tmp_path):
+        for module in self._collectors():
+            assert module._get_uncommitted_diff(str(git_repo)) is None
+            assert module._get_uncommitted_diff(str(tmp_path)) is None
+            assert module._get_recent_commit_shas(str(tmp_path)) == []
+
+    def test_timeout_fallbacks(self, git_repo, monkeypatch):
+        def timeout(*args, **kwargs):
+            raise subprocess.TimeoutExpired(args[0], kwargs["timeout"])
+
+        monkeypatch.setattr(subprocess, "run", timeout)
+        for module in self._collectors():
+            assert module._get_uncommitted_diff(str(git_repo)) is None
+            assert module._get_recent_commit_shas(str(git_repo)) == []
+
+    def test_missing_git_fallbacks(self, git_repo, monkeypatch):
+        def missing_git(*args, **kwargs):
+            raise FileNotFoundError
+
+        monkeypatch.setattr(subprocess, "run", missing_git)
+        for module in self._collectors():
+            assert module._get_uncommitted_diff(str(git_repo)) is None
+            assert module._get_recent_commit_shas(str(git_repo)) == []

@@ -328,6 +328,27 @@ class TestMCPToolIntegration:
             result = json.loads(asyncio.run(ec_search("auth", search_type="semantic")))
         assert result["count"] >= 1
 
+    def test_semantic_target_mcp(self, mock_repo_db, monkeypatch):
+        import struct
+
+        from entirecontext.core import embedding
+        from entirecontext.mcp.server import ec_search
+
+        vector = struct.pack("2f", 1.0, 0.0)
+        session_id = mock_repo_db.execute("SELECT session_id FROM turns WHERE id = 't1'").fetchone()[0]
+        for source_type, source_id in [("session", session_id), ("turn", "t1")]:
+            mock_repo_db.execute(
+                "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
+                "VALUES (?, ?, ?, 'all-MiniLM-L6-v2', ?, 2, 'hash')",
+                (f"embedding-{source_type}", source_type, source_id, vector),
+            )
+        monkeypatch.setattr(embedding, "embed_text", lambda *args: vector)
+
+        result = json.loads(asyncio.run(ec_search("auth", search_type="semantic")))
+
+        assert result["count"] == 1
+        assert result["results"][0]["id"] == "t1"
+
     def test_ec_search_semantic_until_is_forwarded(self, mock_repo_db):
         from unittest.mock import patch
 

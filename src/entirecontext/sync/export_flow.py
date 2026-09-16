@@ -17,17 +17,22 @@ class ExportResult:
     committed: bool
 
 
-def run_export(conn, repo_path: str, worktree_path: str, *, last_export: str | None, config: dict) -> ExportResult:
+def run_export(conn, repo_path: str, worktree_path: str, *, config: dict) -> ExportResult:
+    # Wall-clock cutoffs miss concurrent writes, backdated records, and metadata-only changes.
     filter_enabled, filter_patterns = get_security_config(config)
     session_count = export_sessions(
         conn,
         repo_path,
         worktree_path,
-        since=last_export,
         filter_enabled=filter_enabled,
         filter_patterns=filter_patterns,
     )
-    checkpoint_count = export_checkpoints(conn, worktree_path, since=last_export)
+    checkpoint_count = export_checkpoints(
+        conn,
+        worktree_path,
+        filter_enabled=filter_enabled,
+        filter_patterns=filter_patterns,
+    )
     update_manifest(conn, worktree_path)
     committed = commit_if_changed(
         worktree_path,
