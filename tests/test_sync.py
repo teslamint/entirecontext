@@ -247,14 +247,19 @@ def test_export_redaction(ec_db, tmp_path, monkeypatch, enabled, patterns, struc
         (secret, secret, session["id"]),
     )
     create_turn(ec_db, session["id"], turn_number=1, user_message=secret, assistant_summary=secret)
-    metadata = {"nested": [secret, {"description": secret}], "count": 3, "missing": None}
+    metadata = {
+        "nested": [secret, {"description": secret}],
+        "token=audit_value": {"description": secret},
+        "count": 3,
+        "missing": None,
+    }
     checkpoint = create_checkpoint(
         ec_db,
         session["id"],
         "abc123",
         diff_summary=secret,
         metadata=metadata,
-        files_snapshot={"example.py": {"description": secret}},
+        files_snapshot={"token=audit_value": {"description": secret}},
     )
     agent_state = json.dumps(metadata) if structured_state else secret
     ec_db.execute("UPDATE checkpoints SET agent_state = ? WHERE id = ?", (agent_state, checkpoint["id"]))
@@ -272,14 +277,55 @@ def test_export_redaction(ec_db, tmp_path, monkeypatch, enabled, patterns, struc
     assert meta["session_title"] == meta["session_summary"] == expected
     assert turn["user_message"] == turn["assistant_summary"] == expected
     assert exported["diff_summary"] == expected
-    expected_metadata = {"nested": [expected, {"description": expected}], "count": 3, "missing": None}
+    expected_key = expected if enabled else "token=audit_value"
+    expected_metadata = {
+        "nested": [expected, {"description": expected}],
+        expected_key: {"description": expected},
+        "count": 3,
+        "missing": None,
+    }
     assert json.loads(exported["metadata"]) == expected_metadata
     if structured_state:
-        assert json.loads(exported["agent_state"]) == expected_metadata
+        expected_agent_state = {
+            "nested": [expected, {"description": expected}],
+            "token=audit_value": {"description": expected},
+            "count": 3,
+            "missing": None,
+        }
+        assert json.loads(exported["agent_state"]) == expected_agent_state
     else:
         assert exported["agent_state"] == expected
-    assert json.loads(exported["files_snapshot"]) == {"example.py": {"description": expected}}
+    assert json.loads(exported["files_snapshot"]) == {"token=audit_value": {"description": expected}}
     assert exported["id"] == checkpoint["id"]
     assert exported["session_id"] == meta["id"] == session["id"]
     assert exported["git_commit_hash"] == "abc123"
     assert json.loads(ec_db.execute("SELECT metadata FROM checkpoints").fetchone()["metadata"]) == metadata
+
+
+def test_export_redaction_preserves_colliding_metadata_keys(ec_db, tmp_path, monkeypatch):
+    from entirecontext.core.checkpoint import create_checkpoint
+    from entirecontext.core.session import create_session
+    from entirecontext.sync.export_flow import run_export
+
+    project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+    session = create_session(ec_db, project_id)
+    metadata = {
+        "token=audit_value": {"value": "first"},
+        "token=[REDACTED]": {"value": "second"},
+    }
+    checkpoint = create_checkpoint(ec_db, session["id"], "abc123", metadata=metadata)
+    monkeypatch.setattr("entirecontext.sync.export_flow.commit_if_changed", lambda *args: False)
+
+    run_export(
+        ec_db,
+        str(tmp_path),
+        str(tmp_path),
+        config={"security": {"filter_secrets": True, "patterns": ["audit_value"]}},
+    )
+
+    exported = json.loads((tmp_path / "checkpoints" / f"{checkpoint['id']}.json").read_text())
+    filtered = json.loads(exported["metadata"])
+    assert len(filtered) == 2
+    assert {item["value"] for item in filtered.values()} == {"first", "second"}
+    assert "token=[REDACTED]" in filtered
+    assert any(key.startswith("token=[REDACTED]__") for key in filtered)

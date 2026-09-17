@@ -14,7 +14,8 @@ Governing decision: EC 30f75661 (explicit global cleanup). Existing architecture
 ## Cleanup boundaries
 
 Keep existing private import names as aliases. Do not introduce new configuration, dependencies, schemas, or module boundaries.
-Do not change ranking formulas or global installation settings. Correct only the reproduced session resume and summary error paths.
+Limit changes to the reproduced search, export, guidance-removal, Git-signal deduplication, session-resume, and summary error paths.
+Do not change ranking formulas or global installation settings.
 
 ## Spec Test Disposition
 
