@@ -3,7 +3,7 @@
   "checkpoint_id": "01M2QCDJXWK95ESM5C7P4VQY9A",
   "strategy": "manual-commit",
   "branch": "pr249-rebase",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "src/entirecontext/cli/project_cmds.py",
     "tests/test_project_cmds.py"
@@ -22,13 +22,20 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": "/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 14,
-    "cache_creation_tokens": 103064,
-    "cache_read_tokens": 316488,
-    "output_tokens": 4600,
-    "api_call_count": 7
+    "input_tokens": 28,
+    "cache_creation_tokens": 161150,
+    "cache_read_tokens": 705630,
+    "output_tokens": 9938,
+    "api_call_count": 13
   }
 }
