@@ -440,13 +440,23 @@ def _is_ec_inject_hook(entry: dict) -> bool:
     return any(_is_inject_command(h.get("command", "")) for h in entry.get("hooks", []))
 
 
-def _strip_ec_inject_hooks(entries: list) -> list:
+def _strip_ec_inject_hooks(entries: list) -> list | None:
+    """Remove the guidance hook entry, preserving sibling commands.
+
+    Returns None when an entry (flat or nested) is not a JSON object, so
+    callers can warn and leave the settings file untouched instead of
+    crashing with AttributeError on the malformed shape.
+    """
     kept = []
     for entry in entries:
+        if not isinstance(entry, dict):
+            return None
         if _is_inject_command(entry.get("command", "")):
             continue
         inner = entry.get("hooks")
         if isinstance(inner, list):
+            if any(not isinstance(h, dict) for h in inner):
+                return None
             remaining = [h for h in inner if not _is_inject_command(h.get("command", ""))]
             if inner and not remaining:
                 continue
@@ -484,7 +494,7 @@ def _install_guidance_files() -> bool:
     return should_write
 
 
-def _register_guidance_hook_codex() -> None:
+def _register_guidance_hook_codex() -> bool:
     codex_hooks_path = Path.home() / ".codex" / "hooks.json"
     codex_hooks_path.parent.mkdir(parents=True, exist_ok=True)
     codex_hooks: dict = {}
@@ -492,13 +502,20 @@ def _register_guidance_hook_codex() -> None:
         codex_hooks = _read_json_object(codex_hooks_path)
         if codex_hooks is None:
             console.print("[yellow]Warning:[/yellow] ~/.codex/hooks.json is malformed; skipping guidance registration.")
-            return
+            return False
     hooks_section = codex_hooks.setdefault("hooks", {})
     session_start = hooks_section.get("SessionStart", [])
-    session_start = _strip_ec_inject_hooks(session_start)
-    session_start.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
-    hooks_section["SessionStart"] = session_start
+    stripped = _strip_ec_inject_hooks(session_start)
+    if stripped is None:
+        console.print(
+            "[yellow]Warning:[/yellow] ~/.codex/hooks.json has a malformed SessionStart hook; "
+            "skipping guidance registration."
+        )
+        return False
+    stripped.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
+    hooks_section["SessionStart"] = stripped
     codex_hooks_path.write_text(json.dumps(codex_hooks, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def _remove_guidance_injection() -> None:
@@ -511,7 +528,12 @@ def _remove_guidance_injection() -> None:
             hooks = settings.get("hooks", {})
             session_start = hooks.get("SessionStart", [])
             stripped = _strip_ec_inject_hooks(session_start)
-            if stripped != session_start:
+            if stripped is None:
+                console.print(
+                    "[yellow]Warning:[/yellow] ~/.claude/settings.json has a malformed SessionStart hook; "
+                    "skipping guidance removal."
+                )
+            elif stripped != session_start:
                 if stripped:
                     hooks["SessionStart"] = stripped
                 elif "SessionStart" in hooks:
@@ -528,7 +550,12 @@ def _remove_guidance_injection() -> None:
             hooks_section = codex_hooks.get("hooks", {})
             session_start = hooks_section.get("SessionStart", [])
             stripped = _strip_ec_inject_hooks(session_start)
-            if stripped != session_start:
+            if stripped is None:
+                console.print(
+                    "[yellow]Warning:[/yellow] ~/.codex/hooks.json has a malformed SessionStart hook; "
+                    "skipping guidance removal."
+                )
+            elif stripped != session_start:
                 if stripped:
                     hooks_section["SessionStart"] = stripped
                 elif "SessionStart" in hooks_section:
@@ -840,17 +867,27 @@ def _install_integrations(repo_path: str, agent: str, no_git_hooks: bool) -> Non
             if sys.platform != "win32" and inject_script_owned:
                 user_hooks = user_settings.setdefault("hooks", {})
                 session_start = user_hooks.get("SessionStart", [])
-                session_start = _strip_ec_inject_hooks(session_start)
-                session_start.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
-                user_hooks["SessionStart"] = session_start
-                user_settings_changed = True
-                console.print("[green]Guidance hook registered[/green] in ~/.claude/settings.json")
+                stripped = _strip_ec_inject_hooks(session_start)
+                if stripped is None:
+                    console.print(
+                        "[yellow]Warning:[/yellow] ~/.claude/settings.json has a malformed SessionStart hook; "
+                        "skipping guidance hook registration."
+                    )
+                else:
+                    stripped.append({"hooks": [{"type": "command", "command": _INJECT_HOOK_COMMAND, "timeout": 5}]})
+                    user_hooks["SessionStart"] = stripped
+                    user_settings_changed = True
+                    console.print("[green]Guidance hook registered[/green] in ~/.claude/settings.json")
 
             if user_settings_changed:
                 user_settings_path.write_text(json.dumps(user_settings, indent=2) + "\n", encoding="utf-8")
 
-    if sys.platform != "win32" and inject_script_owned and agent in {"codex", "both"}:
-        _register_guidance_hook_codex()
+    if (
+        sys.platform != "win32"
+        and inject_script_owned
+        and agent in {"codex", "both"}
+        and _register_guidance_hook_codex()
+    ):
         console.print("[green]Guidance hook registered[/green] in ~/.codex/hooks.json")
 
 

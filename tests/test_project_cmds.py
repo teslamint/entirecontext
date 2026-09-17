@@ -1460,6 +1460,13 @@ class TestStripEcInjectHooks:
         assert len(result) == 1
         assert [h["command"] for h in result[0]["hooks"]] == ["other-tool run"]
 
+    def test_returns_none_for_non_object_flat_entry(self):
+        assert _strip_ec_inject_hooks(["not-a-dict"]) is None
+
+    def test_returns_none_for_non_object_nested_entry(self):
+        entry = {"hooks": ["not-a-dict"]}
+        assert _strip_ec_inject_hooks([entry]) is None
+
 
 class TestGuidanceInjection:
     @pytest.mark.parametrize("settings_file", [".claude/settings.json", ".codex/hooks.json"])
@@ -1702,6 +1709,90 @@ class TestGuidanceInjection:
         assert settings_path.read_text(encoding="utf-8") == non_object
         assert not guidance.exists()
 
+    @pytest.mark.parametrize("settings_file", [".claude/settings.json", ".codex/hooks.json"])
+    @pytest.mark.parametrize(
+        "malformed_session_start",
+        [["not-a-dict"], [{"hooks": ["not-a-dict"]}]],
+        ids=["flat", "nested"],
+    )
+    @patch("entirecontext.core.project.find_git_root")
+    def test_disable_remove_guidance_skips_malformed_session_start_entry(
+        self, mock_git_root, tmp_path, monkeypatch, settings_file, malformed_session_start
+    ):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        settings_path = fake_home / settings_file
+        settings_path.parent.mkdir(parents=True)
+        original = json.dumps({"hooks": {"SessionStart": malformed_session_start}})
+        settings_path.write_text(original, encoding="utf-8")
+        guidance = fake_home / ".claude" / "hooks" / "entirecontext-guidance.md"
+        guidance.parent.mkdir(parents=True, exist_ok=True)
+        guidance.write_text(project_cmds._GUIDANCE_CONTENT, encoding="utf-8")
+
+        result = runner.invoke(app, ["disable", "--remove-guidance"])
+
+        assert result.exit_code == 0
+        assert "malformed" in result.output
+        assert settings_path.read_text(encoding="utf-8") == original
+
+    @pytest.mark.parametrize(
+        "malformed_session_start",
+        [["not-a-dict"], [{"hooks": ["not-a-dict"]}]],
+        ids=["flat", "nested"],
+    )
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_codex_skips_malformed_session_start_entry(
+        self, mock_git_root, tmp_path, monkeypatch, malformed_session_start
+    ):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        hooks_path = fake_home / ".codex" / "hooks.json"
+        hooks_path.parent.mkdir(parents=True)
+        original = json.dumps({"hooks": {"SessionStart": malformed_session_start}})
+        hooks_path.write_text(original, encoding="utf-8")
+
+        result = runner.invoke(app, ["enable", "--agent", "codex", "--no-git-hooks"])
+
+        assert result.exit_code == 0
+        assert "malformed" in result.output
+        assert "Guidance hook registered" not in result.output
+        assert hooks_path.read_text(encoding="utf-8") == original
+
+    @pytest.mark.parametrize(
+        "malformed_session_start",
+        [["not-a-dict"], [{"hooks": ["not-a-dict"]}]],
+        ids=["flat", "nested"],
+    )
+    @patch("entirecontext.core.project.find_git_root")
+    def test_enable_claude_skips_malformed_session_start_entry(
+        self, mock_git_root, tmp_path, monkeypatch, malformed_session_start
+    ):
+        repo = tmp_path / "repo"
+        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+        mock_git_root.return_value = str(repo)
+        fake_home = tmp_path / "fakehome"
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        settings_path = fake_home / ".claude" / "settings.json"
+        settings_path.parent.mkdir(parents=True)
+        original = json.dumps({"hooks": {"SessionStart": malformed_session_start}})
+        settings_path.write_text(original, encoding="utf-8")
+
+        result = runner.invoke(app, ["enable", "--no-git-hooks"])
+
+        assert result.exit_code == 0
+        assert "malformed" in result.output
+        after = json.loads(settings_path.read_text(encoding="utf-8"))
+        assert after["hooks"]["SessionStart"] == malformed_session_start
+
     @patch("entirecontext.core.project.find_git_root")
     def test_disable_preserves_guidance_hooks_by_default(self, mock_git_root, tmp_path, monkeypatch):
         repo = tmp_path / "repo"
@@ -1841,6 +1932,7 @@ class TestGuidanceInjection:
 
         assert result.exit_code == 0
         assert "malformed" in result.output
+        assert "Guidance hook registered" not in result.output
         assert hooks_path.read_text(encoding="utf-8") == non_object
 
     @patch("entirecontext.core.project.find_git_root")
