@@ -1,0 +1,57 @@
+You are reviewing an assessment of a code change (verdict, impact summary, roadmap alignment, tidy suggestion). Extract decisions this assessment records — typically an expansion or narrowing of project scope with a specific rationale. Return a JSON array: [{"title": str, "rationale": str, "scope": str, "rejected_alternatives": [{"alternative": str, "reason": str}]}]. Return [] if the assessment is a neutral observation. For each rejected alternative, provide the reason it was not chosen — only if the reason is explicit in the source text. If no reason is stated, omit the "reason" key entirely (do not invent one).
+
+---
+
+impact_summary: fix(integrations): handle async stdin EPIPE and guard install.sh on fresh agent dirs
+
+diff_summary: .coderabbit.yaml                                   |  22 ++
+ .gitignore                                         |   3 +
+ CHANGELOG.md                                       |   4 +
+ README.md                                          |  61 +++-
+ docs/adr/0020-full-sync-export.md                  |  21 --
+ docs/plans/2026-09-06-full-sync-export.md          |  27 --
+ docs/plans/2026-09-06-repository-audit.md          |  37 --
+ ...-09-08-001-docs-project-decision-policy-plan.md | 164 +++++++++
+ .../sync-baseline.json                             |  16 -
+ .../git-baseline.json                              |  16 -
+ ...2026-08-21-v0161-verify-docs-hardening-retro.md | 153 ---------
+ docs/reviews/2026-09-06-full-sync-recovery.md      |  52 ---
+ docs/reviews/2026-09-06-repository-audit.md        |  69 ----
+ ...release-tag-ordering-under-branch-protection.md |  97 ------
+ docs/spec.md                                       |   5 +-
+ .../2026-08-30-uv-tool-interpreter-drift-design.md |  88 +++++
+ docs/specs/2026-09-06-full-sync-export.md          |  24 --
+ docs/specs/2026-09-06-repository-audit.md          |  34 --
+ .../2026-09-08-project-decision-policy-design.md   | 148 ++++++++
+ ...tirecontext-project-decision-policy-template.md | 107 ++++++
+ .../entirecontext-user-decision-reuse-template.md  |   8 +
+ integrations/omp/.mcp.json                         |   9 +
+ integrations/omp/README.md                         | 150 +++++++++
+ integrations/omp/extension/index.ts                | 318 ++++++++++++++++++
+ integrations/omp/install.sh                        |  45 +++
+ integrations/omp/package-lock.json                 |  47 +++
+ integrations/omp/package.json                      |  15 +
+ integrations/omp/tsconfig.json                     |  13 +
+ integrations/omp/verify.sh                         | 170 ++++++++++
+ src/entirecontext/cli/project_cmds.py              | 240 ++-----------
+ src/entirecontext/cli/search_cmds.py               |   1 -
+ src/entirecontext/core/cross_repo.py               |   1 -
+ .../core/decision_prompt_surfacing.py              |  42 ++-
+ src/entirecontext/core/embedding.py                |  13 +-
+ src/entirecontext/core/git_utils.py                |  34 --
+ src/entirecontext/hooks/decision_hooks.py          |  36 +-
+ src/entirecontext/hooks/session_lifecycle.py       |   3 +-
+ src/entirecontext/mcp/tools/search.py              |   1 -
+ src/entirecontext/sync/coordinator.py              |   5 +-
+ src/entirecontext/sync/export_flow.py              |  11 +-
+ src/entirecontext/sync/exporter.py                 |  51 +--
+ tests/test_cross_repo.py                           |  23 --
+ tests/test_e2e_search.py                           |  22 --
+ tests/test_embedding.py                            |  53 ---
+ tests/test_git_utils.py                            |  66 ----
+ tests/test_hooks.py                                |  49 ---
+ tests/test_mcp.py                                  |  21 --
+ tests/test_project_cmds.py                         | 371 +++++----------------
+ tests/test_sync.py                                 |  80 -----
+ tests/test_sync_integration.py                     | 150 ---------
+ 50 files changed, 1575 insertions(+), 1621 deletions(-)
