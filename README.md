@@ -845,8 +845,8 @@ on the `entirecontext/checkpoints/v1` branch.
 
 EntireContext was inspired by:
 
-- [entireio/cli](https://github.com/entireio/cli) — Git-integrated AI agent session capture and context management
-- [TheAgentContextLab/OneContext](https://github.com/TheAgentContextLab/OneContext) — Agent self-managed context layer for unified AI agent memory
+- [Entire](https://entire.io) ([entireio/cli](https://github.com/entireio/cli)) — Developer platform for AI agents; its CLI captures agent sessions in the Git workflow, and the platform adds Git-compatible hosting for agents
+- [OneContext](https://one-context.com) ([LastPieceAI/OneContext](https://github.com/LastPieceAI/OneContext)) — Agent self-managed context layer for unified AI agent memory
 - The **Futures Assessment** feature (`ec futures`) is inspired by Kent Beck's [Earn *And* Learn](https://tidyfirst.substack.com/p/earn-and-learn) and the [Tidy First](https://tidyfirst.substack.com/) philosophy — analyzing whether each change expands or narrows your project's future options.
 
 ## License
