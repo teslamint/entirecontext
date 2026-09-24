@@ -178,6 +178,8 @@ Install location and format:
 
 `ec disable` removes the selected agent integration and the agent-neutral repository Git hooks. It preserves the shared user-level MCP entry by default. `--remove-mcp` explicitly removes only a standard `entirecontext` stdio entry while preserving sibling servers, unrelated settings, and nonstandard entries; an identical standard entry configured manually is also eligible because the explicit flag authorizes global cleanup.
 
+Package health and MCP activation are separate checks. A successful `ec --help` or package reinstall does not enable a Codex MCP registration whose `~/.codex/config.toml` entry has `enabled = false`; enable that registration in Codex configuration.
+
 Exit codes:
 
 - `0` success
@@ -279,6 +281,16 @@ Writes after export selection appear on the next sync. See [ADR 0020](adr/0020-f
 - `assessments` table stores verdict/feedback metadata.
 - `assessment_relationships` stores typed relationships between assessments.
 - CLI commands: `assess`, `list`, `feedback`, `lessons`, `enrich-backlog`, `trend`, `relate`, `relationships`, `unrelate`, `tidy-pr`, `report`, `worker-status`, `worker-stop`, `worker-launch`.
+
+LLM backends for `ec futures assess -b BACKEND` (source: `src/entirecontext/core/llm.py`):
+
+| Backend | Auth | Default model |
+|---|---|---|
+| `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| `github` | `GITHUB_TOKEN` | `openai/gpt-4o-mini` |
+| `ollama` | None (local) | `llama3` |
+| `codex` | CLI subprocess | — |
+| `claude` | CLI subprocess | — |
 
 ## 7.2 MCP exposure `[Implemented]`
 

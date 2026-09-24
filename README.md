@@ -6,226 +6,22 @@
 
 > ⚠️ **Experimental** — API and data format may change without notice.
 
-EntireContext captures AI coding work as it happens, distills decisions and lessons from it, and brings the right context back when similar code changes happen again.
+EntireContext captures AI coding work as it happens, distills decisions and lessons from it, and brings the right context back when similar code changes happen again. It turns session history into memory tied to commits, diffs, checkpoints, and files instead of leaving it as raw transcript storage.
 
-For a long-form A-to-Z orientation, see [the EntireContext Project Manual](docs/entirecontext-project-manual.md).
+This README is the quick-start entry point. For exhaustive detail:
 
-## Why It Exists
+- [EntireContext Project Manual](docs/entirecontext-project-manual.md) — long-form architecture, agent integration, and troubleshooting guide
+- [`docs/spec.md`](docs/spec.md) — compact CLI/MCP/config/data-model reference for the current implementation
+- [`docs/decisions_outcomes.md`](docs/decisions_outcomes.md) — decision staleness and outcome vocabulary
 
-AI coding tools generate changes quickly, but engineering judgment still gets buried in chat logs. Important decisions, rejected alternatives, and hard-won lessons disappear across sessions, repos, and agents, so teams keep rediscovering the same context.
-
-EntireContext turns session history into reusable engineering memory tied to commits, diffs, checkpoints, and files instead of leaving it as raw transcript storage.
-
-## Core Product Loop
+## How It Works
 
 - **Capture** — sessions, turns, tool calls, and checkpoints are recorded through hooks and anchored to git history
 - **Distill** — assessments, feedback, and lessons convert raw session history into reusable judgment
 - **Retrieve** — search, graph traversal, attribution, and rewind surface the most relevant prior context
 - **Intervene** — agents and humans can apply past decisions before the next related change lands
 
-## How Decision Memory Works
-
-- **Decision** — reusable engineering intent (what was chosen, why, what was rejected), linked to files, checkpoints, and assessments
-- **Assessment** — point-in-time evaluation of a diff or checkpoint (expand / narrow / neutral) using Tidy First framing
-- **Lesson** — assessment + feedback distilled into guidance for future changes
-
-Decisions accumulate during sessions. Assessments evaluate their impact. Feedback closes the loop and distills lessons that surface before the next related change.
-
-## Staleness Policy
-
-Decisions carry a `staleness_status` so old guidance can be prevented from dominating retrieval when the code or newer decisions no longer agree with it.
-
-### The four states
-
-| Status | Meaning | Who sets it |
-|---|---|---|
-| `fresh` | Current, actively applicable | Default on create |
-| `stale` | Linked files changed since creation; may still apply | `ec decision stale` or session-end hook |
-| `superseded` | Replaced by a newer decision | `ec decision supersede <old> <new>` |
-| `contradicted` | Usage feedback shows the decision was wrong | Manual `ec decision stale --status contradicted`, or auto-promoted after ≥2 `contradicted` outcomes when they exceed `accepted` outcomes |
-
-### Retrieval defaults per entry point
-
-| Entry point | fresh | stale | superseded | contradicted |
-|---|---|---|---|---|
-| `ec_decision_related` / `rank_related_decisions` | shown | demoted 0.85× | hidden (successor substituted) | hidden |
-| `ec_decision_search` / `fts_search_decisions` / `hybrid_search_decisions` | shown | shown | hidden | hidden |
-| `ec_decision_list` / `ec decision list` | shown | shown | shown | hidden (pass `include_contradicted=True` for inventory) |
-| `ec_decision_get(id)` | shown (no successor) | shown | shown + `successor` pointer | shown |
-| Session-start hook | shown | shown | replaced by successor | hidden |
-
-Opt in to include filtered decisions via flags:
-- `include_stale` (default `True`) — stale decisions pass through with 0.85× demotion
-- `include_superseded` (default `False`) — returns the original without chain collapse
-- `include_contradicted` (default `False` everywhere)
-
-### Supersession chain behavior
-
-When a decision is superseded, retrieval follows `superseded_by_id` to the terminal successor:
-
-- **Terminal is usable** → ranking substitutes the terminal; the old ancestors are dropped.
-- **Terminal is contradicted** → the entire chain is filtered out and reported in `filter_stats.by_reason["chain_terminal_contradicted"]`.
-- **Cycle protection** — `supersede_decision` rejects inputs that would create a cycle; walks are also bounded by a depth cap (10 hops).
-- **Debugging** — `ec decision chain <id>` prints the full walk (id, title, status) from origin to terminal.
-
-### Outcome vocabulary
-
-`decision_outcomes.outcome_type` accepts five values:
-
-| Value | Quality weight | Effect |
-|---|---|---|
-| `accepted` | +1.0 | Decision was applied; improves ranking signal |
-| `ignored` | −0.5 | Decision was surfaced but not applied |
-| `contradicted` | −2.0 | Decision turned out to be wrong; can trigger staleness auto-promotion |
-| `refined` | 0 | Decision was partially applied but adapted; display/audit only |
-| `replaced` | 0 | Decision was superseded; written automatically by `ec decision supersede` |
-
-`ec decision supersede OLD NEW` writes a `replaced` outcome row on the old decision inside the same transaction as the staleness update, creating an audit trail. Multi-step chains (A→B→C) produce a `replaced` row on each superseded decision.
-
-### Auto-promotion from outcome tracking
-
-`record_decision_outcome` recognizes usage feedback. When a decision accumulates ≥2 `contradicted` outcomes **and** contradicted > accepted, its `staleness_status` is automatically promoted to `contradicted`. This is a **one-way ratchet** — later accepted outcomes never auto-revert the status; a manual `ec decision stale --status fresh` is required to recover, and that manual reset also restarts the auto-promotion window so only post-reset outcomes count toward the next promotion.
-
-Note: `decision_outcomes.outcome_type='contradicted'` (usage feedback) is distinct from `decision_assessments.relation_type='contradicts'` (metadata). The latter does not trigger auto-promotion.
-
-Configure the threshold via `[decisions]` in `.entirecontext/config.toml`:
-
-```toml
-[decisions]
-auto_promotion_contradicted_threshold = 2
-```
-
-## Proactive Retrieval
-
-Decision retrieval does not have to be query-only. EntireContext can surface relevant past decisions automatically when you start a task, when you edit decision-linked files mid-session, and through a single MCP convenience call.
-
-### Proactive Decision Injection (UserPromptSubmit hook)
-
-Starting with v0.7.0, the `UserPromptSubmit` hook ranks top-k decisions against every user prompt and injects them directly into Claude Code's context as `additionalContext` — no agent query needed:
-
-```
-## Related Decisions
-
-### 1. Use SQLite WAL mode for agent memory
-  ID: `aaaabbbb-cccc`
-  Status: fresh
-  Score: 0.87
-
-  WAL mode allows concurrent readers without blocking writes, critical for hook throughput.
-```
-
-The injection is synchronous with a hard wall-clock timeout (default 250 ms). If ranking exceeds the deadline, the hook returns without output and the async fallback path takes over.
-
-**Configuration** (`.entirecontext/config.toml`):
-
-```toml
-[decisions.injection]
-inject_on_user_prompt = true   # default ON; set false to disable
-top_k = 5                      # max decisions to surface
-max_tokens = 800               # context budget (heuristic UTF-8 ÷ 3)
-min_confidence = 0.4           # minimum relevance score
-inject_timeout_ms = 250        # hard wall-clock cap for the sync path
-```
-
-### Mid-session surfacing (PostToolUse hook)
-
-Enable the hook so that decisions linked to just-edited files appear inline after every file edit:
-
-```bash
-ec config set decisions.surface_on_tool_use true
-```
-
-When enabled, the PostToolUse hook writes the following Markdown to `.entirecontext/decisions-context-tooluse-<session>.md` (primary delivery, readable by any agent) and also prints it to stdout (secondary convenience). The filename is suffixed with the session id so two agent sessions running in the same repo can't clobber each other's context. SessionStart keeps writing to `.entirecontext/decisions-context.md` — the two files are deliberately separate so cross-channel dedup never causes one writer to destroy the other's context:
-
-```
-## Related Decisions (current edit)
-
-The file(s) you just edited are linked to the following prior decisions:
-
-- [7f791f28] Use retry queue for webhook delivery
-  Status: fresh
-  Rationale: Direct calls cause retry storms under partial outages...
-```
-
-The hook is deduplicated per-turn and session-wide, so the same decision will not be re-surfaced across tool calls within the same user turn, and it will not be re-surfaced after the SessionStart hook already showed it. Additional knobs:
-
-```toml
-[decisions]
-surface_on_tool_use = true
-surface_on_tool_use_turn_interval = 1   # surface every N user turns (default: every turn)
-surface_on_tool_use_limit = 3           # max decisions per surface event
-```
-
-### One-call MCP retrieval: `ec_decision_context`
-
-Agents can call `ec_decision_context` once at the start of a task to get decisions ranked against the current session context — no manual signal assembly required. It auto-unions files from recent turns + files in the uncommitted git diff + the most recent checkpoint SHA, then runs the full multi-signal ranker:
-
-```json
-{
-  "decisions": [
-    {
-      "id": "7f791f28-...",
-      "title": "Use retry queue for webhook delivery",
-      "score": 6.42,
-      "selection_id": "sel-...",
-      "staleness_status": "fresh"
-    }
-  ],
-  "count": 1,
-  "retrieval_event_id": "evt-...",
-  "signal_summary": {
-    "file_count": 3,
-    "has_diff": true,
-    "commit_count": 1,
-    "turn_window": 5,
-    "active_session": true
-  }
-}
-```
-
-Each returned decision carries a `selection_id` you can pass directly to `ec_decision_outcome` or `ec_context_apply` without a follow-up lookup. The tool degrades gracefully when there's no active session — it falls back to git-diff-only signals and returns `active_session: false` with a warning.
-
-Prefer `ec_decision_context()` over `ec_decision_related` when you want zero-argument proactive retrieval. Use `ec_decision_related` when you need to pass explicit file lists, assessment IDs, or a specific diff you're about to apply.
-
-## What Makes EntireContext Different
-
-- **Git-anchored memory** — context is tied to commits, branches, diffs, and checkpoints
-- **Decision-oriented, not chat-oriented** — the goal is reusable engineering judgment, not transcript hoarding
-- **Built for coding agents** — native hook integration plus MCP access for in-session retrieval
-- **Per-repo and cross-repo** — preserve local project context while allowing broader learning patterns
-
-## Key Capabilities
-
-### Core Capability: Decision Memory
-- **Decision capture** — rationale, rejected alternatives, scope, and staleness tracking
-- **Assessments and lessons** — futures evaluations, feedback loops, and distilled guidance
-- **Proactive retrieval** — relevant past decisions surfaced when similar files or diffs appear
-
-### Supporting Capabilities
-- **Git time-travel** — checkpoints, rewind, blame, and attribution
-- **Context retrieval** — regex, FTS5, semantic, and hybrid search across sessions and repos
-- **Agent interfaces** — MCP tools for search, checkpoints, assessments, graph traversal, and trends
-- **Operational tooling** — sync, filtering, consolidation, dashboarding, export, and migration
-
-## Who It's For
-
-- Engineers already using coding agents in day-to-day development
-- Small teams that want decisions and lessons to accumulate instead of disappearing into chat history
-- Repositories where historical intent matters as much as the final diff
-
-## Agent Setup Templates
-
-Templates for configuring agents to proactively reuse stored decisions and lessons.
-
-We recommend a project-owned decision policy to define what to record and when plans or verification evidence are needed.
-Adoption is optional; your project chooses and enforces its requirements.
-The maintainer template describes EntireContext development rules, not requirements for consuming projects.
-Without adoption, existing project instructions and contribution rules still govern code changes.
-
-- Project policy: [entirecontext-project-decision-policy-template.md](docs/templates/entirecontext-project-decision-policy-template.md)
-- Maintainers: [entirecontext-maintainer-decision-reuse-template.md](docs/templates/entirecontext-maintainer-decision-reuse-template.md)
-- Users: [entirecontext-user-decision-reuse-template.md](docs/templates/entirecontext-user-decision-reuse-template.md)
-- Proactive guidance: [entirecontext-proactive-guidance.md](docs/templates/entirecontext-proactive-guidance.md) — broader memory reuse beyond decisions (assessments, lessons, checkpoints, attribution)
+The core record is the **Decision** — reusable engineering intent (what was chosen, why, what was rejected), linked to files, checkpoints, and **Assessments**. Decision usage feedback distills into a **Lesson** and can move a decision through its `staleness_status` (`fresh` → `stale` / `superseded` / `contradicted`), so old guidance stops dominating retrieval once code or newer decisions disagree with it. See `docs/decisions_outcomes.md` and manual §2.4/§11 for the full state machine.
 
 ## Quick Start
 
@@ -239,20 +35,24 @@ Use **local dependency** when you want to manage `entirecontext` in a Python pro
 
 ```bash
 # 1A. Local dependency (Python/uv project)
-uv add entirecontext
-# or: pip install entirecontext
+uv add 'entirecontext[mcp]'
+# or: pip install 'entirecontext[mcp]'
 ```
 
 ```bash
 # 1B. Global install (optional, recommended for non-Python repos)
-uv tool install --managed-python --python 3.13 entirecontext
+uv tool install --managed-python --python 3.13 'entirecontext[mcp]'
 # alternative:
-pipx install entirecontext
+pipx install 'entirecontext[mcp]'
 ```
 
 `--managed-python` keeps the tool environment bound to a uv-managed interpreter.
 It avoids mutable system or Conda interpreter paths changing Python minor versions
 behind an existing environment.
+
+The `[mcp]` extra installs the MCP SDK that `ec mcp serve` needs. `ec init` registers that server by default, so omit the extra only when you do not use MCP.
+
+`ec search --semantic` needs the `semantic` extra (`entirecontext[mcp,semantic]`), which installs `sentence-transformers` and PyTorch. The first embedding run downloads the `all-MiniLM-L6-v2` model (about 87 MB) into the Hugging Face cache. Search also needs stored embeddings: run `ec index --semantic` first, or set `index.auto_embed = true`. Without embeddings, semantic search returns no results.
 
 Tagged GitHub releases also include the built wheel and source tarball as release assets. PyPI remains the primary install path.
 
@@ -273,9 +73,11 @@ ec blame src/main.py
 ec checkpoint list
 ```
 
+Run `ec <command> --help` or see `docs/spec.md` §4.1 for the full CLI surface.
+
 ### Windows Notes
 
-- Install alternative (Python launcher): `py -m pip install entirecontext`
+- Install alternative (Python launcher): `py -m pip install "entirecontext[mcp]"`
 - PowerShell example:
   ```powershell
   ec init
@@ -284,204 +86,9 @@ ec checkpoint list
 - If `ec` is not recognized, open a new terminal (or sign out/in) so updated PATH is loaded.
 - For `uv tool`/`pipx` installs, ensure the scripts directory is on PATH.
 
-## CLI Reference
+## MCP & Agent Integration
 
-The sections below are reference material for the current CLI surface. They stay close to the implemented interface on purpose so the product narrative above does not drift from what the tool actually does.
-
-### Top-Level Commands
-
-| Command | Description |
-|---------|-------------|
-| `ec init [--no-hooks] [--no-git-hooks] [--agent claude\|codex\|both]` | Initialize EntireContext in current git repo and install Claude Code hooks, git hooks, and user-level MCP config (skip all installation with `--no-hooks`) |
-| `ec enable [--no-git-hooks] [--agent claude\|codex\|both]` | Reinstall the same hooks and MCP config without touching the database — use it to repair a clobbered config |
-| `ec disable` | Remove Claude Code hooks and installed git hooks |
-| `ec status` | Show capture status (project, sessions, turns, active session) |
-| `ec config [KEY] [VALUE]` | Get or set configuration (dotted keys) |
-| `ec doctor` | Diagnose issues (schema, hooks, unsynced checkpoints, MCP config) |
-| `ec search QUERY` | Search across sessions, turns, and events |
-| `ec sync [--no-filter] [--if-enabled]` | Export to shadow branch and push; `--if-enabled` gates pre-push sync by config |
-| `ec pull` | Fetch latest `origin` shadow branch snapshot and import |
-| `ec rewind CHECKPOINT_ID` | Show or restore code state at a checkpoint |
-| `ec blame FILE [-L START,END] [--summary]` | Show per-line human/agent attribution |
-| `ec index [--semantic] [--force] [--model NAME]` | Rebuild FTS5 indexes, optionally generate embeddings |
-| `ec import --from-aline [PATH]` | Import sessions/turns/checkpoints from Aline DB |
-| `ec graph [--session ID] [--since DATE] [--limit N]` | Show knowledge graph of git entities |
-| `ec ast-search QUERY [--type TYPE] [--file PATH] [--limit N]` | Search indexed Python AST symbols |
-| `ec dashboard [--since DATE] [--limit N]` | Show team dashboard: sessions, checkpoints, assessment trends |
-| `ec compact [--execute] [--retention-days N] [--limit N]` | Compact storage; dry-run by default |
-| `ec session` | Session management |
-| `ec hook` | Hook handlers called by Claude Code and git hooks |
-| `ec checkpoint` | Checkpoint management |
-| `ec repo` | Repository registry management |
-| `ec event` | Event grouping and linking |
-| `ec mcp` | MCP server management |
-| `ec futures` | Futures assessment and lessons |
-| `ec purge` | Purge turns, sessions, or matching content (dry-run by default) |
-| `ec context` | Retrieval-selection and context-application telemetry |
-| `ec decision` | Decision memory management |
-
-### `ec session` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec session list` | List sessions (with turn counts and status) |
-| `ec session show SESSION_ID` | Show session details and turn summaries |
-| `ec session current` | Show current active session |
-| `ec session export ID [--output FILE]` | Export session as Markdown (YAML frontmatter + sections) |
-| `ec session consolidate [--before DATE] [--session ID] [--limit N] [--execute]` | Compress old turn content (dry-run by default) |
-| `ec session graph [--agent ID] [--session ID] [--depth N]` | Visualise multi-agent session graph |
-| `ec session activate [--turn ID] [--session ID] [--hops N] [--limit N]` | Find related turns via spreading activation |
-| `ec session backfill-ended-at` | Backfill missing `ended_at` values for sessions whose SessionEnd hook never fired |
-| `ec session backfill-applied` | Infer applied decisions for ended sessions with retrieval events |
-
-### `ec checkpoint` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec checkpoint create` | Create a checkpoint at the current git state |
-| `ec checkpoint list` | List checkpoints (commit, branch, diff summary) |
-| `ec checkpoint show CHECKPOINT_ID` | Show checkpoint details and file snapshot |
-| `ec checkpoint diff ID1 ID2` | Diff between two checkpoints |
-| `ec checkpoint assess-accuracy` | Show verdict accuracy baseline from enrichment feedback |
-
-### `ec event` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec event list` | List events (filter by `--status`, `--type`) |
-| `ec event show EVENT_ID` | Show event details and linked sessions |
-| `ec event create TITLE` | Create event (`--type task\|temporal\|milestone`) |
-| `ec event link EVENT_ID SESSION_ID` | Link a session to an event |
-
-### `ec futures` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec futures assess [-c CHECKPOINT] [-r ROADMAP] [-m MODEL] [-b BACKEND]` | Assess staged diff or checkpoint against roadmap via LLM |
-| `ec futures list [-v VERDICT] [-n LIMIT]` | List assessments (filter by `--verdict`) |
-| `ec futures feedback ID FEEDBACK [-r REASON]` | Add agree/disagree feedback to an assessment |
-| `ec futures lessons [-o OUTPUT] [-s SINCE]` | Generate LESSONS.md from assessed changes with feedback |
-| `ec futures enrich-backlog` | Enrich rule-based assessments with LLM analysis or git-evidence feedback |
-| `ec futures trend [--since DATE] [--limit N]` | Show cross-repo assessment trend analysis |
-| `ec futures relate SRC TYPE TGT [--note TEXT]` | Add typed relationship between assessments |
-| `ec futures relationships ID [--direction DIR]` | List relationships for an assessment |
-| `ec futures unrelate SRC TYPE TGT` | Remove a typed relationship |
-| `ec futures tidy-pr [--since DATE] [--limit N] [--output FILE]` | Generate tidy PR draft from narrow assessments |
-| `ec futures report [--since DATE] [--limit N] [--output FILE]` | Generate team-shareable Markdown report |
-| `ec futures worker-status` | Show background assessment worker status |
-| `ec futures worker-stop` | Stop background assessment worker |
-| `ec futures worker-launch [--diff TEXT]` | Launch background assessment worker |
-
-### `ec decision` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec decision create TITLE [--rationale TEXT] [--scope TEXT]` | Create a decision record |
-| `ec decision list [--status STATUS] [--file PATH] [--limit N]` | List decisions with optional staleness/file filters |
-| `ec decision show DECISION_ID` | Show decision details and linked artifacts |
-| `ec decision rejected-alternatives DECISION_ID` | Show rejected alternatives for a decision |
-| `ec decision link DECISION_ID ...` | Link decision to assessment, checkpoint, commit, or file evidence |
-| `ec decision stale DECISION_ID [--status STATUS]` | Check or set decision staleness |
-| `ec decision outcome DECISION_ID --outcome TYPE` | Record accepted/ignored/contradicted/refined/replaced usage feedback |
-| `ec decision update DECISION_ID ...` | Update decision fields |
-| `ec decision supersede OLD NEW` | Mark a decision as superseded by another |
-| `ec decision unlink DECISION_ID ...` | Remove a decision link |
-| `ec decision search QUERY` | Search decisions by keyword |
-| `ec decision chain DECISION_ID` | Walk a supersession chain for debugging |
-| `ec decision stale-all` | Check staleness for all fresh decisions and persist results |
-| `ec decision extract-candidates SESSION_ID` | Extract candidate decisions from a session |
-| `ec decision candidates` | Candidate decision review flow |
-| `ec decision alternatives` | Rejected-alternative quality commands |
-
-### `ec context` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec context select` | Record or inspect retrieval selections |
-| `ec context apply APPLICATION_TYPE` | Record how retrieved context was applied (`reference`, `decision_change`, `code_reuse`, or `lesson_applied`) |
-
-### `ec mcp` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec mcp serve` | Start the MCP server over stdio |
-
-### LLM Backends (`ec futures assess`)
-
-| Backend | Flag | Auth | Default Model |
-|---------|------|------|---------------|
-| `openai` | `-b openai` | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| `github` | `-b github` | `GITHUB_TOKEN` | `openai/gpt-4o-mini` |
-| `ollama` | `-b ollama` | None (local) | `llama3` |
-| `codex` | `-b codex` | CLI subprocess | — |
-| `claude` | `-b claude` | CLI subprocess | — |
-
-### `ec purge` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec purge session SESSION_ID [--execute] [--force]` | Purge a session and all its turns (dry-run by default) |
-| `ec purge turn TURN_ID... [--execute]` | Purge specific turns by ID |
-| `ec purge match PATTERN [--execute] [--force]` | Purge turns matching a regex pattern |
-
-### `ec import` Command
-
-| Command | Description |
-|---------|-------------|
-| `ec import --from-aline [PATH]` | Import sessions/turns/checkpoints from Aline DB |
-
-Options: `--workspace`, `--dry-run`, `--skip-content`
-
-### `ec repo` Subcommands
-
-| Command | Description |
-|---------|-------------|
-| `ec repo list` | List all registered EntireContext projects |
-
-### Common Flags
-
-| Flag | Description |
-|------|-------------|
-| `-g`, `--global` | Search/list across all registered repos |
-| `-r`, `--repo NAME` | Filter by repo name (repeatable) |
-| `-n`, `--limit N` | Max results (default 20) |
-
-### Search Options
-
-| Flag | Description |
-|------|-------------|
-| `--fts` | Use FTS5 full-text search |
-| `--semantic` | Use semantic search (requires `entirecontext[semantic]`) |
-| `--hybrid` | Use hybrid search (FTS5 + recency RRF reranking) |
-| `--file PATH` | Filter by file path |
-| `--commit HASH` | Filter by commit hash |
-| `--agent TYPE` | Filter by agent type |
-| `--since ISO8601` | Filter by date |
-| `-t TARGET` | Search target: `turn` (default), `session`, `event`, `content` |
-
-## MCP Server
-
-EntireContext exposes the same retrieval and assessment primitives to coding agents over MCP so the memory loop can run inside active coding sessions, not only through the CLI.
-
-### Automatic Setup
-
-`ec init` automatically registers the MCP server in `~/.claude/settings.json` (user-level):
-
-```bash
-ec init      # initializes the repo, installs hooks AND configures MCP server
-ec doctor    # verify MCP config is present
-```
-
-`ec enable` does the same registration without the database work, so either command gets you there. Both are idempotent — a repeat run skips the MCP entry if it already exists. `ec disable` removes the selected agent integration and both EntireContext repository Git hooks but preserves the global MCP config by default because other repos or agents may use it. Add `--remove-mcp` to explicitly remove a standard EntireContext MCP entry; this also removes an identical standard entry that was configured manually.
-
-Package health and MCP activation are separate checks. A successful `ec --help`
-or package reinstall does not enable a Codex MCP registration whose
-`~/.codex/config.toml` entry has `enabled = false`. Enable that registration in
-Codex configuration after verifying the package when MCP startup remains absent.
-
-### Manual Setup
-
-To configure manually, add to `~/.claude/settings.json`:
+`ec init` automatically registers the MCP server in `~/.claude/settings.json`; `ec mcp serve` runs it standalone over stdio. Manual setup:
 
 ```json
 {
@@ -495,23 +102,7 @@ To configure manually, add to `~/.claude/settings.json`:
 }
 ```
 
-### MCP Removal
-
-To disable the default Claude integration and also remove the standard user-level MCP entry:
-
-```bash
-ec disable --remove-mcp
-```
-
-Choose `--agent codex` or `--agent both` when disabling those agent integrations. The command preserves sibling MCP servers and nonstandard `entirecontext` entries. To remove only MCP without disabling the current repository integrations, delete the `mcpServers.entirecontext` key from `~/.claude/settings.json` manually.
-
-### Standalone Server
-
-To run the MCP server directly (e.g. for debugging):
-
-```bash
-ec mcp serve
-```
+Decisions also surface without an explicit call. The `UserPromptSubmit` hook ranks and injects top decisions per prompt as `additionalContext`. When `decisions.surface_on_tool_use` is enabled, `PostToolUse` writes hits for just-edited files to `.entirecontext/decisions-context-tooluse-<session>.md`. When `decisions.show_related_on_start` is enabled (default `false`), `SessionStart` writes related decisions to `.entirecontext/decisions-context.md` if any exist. See manual §4.2–§4.4 for ranking, timeout, and dedup config.
 
 ### Available Tools
 
@@ -549,297 +140,26 @@ ec mcp serve
 
 Tools that expose a `repos` parameter use `null` for the current repo, `["*"]` for all repos, and `["name"]` for specific repos. Tools without that parameter operate on the resolved current repository or their tool-specific scope.
 
-## Hook System
+## Agent Setup Templates
 
-`ec init` installs agent-specific capture hooks plus agent-neutral repository git hooks automatically. `ec enable` reinstalls the same set. The default `--agent claude` path writes Claude Code hooks and the MCP registration; `--agent codex` writes Codex notify and the MCP registration, installs the `post-commit` and `pre-push` git hooks, and does not write Claude Code hooks. Pass `--no-git-hooks` to suppress only the repository git hooks.
+Templates for configuring agents to proactively reuse stored decisions and lessons. Adoption is optional; each project chooses and enforces its own requirements.
 
-### Claude Code Hooks (`.claude/settings.local.json`)
-
-| Hook Type | Trigger | Action |
-|-----------|---------|--------|
-| `SessionStart` | Claude Code session begins | Create/resume session record |
-| `UserPromptSubmit` | User sends a message | Record turn start |
-| `Stop` | Assistant completes response | Record turn end with summary |
-| `PostToolUse` | Tool call completes | Track files touched and tools used |
-| `SessionEnd` | Claude Code session ends | Finalize session, generate summary |
-
-Hook protocol: stdin JSON, exit code 0 = success, 2 = block.
-
-### Git Hooks (`.git/hooks/`)
-
-| Hook | Trigger | Action |
-|------|---------|--------|
-| `post-commit` | `git commit` | Create checkpoint tied to the new commit if a session is active |
-| `pre-push` | `git push` | Run `ec sync` if `auto_sync_on_push` is enabled |
-
-Skip Git hook installation with `ec init --no-git-hooks` or `ec enable --no-git-hooks`. The hooks are agent-neutral, so `ec disable` removes both EntireContext repository hooks for `--agent claude`, `codex`, and `both`; agent-specific Claude hooks and Codex notify remain controlled by `--agent`.
-
-### omp (Oh My Pi)
-
-omp does not speak the Claude Code hook protocol; it exposes its own
-extension API instead. `integrations/omp/` ships an omp extension that maps
-omp's lifecycle events onto the same `ec hook handle --type <HookType>` calls,
-plus an `.mcp.json` for the MCP server. See
-[`integrations/omp/README.md`](integrations/omp/README.md) for the event
-mapping, install script, and verification steps.
-
-### Installed-tool provenance
-
-Distribution builds stamp the checkout Git SHA and tracked-file dirty state into the `ec` package. When an installed `ec doctor` runs inside an EntireContext source checkout, it compares that stamp with the checkout's current `HEAD`. A missing or mismatched stamp directs the operator to reinstall from the checkout:
-
-```bash
-uv tool install --force .
-```
-
-A dirty stamp directs the operator to commit or restore tracked changes before reinstalling. If the checkout has no resolvable `HEAD`, create or check out a commit before rebuilding the installed executable.
-
-Editable and direct source executions skip this comparison because they already run the checkout code. Consumer repositories also skip it; the check applies only when the current repository identifies itself as the EntireContext source project.
-
-### Recovering a drifted uv tool environment
-
-If `ec` fails with `ModuleNotFoundError: No module named 'entirecontext'`, use
-`uv` to recreate the tool environment before invoking `ec`:
-
-```bash
-uv tool uninstall entirecontext
-uv tool install --managed-python --python 3.13 entirecontext
-```
-
-For an install from an EntireContext checkout, run the second command from the
-checkout with `.` as the target:
-
-```bash
-uv tool install --managed-python --python 3.13 .
-```
-
-These commands replace the tool environment but preserve the EntireContext
-database under `~/.entirecontext` and repository data under `.entirecontext`.
-Do not use `uv tool install --force` as the interpreter-drift repair. It can
-restore package files without replacing a stale interpreter binding.
-
-Verify the recreated environment:
-
-```bash
-ec --help
-ec doctor
-python_path=$(head -1 "$(command -v ec)" | sed 's/^#!//')
-"$python_path" -c 'import pathlib, sys; print(pathlib.Path(sys.prefix, "pyvenv.cfg").read_text())'
-"$python_path" -c 'import entirecontext; print(entirecontext.__file__)'
-```
-
-`ec doctor` reports the configured and active Python major-minor versions when
-they differ and prints the clean recreation commands.
-
-## Configuration
-
-Config merges in order: **defaults** ← **global** (`~/.entirecontext/config.toml`) ← **per-repo** (`.entirecontext/config.toml`).
-
-### Common Configuration Defaults
-
-The source of truth is `src/entirecontext/core/config.py`. This excerpt lists operator-facing defaults; use `ec config` to inspect the merged global + per-repo value.
-
-```toml
-[capture]
-auto_capture = true
-checkpoint_on_commit = true
-checkpoint_on_session_end = false
-auto_cleanup_no_changes = false
-content_retention_days = 30
-intent_summary = false
-emit_aar = true
-codex_session_idle_minutes = 60
-surface_lessons_on_start = true
-
-[capture.exclusions]
-enabled = false
-content_patterns = []
-file_patterns = []
-tool_names = []
-redact_patterns = []
-
-[search]
-default_mode = "regex"
-semantic_model = "all-MiniLM-L6-v2"
-
-[sync]
-auto_sync = false
-auto_sync_on_push = false
-auto_pull = false
-cooldown_seconds = 300
-pull_staleness_seconds = 600
-push_on_sync = true
-quiet = true
-
-[display]
-max_results = 20
-color = true
-
-[security]
-filter_secrets = true
-patterns = [
-  "(?i)(api[_-]?key|secret|password|token)\\s*[=:]\\s*['\"]?[\\w-]+",
-  "(?i)bearer\\s+[\\w.-]+",
-  "ghp_[a-zA-Z0-9]{36}",
-  "sk-[a-zA-Z0-9]{48}",
-]
-
-[index]
-auto_embed = false
-embed_model = "all-MiniLM-L6-v2"
-
-[futures]
-auto_distill = false
-lessons_output = "LESSONS.md"
-lessons_min_per_verdict = 5
-default_backend = "claude"
-default_model = ""
-assess_enrich = true
-assess_backfill_window_days = 7
-
-[decisions]
-auto_stale_check = false
-auto_extract = false
-show_related_on_start = false
-surface_on_tool_use = false
-infer_applied_on_session_end = true
-infer_outcome_type = true
-auto_promotion_contradicted_threshold = 2
-auto_embed = true
-
-[decisions.injection]
-inject_on_user_prompt = true
-top_k = 5
-max_tokens = 800
-min_confidence = 0.4
-inject_timeout_ms = 250
-
-[filtering.query_redaction]
-enabled = false
-patterns = []
-replacement = "[FILTERED]"
-```
-Lesson selection reserves slots per verdict inside the total lesson cap, so a run of one verdict cannot evict every lesson of another; the reservation never exceeds half the cap, and `0` restores pure recency ordering.
-
-### CLI Usage
-
-```bash
-ec config                              # show all config
-ec config search.default_mode          # get a value
-ec config search.default_mode fts      # set a value
-ec config security.filter_secrets true # set a value
-```
-
-## Sync Policy
-
-Shadow branch sync uses artifact-level merge only on `entirecontext/checkpoints/v1`.
-
-- `ec sync` performs one automatic retry only, and only when the first push is rejected as non-fast-forward.
-- The retry path fetches `origin/entirecontext/checkpoints/v1`, merges exported artifacts, creates a new commit, and pushes again.
-- `ec pull` imports from the latest `origin/<shadow-branch>` remote-tracking snapshot, not from the local shadow branch.
-- There is no git conflict UI and no general git 3-way merge support in this path.
-- Artifact merge policy:
-  - `manifest.json`: key union; higher `total_turns` wins for duplicate session entries.
-  - `sessions/<id>/meta.json`: higher `total_turns` wins; ties preserve non-null fields; `started_at` uses earlier value; `ended_at` uses later value.
-  - `sessions/<id>/transcript.jsonl`: deduplicate by turn `id`.
-  - `checkpoints/*.json`: filename union.
-- Malformed remote artifacts, missing remote shadow snapshots, and retry push failures are explicit sync errors.
-
-## Architecture
-
-Sessions, turns, decisions, and checkpoints flow from Claude Code/git hooks through core services into SQLite, with optional export via shadow branch sync.
-
-```
-CLI (Typer)  →  core/ services  →  db/ SQLite  →  hooks/ capture  →  sync/ shadow branch
-  project_cmds     search              schema          session_lifecycle     coordinator
-  session_cmds     decisions           migration       turn_capture          merge
-  search_cmds      futures             connection      decision_hooks        export/import
-  sync_cmds        telemetry
-  checkpoint_cmds  attribution
-  decisions_cmds   content_filter
-  context_cmds     purge
-  futures_cmds     dashboard
-  compact_cmds     knowledge_graph
-  mcp_cmds         ast_index
-  ...              consolidation
-
-mcp/server.py + mcp/tools/* expose the agent-facing MCP interface.
-```
-
-### Data Model
-
-Schema version: **20** (`src/entirecontext/db/schema.py`).
-
-| Table | Purpose |
-|-------|---------|
-| `projects` | Registered repos (name, path, remote URL) |
-| `agents` | Agent identities (type, role, parent agent) |
-| `sessions` | Captured sessions (type, title, summary, turn count) |
-| `turns` | Individual turns (user message, assistant summary, files touched) |
-| `turn_content` | JSONL content file references for full turn data |
-| `checkpoints` | Git-anchored snapshots (commit hash, branch, file snapshot, diff) |
-| `events`, `event_sessions`, `event_checkpoints` | Task / temporal / milestone grouping and links |
-| `assessments`, `assessment_relationships` | Futures assessment results and typed assessment links |
-| `decisions` | Decision memory records, staleness, rejected alternatives, and supersession pointers |
-| `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_assessments` | Evidence links from decisions to git/code/assessment context |
-| `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state` | Committed rename provenance, explicit-unlink suppressions, and the repository scan watermark |
-| `decision_outcomes` | Usage feedback for decisions (`accepted`, `ignored`, `contradicted`, `refined`, `replaced`) |
-| `decision_candidates` | Auto-extracted candidate decisions before review/promotion |
-| `retrieval_events`, `retrieval_selections`, `context_applications` | Retrieval telemetry and context-application tracking |
-| `attributions` | Per-line human/agent file attribution |
-| `embeddings` | Semantic search vectors |
-| `ast_symbols` | Python AST symbol index (functions, classes, methods) |
-| `sync_metadata` | Shadow branch sync state |
-| `operation_events` | Durable operation/audit events |
-
-FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates` — synchronized by triggers where applicable.
-
-### Data Locations
-
-| Path | Contents |
-|------|----------|
-| `.entirecontext/db/local.db` | Per-repo SQLite database |
-| `.entirecontext/content/` | JSONL turn content files |
-| `.entirecontext/config.toml` | Per-repo configuration |
-| `~/.entirecontext/db/ec.db` | Global database (cross-repo registry) |
-| `~/.entirecontext/config.toml` | Global configuration |
+- Project policy: [entirecontext-project-decision-policy-template.md](docs/templates/entirecontext-project-decision-policy-template.md)
+- Maintainers: [entirecontext-maintainer-decision-reuse-template.md](docs/templates/entirecontext-maintainer-decision-reuse-template.md)
+- Users: [entirecontext-user-decision-reuse-template.md](docs/templates/entirecontext-user-decision-reuse-template.md)
+- Proactive guidance: [entirecontext-proactive-guidance.md](docs/templates/entirecontext-proactive-guidance.md) — broader memory reuse beyond decisions (assessments, lessons, checkpoints, attribution)
 
 ## Development
 
 ```bash
 git clone https://github.com/teslamint/entirecontext.git
 cd entirecontext
-uv sync --extra dev
+uv sync --extra dev --extra semantic --extra mcp
+uv run pytest
+uv run ruff format . && uv run ruff check . --fix
 ```
 
-### Run Tests
-
-```bash
-uv run pytest                          # all tests
-uv run pytest tests/test_core.py       # single file
-uv run pytest -k "test_search"         # by name pattern
-uv run pytest --cov=entirecontext      # with coverage
-```
-
-### Lint & Format
-
-```bash
-uv run ruff format .                   # format (line-length 120)
-uv run ruff check . --fix              # lint + autofix
-```
-
-### Optional Extras
-
-| Extra | Dependencies | Purpose |
-|-------|-------------|---------|
-| `dev` | pytest, pytest-cov, ruff | Testing and linting |
-| `semantic` | sentence-transformers | Semantic search with embeddings |
-| `mcp` | mcp | MCP server for AI agent integration |
-
-Install extras: `uv sync --extra dev --extra semantic --extra mcp`
-
-## Development Context
-This project's entire AI development history is available
-on the `entirecontext/checkpoints/v1` branch.
+This project's own AI development history is available on the `entirecontext/checkpoints/v1` branch. See [`CLAUDE.md`](CLAUDE.md) and manual §13 for contributor policy.
 
 ## Acknowledgments
 
