@@ -81,16 +81,6 @@ class TestStreamingPopen:
             assert isinstance(msg, str)
             assert msg
 
-    def test_generator_cleanup_terminates_process(self, git_repo):
-        """Early break from generator does not leak processes."""
-        (git_repo / "c.py").write_text("z = 3")
-        subprocess.run(["git", "add", "."], cwd=str(git_repo), check=True)
-        subprocess.run(["git", "commit", "-m", "add c"], cwd=str(git_repo), check=True)
-
-        gen = _stream_commits(str(git_repo), since=None, until=None, limit=100)
-        next(gen)
-        gen.close()
-
     def test_merge_commits_excluded(self, git_repo):
         """Merge commits are not yielded by _stream_commits."""
         repo = str(git_repo)

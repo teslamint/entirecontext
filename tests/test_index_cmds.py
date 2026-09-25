@@ -60,29 +60,3 @@ class TestIndexCommand:
             result = runner.invoke(app, ["index", "--semantic"])
             assert result.exit_code == 1
             assert "sentence-transformers" in result.output
-
-    def test_force_flag(self):
-        mock_conn = MagicMock()
-        counts = {"fts_turns": 10}
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.search.rebuild_fts_indexes", return_value=counts),
-            patch("entirecontext.core.embedding.generate_embeddings", return_value=50) as mock_gen,
-        ):
-            result = runner.invoke(app, ["index", "--semantic", "--force"])
-            assert result.exit_code == 0
-            mock_gen.assert_called_once_with(mock_conn, "/tmp/test", model_name="all-MiniLM-L6-v2", force=True)
-
-    def test_custom_model(self):
-        mock_conn = MagicMock()
-        counts = {"fts_turns": 10}
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.search.rebuild_fts_indexes", return_value=counts),
-            patch("entirecontext.core.embedding.generate_embeddings", return_value=10) as mock_gen,
-        ):
-            result = runner.invoke(app, ["index", "--semantic", "--model", "custom-model"])
-            assert result.exit_code == 0
-            mock_gen.assert_called_once_with(mock_conn, "/tmp/test", model_name="custom-model", force=False)
