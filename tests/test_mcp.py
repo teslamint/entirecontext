@@ -2311,3 +2311,58 @@ class TestMCPAssessTrends:
         assert result["total_count"] == 0
         assert result["with_feedback"] == 0
         assert result["overall"]["expand"] == 0
+
+
+class TestMCPLinkedWorktree:
+    def test_env_repo_path_in_linked_worktree_opens_main_db(self, ec_worktree, monkeypatch):
+        main, linked = ec_worktree
+        monkeypatch.setenv("ENTIRECONTEXT_REPO_PATH", str(linked))
+
+        conn, repo_path = runtime.get_repo_db()
+        conn.close()
+
+        assert repo_path == str(main)
+        assert runtime.get_workspace_root(repo_path) == str(linked)
+        assert not (linked / ".entirecontext").exists()
+
+    def test_decision_context_reads_linked_worktree_diff(self, ec_worktree, monkeypatch):
+        import subprocess
+
+        from entirecontext.core.decisions import create_decision, link_decision_to_file
+        from entirecontext.db import get_db
+        from entirecontext.mcp.tools.decisions import ec_decision_context
+
+        main, linked = ec_worktree
+        target = linked / "src" / "wt_only.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("x = 1\n")
+        subprocess.run(["git", "-C", str(linked), "add", "."], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(linked), "commit", "-m", "wt"], check=True, capture_output=True)
+        target.write_text("x = 2\n")
+        conn = get_db(str(main))
+        try:
+            decision = create_decision(conn, title="Worktree-only diff decision")
+            link_decision_to_file(conn, decision["id"], "src/wt_only.py")
+        finally:
+            conn.close()
+        monkeypatch.setenv("ENTIRECONTEXT_REPO_PATH", str(linked))
+
+        result = json.loads(asyncio.run(ec_decision_context()))
+
+        assert result["signal_summary"]["has_diff"] is True
+        assert decision["id"] in {d["id"] for d in result["decisions"]}
+
+    def test_registry_has_one_canonical_repo_for_worktrees(self, ec_worktree, tmp_path, monkeypatch):
+        from entirecontext.core.project import init_project
+
+        main, linked = ec_worktree
+        init_project(str(linked))
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        monkeypatch.chdir(outside)
+        monkeypatch.delenv("ENTIRECONTEXT_REPO_PATH", raising=False)
+
+        conn, repo_path = runtime.get_repo_db()
+        conn.close()
+
+        assert repo_path == str(main)

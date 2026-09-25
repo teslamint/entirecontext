@@ -16,10 +16,10 @@ def index_cmd(
     model: str = typer.Option("all-MiniLM-L6-v2", "--model", help="Embedding model name"),
 ):
     """Rebuild search indexes (FTS5) and optionally generate embeddings."""
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)

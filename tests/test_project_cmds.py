@@ -1977,3 +1977,78 @@ class TestGuidanceInjection:
         codex_hooks = json.loads((fake_home / ".codex" / "hooks.json").read_text(encoding="utf-8"))
         session_start = codex_hooks.get("hooks", {}).get("SessionStart", [])
         assert not any(_is_ec_inject_hook(e) for e in session_start)
+
+
+class TestLinkedWorktreeProjectCommands:
+    def test_init_from_linked_joins_main_project(self, ec_worktree, monkeypatch):
+        main, linked = ec_worktree
+        monkeypatch.chdir(linked)
+
+        result = runner.invoke(app, ["init", "--no-hooks"])
+
+        assert result.exit_code == 0, result.output
+        assert "Joined existing logical project" in result.output
+        assert str(main) in result.output
+        assert not (linked / ".entirecontext" / "db").exists()
+
+    def test_status_from_linked_shows_main_and_branch(self, ec_worktree, monkeypatch):
+        from rich.console import Console
+
+        main, linked = ec_worktree
+        monkeypatch.chdir(linked)
+        monkeypatch.setattr(project_cmds, "console", Console(width=400))
+
+        result = runner.invoke(app, ["status"])
+
+        assert result.exit_code == 0, result.output
+        assert str(main) in result.output
+        assert f"{linked} (linked worktree)" in result.output
+        assert "wt" in result.output
+
+    def test_init_warns_about_legacy_db_and_leaves_it_untouched(
+        self, legacy_worktree_db, isolated_global_db, monkeypatch
+    ):
+        import os
+
+        main, linked, legacy_db = legacy_worktree_db
+        before = (legacy_db.read_bytes(), os.stat(legacy_db).st_mtime_ns)
+        monkeypatch.chdir(linked)
+
+        result = runner.invoke(app, ["init", "--no-hooks"])
+
+        assert result.exit_code == 0, result.output
+        output = " ".join(result.output.split())
+        assert "Legacy per-worktree database found" in output
+        assert "--promote-from" in output
+        assert (legacy_db.read_bytes(), os.stat(legacy_db).st_mtime_ns) == before
+        assert (main / ".entirecontext" / "db" / "local.db").exists()
+
+    @pytest.mark.skipif(not __import__("shutil").which("jq"), reason="jq is required by ec-inject.sh")
+    def test_inject_script_resolves_main_worktree(self, linked_worktree, tmp_path):
+        main, linked = linked_worktree
+        home = tmp_path / "inject-home"
+        hooks_dir = home / ".claude" / "hooks"
+        hooks_dir.mkdir(parents=True)
+        (hooks_dir / "entirecontext-guidance.md").write_text("guidance body\n", encoding="utf-8")
+        script = tmp_path / "ec-inject.sh"
+        script.write_text(project_cmds._INJECT_SCRIPT, encoding="utf-8")
+        env = {**__import__("os").environ, "HOME": str(home)}
+
+        def run_inject(cwd: Path) -> subprocess.CompletedProcess:
+            return subprocess.run(
+                ["sh", str(script)],
+                input=json.dumps({"cwd": str(cwd)}),
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+        silent = run_inject(linked)
+        assert silent.returncode == 0
+        assert silent.stdout == ""
+
+        (main / ".entirecontext").mkdir()
+        injected = run_inject(linked)
+        assert injected.returncode == 0
+        payload = json.loads(injected.stdout)
+        assert payload["hookSpecificOutput"]["additionalContext"] == "guidance body\n"

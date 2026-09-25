@@ -18,11 +18,11 @@ def context_select(
     result_id: str = typer.Argument(..., help="Selected result ID"),
     rank: int = typer.Option(1, "--rank", min=1, help="Rank of the selected result"),
 ) -> None:
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..core.telemetry import record_retrieval_selection
     from ..db import check_and_migrate, get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -55,20 +55,20 @@ def context_apply(
     source_id: str | None = typer.Option(None, "--source-id", help="Source ID when no selection is provided"),
     note: str | None = typer.Option(None, "--note", help="Optional note"),
 ) -> None:
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
     from ..core.telemetry import detect_current_context, record_context_application
     from ..db import check_and_migrate, get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
 
-    conn = get_db(repo_path)
+    conn = get_db(roots.project_root)
     try:
         if isinstance(conn, sqlite3.Connection):
             check_and_migrate(conn)
-        session_id, turn_id = detect_current_context(conn)
+        session_id, turn_id = detect_current_context(conn, workspace_root=roots.workspace_root)
         application = record_context_application(
             conn,
             application_type=application_type,

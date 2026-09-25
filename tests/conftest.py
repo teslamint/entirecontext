@@ -44,10 +44,15 @@ def hermetic_git_config(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def reset_mcp_runtime_cache(monkeypatch):
-    """Reset the module-level repo-path cache in mcp.runtime between tests."""
+    """Reset the module-level repo-path caches in mcp.runtime and core.repo_roots between tests."""
+    from entirecontext.core.repo_roots import clear_repo_roots_cache
     from entirecontext.mcp import runtime
 
     monkeypatch.setattr(runtime, "_cached_repo_path", None)
+    monkeypatch.setattr(runtime, "_workspace_roots", {})
+    clear_repo_roots_cache()
+    yield
+    clear_repo_roots_cache()
 
 
 @pytest.fixture
@@ -77,6 +82,68 @@ def git_repo(tmp_path):
         capture_output=True,
     )
     return repo
+
+
+def _add_linked_worktree(main, linked):
+    subprocess.run(
+        ["git", "-C", str(main), "worktree", "add", "-b", "wt", str(linked)],
+        check=True,
+        capture_output=True,
+    )
+    assert (linked / ".git").is_file()
+    return linked
+
+
+@pytest.fixture
+def linked_worktree(git_repo, tmp_path):
+    """A real ``git worktree add`` checkout (branch ``wt``) of ``git_repo``.
+
+    Yields ``(main, linked)``; nothing is initialized.
+    """
+    linked = _add_linked_worktree(git_repo, tmp_path / "linked")
+    return git_repo, linked
+
+
+@pytest.fixture
+def ec_worktree(ec_repo, tmp_path):
+    """Linked worktree (branch ``wt``) of an EntireContext-initialized main checkout.
+
+    Yields ``(main, linked)``.
+    """
+    linked = _add_linked_worktree(ec_repo, tmp_path / "linked")
+    return ec_repo, linked
+
+
+@pytest.fixture
+def legacy_worktree_db(linked_worktree):
+    """A pre-v21 style ``<linked>/.entirecontext/db/local.db`` with one project/session/decision.
+
+    Built with raw ``sqlite3.connect`` so it bypasses the ``get_db`` linked-worktree guard.
+    Yields ``(main, linked, db_path)``.
+    """
+    import sqlite3
+
+    from entirecontext.db.connection import _configure_connection, _ECConnection
+    from entirecontext.db.migration import init_schema
+
+    main, linked = linked_worktree
+    db_dir = linked / ".entirecontext" / "db"
+    db_dir.mkdir(parents=True)
+    db_path = db_dir / "local.db"
+    conn = sqlite3.connect(str(db_path), factory=_ECConnection)
+    _configure_connection(conn)
+    init_schema(conn)
+    conn.execute(
+        "INSERT INTO projects (id, name, repo_path) VALUES (?, ?, ?)",
+        ("legacy-project", linked.name, str(linked)),
+    )
+    conn.execute(
+        "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+        "VALUES ('legacy-session', 'legacy-project', 'claude', datetime('now'), datetime('now'))"
+    )
+    conn.execute("INSERT INTO decisions (id, title) VALUES ('legacy-decision', 'Legacy decision')")
+    conn.close()
+    return main, linked, db_path
 
 
 @pytest.fixture

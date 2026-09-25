@@ -77,9 +77,10 @@ def _record_phase(
     status: str,
     started_at: float,
     error: Exception | None = None,
+    workspace_root: str | None = None,
 ) -> dict:
     latency_ms = int((time.perf_counter() - started_at) * 1000)
-    session_id, turn_id = detect_current_context(conn)
+    session_id, turn_id = detect_current_context(conn, workspace_root=workspace_root)
     event = record_operation_event(
         conn,
         source=source,
@@ -120,22 +121,29 @@ def _checkpoint_exists_exact(conn, checkpoint_id: str) -> bool:
     return row is not None
 
 
-def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dict:
+def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False, *, workspace_root: str | None = None) -> dict:
+    git_path = workspace_root or repo_path
     start = time.monotonic()
     result = SyncResult()
     should_update_metadata = False
     worktrees_to_remove: list[str] = []
 
-    if not shadow_branch_exists(repo_path):
-        init_shadow_branch(repo_path)
+    if not shadow_branch_exists(git_path):
+        init_shadow_branch(git_path)
 
     try:
         phase_start = time.perf_counter()
-        worktree_path = create_worktree(repo_path, SHADOW_BRANCH, "ec-sync-")
+        worktree_path = create_worktree(git_path, SHADOW_BRANCH, "ec-sync-")
         worktrees_to_remove.append(worktree_path)
         result.phases.append(
             _record_phase(
-                conn, source="sync", operation_name="perform_sync", phase="prepare", status="ok", started_at=phase_start
+                conn,
+                workspace_root=git_path,
+                source="sync",
+                operation_name="perform_sync",
+                phase="prepare",
+                status="ok",
+                started_at=phase_start,
             )
         )
 
@@ -146,7 +154,13 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
         result.committed = export_result.committed
         result.phases.append(
             _record_phase(
-                conn, source="sync", operation_name="perform_sync", phase="export", status="ok", started_at=phase_start
+                conn,
+                workspace_root=git_path,
+                source="sync",
+                operation_name="perform_sync",
+                phase="export",
+                status="ok",
+                started_at=phase_start,
             )
         )
 
@@ -159,6 +173,7 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
                 result.phases.append(
                     _record_phase(
                         conn,
+                        workspace_root=git_path,
                         source="sync",
                         operation_name="perform_sync",
                         phase="push",
@@ -168,12 +183,12 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
                 )
             elif is_non_fast_forward_push(push_result):
                 result.retry_count = 1
-                fetch_shadow_branch(repo_path)
-                if not remote_shadow_ref_exists(repo_path):
+                fetch_shadow_branch(git_path)
+                if not remote_shadow_ref_exists(git_path):
                     raise ShadowMergeError(f"remote shadow snapshot not found: {REMOTE_SHADOW_REF}")
 
-                local_snapshot_path = create_worktree(repo_path, SHADOW_BRANCH, "ec-sync-local-", detach=True)
-                remote_snapshot_path = create_worktree(repo_path, REMOTE_SHADOW_REF, "ec-sync-remote-", detach=True)
+                local_snapshot_path = create_worktree(git_path, SHADOW_BRANCH, "ec-sync-local-", detach=True)
+                remote_snapshot_path = create_worktree(git_path, REMOTE_SHADOW_REF, "ec-sync-remote-", detach=True)
                 worktrees_to_remove.extend([local_snapshot_path, remote_snapshot_path])
 
                 reset_hard(worktree_path, REMOTE_SHADOW_REF)
@@ -201,6 +216,7 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
                 result.phases.append(
                     _record_phase(
                         conn,
+                        workspace_root=git_path,
                         source="sync",
                         operation_name="perform_sync",
                         phase="retry_merge",
@@ -212,6 +228,7 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
                 result.phases.append(
                     _record_phase(
                         conn,
+                        workspace_root=git_path,
                         source="sync",
                         operation_name="perform_sync",
                         phase="push",
@@ -229,6 +246,7 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
         result.phases.append(
             _record_phase(
                 conn,
+                workspace_root=git_path,
                 source="sync",
                 operation_name="perform_sync",
                 phase="finalize",
@@ -242,6 +260,7 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
         result.phases.append(
             _record_phase(
                 conn,
+                workspace_root=git_path,
                 source="sync",
                 operation_name="perform_sync",
                 phase="finalize",
@@ -257,17 +276,18 @@ def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
             _update_sync_metadata(conn, last_export_at=now, duration_ms=result.duration_ms)
 
         for worktree_path in reversed(worktrees_to_remove):
-            remove_worktree(repo_path, worktree_path)
+            remove_worktree(git_path, worktree_path)
 
     return result.to_dict()
 
 
-def perform_pull(conn, repo_path: str, config: dict, quiet: bool = False) -> dict:
+def perform_pull(conn, repo_path: str, config: dict, quiet: bool = False, *, workspace_root: str | None = None) -> dict:
+    git_path = workspace_root or repo_path
     result = SyncResult()
     worktree_path: str | None = None
 
-    fetch_shadow_branch(repo_path)
-    if not remote_shadow_ref_exists(repo_path):
+    fetch_shadow_branch(git_path)
+    if not remote_shadow_ref_exists(git_path):
         result.error = "no_shadow_branch"
         return result.to_dict()
 
@@ -275,7 +295,7 @@ def perform_pull(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
     project_id = project_row["id"] if project_row else None
 
     try:
-        worktree_path = create_worktree(repo_path, REMOTE_SHADOW_REF, "ec-pull-", detach=True)
+        worktree_path = create_worktree(git_path, REMOTE_SHADOW_REF, "ec-pull-", detach=True)
 
         sessions_dir = Path(worktree_path) / "sessions"
         session_count = 0
@@ -390,6 +410,6 @@ def perform_pull(conn, repo_path: str, config: dict, quiet: bool = False) -> dic
         result.error = str(exc)
     finally:
         if worktree_path:
-            remove_worktree(repo_path, worktree_path)
+            remove_worktree(git_path, worktree_path)
 
     return result.to_dict()

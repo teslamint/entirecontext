@@ -17,6 +17,9 @@ def session_list(
     limit: int = typer.Option(20, "--limit", "-n"),
     global_search: bool = typer.Option(False, "--global", "-g", help="List sessions across all registered repos"),
     repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
+    workspace: bool = typer.Option(
+        False, "--workspace", help="Only sessions recorded in the current worktree checkout"
+    ),
 ):
     """List sessions."""
     is_cross_repo = global_search or repo
@@ -52,14 +55,15 @@ def session_list(
         console.print(table)
         return
 
-    from ..core.project import find_git_root, get_project
+    from ..core.project import get_project, get_repo_roots
     from ..core.session import list_sessions
     from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.project_root
 
     project = get_project(repo_path)
     if not project:
@@ -68,7 +72,8 @@ def session_list(
 
     conn = get_db(repo_path)
     try:
-        sessions = list_sessions(conn, project_id=project["id"], limit=limit)
+        filters = {"workspace_root": roots.workspace_root} if workspace else {}
+        sessions = list_sessions(conn, project_id=project["id"], limit=limit, **filters)
     finally:
         conn.close()
 
@@ -140,12 +145,12 @@ def session_show(
             console.print(f"[dim]{w}[/dim]")
         return
 
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..core.session import get_session
     from ..core.turn import list_turns
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -189,18 +194,18 @@ def session_show(
 @session_app.command("current")
 def session_current():
     """Show current active session."""
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
     from ..core.session import get_current_session
     from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
 
-    conn = get_db(repo_path)
+    conn = get_db(roots.project_root)
     try:
-        session = get_current_session(conn)
+        session = get_current_session(conn, workspace_root=roots.workspace_root)
     finally:
         conn.close()
 
@@ -222,12 +227,12 @@ def session_export(
     from pathlib import Path
 
     from ..core.export import export_session_markdown
-    from ..core.project import find_git_root, get_project
+    from ..core.project import find_project_root, get_project
     from ..core.session import get_session
     from ..core.turn import list_turns
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -278,10 +283,10 @@ def session_consolidate(
     from datetime import datetime, timedelta, timezone
 
     from ..core.consolidation import consolidate_old_turns
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -322,10 +327,10 @@ def session_graph(
     of sessions associated with each agent.
     """
     from ..core.agent_graph import build_agent_graph
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -407,10 +412,10 @@ def session_activate(
     strongly connected turns ranked by activation score.
     """
     from ..core.activation import spread_activation
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -469,10 +474,10 @@ def session_backfill_ended_at(
     --max-age-hours. Sets ended_at = last_activity_at for each eligible row.
     Safe default is --dry-run; pass --apply to commit changes.
     """
-    from ..core.project import find_git_root, get_project
+    from ..core.project import find_project_root, get_project
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -542,14 +547,15 @@ def session_backfill_applied(
     dry_run: bool = typer.Option(True, "--dry-run/--apply", help="Preview without changes (default) or apply."),
 ):
     """Retroactively infer applied decisions for ended sessions with retrieval events."""
-    from ..core.project import find_git_root, get_project
+    from ..core.project import get_project, get_repo_roots
     from ..db import get_db
     from ..core.auto_apply import infer_applied_decisions
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.project_root
 
     project = get_project(repo_path)
     if not project:
@@ -580,7 +586,9 @@ def session_backfill_applied(
         sessions_with_applies = 0
 
         for sid in session_ids:
-            result = infer_applied_decisions(conn, sid, dry_run=dry_run, repo_path=repo_path)
+            result = infer_applied_decisions(
+                conn, sid, dry_run=dry_run, repo_path=repo_path, workspace_root=roots.workspace_root
+            )
             if result["applied_count"] > 0:
                 sessions_with_applies += 1
                 total_applied += result["applied_count"]

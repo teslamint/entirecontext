@@ -59,10 +59,10 @@ def event_list(
         return
 
     from ..core.event import list_events
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -101,10 +101,10 @@ def event_list(
 def event_show(event_id: str = typer.Argument(..., help="Event ID")):
     """Show event details and linked sessions."""
     from ..core.event import get_event, get_event_sessions
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -148,10 +148,10 @@ def event_create(
 ):
     """Create a new event."""
     from ..core.event import create_event
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -175,11 +175,11 @@ def event_link(
 ):
     """Link a session to an event."""
     from ..core.event import get_event, link_event_session
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..core.session import get_session
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)

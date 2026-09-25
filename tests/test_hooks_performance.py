@@ -168,3 +168,28 @@ class TestPDIPerformanceBaseline:
         PERF_DOC.parent.mkdir(parents=True, exist_ok=True)
         PERF_DOC.write_text("\n".join(lines), encoding="utf-8")
         print(f"\nWrote perf baseline to {PERF_DOC}")
+
+
+_PRE_V21_SESSION_START_GIT_CALLS = 9
+
+
+def test_session_start_git_subprocess_budget(ec_repo, monkeypatch):
+    import subprocess
+
+    from entirecontext.hooks.handler import handle_hook
+
+    real_run = subprocess.run
+    git_calls: list[list[str]] = []
+
+    def counting_run(cmd, *args, **kwargs):
+        if isinstance(cmd, (list, tuple)) and cmd and cmd[0] == "git":
+            git_calls.append(list(cmd))
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", counting_run)
+
+    handle_hook("SessionStart", data={"session_id": "perf-session", "cwd": str(ec_repo), "source": "startup"})
+
+    root_discovery = [c for c in git_calls if "--show-toplevel" in c]
+    assert len(root_discovery) == 1
+    assert len(git_calls) <= _PRE_V21_SESSION_START_GIT_CALLS

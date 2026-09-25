@@ -16,9 +16,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def detect_current_context(conn) -> tuple[str | None, str | None]:
-    """Return the active session and its latest turn, if any."""
-    session = get_current_session(conn)
+def detect_current_context(conn, workspace_root: str | None = None) -> tuple[str | None, str | None]:
+    """Return the active session and its latest turn, if any.
+
+    Linked Git worktrees share one database, so callers should pass the
+    active checkout's ``workspace_root``; otherwise the most recent open
+    session of any worktree is returned.
+    """
+    session = get_current_session(conn, workspace_root=workspace_root)
     if not session:
         return None, None
 

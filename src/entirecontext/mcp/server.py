@@ -24,11 +24,11 @@ def _get_repo_db() -> tuple[sqlite3.Connection, str]:
     return runtime.get_repo_db()
 
 
-def _detect_current_session(conn: sqlite3.Connection) -> str | None:
-    row = conn.execute(
-        "SELECT id FROM sessions WHERE ended_at IS NULL ORDER BY last_activity_at DESC LIMIT 1"
-    ).fetchone()
-    return row["id"] if row else None
+def _detect_current_session(conn: sqlite3.Connection, workspace_root: str | None = None) -> str | None:
+    from ..core.session import get_current_session
+
+    session = get_current_session(conn, workspace_root=workspace_root)
+    return session["id"] if session else None
 
 
 def _record_search_event(
@@ -45,6 +45,7 @@ def _record_search_event(
     since: str | None = None,
     session_id: str | None = None,
     turn_id: str | None = None,
+    workspace_root: str | None = None,
 ) -> str:
     from ..core.telemetry import detect_current_context, record_retrieval_event
 
@@ -54,7 +55,7 @@ def _record_search_event(
     # to anchor their telemetry to that exact session, not whatever the
     # connection's currently active session happens to be.
     if session_id is None and turn_id is None:
-        session_id, turn_id = detect_current_context(conn)
+        session_id, turn_id = detect_current_context(conn, workspace_root=workspace_root)
     event = record_retrieval_event(
         conn,
         source="mcp",

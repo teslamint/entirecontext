@@ -195,3 +195,38 @@ class TestCheckpointDiff:
             result = runner.invoke(app, ["checkpoint", "diff", "cp1", "cp2"])
             assert result.exit_code == 0
             assert "No differences" in result.output
+
+
+def test_checkpoint_create_in_linked_worktree(ec_worktree, monkeypatch):
+    import subprocess
+
+    from entirecontext.core.session import create_session
+    from entirecontext.db import get_db
+
+    main, linked = ec_worktree
+    (linked / "wt.txt").write_text("wt\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(linked), "add", "wt.txt"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(linked), "commit", "-m", "wt"], check=True, capture_output=True)
+    linked_head = subprocess.run(
+        ["git", "-C", str(linked), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    conn = get_db(str(main))
+    try:
+        project_id = conn.execute("SELECT id FROM projects").fetchone()["id"]
+        create_session(conn, project_id, session_id="main-open", workspace_root=str(main))
+        create_session(conn, project_id, session_id="linked-open", workspace_root=str(linked))
+        conn.execute("UPDATE sessions SET last_activity_at = '2000-01-01' WHERE id = 'linked-open'")
+    finally:
+        conn.close()
+    monkeypatch.chdir(linked)
+
+    result = runner.invoke(app, ["checkpoint", "create", "-m", "wt checkpoint"])
+
+    assert result.exit_code == 0, result.output
+    conn = get_db(str(main))
+    try:
+        row = conn.execute("SELECT session_id, git_branch, git_commit_hash FROM checkpoints").fetchone()
+    finally:
+        conn.close()
+    assert (row["session_id"], row["git_branch"], row["git_commit_hash"]) == ("linked-open", "wt", linked_head)
+    assert not (linked / ".entirecontext").exists()

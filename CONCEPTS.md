@@ -8,6 +8,14 @@
 
 **Cache identity** — The canonical representation used to decide whether two lookups can reuse one result. It must match the lookup's equivalence rules.
 
+## Git worktrees
+
+**Logical project** — The one EntireContext project shared by every linked worktree of a repository. It is keyed by the Git common dir and lives at the canonical project root (the main worktree), which owns the database, config, content files and the `repo_index` entry. *Avoid: repo, checkout.*
+
+**Workspace** — The checkout an agent is working in: its toplevel, branch and per-worktree git dir. Git operations run in the workspace; each session records the workspace it started in (`sessions.workspace_root`, `git_branch`, `worktree_git_dir`).
+
+**Legacy worktree DB** — A pre-v21 `<worktree>/.entirecontext/db/local.db` created when each worktree was its own project. It is detected and reported read-only, never written, merged, copied or symlinked.
+
 ## Cross-repo queries
 
 **Repo warning** — A per-repo failure recorded and returned alongside the results instead of aborting the whole query. One unreachable or corrupt repository degrades the answer rather than failing it.

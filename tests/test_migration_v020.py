@@ -8,6 +8,7 @@ import pytest
 
 from entirecontext.db.connection import get_memory_db
 from entirecontext.db.migration import apply_migrations, get_current_version, init_schema
+from entirecontext.db.schema import SCHEMA_VERSION
 
 
 _SUPPRESSION_TABLE_SQL = """CREATE TABLE decision_file_lineage_suppressions (
@@ -95,6 +96,6 @@ def test_fresh_schema_matches_migrated_v20_table(v19_db):
         assert migrated_sql is not None
         assert fresh_sql is not None
         assert _normalized_sql(fresh_sql) == _normalized_sql(migrated_sql)
-        assert get_current_version(fresh) == 20
+        assert get_current_version(fresh) == SCHEMA_VERSION
     finally:
         fresh.close()

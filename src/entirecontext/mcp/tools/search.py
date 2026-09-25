@@ -40,9 +40,11 @@ async def ec_search(
             else:
                 current_repo_path = None
             if since:
-                resolved_since, _ = resolve_temporal_ref(since, repo_path=current_repo_path)
+                resolved_since, _ = resolve_temporal_ref(since, repo_path=runtime.get_workspace_root(current_repo_path))
             if until:
-                resolved_until, until_exclusive = resolve_until(until, repo_path=current_repo_path)
+                resolved_until, until_exclusive = resolve_until(
+                    until, repo_path=runtime.get_workspace_root(current_repo_path)
+                )
             TQLContext.validated(
                 since=resolved_since,
                 until=resolved_until,
@@ -84,9 +86,11 @@ async def ec_search(
 
             try:
                 if since:
-                    resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+                    resolved_since, _ = resolve_temporal_ref(since, repo_path=runtime.get_workspace_root(repo_path))
                 if until:
-                    resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+                    resolved_until, until_exclusive = resolve_until(
+                        until, repo_path=runtime.get_workspace_root(repo_path)
+                    )
                 TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
             except TQLError as exc:
                 return runtime.error_payload(str(exc))
@@ -169,6 +173,7 @@ async def ec_search(
                 commit_filter=commit_filter,
                 agent_filter=agent_filter,
                 since=since,
+                workspace_root=runtime.get_workspace_root(repo_path),
             )
         except ValueError as exc:
             return runtime.error_payload(str(exc))

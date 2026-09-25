@@ -57,7 +57,7 @@ def is_worker_running(pid: int) -> bool:
         return True
 
 
-def launch_worker(repo_path: str, cmd: list[str], pid_name: str = "worker") -> int:
+def launch_worker(repo_path: str, cmd: list[str], pid_name: str = "worker", *, cwd: str | None = None) -> int:
     """Launch *cmd* as a detached background process and record its PID.
 
     The child process is started with ``start_new_session=True`` so it is
@@ -65,9 +65,12 @@ def launch_worker(repo_path: str, cmd: list[str], pid_name: str = "worker") -> i
     written to ``<repo>/.entirecontext/<pid_name>.pid``.
 
     Args:
-        repo_path: Absolute path to the git repository root.
+        repo_path: Canonical project root; owns the PID file, so workers
+            dedupe across linked worktrees.
         cmd: Command + arguments to execute (passed directly to ``Popen``).
         pid_name: Base name for the PID file (default: ``"worker"``).
+        cwd: Working directory for the child (the active workspace);
+            defaults to ``repo_path``.
 
     Returns:
         The PID of the launched process.
@@ -77,7 +80,7 @@ def launch_worker(repo_path: str, cmd: list[str], pid_name: str = "worker") -> i
 
     proc = subprocess.Popen(
         cmd,
-        cwd=repo_path,
+        cwd=cwd or repo_path,
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

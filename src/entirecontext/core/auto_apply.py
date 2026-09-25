@@ -397,12 +397,32 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
     return "replaced"
 
 
+def _session_workspace_root(conn: sqlite3.Connection, session_id: str) -> str | None:
+    try:
+        row = conn.execute("SELECT workspace_root FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    except sqlite3.Error:
+        return None
+    return row["workspace_root"] if row and row["workspace_root"] else None
+
+
 def infer_applied_decisions(
-    conn: sqlite3.Connection, session_id: str, *, dry_run: bool = False, repo_path: str | None = None
+    conn: sqlite3.Connection,
+    session_id: str,
+    *,
+    dry_run: bool = False,
+    repo_path: str | None = None,
+    workspace_root: str | None = None,
 ) -> dict[str, Any]:
-    """Infer outcomes for decisions and lessons whose files were modified this session."""
-    matches = _detect_overlapping_decisions(conn, session_id, repo_path)
-    lesson_matches = _detect_overlapping_lessons(conn, session_id, repo_path)
+    """Infer outcomes for decisions and lessons whose files were modified this session.
+
+    ``repo_path`` is the canonical project root (config). File paths are
+    relativized and Git runs against the checkout the session ran in: the
+    session's recorded ``workspace_root``, then ``workspace_root``, then
+    ``repo_path``.
+    """
+    git_path = _session_workspace_root(conn, session_id) or workspace_root or repo_path
+    matches = _detect_overlapping_decisions(conn, session_id, git_path)
+    lesson_matches = _detect_overlapping_lessons(conn, session_id, git_path)
 
     if dry_run or (not matches and not lesson_matches):
         return {"applied_count": len(matches) + len(lesson_matches), "applied_decisions": []}
@@ -423,9 +443,9 @@ def infer_applied_decisions(
     # Decision outcomes — with optional Layer 2 classification
     for match in matches:
         outcome_type = "accepted"
-        if infer_outcome_type and repo_path:
+        if infer_outcome_type and git_path:
             if _has_new_decision_with_file_overlap(conn, session_id, match["decision_id"], match["overlap_files"]):
-                outcome_type = _classify_diff_pattern(repo_path, session_id, match["overlap_files"], conn)
+                outcome_type = _classify_diff_pattern(git_path, session_id, match["overlap_files"], conn)
 
         note = f"auto: session_end {outcome_type} ({', '.join(match['overlap_files'][:3])})"
         infer_session = session_id

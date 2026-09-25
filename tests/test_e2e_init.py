@@ -67,3 +67,24 @@ class TestProjectInit:
         assert status["turn_count"] == 0
         assert status["checkpoint_count"] == 0
         assert status["active_session"] is None
+
+
+class TestLinkedWorktreeInit:
+    def test_status_in_linked_worktree_shows_main_project(self, linked_worktree, isolated_global_db, monkeypatch):
+        from typer.testing import CliRunner
+
+        from entirecontext.cli import app
+
+        main, linked = linked_worktree
+        monkeypatch.chdir(main)
+        project = init_project()
+
+        monkeypatch.chdir(linked)
+        status = get_status()
+        assert status["project"]["id"] == project["id"]
+        assert status["workspace"]["root"] == str(linked)
+
+        result = CliRunner().invoke(app, ["status"])
+        assert result.exit_code == 0, result.output
+        assert project["id"][:8] in result.output
+        assert not (linked / ".entirecontext").exists()

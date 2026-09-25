@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .helpers import get_repo_connection
+from .helpers import get_repo_connection, get_repo_roots_connection
 
 console = Console()
 decision_app = typer.Typer(help="Decision memory management")
@@ -47,15 +47,15 @@ def decision_list(
     from ..core.decisions import list_decisions
     from ..core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
-    conn, repo_path = get_repo_connection()
+    conn, roots = get_repo_roots_connection()
     try:
         resolved_since: str | None = None
         resolved_until: str | None = None
         until_exclusive: bool = False
         if since:
-            resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+            resolved_since, _ = resolve_temporal_ref(since, repo_path=roots.workspace_root)
         if until:
-            resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+            resolved_until, until_exclusive = resolve_until(until, repo_path=roots.workspace_root)
         TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         decisions = list_decisions(
             conn,
@@ -216,7 +216,7 @@ def decision_stale(
     status: Optional[str] = typer.Option(None, "--status", help="Manually set: fresh|stale|superseded|contradicted"),
 ):
     """Check or set staleness for a decision. Without --status, auto-detects via git."""
-    conn, repo_path = get_repo_connection()
+    conn, roots = get_repo_roots_connection()
     try:
         if status:
             from ..core.decisions import update_decision_staleness
@@ -226,7 +226,7 @@ def decision_stale(
         else:
             from ..core.decisions import check_staleness
 
-            result = check_staleness(conn, decision_id, repo_path)
+            result = check_staleness(conn, decision_id, roots.workspace_root)
             if result["stale"]:
                 console.print(f"[yellow]STALE[/yellow] — {len(result['changed_files'])} linked file(s) changed:")
                 for f in result["changed_files"]:
@@ -250,9 +250,9 @@ def decision_outcome(
     from ..core.decisions import record_decision_outcome
     from ..core.telemetry import detect_current_context
 
-    conn, _ = get_repo_connection()
+    conn, roots = get_repo_roots_connection()
     try:
-        session_id, turn_id = detect_current_context(conn)
+        session_id, turn_id = detect_current_context(conn, workspace_root=roots.workspace_root)
         if turn_id is None:
             session_id = None
         created = record_decision_outcome(
@@ -383,15 +383,15 @@ def decision_search(
     from ..core.decisions import fts_search_decisions, hybrid_search_decisions
     from ..core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
-    conn, repo_path = get_repo_connection()
+    conn, roots = get_repo_roots_connection()
     try:
         resolved_since: str | None = None
         resolved_until: str | None = None
         until_exclusive: bool = False
         if since:
-            resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+            resolved_since, _ = resolve_temporal_ref(since, repo_path=roots.workspace_root)
         if until:
-            resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+            resolved_until, until_exclusive = resolve_until(until, repo_path=roots.workspace_root)
         TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         if search_type == "hybrid":
             decisions = hybrid_search_decisions(
@@ -503,12 +503,12 @@ def decision_stale_all():
     """Check staleness for all fresh decisions and persist results."""
     from ..core.decisions import check_staleness, list_decisions, update_decision_staleness
 
-    conn, repo_path = get_repo_connection()
+    conn, roots = get_repo_roots_connection()
     try:
         decisions = list_decisions(conn, staleness_status="fresh", limit=1000)
         stale_count = 0
         for d in decisions:
-            result = check_staleness(conn, d["id"], repo_path)
+            result = check_staleness(conn, d["id"], roots.workspace_root)
             if result["stale"]:
                 stale_count += 1
                 update_decision_staleness(conn, d["id"], "stale")
@@ -680,6 +680,9 @@ def decision_surface_prompt(
     repo_path_arg: Optional[str] = typer.Option(
         None, "--repo-path", help="Absolute repo root (required when the worker inherits cwd outside the repo)"
     ),
+    workspace_path_arg: Optional[str] = typer.Option(
+        None, "--workspace-path", help="Active worktree checkout for Git signals (defaults to --repo-path)"
+    ),
 ):
     """Background worker: rank decisions against the current user prompt.
 
@@ -701,10 +704,10 @@ def decision_surface_prompt(
     from pathlib import Path
 
     from ..core.decision_prompt_surfacing import run_prompt_surface_worker
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
 
     prompt_path = Path(prompt_file)
-    repo_path = repo_path_arg or find_git_root()
+    repo_path = repo_path_arg or find_project_root()
     if not repo_path:
         # Either the caller (the hook) forgot to pass --repo-path AND the
         # worker's inherited cwd is outside a git tree, or the repo was
@@ -717,7 +720,8 @@ def decision_surface_prompt(
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
 
-    result = run_prompt_surface_worker(repo_path, session_id, turn_id, prompt_path)
+    extra = {"workspace_path": workspace_path_arg} if workspace_path_arg else {}
+    result = run_prompt_surface_worker(repo_path, session_id, turn_id, prompt_path, **extra)
     if result.get("warnings"):
         for warning in result["warnings"]:
             console.print(f"[yellow]warning:[/yellow] {warning}")
@@ -1096,11 +1100,11 @@ def decision_verify_docs(
     )
     from ..db.migration import get_current_version
 
-    conn, repo_path = get_repo_connection()
+    conn, roots = get_repo_roots_connection()
     try:
         scan_dirs = tuple(dirs) if dirs else ("docs/adr", "docs/specs", "docs/plans")
         scan_files = tuple(files) if files else ("ROADMAP.md",)
-        refs = scan_doc_decision_refs(repo_path, dirs=scan_dirs, files=scan_files)
+        refs = scan_doc_decision_refs(roots.workspace_root, dirs=scan_dirs, files=scan_files)
 
         if not refs:
             console.print("[dim]No UUIDs found in scanned documents.[/dim]")

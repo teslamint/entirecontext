@@ -46,9 +46,9 @@ cli/             business    SQLite     Claude Code   shadow branch
 
 **Per-repo DB**: `.entirecontext/db/local.db`
 **Global DB**: `~/.entirecontext/db/ec.db`
-**Schema version**: 20
+**Schema version**: 21
 
-Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state`, `decision_assessments`, `decision_outcomes`, `ranking_snapshots`, `archaeology_processed`
+Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state`, `decision_file_lineage_worktree_state`, `decision_assessments`, `decision_outcomes`, `ranking_snapshots`, `archaeology_processed`
 
 FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates` (auto-synced via triggers)
 
@@ -61,6 +61,8 @@ Claude Code hooks integration via stdin JSON protocol. Entry: `hooks/handler.py`
 5 hook types: `SessionStart`, `UserPromptSubmit`, `Stop`, `PostToolUse`, `SessionEnd`
 
 Decision-file rename synchronization runs only at `SessionStart`, before decision ranking. It preserves historical `decision_files` rows and additively materializes committed destinations; query paths and `PostToolUse` must not invoke Git.
+
+Git worktrees: the project root (DB, config, content, pid files) is canonical via the git common dir (`core/repo_roots.py`), so all linked worktrees share the main worktree's `.entirecontext/`; Git operations use the workspace root. The `PostToolUse` decision hook resolves roots via `resolve_repo_roots_fs` without Git; `PostToolUse` turn capture still runs one `git rev-parse`. `get_db` refuses a linked-worktree root. See `docs/solutions/workflow-issues/worktree-canonical-project.md`.
 
 Return codes: 0=success, 2=block.
 

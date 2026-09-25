@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import contextlib
 import sqlite3
-import subprocess
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .repo_roots import RepoRoots, resolve_repo_roots, roots_for_workspace
 
 
 @contextlib.contextmanager
@@ -70,19 +71,8 @@ def transaction(conn: sqlite3.Connection) -> Iterator[None]:
 
 
 def _find_git_root(path: str | Path = ".") -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=str(path),
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    return None
+    roots = resolve_repo_roots(path)
+    return roots.workspace_root if roots else None
 
 
 @dataclass(slots=True)
@@ -95,11 +85,24 @@ class RequestContext:
 
 @dataclass(slots=True)
 class RepoContext:
+    """Per-repository runtime context.
+
+    ``repo_path`` is the canonical project root (DB, config, content); it is
+    kept under that name for backward compatibility. ``workspace_root`` is the
+    active checkout, which differs from ``repo_path`` in a linked worktree.
+    """
+
     repo_path: str
     conn: sqlite3.Connection
     config: dict[str, Any]
     project: dict[str, Any] | None
     current_session_id: str | None
+    workspace_root: str | None = None
+    roots: RepoRoots | None = None
+
+    @property
+    def project_root(self) -> str:
+        return self.repo_path
 
     @classmethod
     def from_cwd(cls, cwd: str | Path = ".", *, require_project: bool = False) -> RepoContext | None:
@@ -113,26 +116,29 @@ class RepoContext:
         from ..core.config import load_config
         from ..db import check_and_migrate, get_db
 
-        resolved_repo_path = str(Path(repo_path).resolve())
-        conn = get_db(resolved_repo_path)
+        roots = roots_for_workspace(str(Path(repo_path).resolve()))
+        project_root = roots.project_root
+        conn = get_db(project_root)
         check_and_migrate(conn)
 
-        project_row = conn.execute("SELECT * FROM projects WHERE repo_path = ?", (resolved_repo_path,)).fetchone()
+        project_row = conn.execute("SELECT * FROM projects WHERE repo_path = ?", (project_root,)).fetchone()
         project = dict(project_row) if project_row else None
         if require_project and project is None:
             conn.close()
             return None
 
-        current_session = conn.execute(
-            "SELECT id FROM sessions WHERE ended_at IS NULL ORDER BY last_activity_at DESC LIMIT 1"
-        ).fetchone()
+        from .session import get_current_session
+
+        current_session = get_current_session(conn, workspace_root=roots.workspace_root)
 
         return cls(
-            repo_path=resolved_repo_path,
+            repo_path=project_root,
             conn=conn,
-            config=load_config(resolved_repo_path),
+            config=load_config(project_root),
             project=project,
             current_session_id=current_session["id"] if current_session else None,
+            workspace_root=roots.workspace_root,
+            roots=roots,
         )
 
     def close(self) -> None:

@@ -60,6 +60,7 @@ Use the same workflow after either install path. After a local dependency instal
 
 ```bash
 # 2. Initialize in your repo — installs Claude Code hooks, git hooks, and MCP config
+#    (linked git worktrees share the main worktree's project; run `ec enable` in each worktree)
 cd your-project
 ec init
 

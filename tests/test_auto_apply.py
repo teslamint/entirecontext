@@ -576,3 +576,46 @@ def test_auto_apply_prevents_ignored_double_marking(ec_db, ec_repo):
 
     ignored_decision_ids = {row["decision_id"] for row in ignored_candidates}
     assert decision["id"] not in ignored_decision_ids
+
+
+def test_infer_applied_relativizes_against_session_workspace(ec_worktree, ec_db):
+    """Absolute paths touched in a linked worktree match repo-relative decision links."""
+    main, linked = ec_worktree
+    conn = ec_db
+    project_id = conn.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+    session = create_session(conn, project_id, workspace_root=str(linked), git_branch="wt")
+    session_id = session["id"]
+    turn = create_turn(
+        conn,
+        session_id,
+        turn_number=1,
+        user_message="edit foo in worktree",
+        files_touched=json.dumps([str(linked / "src" / "foo.py")]),
+        tools_used=json.dumps(["Edit"]),
+    )
+    conn.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (session_id,))
+    decision = create_decision(conn, title="Worktree foo decision")
+    link_decision_to_file(conn, decision["id"], "src/foo.py")
+    event = record_retrieval_event(
+        conn,
+        source="hook",
+        search_type="decision_surface",
+        target="decisions",
+        query="foo",
+        result_count=1,
+        latency_ms=5,
+        session_id=session_id,
+        turn_id=turn["id"],
+    )
+    record_retrieval_selection(
+        conn,
+        event["id"],
+        result_type="decision",
+        result_id=decision["id"],
+        session_id=session_id,
+        turn_id=turn["id"],
+    )
+
+    result = infer_applied_decisions(conn, session_id, dry_run=True, repo_path=str(main))
+
+    assert result["applied_count"] == 1

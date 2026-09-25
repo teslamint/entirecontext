@@ -10,7 +10,8 @@ from typing import Any
 from ..core.async_worker import launch_worker, worker_status
 from ..core.git_utils import get_recent_commit_shas as _get_recent_commit_shas
 from ..core.git_utils import get_uncommitted_diff as _get_uncommitted_diff
-from .session_lifecycle import _find_git_root, _record_hook_warning
+from ..core.repo_roots import RepoRoots, resolve_repo_roots_fs, roots_for_workspace
+from .session_lifecycle import _find_git_root, _record_hook_warning, _workspace_kwargs
 
 # Two distinct files so SessionStart and PostToolUse never clobber each
 # other. Agents read both; PR #56 review round 3 flagged that a shared
@@ -51,12 +52,24 @@ def _load_decisions_config(repo_path: str) -> dict:
     return config.get("decisions", {})
 
 
-def maybe_sync_decision_file_lineage(data: dict[str, Any]) -> Any | None:
-    """Synchronize committed rename lineage at SessionStart. Never raises."""
-    cwd = data.get("cwd", ".")
-    repo_path = _find_ec_repo_root(cwd) or _find_git_root(cwd)
-    if not repo_path:
+def _resolve_git_roots(cwd: str) -> RepoRoots | None:
+    workspace_root = _find_git_root(cwd)
+    if not workspace_root:
         return None
+    return roots_for_workspace(workspace_root)
+
+
+def maybe_sync_decision_file_lineage(data: dict[str, Any]) -> Any | None:
+    """Synchronize committed rename lineage at SessionStart. Never raises.
+
+    The DB is the canonical project's; Git history is read in the active
+    workspace so each worktree advances its own watermark.
+    """
+    cwd = data.get("cwd", ".")
+    roots = resolve_repo_roots_fs(cwd) or _resolve_git_roots(cwd)
+    if not roots:
+        return None
+    repo_path = roots.project_root
 
     try:
         from ..core.decision_file_lineage import sync_decision_file_lineage
@@ -64,7 +77,7 @@ def maybe_sync_decision_file_lineage(data: dict[str, Any]) -> Any | None:
 
         conn = get_db(repo_path)
         try:
-            return sync_decision_file_lineage(conn, repo_path)
+            return sync_decision_file_lineage(conn, roots.workspace_root)
         finally:
             conn.close()
     except Exception as exc:
@@ -72,7 +85,7 @@ def maybe_sync_decision_file_lineage(data: dict[str, Any]) -> Any | None:
         return None
 
 
-def maybe_check_stale_decisions(repo_path: str) -> None:
+def maybe_check_stale_decisions(repo_path: str, *, workspace_root: str | None = None) -> None:
     """Auto-detect stale decisions on SessionEnd. Never raises."""
     try:
         config = _load_decisions_config(repo_path)
@@ -86,7 +99,7 @@ def maybe_check_stale_decisions(repo_path: str) -> None:
         try:
             decisions = list_decisions(conn, staleness_status="fresh", limit=50)
             for d in decisions:
-                result = check_staleness(conn, d["id"], repo_path)
+                result = check_staleness(conn, d["id"], workspace_root or repo_path)
                 if result["stale"]:
                     update_decision_staleness(conn, d["id"], "stale")
         finally:
@@ -165,9 +178,11 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
     """Surface related and stale decisions at session start. Never raises."""
     try:
         cwd = data.get("cwd", ".")
-        repo_path = _find_git_root(cwd)
-        if not repo_path:
+        roots = _resolve_git_roots(cwd)
+        if not roots:
             return None
+        repo_path = roots.project_root
+        workspace_root = roots.workspace_root
 
         config = _load_decisions_config(repo_path)
         from ..core.config import is_experiment_off
@@ -202,9 +217,9 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             display_limit = 5
 
             # 1. Assemble signals and rank decisions via the full multi-signal ranker.
-            changed_files = _get_recently_changed_files(repo_path)
-            diff_text = _get_uncommitted_diff(repo_path)
-            commit_shas = _get_recent_commit_shas(repo_path, limit=5)
+            changed_files = _get_recently_changed_files(workspace_root)
+            diff_text = _get_uncommitted_diff(workspace_root)
+            commit_shas = _get_recent_commit_shas(workspace_root, limit=5)
 
             assessment_ids: list[str] = []
             try:
@@ -396,9 +411,9 @@ def on_session_start_decisions(data: dict[str, Any]) -> str | None:
             conn.close()
     except Exception as exc:
         try:
-            repo_path = _find_git_root(data.get("cwd", "."))
-            if repo_path:
-                _record_hook_warning(repo_path, "session_start_decisions", exc)
+            roots = _resolve_git_roots(data.get("cwd", "."))
+            if roots:
+                _record_hook_warning(roots.project_root, "session_start_decisions", exc)
         except Exception:
             pass
         return None
@@ -427,23 +442,16 @@ def _gather_exact_file_matches(conn: sqlite3.Connection, normalized_files: list[
 
 
 def _find_ec_repo_root(start: str) -> str | None:
-    """Walk up from ``start`` looking for ``.entirecontext/db/local.db``.
+    """Return the canonical project root for ``start`` without running Git.
 
-    Hook paths use this initialized-repository marker to avoid Git subprocess
-    latency during repository discovery. ``PostToolUse`` requires the pure
-    filesystem path; ``SessionStart`` falls back to ``_find_git_root`` only
-    before a repository database exists.
+    Delegates to ``resolve_repo_roots_fs``, which walks up to the checkout's
+    ``.git`` entry, maps a linked worktree to its main worktree, and requires
+    the canonical ``.entirecontext/db/local.db`` to exist. ``PostToolUse``
+    requires this pure filesystem path; ``SessionStart`` falls back to
+    ``_find_git_root`` only before a repository database exists.
     """
-    from pathlib import Path as _Path
-
-    try:
-        current = _Path(start).resolve()
-    except (OSError, RuntimeError):
-        return None
-    for parent in (current, *current.parents):
-        if (parent / ".entirecontext" / "db" / "local.db").exists():
-            return str(parent)
-    return None
+    roots = resolve_repo_roots_fs(start)
+    return roots.project_root if roots else None
 
 
 def _extract_tool_files(tool_input: Any, config: dict) -> list[str]:
@@ -928,7 +936,9 @@ def _session_has_assessment_signal(conn, session_id: str) -> bool:
     return row is not None
 
 
-def maybe_extract_decisions(repo_path: str, session_id: str, *, source: str = "session_end") -> None:
+def maybe_extract_decisions(
+    repo_path: str, session_id: str, *, source: str = "session_end", workspace_root: str | None = None
+) -> None:
     """Launch background candidate extraction if any of the three source gates fire. Never raises.
 
     Args:
@@ -1020,6 +1030,7 @@ def maybe_extract_decisions(repo_path: str, session_id: str, *, source: str = "s
                     session_id,
                 ],
                 pid_name="worker-decision",
+                **_workspace_kwargs(repo_path, workspace_root, "cwd"),
             )
         finally:
             conn.close()

@@ -89,9 +89,9 @@ async def ec_decision_related(
         until_exclusive: bool = False
         try:
             if since:
-                resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+                resolved_since, _ = resolve_temporal_ref(since, repo_path=runtime.get_workspace_root(repo_path))
             if until:
-                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+                resolved_until, until_exclusive = resolve_until(until, repo_path=runtime.get_workspace_root(repo_path))
             TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         except TQLError as exc:
             return runtime.error_payload(str(exc))
@@ -125,6 +125,7 @@ async def ec_decision_related(
             latency_ms=int((time.perf_counter() - started_at) * 1000),
             file_filter=",".join(files or []) or None,
             since=None,
+            workspace_root=runtime.get_workspace_root(repo_path),
         )
         backpatch_snapshot_event(
             conn,
@@ -202,7 +203,6 @@ async def ec_decision_context(
             backpatch_snapshot_event,
             rank_related_decisions,
         )
-        from ...core.telemetry import detect_current_context
 
         full_config = load_config(repo_path)
         decisions_cfg = full_config.get("decisions", {})
@@ -233,7 +233,7 @@ async def ec_decision_context(
             if turn_row:
                 turn_id = turn_row["id"]
         else:
-            session_id, turn_id = detect_current_context(conn)
+            session_id, turn_id = runtime.detect_current_context(conn, repo_path)
         warnings: list[str] = []
         if is_session_overridden:
             warnings.append("session_id override: repo-wide git diff signal skipped to avoid cross-session pollution.")
@@ -290,7 +290,7 @@ async def ec_decision_context(
             try:
                 diff_result = subprocess.run(
                     ["git", "diff", "HEAD"],
-                    cwd=repo_path,
+                    cwd=runtime.get_workspace_root(repo_path),
                     capture_output=True,
                     text=True,
                     timeout=3,
@@ -313,7 +313,7 @@ async def ec_decision_context(
                 if git_diff_available:
                     name_result = subprocess.run(
                         ["git", "diff", "--name-only", "HEAD"],
-                        cwd=repo_path,
+                        cwd=runtime.get_workspace_root(repo_path),
                         capture_output=True,
                         text=True,
                         timeout=3,
@@ -377,6 +377,7 @@ async def ec_decision_context(
             since=None,
             session_id=session_id,
             turn_id=turn_id,
+            workspace_root=runtime.get_workspace_root(repo_path),
         )
         backpatch_snapshot_event(
             conn,
@@ -429,14 +430,13 @@ async def ec_decision_outcome(
     session_id and turn_id are not explicitly provided.
     """
     try:
-        conn, _ = runtime.open_repo()
+        conn, repo_path = runtime.open_repo()
     except runtime.RepoResolutionError as exc:
         return runtime.error_payload(str(exc))
     try:
         from ...core.decisions import record_decision_outcome
-        from ...core.telemetry import detect_current_context
 
-        current_session_id, current_turn_id = detect_current_context(conn)
+        current_session_id, current_turn_id = runtime.detect_current_context(conn, repo_path)
         if current_turn_id is None:
             current_session_id = None
         if session_id is not None or turn_id is not None:
@@ -532,9 +532,9 @@ async def ec_decision_list(
         until_exclusive: bool = False
         try:
             if since:
-                resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+                resolved_since, _ = resolve_temporal_ref(since, repo_path=runtime.get_workspace_root(repo_path))
             if until:
-                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+                resolved_until, until_exclusive = resolve_until(until, repo_path=runtime.get_workspace_root(repo_path))
             TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         except TQLError as exc:
             return runtime.error_payload(str(exc))
@@ -572,7 +572,7 @@ async def ec_decision_stale(decision_id: str) -> str:
     try:
         from ...core.decisions import check_staleness
 
-        result = check_staleness(conn, decision_id, repo_path)
+        result = check_staleness(conn, decision_id, runtime.get_workspace_root(repo_path) or repo_path)
         return json.dumps(result)
     except ValueError as exc:
         return runtime.error_payload(str(exc))
@@ -625,9 +625,11 @@ async def ec_decision_search(
         cross_until_exclusive: bool = False
         try:
             if since:
-                cross_since, _ = resolve_temporal_ref(since, repo_path=current_repo_path)
+                cross_since, _ = resolve_temporal_ref(since, repo_path=runtime.get_workspace_root(current_repo_path))
             if until:
-                cross_until, cross_until_exclusive = resolve_until(until, repo_path=current_repo_path)
+                cross_until, cross_until_exclusive = resolve_until(
+                    until, repo_path=runtime.get_workspace_root(current_repo_path)
+                )
             TQLContext.validated(since=cross_since, until=cross_until, until_exclusive=cross_until_exclusive)
         except TQLError as exc:
             return runtime.error_payload(str(exc))
@@ -678,9 +680,9 @@ async def ec_decision_search(
         until_exclusive: bool = False
         try:
             if since:
-                resolved_since, _ = resolve_temporal_ref(since, repo_path=repo_path)
+                resolved_since, _ = resolve_temporal_ref(since, repo_path=runtime.get_workspace_root(repo_path))
             if until:
-                resolved_until, until_exclusive = resolve_until(until, repo_path=repo_path)
+                resolved_until, until_exclusive = resolve_until(until, repo_path=runtime.get_workspace_root(repo_path))
             TQLContext.validated(since=resolved_since, until=resolved_until, until_exclusive=until_exclusive)
         except TQLError as exc:
             return runtime.error_payload(str(exc))
@@ -719,6 +721,7 @@ async def ec_decision_search(
             result_count=len(results),
             latency_ms=int((time.perf_counter() - started_at) * 1000),
             since=resolved_since,
+            workspace_root=runtime.get_workspace_root(repo_path),
         )
         for idx, item in enumerate(results, start=1):
             runtime.record_selection(

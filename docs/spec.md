@@ -67,7 +67,7 @@ Storage
 
 ## 3. Data Model
 
-Schema version: **20**.
+Schema version: **21**.
 Minimum SQLite version: **3.38.0+**.
 
 Reference:

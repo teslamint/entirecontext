@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Git worktrees share one logical project (schema v21)** — linked worktrees now resolve the canonical project root from `git rev-parse --git-common-dir`, so every worktree of a repository reads and writes the main worktree's `.entirecontext/` DB, config and content. Git operations (diffs, HEAD, rewind, sync transport, blame) run in the active workspace. Schema v21 adds `sessions.workspace_root`, `sessions.worktree_git_dir`, `sessions.git_branch`, `projects.git_common_dir` and the per-worktree lineage watermark table `decision_file_lineage_worktree_state`. `ec status` shows the logical project and the active workspace separately, and the current-session lookup is scoped to the workspace. Existing per-worktree databases are detected and reported read-only by `ec status`, `ec init` and `ec doctor`; they are never modified, merged, copied or symlinked. Re-run `ec enable` to regenerate `~/.claude/hooks/ec-inject.sh`, which now injects guidance in linked worktrees. Bare-repository worktrees, `--separate-git-dir` and submodules keep one project per checkout.
+
 ### Fixed
 
 - **uv tool interpreter drift diagnostics** — `ec doctor` now reports mismatched configured and active Python minor versions and provides clean uv-managed environment recreation commands. Installation and recovery guidance now avoids mutable Conda interpreter bindings.

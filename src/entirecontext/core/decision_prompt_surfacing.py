@@ -236,6 +236,9 @@ def rank_decisions_for_prompt(
 ) -> tuple[list[dict[str, Any]], list[str], str | None]:
     """Rank decisions relevant to a user prompt.
 
+    ``repo_path`` is only used for Git signals, so callers pass the active
+    workspace (checkout) root.
+
     Returns (surfaced, warnings, snapshot_id). ``surfaced`` is a list of full
     decision dicts with ``score`` and ``rank`` injected.  ``snapshot_id`` is
     non-None when snapshot capture is enabled.
@@ -359,8 +362,12 @@ def run_prompt_surface_worker(
     session_id: str,
     turn_id: str,
     prompt_file: str | Path,
+    workspace_path: str | None = None,
 ) -> dict[str, Any]:
     """Rank decisions relevant to the redacted prompt and write fallback Markdown.
+
+    ``repo_path`` is the canonical project root (DB, config, fallback file);
+    Git signals are read from ``workspace_path`` when given.
 
     Returns a result dict for testability:
         {"wrote": bool, "output_path": str | None, "deleted_tmp": bool,
@@ -402,7 +409,7 @@ def run_prompt_surface_worker(
             worker_limit = int(config.get("decisions", {}).get("surface_on_user_prompt_limit", 3))
             surfaced, rank_warnings, snapshot_id = rank_decisions_for_prompt(
                 conn,
-                repo_path=repo_path,
+                repo_path=workspace_path or repo_path,
                 prompt_text=prompt_text,
                 config=config,
                 limit=worker_limit,

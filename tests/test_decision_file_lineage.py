@@ -290,6 +290,10 @@ def test_sync_full_rescans_when_watermark_is_not_an_ancestor(ec_repo, ec_db):
         "UPDATE decision_file_lineage_state SET last_scanned_commit = ? WHERE id = 1",
         ("f" * 40,),
     )
+    ec_db.execute(
+        "UPDATE decision_file_lineage_worktree_state SET last_scanned_commit = ?",
+        ("f" * 40,),
+    )
     ec_db.commit()
 
     result = sync_decision_file_lineage(ec_db, str(ec_repo))
@@ -337,3 +341,62 @@ def test_db_error_rolls_back_lineage_links_and_watermark(ec_repo, ec_db, monkeyp
 def test_sync_rejects_nonpositive_time_budget(ec_repo, ec_db):
     with pytest.raises(ValueError, match="timeout_seconds must be positive"):
         sync_decision_file_lineage(ec_db, str(ec_repo), timeout_seconds=0)
+
+
+def test_worktrees_on_divergent_branches_keep_separate_watermarks(ec_worktree, ec_db, monkeypatch):
+    from entirecontext.core import decision_file_lineage
+
+    main, linked = ec_worktree
+    _commit_file(main, "src/main_only.py")
+    _commit_file(linked, "src/wt_only.py")
+    assert sync_decision_file_lineage(ec_db, str(main)).full_scan is True
+    assert sync_decision_file_lineage(ec_db, str(linked)).full_scan is True
+
+    real_run = subprocess.run
+    log_calls: list[list[str]] = []
+
+    def counting_run(cmd, *args, **kwargs):
+        if "log" in cmd:
+            log_calls.append(list(cmd))
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(decision_file_lineage.subprocess, "run", counting_run)
+
+    for _ in range(2):
+        assert sync_decision_file_lineage(ec_db, str(main)).full_scan is False
+        assert sync_decision_file_lineage(ec_db, str(linked)).full_scan is False
+
+    assert log_calls == []
+    rows = ec_db.execute("SELECT COUNT(*) FROM decision_file_lineage_worktree_state").fetchone()[0]
+    assert rows == 2
+
+
+def test_legacy_watermark_seeds_main_worktree(ec_repo, ec_db):
+    head = _commit_file(ec_repo, "src/old.py")
+    ec_db.execute("DELETE FROM decision_file_lineage_worktree_state")
+    ec_db.execute(
+        "INSERT INTO decision_file_lineage_state (id, last_scanned_commit) VALUES (1, ?) "
+        "ON CONFLICT(id) DO UPDATE SET last_scanned_commit = excluded.last_scanned_commit",
+        (head,),
+    )
+
+    result = sync_decision_file_lineage(ec_db, str(ec_repo))
+
+    assert result.full_scan is False
+    row = ec_db.execute(
+        "SELECT worktree_git_dir, last_scanned_commit FROM decision_file_lineage_worktree_state"
+    ).fetchone()
+    assert row["worktree_git_dir"] == str(ec_repo / ".git")
+    assert row["last_scanned_commit"] == head
+
+
+def test_linked_worktree_does_not_advance_legacy_watermark(ec_worktree, ec_db):
+    main, linked = ec_worktree
+    main_head = _commit_file(main, "src/main_only.py")
+    sync_decision_file_lineage(ec_db, str(main))
+    _commit_file(linked, "src/wt_only.py")
+
+    sync_decision_file_lineage(ec_db, str(linked))
+
+    legacy = ec_db.execute("SELECT last_scanned_commit FROM decision_file_lineage_state WHERE id = 1").fetchone()
+    assert legacy["last_scanned_commit"] == main_head

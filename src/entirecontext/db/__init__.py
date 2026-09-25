@@ -1,10 +1,12 @@
 """Database layer for EntireContext."""
 
-from .connection import get_db, get_global_db, get_memory_db
+from .connection import LinkedWorktreeDatabaseError, db_path_for, get_db, get_global_db, get_memory_db
 from .migration import apply_migrations, bootstrap_schema, check_and_migrate, get_current_version, init_schema
 from .schema import SCHEMA_VERSION
 
 __all__ = [
+    "LinkedWorktreeDatabaseError",
+    "db_path_for",
     "get_db",
     "get_global_db",
     "get_memory_db",

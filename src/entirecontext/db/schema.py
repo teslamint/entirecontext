@@ -1,6 +1,6 @@
 """Database schema definitions for EntireContext."""
 
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 # Minimum SQLite version required (for JSON functions)
 MIN_SQLITE_VERSION = "3.38.0"
@@ -21,8 +21,10 @@ CREATE TABLE IF NOT EXISTS projects (
     remote_url TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
-    config TEXT
+    config TEXT,
+    git_common_dir TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_git_common_dir ON projects(git_common_dir) WHERE git_common_dir IS NOT NULL;
 """,
     "agents": """
 CREATE TABLE IF NOT EXISTS agents (
@@ -55,12 +57,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     metadata TEXT,
+    workspace_root TEXT,
+    worktree_git_dir TEXT,
+    git_branch TEXT,
     FOREIGN KEY (project_id) REFERENCES projects(id),
     FOREIGN KEY (agent_id) REFERENCES agents(id)
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_agent ON sessions(agent_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_activity ON sessions(last_activity_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sessions_workspace ON sessions(project_id, workspace_root);
 """,
     "turns": """
 CREATE TABLE IF NOT EXISTS turns (
@@ -284,6 +290,14 @@ CREATE TABLE IF NOT EXISTS decision_file_lineage_suppressions (
 CREATE TABLE IF NOT EXISTS decision_file_lineage_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_scanned_commit TEXT,
+    CHECK (last_scanned_commit IS NULL OR length(last_scanned_commit) IN (40, 64))
+);
+""",
+    "decision_file_lineage_worktree_state": """
+CREATE TABLE IF NOT EXISTS decision_file_lineage_worktree_state (
+    worktree_git_dir TEXT PRIMARY KEY,
+    last_scanned_commit TEXT,
+    updated_at TEXT DEFAULT (datetime('now')),
     CHECK (last_scanned_commit IS NULL OR length(last_scanned_commit) IN (40, 64))
 );
 """,

@@ -21,13 +21,14 @@ def archaeologize(
     """Extract decisions from git commit history."""
     from ..core.archaeology import archaeologize as do_archaeologize
     from ..core.config import load_config
-    from ..core.project import find_git_root
-    from ..db import check_and_migrate, get_db
+    from ..core.project import get_repo_roots
+    from ..db import check_and_migrate, db_path_for, get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.project_root
 
     config = load_config(repo_path)
     arch_config = config.get("decisions", {}).get("archaeology", {})
@@ -45,9 +46,7 @@ def archaeologize(
     min_confidence = float(decisions_config.get("candidate_min_confidence", arch_config.get("min_confidence", 0.35)))
 
     if dry_run:
-        from pathlib import Path
-
-        db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
+        db_path = db_path_for(repo_path)
         if db_path.exists():
             import sqlite3
 
@@ -77,6 +76,7 @@ def archaeologize(
             batch_size=effective_batch_size,
             min_confidence=min_confidence,
             progress_callback=_progress,
+            workspace_path=roots.workspace_root,
         )
     finally:
         conn.close()

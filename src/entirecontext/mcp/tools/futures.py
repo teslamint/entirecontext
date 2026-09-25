@@ -142,7 +142,9 @@ async def ec_feedback(assessment_id: str, feedback: str, reason: str | None = No
         from ...core.futures import add_feedback, auto_distill_lessons
 
         add_feedback(conn, assessment_id, feedback, feedback_reason=reason)
-        distilled = auto_distill_lessons(repo_path) if repo_path else False
+        workspace_root = runtime.get_workspace_root(repo_path)
+        distill_kwargs = {"workspace_root": workspace_root} if workspace_root and workspace_root != repo_path else {}
+        distilled = auto_distill_lessons(repo_path, **distill_kwargs) if repo_path else False
         return json.dumps(
             {
                 "status": "ok",
