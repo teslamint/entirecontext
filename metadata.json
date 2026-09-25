@@ -3,7 +3,7 @@
   "checkpoint_id": "01M3BHP8CBA1J63HBZ9X8Y8BD9",
   "strategy": "manual-commit",
   "branch": "docs/ste100-prose",
-  "checkpoints_count": 6,
+  "checkpoints_count": 7,
   "files_touched": [
     "AGENTS.md",
     "CLAUDE.md"
@@ -50,13 +50,20 @@
       "compact_transcript": "/5/transcript.jsonl",
       "content_hash": "/5/content_hash.txt",
       "prompt": "/5/prompt.txt"
+    },
+    {
+      "metadata": "/6/metadata.json",
+      "transcript": "/6/full.jsonl",
+      "compact_transcript": "/6/transcript.jsonl",
+      "content_hash": "/6/content_hash.txt",
+      "prompt": "/6/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 24,
-    "cache_creation_tokens": 287531,
-    "cache_read_tokens": 455360,
-    "output_tokens": 6163,
-    "api_call_count": 11
+    "input_tokens": 40,
+    "cache_creation_tokens": 348372,
+    "cache_read_tokens": 933388,
+    "output_tokens": 9450,
+    "api_call_count": 18
   }
 }
