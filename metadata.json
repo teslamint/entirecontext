@@ -1,0 +1,44 @@
+{
+  "cli_version": "0.11.2",
+  "checkpoint_id": "01M3BHPDFQ8ZF9V9EWD87XA80H",
+  "strategy": "manual-commit",
+  "branch": "docs/ste100-prose",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "CONCEPTS.md",
+    "README.md",
+    "docs/RELEASE.md",
+    "docs/adr/README.md",
+    "docs/decisions_outcomes.md",
+    "docs/entirecontext-project-manual.md",
+    "docs/solutions/developer-experience/installed-tool-drifts-from-checkout.md",
+    "docs/solutions/performance-issues/bound-cost-across-lookup-pipeline-domains.md",
+    "docs/solutions/tooling-decisions/mcp-sdk-major-version-migration.md",
+    "docs/solutions/workflow-issues/make-verification-commands-fail-closed.md",
+    "docs/solutions/workflow-issues/measure-archaeology-against-reachable-history.md",
+    "docs/solutions/workflow-issues/release-tag-ordering-under-branch-protection.md",
+    "docs/spec.md",
+    "docs/templates/entirecontext-maintainer-decision-reuse-template.md",
+    "docs/templates/entirecontext-proactive-guidance.md",
+    "docs/templates/entirecontext-project-decision-policy-template.md",
+    "docs/templates/entirecontext-user-decision-reuse-template.md",
+    "integrations/omp/README.md",
+    "scripts/experiments/README.md"
+  ],
+  "sessions": [
+    {
+      "metadata": "/0/metadata.json",
+      "transcript": "/0/full.jsonl",
+      "compact_transcript": "/0/transcript.jsonl",
+      "content_hash": "/0/content_hash.txt",
+      "prompt": "/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 2,
+    "cache_creation_tokens": 46458,
+    "cache_read_tokens": 12264,
+    "output_tokens": 622,
+    "api_call_count": 1
+  }
+}
