@@ -35,15 +35,15 @@ def _workspace_kwargs(repo_path: str, workspace_root: str | None, key: str = "wo
     return {}
 
 
-def _session_workspace_root(conn, session_id: str, fallback: str) -> str:
-    """Return the checkout a session ran in, falling back for pre-v21 rows."""
+def _session_workspace_root(conn, session_id: str, fallback: str, project_root: str) -> str:
+    """Return the checkout a session ran in; pre-v21 rows ran in ``project_root``."""
     try:
         row = conn.execute("SELECT workspace_root FROM sessions WHERE id = ?", (session_id,)).fetchone()
     except Exception:
         return fallback
-    if row and row["workspace_root"]:
-        return row["workspace_root"]
-    return fallback
+    if row is None:
+        return fallback
+    return row["workspace_root"] or project_root
 
 
 def _record_hook_warning(repo_path: str | None, phase: str, exc: Exception) -> None:
@@ -262,7 +262,7 @@ def on_session_end(data: dict[str, Any]) -> None:
             "UPDATE sessions SET ended_at = ?, updated_at = ? WHERE id = ?",
             (now, now, session_id),
         )
-        workspace_root = _session_workspace_root(conn, session_id, roots.workspace_root)
+        workspace_root = _session_workspace_root(conn, session_id, roots.workspace_root, repo_path)
 
         _populate_session_summary(conn, session_id)
 

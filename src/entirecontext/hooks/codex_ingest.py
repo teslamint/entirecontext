@@ -249,9 +249,10 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
     repo_path = roots.project_root
     workspace_root = roots.workspace_root
 
-    _run_upstream_notify(workspace_root, payload_text)
+    state_root = workspace_root if _is_repo_enabled(workspace_root) else repo_path
+    _run_upstream_notify(state_root, payload_text)
 
-    if not _is_repo_enabled(workspace_root) and not (workspace_root != repo_path and _is_repo_enabled(repo_path)):
+    if not _is_repo_enabled(state_root):
         return
 
     codex_home = (

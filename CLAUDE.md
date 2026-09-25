@@ -36,6 +36,7 @@ cli/             business    SQLite     Claude Code   shadow branch
   import_cmds    async_worker
   compact_cmds   compact
                  decision_file_lineage
+                 repo_roots
   mcp_cmds
   archaeology_cmds
 ```

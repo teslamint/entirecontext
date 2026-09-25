@@ -68,6 +68,7 @@ def rewind(
             console.print(f"[dim]{w}[/dim]")
         return
 
+    import os
     import subprocess
 
     from ..core.checkpoint import get_checkpoint
@@ -123,8 +124,8 @@ def rewind(
                 console.print(f"  ... and {len(snapshot) - 20} more")
 
     if restore:
-        session_workspace = session.get("workspace_root") if session else None
-        if session_workspace and session_workspace != workspace_root:
+        session_workspace = (session.get("workspace_root") or roots.project_root) if session else None
+        if session_workspace and os.path.realpath(session_workspace) != os.path.realpath(workspace_root):
             console.print(
                 f"\n[yellow]Warning:[/yellow] checkpoint was recorded in worktree {session_workspace}, "
                 f"not the current checkout {workspace_root}."

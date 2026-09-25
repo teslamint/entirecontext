@@ -273,3 +273,25 @@ def test_session_end_auto_distill_targets_session_workspace(ec_worktree, monkeyp
     session_lifecycle._maybe_trigger_auto_distill(str(main), workspace_root=str(main))
 
     assert calls == [(str(main), {"workspace_root": str(linked)}), (str(main), {})]
+
+
+def test_legacy_null_workspace_sessions_count_for_main_checkout_only(ec_worktree):
+    from entirecontext.core.session import list_sessions
+
+    main, linked = ec_worktree
+    conn = get_db(str(main))
+    try:
+        project_id = conn.execute("SELECT id FROM projects").fetchone()["id"]
+        create_session(conn, project_id, session_id="legacy-main-session")
+        create_session(conn, project_id, session_id="linked-session", workspace_root=str(linked))
+        conn.commit()
+
+        main_ids = {s["id"] for s in list_sessions(conn, workspace_root=str(main))}
+        linked_ids = {s["id"] for s in list_sessions(conn, workspace_root=str(linked))}
+    finally:
+        conn.close()
+
+    assert main_ids == {"legacy-main-session"}
+    assert linked_ids == {"linked-session"}
+    assert get_status(str(main))["workspace_session_count"] == 1
+    assert get_status(str(linked))["workspace_session_count"] == 1

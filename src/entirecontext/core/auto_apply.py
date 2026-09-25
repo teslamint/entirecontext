@@ -397,12 +397,15 @@ def _classify_diff_pattern(repo_path: str, session_id: str, overlap_files: list[
     return "replaced"
 
 
-def _session_workspace_root(conn: sqlite3.Connection, session_id: str) -> str | None:
+def _session_workspace_root(conn: sqlite3.Connection, session_id: str, repo_path: str) -> str | None:
+    """Return the checkout a session ran in; pre-v21 rows ran in ``repo_path``."""
     try:
         row = conn.execute("SELECT workspace_root FROM sessions WHERE id = ?", (session_id,)).fetchone()
     except sqlite3.Error:
         return None
-    return row["workspace_root"] if row and row["workspace_root"] else None
+    if row is None:
+        return None
+    return row["workspace_root"] or repo_path
 
 
 def infer_applied_decisions(
@@ -420,7 +423,7 @@ def infer_applied_decisions(
     session's recorded ``workspace_root``, then ``workspace_root``, then
     ``repo_path``.
     """
-    git_path = _session_workspace_root(conn, session_id) or workspace_root or repo_path
+    git_path = _session_workspace_root(conn, session_id, repo_path) or workspace_root or repo_path
     matches = _detect_overlapping_decisions(conn, session_id, git_path)
     lesson_matches = _detect_overlapping_lessons(conn, session_id, git_path)
 

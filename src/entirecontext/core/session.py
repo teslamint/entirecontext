@@ -70,8 +70,9 @@ def list_sessions(
         conditions.append("project_id = ?")
         params.append(project_id)
     if workspace_root:
-        conditions.append("workspace_root = ?")
-        params.append(workspace_root)
+        clause, clause_params = workspace_filter(workspace_root)
+        conditions.append(clause)
+        params.extend(clause_params)
     if not include_ended:
         conditions.append("ended_at IS NULL")
 
@@ -94,6 +95,17 @@ def _is_linked_worktree(workspace_root: str) -> bool:
         return False
 
 
+def workspace_filter(workspace_root: str) -> tuple[str, tuple[str, ...]]:
+    """SQL condition for the sessions that belong to ``workspace_root``.
+
+    Pre-v21 rows have no workspace and were recorded in the project's own
+    checkout, so they belong to that checkout but never to a linked worktree.
+    """
+    if _is_linked_worktree(workspace_root):
+        return "workspace_root = ?", (workspace_root,)
+    return "(workspace_root = ? OR workspace_root IS NULL)", (workspace_root,)
+
+
 def get_current_session(conn, workspace_root: str | None = None) -> dict | None:
     """Get the most recently active session.
 
@@ -106,17 +118,12 @@ def get_current_session(conn, workspace_root: str | None = None) -> dict | None:
         row = conn.execute(
             "SELECT * FROM sessions WHERE ended_at IS NULL ORDER BY last_activity_at DESC LIMIT 1"
         ).fetchone()
-    elif _is_linked_worktree(workspace_root):
-        row = conn.execute(
-            "SELECT * FROM sessions WHERE ended_at IS NULL AND workspace_root = ? "
-            "ORDER BY last_activity_at DESC LIMIT 1",
-            (workspace_root,),
-        ).fetchone()
     else:
+        clause, params = workspace_filter(workspace_root)
         row = conn.execute(
-            "SELECT * FROM sessions WHERE ended_at IS NULL AND (workspace_root = ? OR workspace_root IS NULL) "
+            f"SELECT * FROM sessions WHERE ended_at IS NULL AND {clause} "
             "ORDER BY (workspace_root IS NULL), last_activity_at DESC LIMIT 1",
-            (workspace_root,),
+            params,
         ).fetchone()
     return dict(row) if row else None
 

@@ -80,7 +80,7 @@ Reference:
 - `checkpoints`, `events`, `event_sessions`, `event_checkpoints`
 - `attributions`, `embeddings`, `ast_symbols`
 - `assessments`, `assessment_relationships`
-- `decisions`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state`, `decision_assessments`, `decision_outcomes`
+- `decisions`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state`, `decision_file_lineage_worktree_state`, `decision_assessments`, `decision_outcomes`
 - `retrieval_events`, `retrieval_selections`, `context_applications`
 - `operation_events`, `decision_candidates`
 - `sync_metadata`

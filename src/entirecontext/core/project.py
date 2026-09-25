@@ -206,15 +206,16 @@ def get_status(repo_path: str | Path | None = None) -> dict:
         if context.project is None:
             return {"initialized": False, "repo_path": context.repo_path}
 
-        from .session import get_current_session
+        from .session import get_current_session, workspace_filter
 
         roots = context.roots or roots_for_workspace(context.repo_path)
         conn = context.conn
         session_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         turn_count = conn.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
         checkpoint_count = conn.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0]
+        ws_clause, ws_params = workspace_filter(roots.workspace_root)
         workspace_session_count = conn.execute(
-            "SELECT COUNT(*) FROM sessions WHERE workspace_root = ?", (roots.workspace_root,)
+            f"SELECT COUNT(*) FROM sessions WHERE {ws_clause}", ws_params
         ).fetchone()[0]
 
         current = get_current_session(conn, workspace_root=roots.workspace_root)

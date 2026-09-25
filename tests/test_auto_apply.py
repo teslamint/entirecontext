@@ -619,3 +619,46 @@ def test_infer_applied_relativizes_against_session_workspace(ec_worktree, ec_db)
     result = infer_applied_decisions(conn, session_id, dry_run=True, repo_path=str(main))
 
     assert result["applied_count"] == 1
+
+
+def test_infer_applied_uses_project_checkout_for_legacy_session(ec_worktree, ec_db):
+    """A pre-v21 session (NULL workspace) ran in the main checkout, not in the caller's worktree."""
+    main, linked = ec_worktree
+    conn = ec_db
+    project_id = conn.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+    session = create_session(conn, project_id)
+    session_id = session["id"]
+    turn = create_turn(
+        conn,
+        session_id,
+        turn_number=1,
+        user_message="edit foo in main",
+        files_touched=json.dumps([str(main / "src" / "foo.py")]),
+        tools_used=json.dumps(["Edit"]),
+    )
+    conn.execute("UPDATE sessions SET ended_at = datetime('now') WHERE id = ?", (session_id,))
+    decision = create_decision(conn, title="Legacy foo decision")
+    link_decision_to_file(conn, decision["id"], "src/foo.py")
+    event = record_retrieval_event(
+        conn,
+        source="hook",
+        search_type="decision_surface",
+        target="decisions",
+        query="foo",
+        result_count=1,
+        latency_ms=5,
+        session_id=session_id,
+        turn_id=turn["id"],
+    )
+    record_retrieval_selection(
+        conn,
+        event["id"],
+        result_type="decision",
+        result_id=decision["id"],
+        session_id=session_id,
+        turn_id=turn["id"],
+    )
+
+    result = infer_applied_decisions(conn, session_id, dry_run=True, repo_path=str(main), workspace_root=str(linked))
+
+    assert result["applied_count"] == 1

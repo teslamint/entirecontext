@@ -160,3 +160,21 @@ def test_duplicate_notify_does_not_refresh_last_activity_at(ec_repo):
     conn.close()
     assert row2["total_turns"] == 1, "Turn count should not change on duplicate"
     assert row2["last_activity_at"] == first_activity, "last_activity_at must not change on duplicate"
+
+
+def test_linked_worktree_event_uses_main_checkout_upstream_notify(ec_worktree, tmp_path, monkeypatch):
+    from unittest.mock import patch
+
+    main, linked = ec_worktree
+    fake_home = tmp_path / "home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    _save_state(str(main), {"upstream_notify": ["echo", "main-upstream"]})
+
+    with patch("entirecontext.hooks.codex_ingest._run_upstream_notify") as notify:
+        ingest_codex_notify_event(
+            {"thread_id": "no-such-thread", "cwd": str(linked), "codex_home": str(tmp_path / "codex")}
+        )
+
+    notify.assert_called_once()
+    assert notify.call_args.args[0] == str(main)

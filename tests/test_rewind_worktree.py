@@ -26,11 +26,13 @@ def _commit(repo: Path, name: str, content: str) -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
-def _checkpoint(main: Path, workspace_root: Path, commit: str, session_id: str) -> str:
+def _checkpoint(main: Path, workspace_root: Path | None, commit: str, session_id: str) -> str:
     conn = get_db(str(main))
     try:
         project_id = conn.execute("SELECT id FROM projects").fetchone()["id"]
-        create_session(conn, project_id, session_id=session_id, workspace_root=str(workspace_root))
+        create_session(
+            conn, project_id, session_id=session_id, workspace_root=str(workspace_root) if workspace_root else None
+        )
         return create_checkpoint(conn, session_id=session_id, git_commit_hash=commit, git_branch="wt")["id"]
     finally:
         conn.close()
@@ -71,3 +73,30 @@ def test_restore_of_other_workspace_checkpoint_requires_force(ec_worktree, monke
 
     assert forced.exit_code == 0, forced.output
     assert (linked / "app.txt").read_text(encoding="utf-8") == "v1\n"
+
+
+def test_restore_of_legacy_main_checkpoint_requires_force_in_linked(ec_worktree, monkeypatch):
+    main, linked = ec_worktree
+    first = _commit(linked, "app.txt", "v1\n")
+    checkpoint_id = _checkpoint(main, None, first, "legacy-rewind")
+    _commit(linked, "app.txt", "v2\n")
+    monkeypatch.chdir(linked)
+
+    refused = runner.invoke(app, ["rewind", checkpoint_id, "--restore"])
+
+    assert refused.exit_code == 1
+    assert "--force" in refused.output
+    assert (linked / "app.txt").read_text(encoding="utf-8") == "v2\n"
+
+
+def test_restore_of_legacy_checkpoint_in_main_passes_workspace_guard(ec_worktree, monkeypatch):
+    main, _linked = ec_worktree
+    first = _commit(main, "app.txt", "v1\n")
+    checkpoint_id = _checkpoint(main, None, first, "legacy-main-rewind")
+    _commit(main, "app.txt", "v2\n")
+    monkeypatch.chdir(main)
+
+    result = runner.invoke(app, ["rewind", checkpoint_id, "--restore"])
+
+    assert "recorded in worktree" not in result.output
+    assert "--force" not in result.output
