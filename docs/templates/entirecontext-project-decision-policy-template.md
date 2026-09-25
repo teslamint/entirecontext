@@ -103,5 +103,5 @@ The maintainer's project approval authorizes the change; EC preserves that decis
 You can still use EC in your current project workflow to make the same retry change.
 For example, a maintainer can request the change under the project's current instructions and contribution rules.
 Follow any approvals, plans, tests, or evidence requirements those rules already impose.
-If your project declines this template, the change remains allowed and current requirements still apply.
+Declining this template does not prohibit the change. It also does not waive those requirements.
 EC can record and retrieve the decision without this policy. The record does not grant permission to make the change.

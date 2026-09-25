@@ -21,7 +21,7 @@ This README is the quick-start entry point. For exhaustive detail:
 - **Retrieve** — search, graph traversal, attribution, and rewind surface the most relevant prior context
 - **Intervene** — agents and humans can apply past decisions before the next related change lands
 
-The core record is the **Decision**, which captures reusable engineering intent: what someone chose, why, and what they rejected. Each decision links to files, checkpoints, and **Assessments**. Feedback about a decision distills into a **Lesson**. This feedback can also move a decision through its `staleness_status` (`fresh` → `stale` / `superseded` / `contradicted`). This status stops old guidance from dominating retrieval when code or newer decisions disagree with it. See `docs/decisions_outcomes.md` and manual §2.4/§11 for the full state machine.
+The core record is the **Decision**, which captures reusable engineering intent: what someone chose, why, and what they rejected. Each decision links to files, checkpoints, and **Assessments**. Assessment feedback can distill into a **Lesson**. Separately, decision usage outcomes can move a decision through its `staleness_status` (`fresh` → `stale` / `superseded` / `contradicted`). This status stops old guidance from dominating retrieval when code or newer decisions disagree with it. See `docs/decisions_outcomes.md` and manual §2.4/§11 for the full state machine.
 
 ## Quick Start
 

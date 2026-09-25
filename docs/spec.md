@@ -253,7 +253,7 @@ Artifacts:
 3. Export all sessions, their turns, and checkpoints, regardless of timestamps
 4. Update `manifest.json`.
 5. Commit the changes when present.
-6. Push if the runtime config enables sync
+6. Push when the export created a commit. The `ec sync` command always pushes in that case, because it does not pass `push_on_sync` and the default is `true`. Background auto-sync passes the `[sync]` section, so `sync.push_on_sync = false` disables its push.
 7. If the push is rejected as non-fast-forward:
    - fetch `origin/<shadow-branch>`
    - create detached worktrees for the local `HEAD` snapshot and the remote tracking snapshot
