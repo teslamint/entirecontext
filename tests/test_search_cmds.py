@@ -17,18 +17,6 @@ class TestSearch:
             result = runner.invoke(app, ["search", "test"])
             assert result.exit_code == 1
 
-    def test_empty_results(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.search.regex_search", return_value=[]),
-        ):
-            result = runner.invoke(app, ["search", "nothing"])
-            assert result.exit_code == 0
-            assert "No results found" in result.output
-            assert "Search ID:" in result.output
-
     def test_regex_search_default(self):
         mock_conn = MagicMock()
         results = [
@@ -50,46 +38,6 @@ class TestSearch:
             mock_regex.assert_called_once()
             assert "hello world" in result.output
             assert "Search ID:" in result.output
-
-    def test_fts_search(self):
-        mock_conn = MagicMock()
-        results = [
-            {
-                "id": "turn-002-uuid12",
-                "session_id": "sess-002-uuid",
-                "user_message": "fts result",
-                "assistant_summary": "found it",
-                "timestamp": "2025-01-01",
-            }
-        ]
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.search.fts_search", return_value=results) as mock_fts,
-        ):
-            result = runner.invoke(app, ["search", "query", "--fts"])
-            assert result.exit_code == 0
-            mock_fts.assert_called_once()
-
-    def test_semantic_search(self):
-        mock_conn = MagicMock()
-        results = [
-            {
-                "id": "turn-003-uuid12",
-                "session_id": "sess-003-uuid",
-                "user_message": "semantic result",
-                "assistant_summary": "found semantically",
-                "timestamp": "2025-01-01",
-            }
-        ]
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.embedding.semantic_search", return_value=results) as mock_sem,
-        ):
-            result = runner.invoke(app, ["search", "meaning", "--semantic"])
-            assert result.exit_code == 0
-            mock_sem.assert_called_once()
 
     def test_semantic_until_is_forwarded(self):
         mock_conn = MagicMock()

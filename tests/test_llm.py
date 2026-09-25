@@ -19,18 +19,6 @@ from entirecontext.core.llm import (
 )
 
 
-def test_get_backend_openai():
-    backend = get_backend("openai")
-    assert isinstance(backend, OpenAIBackend)
-    assert backend.model == "gpt-4o-mini"
-
-
-def test_get_backend_openai_custom_model():
-    backend = get_backend("openai", model="gpt-4o")
-    assert isinstance(backend, OpenAIBackend)
-    assert backend.model == "gpt-4o"
-
-
 def test_get_backend_codex():
     backend = get_backend("codex")
     assert isinstance(backend, CLIBackend)

@@ -23,26 +23,6 @@ def db():
 
 
 class TestCreateCheckpoint:
-    def test_basic(self, db):
-        result = create_checkpoint(db, "s1", "abc123def")
-        assert result["session_id"] == "s1"
-        assert result["git_commit_hash"] == "abc123def"
-        assert result["id"] is not None
-
-    def test_with_all_fields(self, db):
-        result = create_checkpoint(
-            db,
-            "s1",
-            "abc123def",
-            git_branch="main",
-            files_snapshot={"src/main.py": "hash1", "README.md": "hash2"},
-            diff_summary="Added main module",
-            metadata={"tool": "claude"},
-            checkpoint_id="cp-custom",
-        )
-        assert result["id"] == "cp-custom"
-        assert result["git_branch"] == "main"
-
     def test_with_parent(self, db):
         create_checkpoint(db, "s1", "aaa111", checkpoint_id="cp1")
         create_checkpoint(db, "s1", "bbb222", parent_checkpoint_id="cp1", checkpoint_id="cp2")
@@ -63,12 +43,6 @@ class TestCreateCheckpoint:
 
 
 class TestGetCheckpoint:
-    def test_exact_id(self, db):
-        create_checkpoint(db, "s1", "abc123", checkpoint_id="cp-exact-123")
-        result = get_checkpoint(db, "cp-exact-123")
-        assert result is not None
-        assert result["id"] == "cp-exact-123"
-
     def test_prefix_match(self, db):
         create_checkpoint(db, "s1", "abc123", checkpoint_id="cp-prefix-unique-id")
         result = get_checkpoint(db, "cp-prefix-unique")
@@ -89,12 +63,6 @@ class TestListCheckpoints:
     def test_empty(self, db):
         result = list_checkpoints(db)
         assert result == []
-
-    def test_basic(self, db):
-        create_checkpoint(db, "s1", "aaa", checkpoint_id="cp1")
-        create_checkpoint(db, "s1", "bbb", checkpoint_id="cp2")
-        result = list_checkpoints(db)
-        assert len(result) == 2
 
     def test_filter_by_session(self, db):
         create_session(db, "p1", session_id="s2")

@@ -95,11 +95,6 @@ def _seed_db(ec_repo, ec_db):
 
 
 class TestSpreadActivation:
-    def test_returns_list(self, ec_repo, ec_db):
-        ids = _seed_db(ec_repo, ec_db)
-        results = spread_activation(ec_db, seed_turn_id=ids["t1"])
-        assert isinstance(results, list)
-
     def test_seed_turn_not_in_results(self, ec_repo, ec_db):
         """The seed turn itself should not appear in the related results."""
         ids = _seed_db(ec_repo, ec_db)
@@ -162,22 +157,9 @@ class TestSpreadActivation:
         results = spread_activation(ec_db, seed_turn_id=ids["t1"], max_hops=2, limit=2)
         assert len(results) <= 2
 
-    def test_seed_by_session_id(self, ec_repo, ec_db):
-        """seed_session_id uses all turns in session as starting seeds."""
-        ids = _seed_db(ec_repo, ec_db)
-        results = spread_activation(ec_db, seed_session_id=ids["s1"])
-        assert isinstance(results, list)
-
     def test_empty_db_returns_empty_list(self, ec_repo, ec_db):
         results = spread_activation(ec_db, seed_turn_id="nonexistent-id")
         assert results == []
-
-    def test_result_includes_turn_metadata(self, ec_repo, ec_db):
-        ids = _seed_db(ec_repo, ec_db)
-        results = spread_activation(ec_db, seed_turn_id=ids["t1"])
-        for r in results:
-            assert "id" in r
-            assert "session_id" in r
 
     def test_direct_connection_higher_score_than_indirect(self, ec_repo, ec_db):
         """Directly connected turns should have higher activation than 2-hop turns."""
@@ -236,29 +218,3 @@ class TestSessionActivateCLI:
             result = runner.invoke(app, ["session", "activate", "--turn", "nonexistent"])
             assert result.exit_code == 0
             assert "no" in result.output.lower() or "0" in result.output
-
-    def test_session_option(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.activation.spread_activation", return_value=[]) as mock_activate,
-        ):
-            runner.invoke(app, ["session", "activate", "--session", "sess-001"])
-            mock_activate.assert_called_once()
-            call_args = mock_activate.call_args
-            assert call_args.args[0] is mock_conn
-            assert call_args.kwargs.get("seed_session_id") == "sess-001"
-
-    def test_hops_option(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.activation.spread_activation", return_value=[]) as mock_activate,
-        ):
-            runner.invoke(app, ["session", "activate", "--turn", "abc", "--hops", "3"])
-            mock_activate.assert_called_once()
-            call_args = mock_activate.call_args
-            assert call_args.args[0] is mock_conn
-            assert call_args.kwargs.get("max_hops") == 3

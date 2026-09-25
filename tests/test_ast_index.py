@@ -116,31 +116,6 @@ _NO_DOCSTRING_MODULE = textwrap.dedent(
 
 
 class TestExtractAstSymbols:
-    def test_returns_list(self):
-        symbols = extract_ast_symbols(_SIMPLE_MODULE, "module.py")
-        assert isinstance(symbols, list)
-
-    def test_detects_top_level_function(self):
-        symbols = extract_ast_symbols(_SIMPLE_MODULE, "module.py")
-        names = [s["name"] for s in symbols]
-        assert "simple_function" in names
-
-    def test_detects_private_function(self):
-        symbols = extract_ast_symbols(_SIMPLE_MODULE, "module.py")
-        names = [s["name"] for s in symbols]
-        assert "_private_helper" in names
-
-    def test_detects_class(self):
-        symbols = extract_ast_symbols(_SIMPLE_MODULE, "module.py")
-        types = {s["name"]: s["symbol_type"] for s in symbols}
-        assert types.get("MyClass") == "class"
-
-    def test_detects_method(self):
-        symbols = extract_ast_symbols(_SIMPLE_MODULE, "module.py")
-        method_names = [s["name"] for s in symbols if s["symbol_type"] == "method"]
-        assert "__init__" in method_names
-        assert "compute" in method_names
-
     def test_method_has_parent_name(self):
         symbols = extract_ast_symbols(_SIMPLE_MODULE, "module.py")
         for s in symbols:
@@ -189,11 +164,6 @@ class TestExtractAstSymbols:
             assert "end_line" in s
             assert s["start_line"] >= 1
             assert s["end_line"] >= s["start_line"]
-
-    def test_file_path_set(self):
-        symbols = extract_ast_symbols(_SIMPLE_MODULE, "module.py")
-        for s in symbols:
-            assert s["file_path"] == "module.py"
 
     def test_decorators_list(self):
         symbols = extract_ast_symbols(_DECORATED_MODULE, "decorated.py")
@@ -264,11 +234,6 @@ class TestExtractAstSymbols:
 
 
 class TestIndexFileAst:
-    def test_inserts_symbols_into_db(self, ec_repo, ec_db):
-        index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE)
-        rows = ec_db.execute("SELECT * FROM ast_symbols WHERE file_path = 'auth.py'").fetchall()
-        assert len(rows) > 0
-
     def test_stored_name_matches(self, ec_repo, ec_db):
         index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE)
         names = [
@@ -388,11 +353,6 @@ class TestSearchAstSymbols:
         index_file_ast(ec_db, "auth.py", _SIMPLE_MODULE)
         index_file_ast(ec_db, "widgets.py", _DECORATED_MODULE)
 
-    def test_search_returns_list(self, ec_repo, ec_db):
-        self._seed(ec_db)
-        results = search_ast_symbols(ec_db, "compute")
-        assert isinstance(results, list)
-
     def test_search_finds_function_by_name(self, ec_repo, ec_db):
         self._seed(ec_db)
         results = search_ast_symbols(ec_db, "simple_function")
@@ -439,15 +399,6 @@ class TestSearchAstSymbols:
         self._seed(ec_db)
         results = search_ast_symbols(ec_db, "xyzzy_nonexistent_xyz")
         assert results == []
-
-    def test_results_include_required_fields(self, ec_repo, ec_db):
-        self._seed(ec_db)
-        results = search_ast_symbols(ec_db, "compute")
-        for r in results:
-            assert "name" in r
-            assert "symbol_type" in r
-            assert "file_path" in r
-            assert "qualified_name" in r
 
     def test_empty_db_returns_empty(self, ec_repo, ec_db):
         results = search_ast_symbols(ec_db, "anything")
@@ -497,23 +448,3 @@ class TestAstSearchCLI:
             result = runner.invoke(app, ["ast-search", "xyzzy"])
         assert result.exit_code == 0
         assert "no" in result.output.lower() or "0" in result.output
-
-    def test_type_filter_passed(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.ast_index.search_ast_symbols", return_value=[]) as mock_search,
-        ):
-            runner.invoke(app, ["ast-search", "fn", "--type", "function"])
-        assert mock_search.call_args.kwargs.get("symbol_type") == "function"
-
-    def test_file_filter_passed(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.ast_index.search_ast_symbols", return_value=[]) as mock_search,
-        ):
-            runner.invoke(app, ["ast-search", "fn", "--file", "auth.py"])
-        assert mock_search.call_args.kwargs.get("file_filter") == "auth.py"

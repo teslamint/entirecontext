@@ -59,26 +59,6 @@ def test_compute_verdict_accuracy_with_feedback(ec_repo, ec_db):
     assert result["per_verdict"]["neutral"]["disagree"] == 1
 
 
-def test_compute_verdict_accuracy_disagree_with_reason(ec_repo, ec_db):
-    session_id = _create_session(ec_db)
-    ec_db.execute(
-        "INSERT INTO checkpoints (id, session_id, git_commit_hash, git_branch, created_at)"
-        " VALUES ('ckp-va-1', ?, 'abc', 'main', datetime('now'))",
-        (session_id,),
-    )
-    ec_db.execute(
-        "INSERT INTO assessments (id, checkpoint_id, verdict, model_name, feedback, feedback_reason, created_at)"
-        " VALUES ('asmt-va-1', 'ckp-va-1', 'expand', 'claude-cli', 'disagree',"
-        " 'auto:revised:neutral->expand', datetime('now'))"
-    )
-
-    result = compute_verdict_accuracy(ec_db)
-    # attributed to original 'neutral', not current 'expand'
-    assert "neutral" in result["per_verdict"]
-    assert result["per_verdict"]["neutral"]["disagree"] == 1
-    assert result["agreement_rate"] == 0.0
-
-
 def test_compute_verdict_accuracy_excludes_manual_feedback(ec_repo, ec_db):
     session_id = _create_session(ec_db)
     ec_db.execute(

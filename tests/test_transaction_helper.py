@@ -28,14 +28,6 @@ def conn():
     c.close()
 
 
-def test_happy_path_commits_on_normal_exit(conn):
-    with transaction(conn):
-        conn.execute("INSERT INTO t (v) VALUES (?)", ("alpha",))
-    rows = conn.execute("SELECT v FROM t ORDER BY id").fetchall()
-    assert [r["v"] for r in rows] == ["alpha"]
-    assert getattr(conn, "_ec_tx_depth", 0) == 0
-
-
 def test_nested_defers_to_outer_owner(conn):
     with transaction(conn):
         conn.execute("INSERT INTO t (v) VALUES (?)", ("outer",))

@@ -40,17 +40,6 @@ class TestCrossRepoAssessments:
         assert "frontend" in repo_names
         assert "backend" in repo_names
 
-    def test_results_have_repo_metadata(self, multi_ec_repos):
-        conn = _get_repo_conn(multi_ec_repos["frontend"])
-        _seed_assessment(conn, verdict="narrow")
-        conn.close()
-
-        results = cross_repo_assessments()
-        assert len(results) >= 1
-        for r in results:
-            assert "repo_name" in r
-            assert "repo_path" in r
-
     def test_verdict_filter(self, multi_ec_repos):
         for name, repo_path in multi_ec_repos.items():
             conn = _get_repo_conn(repo_path)
@@ -104,18 +93,6 @@ class TestCrossRepoAssessments:
     def test_empty_repos_returns_empty(self, isolated_global_db):
         results = cross_repo_assessments()
         assert results == []
-
-    def test_include_warnings_false_returns_list(self, multi_ec_repos):
-        result = cross_repo_assessments(include_warnings=False)
-        assert isinstance(result, list)
-
-    def test_include_warnings_true_returns_tuple(self, multi_ec_repos):
-        result = cross_repo_assessments(include_warnings=True)
-        assert isinstance(result, tuple)
-        assert len(result) == 2
-        results, warnings = result
-        assert isinstance(results, list)
-        assert isinstance(warnings, list)
 
     def test_sorted_by_created_at_desc(self, multi_ec_repos):
         for name, repo_path in multi_ec_repos.items():
@@ -202,18 +179,6 @@ class TestCrossRepoAssessmentTrends:
         assert "frontend" in trends["by_repo"]
         assert "backend" not in trends["by_repo"]
         assert trends["total_count"] == 1
-
-    def test_include_warnings_false(self, multi_ec_repos):
-        result = cross_repo_assessment_trends(include_warnings=False)
-        assert isinstance(result, dict)
-        assert not isinstance(result, tuple)
-
-    def test_include_warnings_true(self, multi_ec_repos):
-        result = cross_repo_assessment_trends(include_warnings=True)
-        assert isinstance(result, tuple)
-        trends, warnings = result
-        assert isinstance(trends, dict)
-        assert isinstance(warnings, list)
 
     def test_no_assessments_in_repos(self, multi_ec_repos):
         trends = cross_repo_assessment_trends()

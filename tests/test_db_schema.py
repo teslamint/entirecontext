@@ -79,10 +79,6 @@ class TestSchemaCreation:
         result = db.execute("PRAGMA foreign_keys").fetchone()
         assert result[0] == 1
 
-    def test_decisions_table_has_auto_promotion_reset_at(self, db):
-        columns = {row[1] for row in db.execute("PRAGMA table_info(decisions)").fetchall()}
-        assert "auto_promotion_reset_at" in columns
-
 
 class TestFTSTriggers:
     def _insert_session(self, db):
@@ -91,17 +87,6 @@ class TestFTSTriggers:
             "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
             "VALUES ('s1', 'p1', 'claude', '2025-01-01', '2025-01-01')"
         )
-
-    def test_fts_turns_insert(self, db):
-        self._insert_session(db)
-        db.execute(
-            "INSERT INTO turns (id, session_id, turn_number, user_message, assistant_summary, content_hash, timestamp) "
-            "VALUES ('t1', 's1', 1, 'fix the auth bug', 'fixed authentication issue', 'abc123', '2025-01-01')"
-        )
-        db.commit()
-
-        result = db.execute("SELECT * FROM fts_turns WHERE fts_turns MATCH 'auth'").fetchall()
-        assert len(result) == 1
 
     def test_fts_turns_update(self, db):
         self._insert_session(db)

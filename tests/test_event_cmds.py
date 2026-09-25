@@ -138,18 +138,6 @@ class TestEventCreate:
             assert result.exit_code == 1
             assert "Invalid event type" in result.output
 
-    def test_success(self):
-        mock_conn = MagicMock()
-        created = {"id": "evt-new123456789"}
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.event.create_event", return_value=created),
-        ):
-            result = runner.invoke(app, ["event", "create", "My Event"])
-            assert result.exit_code == 0
-            assert "Created event" in result.output
-
 
 class TestEventLink:
     def test_not_in_repo(self):

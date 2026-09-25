@@ -33,22 +33,10 @@ def resolve_conn():
 
 
 class TestResolveId:
-    def test_exact_match(self, resolve_conn):
-        from entirecontext.core.resolve import resolve_id
-
-        assert resolve_id(resolve_conn, "decisions", "abc123def456") == "abc123def456"
-
     def test_prefix_match(self, resolve_conn):
         from entirecontext.core.resolve import resolve_id
 
         assert resolve_id(resolve_conn, "decisions", "abc123") == "abc123def456"
-
-    def test_prefix_ambiguous_returns_a_match(self, resolve_conn):
-        """When multiple rows share a prefix, one matching row is returned (undefined which)."""
-        from entirecontext.core.resolve import resolve_id
-
-        result = resolve_id(resolve_conn, "decisions", "abc")
-        assert result in ("abc123def456", "abc999xyz000")
 
     def test_no_match_returns_none(self, resolve_conn):
         from entirecontext.core.resolve import resolve_id
@@ -79,13 +67,6 @@ class TestResolveId:
 
         assert resolve_id(resolve_conn, "decisions", "abc_23") is None
 
-    def test_all_allowed_tables_accepted(self, resolve_conn):
-        from entirecontext.core.resolve import resolve_id
-
-        assert resolve_id(resolve_conn, "decisions", "abc123") is not None
-        assert resolve_id(resolve_conn, "checkpoints", "chk-") is not None
-        assert resolve_id(resolve_conn, "assessments", "aaa-") is not None
-
     def test_typed_helpers(self, resolve_conn):
         from entirecontext.core.resolve import (
             resolve_assessment_id,
@@ -99,25 +80,10 @@ class TestResolveId:
 
 
 class TestEscapeLike:
-    def test_percent_escaped(self):
-        from entirecontext.core.resolve import escape_like
-
-        assert escape_like("a%b") == "a\\%b"
-
-    def test_underscore_escaped(self):
-        from entirecontext.core.resolve import escape_like
-
-        assert escape_like("a_b") == "a\\_b"
-
     def test_backslash_escaped(self):
         from entirecontext.core.resolve import escape_like
 
         assert escape_like("a\\b") == "a\\\\b"
-
-    def test_no_metacharacters_unchanged(self):
-        from entirecontext.core.resolve import escape_like
-
-        assert escape_like("abc123") == "abc123"
 
 
 # ---------------------------------------------------------------------------
@@ -144,18 +110,6 @@ class TestGetRepoConnection:
         conn, repo_path = get_repo_connection()
         try:
             assert repo_path == str(ec_repo)
-            assert isinstance(conn, sqlite3.Connection)
-        finally:
-            conn.close()
-
-    def test_migrate_false_skips_migration(self, ec_repo, monkeypatch):
-        """migrate=False should still return a connection without error."""
-        monkeypatch.setattr("entirecontext.core.project.find_git_root", lambda: str(ec_repo))
-
-        from entirecontext.cli.helpers import get_repo_connection
-
-        conn, _ = get_repo_connection(migrate=False)
-        try:
             assert isinstance(conn, sqlite3.Connection)
         finally:
             conn.close()

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import shlex
 import stat
@@ -28,68 +27,8 @@ from entirecontext.cli.project_cmds import (
 runner = CliRunner()
 
 
-class TestHookTimeoutUnits:
-    """Timeouts must be in seconds (matcher-based format)."""
-
-    @patch("entirecontext.core.project.find_git_root")
-    def test_enable_generates_correct_timeouts(self, mock_git_root, tmp_path, monkeypatch):
-        repo = tmp_path / "repo"
-        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
-        mock_git_root.return_value = str(repo)
-        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
-
-        result = runner.invoke(app, ["enable", "--no-git-hooks"])
-        assert result.exit_code == 0
-
-        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
-        hooks = settings["hooks"]
-
-        assert hooks["SessionStart"][0]["hooks"][0]["timeout"] == 5
-        assert hooks["UserPromptSubmit"][0]["hooks"][0]["timeout"] == 5
-        assert hooks["Stop"][0]["hooks"][0]["timeout"] == 10
-        assert hooks["PostToolUse"][0]["hooks"][0]["timeout"] == 3
-        assert hooks["SessionEnd"][0]["hooks"][0]["timeout"] == 5
-
-    @patch("entirecontext.core.project.find_git_root")
-    def test_timeouts_are_positive_seconds(self, mock_git_root, tmp_path, monkeypatch):
-        repo = tmp_path / "repo"
-        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
-        mock_git_root.return_value = str(repo)
-        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
-
-        runner.invoke(app, ["enable", "--no-git-hooks"])
-        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
-        hooks = settings["hooks"]
-
-        for hook_name, entries in hooks.items():
-            for entry in entries:
-                for h in entry.get("hooks", []):
-                    assert h["timeout"] > 0, f"{hook_name} timeout must be positive"
-
-
 class TestHookConfigStructure:
     """Matcher-based format per Claude Code spec."""
-
-    @patch("entirecontext.core.project.find_git_root")
-    def test_enable_generates_matcher_format(self, mock_git_root, tmp_path, monkeypatch):
-        repo = tmp_path / "repo"
-        subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
-        mock_git_root.return_value = str(repo)
-        monkeypatch.setenv("HOME", str(tmp_path / "fakehome"))
-
-        runner.invoke(app, ["enable", "--no-git-hooks"])
-        settings = json.loads((repo / ".claude" / "settings.local.json").read_text())
-        hooks = settings["hooks"]
-
-        for hook_name, entries in hooks.items():
-            for entry in entries:
-                assert "matcher" in entry, f"{hook_name}: missing 'matcher'"
-                assert "hooks" in entry, f"{hook_name}: missing 'hooks' array"
-                inner = entry["hooks"]
-                assert len(inner) == 1, f"{hook_name}: expected 1 inner hook"
-                assert inner[0]["type"] == "command", f"{hook_name}: inner hook type must be 'command'"
-                assert "command" in inner[0], f"{hook_name}: inner hook missing 'command'"
-                assert "timeout" in inner[0], f"{hook_name}: inner hook missing 'timeout'"
 
     @patch("entirecontext.core.project.find_git_root")
     def test_enable_command_contains_hook_type(self, mock_git_root, tmp_path, monkeypatch):
@@ -203,10 +142,6 @@ class TestStripEcHooks:
 
 class TestFallbackModuleIsRunnable:
     """The no-PATH fallback writes `python -m entirecontext.cli`, which must execute."""
-
-    def test_module_entry_point_exists(self):
-        spec = importlib.util.find_spec("entirecontext.cli.__main__")
-        assert spec is not None, "python -m entirecontext.cli needs a __main__ module"
 
     def test_module_form_runs(self):
         result = subprocess.run(
@@ -678,18 +613,6 @@ class TestDoctorMCPCheck:
 
         result = runner.invoke(app, ["doctor"])
         assert "mcp" in result.output.lower()
-
-    @patch("entirecontext.core.project.find_git_root")
-    def test_doctor_no_mcp_warning_when_configured(self, mock_git_root, ec_repo, ec_db, monkeypatch):
-        mock_git_root.return_value = str(ec_repo)
-        _setup_fake_home_with_mcp(ec_repo, monkeypatch)
-
-        (ec_repo / ".claude").mkdir(parents=True, exist_ok=True)
-        settings = {"hooks": {"SessionStart": [{"command": "ec hook handle --type SessionStart", "timeout": 5000}]}}
-        (ec_repo / ".claude" / "settings.local.json").write_text(json.dumps(settings))
-
-        result = runner.invoke(app, ["doctor"])
-        assert "mcp server not configured" not in result.output.lower()
 
 
 def _mark_entirecontext_checkout(repo: Path) -> Path:

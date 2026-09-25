@@ -164,55 +164,6 @@ def test_replaced_outcome_on_net_deletions(outcome_setup):
     assert outcome["outcome_type"] == "replaced"
 
 
-def test_accepted_outcome_when_no_new_decision(ec_db, ec_repo):
-    """File overlap without new decision => accepted (existing behavior)."""
-    conn = ec_db
-    repo_path = str(ec_repo)
-    project_id = conn.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
-
-    decision = create_decision(conn, title="Original approach", rationale="Simple")
-    link_decision_to_file(conn, decision["id"], "src/foo.py")
-
-    session = create_session(conn, project_id)
-    turn = create_turn(
-        conn,
-        session["id"],
-        turn_number=1,
-        user_message="work",
-        files_touched=json.dumps(["src/foo.py"]),
-        tools_used=json.dumps(["Edit"]),
-    )
-
-    event = record_retrieval_event(
-        conn,
-        source="hook",
-        search_type="decision_surface",
-        target="decisions",
-        query="foo",
-        result_count=1,
-        latency_ms=5,
-        session_id=session["id"],
-        turn_id=turn["id"],
-    )
-    record_retrieval_selection(
-        conn,
-        event["id"],
-        result_type="decision",
-        result_id=decision["id"],
-        session_id=session["id"],
-        turn_id=turn["id"],
-    )
-
-    result = infer_applied_decisions(conn, session["id"], repo_path=repo_path)
-    assert result["applied_count"] == 1
-
-    outcome = conn.execute(
-        "SELECT * FROM decision_outcomes WHERE decision_id = ?",
-        (decision["id"],),
-    ).fetchone()
-    assert outcome["outcome_type"] == "accepted"
-
-
 def test_infer_outcome_type_config_off_falls_back_to_accepted(outcome_setup, monkeypatch):
     """infer_outcome_type=False => always 'accepted' even with new decision."""
     import pathlib

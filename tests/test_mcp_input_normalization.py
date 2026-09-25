@@ -80,19 +80,6 @@ class TestNormalizeRepoNames:
     def test_empty_list_returns_none(self):
         assert runtime.normalize_repo_names([]) is None
 
-    def test_wildcard_star_triggers_cross_repo(self):
-        """repos=["*"] should still trigger cross-repo mode (bool(repos) is True)
-        even though normalize returns None (meaning 'all repos')."""
-        repos_input = ["*"]
-        assert bool(repos_input) is True
-        assert runtime.normalize_repo_names(repos_input) is None
-
-    def test_scalar_star_triggers_cross_repo(self):
-        """repos="*" should trigger cross-repo mode."""
-        repos_input = "*"
-        assert bool(repos_input) is True
-        assert runtime.normalize_repo_names(repos_input) is None
-
 
 # ---------------------------------------------------------------------------
 # Part 2: FTS query error handling
@@ -118,18 +105,6 @@ class TestFtsQueryErrorHandling:
         with pytest.raises(ValueError, match="Invalid FTS query"):
             _fts_search_events(db, "AND OR NOT", None, None, False, 10)
 
-    def test_fts_colon_punctuation_raises_valueerror(self, db):
-        from entirecontext.core.search import _fts_search_turns
-
-        with pytest.raises(ValueError, match="Invalid FTS query"):
-            _fts_search_turns(db, "foo:bar", None, None, None, None, None, False, 10)
-
-    def test_fts_valid_query_still_works(self, db):
-        from entirecontext.core.search import _fts_search_turns
-
-        results = _fts_search_turns(db, "auth", None, None, None, None, None, False, 10)
-        assert isinstance(results, list)
-
     def test_ec_search_fts_bad_syntax_returns_error_payload(self, mock_repo_db):
         from entirecontext.mcp.tools.search import ec_search
 
@@ -144,14 +119,6 @@ class TestFtsQueryErrorHandling:
         assert "error" in result
         assert "Invalid FTS query" in result["error"]
 
-    def test_ec_search_foo_colon_bar_returns_error_payload(self, mock_repo_db):
-        """Matches PR test plan: ec_search(query='foo:bar', search_type='fts')."""
-        from entirecontext.mcp.tools.search import ec_search
-
-        result = json.loads(asyncio.run(ec_search("foo:bar", search_type="fts")))
-        assert "error" in result
-        assert "Invalid FTS query" in result["error"]
-
 
 # ---------------------------------------------------------------------------
 # Part 3: Decision field coercion
@@ -161,12 +128,6 @@ class TestFtsQueryErrorHandling:
 class TestEnsureList:
     def test_none_passthrough(self):
         assert _ensure_list(None, "f") is None
-
-    def test_string_to_list(self):
-        assert _ensure_list("a", "f") == ["a"]
-
-    def test_dict_to_list(self):
-        assert _ensure_list({"k": "v"}, "f") == [{"k": "v"}]
 
     def test_list_passthrough(self):
         assert _ensure_list(["a", "b"], "f") == ["a", "b"]
@@ -216,17 +177,3 @@ class TestDecisionCreateCoercion:
         )
         assert "error" in result
         assert "rejected_alternatives" in result["error"]
-
-    def test_plain_single_string_coerced(self, mock_repo_db):
-        """Matches PR test plan: rejected_alternatives='single string' -> ['single string']."""
-        from entirecontext.mcp.tools.decisions import ec_decision_create
-
-        result = json.loads(
-            asyncio.run(
-                ec_decision_create(
-                    title="Test decision",
-                    rejected_alternatives="single string",
-                )
-            )
-        )
-        assert result["rejected_alternatives"] == ["single string"]

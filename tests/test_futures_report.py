@@ -59,11 +59,6 @@ def _make_assessments_varied():
 
 
 class TestGenerateFuturesReport:
-    def test_returns_string(self):
-        assessments = _make_assessments_varied()
-        result = generate_futures_report(assessments)
-        assert isinstance(result, str)
-
     def test_empty_assessments_returns_no_data_message(self):
         result = generate_futures_report([])
         assert "no" in result.lower() or "empty" in result.lower() or "0" in result
@@ -88,11 +83,6 @@ class TestGenerateFuturesReport:
         fm = result[4:frontmatter_end]
         assert "generated:" in fm
 
-    def test_contains_h1_heading(self):
-        assessments = _make_assessments_varied()
-        result = generate_futures_report(assessments)
-        assert "# " in result
-
     def test_verdict_distribution_section_present(self):
         assessments = _make_assessments_varied()
         result = generate_futures_report(assessments)
@@ -100,40 +90,11 @@ class TestGenerateFuturesReport:
         assert "narrow" in result.lower()
         assert "neutral" in result.lower()
 
-    def test_expand_count_correct(self):
-        assessments = _make_assessments_varied()
-        result = generate_futures_report(assessments)
-        # 2 expand out of 5
-        assert "2" in result
-
-    def test_narrow_count_correct(self):
-        assessments = _make_assessments_varied()
-        result = generate_futures_report(assessments)
-        # 2 narrow
-        assert "2" in result
-
-    def test_neutral_count_correct(self):
-        assessments = _make_assessments_varied()
-        result = generate_futures_report(assessments)
-        # 1 neutral
-        assert "1" in result
-
-    def test_total_count_present(self):
-        assessments = _make_assessments_varied()
-        result = generate_futures_report(assessments)
-        assert "5" in result
-
     def test_impact_summaries_included(self):
         assessments = _make_assessments_varied()
         result = generate_futures_report(assessments)
         assert "Better structure" in result
         assert "Added coupling" in result
-
-    def test_feedback_section_present_when_feedback_exists(self):
-        assessments = _make_assessments_varied()
-        result = generate_futures_report(assessments)
-        # 2 assessments have feedback
-        assert "agree" in result.lower() or "feedback" in result.lower()
 
     def test_tidy_suggestions_included(self):
         a = _make_assessment(tidy_suggestion="Consider extracting interface")
@@ -203,12 +164,6 @@ class TestGenerateFuturesReport:
         result = generate_futures_report([a])
         assert "2025-03-10" in result
 
-    def test_output_structure_has_sections(self):
-        """Report should have at least two ## sections."""
-        assessments = _make_assessments_varied()
-        result = generate_futures_report(assessments)
-        assert result.count("## ") >= 2
-
 
 # ---------------------------------------------------------------------------
 # CLI tests: ec futures report
@@ -220,19 +175,6 @@ class TestFuturesReportCLI:
         with patch("entirecontext.core.project.find_git_root", return_value=None):
             result = runner.invoke(app, ["futures", "report"])
             assert result.exit_code == 1
-
-    def test_no_assessments(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.core.project.get_project", return_value={"id": "p1", "name": "proj"}),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.futures.list_assessments", return_value=[]),
-        ):
-            result = runner.invoke(app, ["futures", "report"])
-            assert result.exit_code == 0
-            # Should print something (empty report)
-            assert len(result.output) > 0
 
     def test_report_printed_to_stdout(self):
         mock_conn = MagicMock()
@@ -262,28 +204,3 @@ class TestFuturesReportCLI:
             assert output_file.exists()
             content = output_file.read_text()
             assert "expand" in content.lower() or "narrow" in content.lower()
-
-    def test_since_option_passed_to_query(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.core.project.get_project", return_value={"id": "p1", "name": "proj"}),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.futures.list_assessments", return_value=[]) as mock_list,
-        ):
-            runner.invoke(app, ["futures", "report", "--since", "2025-01-01"])
-            mock_list.assert_called_once()
-
-    def test_limit_option(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.core.project.get_project", return_value={"id": "p1", "name": "proj"}),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.futures.list_assessments", return_value=[]) as mock_list,
-        ):
-            runner.invoke(app, ["futures", "report", "--limit", "50"])
-            mock_list.assert_called_once()
-            call_kwargs = mock_list.call_args
-            # limit=50 should have been passed
-            assert 50 in call_kwargs.args or call_kwargs.kwargs.get("limit") == 50

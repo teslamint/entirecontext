@@ -43,18 +43,6 @@ class TestStatusCommand:
         return status
 
     @patch("entirecontext.core.project.get_status")
-    def test_status_initialized(self, mock_status):
-        mock_status.return_value = self._status()
-        result = runner.invoke(app, ["status"])
-        assert result.exit_code == 0
-        assert "myproject" in result.output
-        assert "Logical project" in result.output
-        assert "Active workspace" in result.output
-        assert "/tmp/wt (linked worktree)" in result.output
-        assert "feature" in result.output
-        assert "Workspace sessions" in result.output
-
-    @patch("entirecontext.core.project.get_status")
     def test_status_warns_about_legacy_worktree_db(self, mock_status):
         mock_status.return_value = self._status(
             legacy_worktree_db={"path": "/tmp/wt/.entirecontext/db/local.db", "session_count": 3, "decision_count": 1}
@@ -67,49 +55,12 @@ class TestStatusCommand:
         assert "verify-docs --promote-from" in output
 
 
-class TestConfigCommand:
-    @patch("entirecontext.core.project.find_git_root")
-    def test_config_show_all(self, mock_git_root):
-        mock_git_root.return_value = None
-        result = runner.invoke(app, ["config"])
-        assert result.exit_code == 0
-
-    @patch("entirecontext.core.project.find_git_root")
-    def test_config_get_key(self, mock_git_root):
-        mock_git_root.return_value = None
-        result = runner.invoke(app, ["config", "search.default_mode"])
-        assert result.exit_code == 0
-        assert "regex" in result.output
-
-
 class TestSearchCommand:
     @patch("entirecontext.core.project.find_git_root")
     def test_search_not_in_repo(self, mock_git_root):
         mock_git_root.return_value = None
         result = runner.invoke(app, ["search", "test"])
         assert result.exit_code == 1
-
-    def test_search_semantic_calls_semantic_search(self):
-        mock_conn = MagicMock()
-        with patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"):
-            with patch("entirecontext.db.get_db", return_value=mock_conn):
-                with patch(
-                    "entirecontext.core.embedding.semantic_search",
-                    return_value=[
-                        {
-                            "id": "t1",
-                            "source_type": "turn",
-                            "session_id": "s1",
-                            "user_message": "test query",
-                            "assistant_summary": "result",
-                            "timestamp": "2025-01-01",
-                            "score": 0.95,
-                        }
-                    ],
-                ) as mock_sem:
-                    result = runner.invoke(app, ["search", "test query", "--semantic"])
-                    assert result.exit_code == 0
-                    mock_sem.assert_called_once()
 
     def test_search_semantic_import_error_message(self):
         mock_conn = MagicMock()

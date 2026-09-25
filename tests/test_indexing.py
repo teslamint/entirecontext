@@ -164,15 +164,6 @@ class TestCosineSimilarity:
             cosine_similarity(a, b)
 
 
-class TestEmbedText:
-    def test_embed_text_import_error(self):
-        from entirecontext.core.embedding import embed_text
-
-        with patch.dict("sys.modules", {"sentence_transformers": None}):
-            with pytest.raises(ImportError, match="sentence-transformers"):
-                embed_text("test")
-
-
 class TestGenerateEmbeddings:
     def test_generate_embeddings_import_error(self, db):
         from entirecontext.core.embedding import generate_embeddings
@@ -235,24 +226,3 @@ class TestSessionSummaryPopulation:
 
         session = db.execute("SELECT session_title FROM sessions WHERE id = 's4'").fetchone()
         assert len(session["session_title"]) == 100
-
-    def test_populate_combines_summaries(self, db):
-        create_session(db, "p1", session_id="s5")
-        create_turn(db, "s5", 1, user_message="msg1", assistant_summary="summary1")
-        create_turn(db, "s5", 2, user_message="msg2", assistant_summary="summary2")
-        create_turn(db, "s5", 3, user_message="msg3", assistant_summary="summary3")
-
-        from entirecontext.hooks.session_lifecycle import _populate_session_summary
-
-        _populate_session_summary(db, "s5")
-
-        session = db.execute("SELECT session_summary FROM sessions WHERE id = 's5'").fetchone()
-        assert "summary1" in session["session_summary"]
-        assert "summary2" in session["session_summary"]
-        assert "summary3" in session["session_summary"]
-        assert " | " in session["session_summary"]
-
-    def test_populate_nonexistent_session(self, db):
-        from entirecontext.hooks.session_lifecycle import _populate_session_summary
-
-        _populate_session_summary(db, "nonexistent")

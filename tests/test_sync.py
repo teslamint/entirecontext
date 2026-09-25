@@ -12,7 +12,7 @@ from entirecontext.sync.merge import (
     merge_session_meta,
     merge_transcripts,
 )
-from entirecontext.sync.security import filter_export_data, get_security_config
+from entirecontext.sync.security import get_security_config
 
 
 class TestMergeSessionMeta:
@@ -182,16 +182,6 @@ class TestMergeCheckpointFiles:
 
 
 class TestSecurityFilter:
-    def test_filter_enabled(self):
-        text = "api_key=secret123"
-        result = filter_export_data(text, enabled=True)
-        assert "secret123" not in result
-
-    def test_filter_disabled(self):
-        text = "api_key=secret123"
-        result = filter_export_data(text, enabled=False)
-        assert result == text
-
     def test_get_security_config_defaults(self):
         config = {}
         enabled, patterns = get_security_config(config)

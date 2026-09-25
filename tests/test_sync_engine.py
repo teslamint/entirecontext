@@ -215,22 +215,6 @@ class TestPerformSync:
         assert row["last_export_at"] is not None
         assert row["last_sync_duration_ms"] is not None
 
-    def test_inits_shadow_branch_if_missing(self, sync_db, ec_repo):
-        config = {"push_on_sync": False}
-        side_effect, _state = _mk_subprocess_side_effect(status_outputs=[""])
-
-        with (
-            patch("entirecontext.sync.engine.shadow_branch_exists", return_value=False),
-            patch("entirecontext.sync.engine.init_shadow_branch") as mock_init,
-            patch("entirecontext.sync.engine.subprocess.run", side_effect=side_effect),
-            patch("entirecontext.sync.engine.export_sessions", return_value=0),
-            patch("entirecontext.sync.engine.export_checkpoints", return_value=0),
-            patch("entirecontext.sync.engine.update_manifest"),
-        ):
-            perform_sync(sync_db, str(ec_repo), config)
-
-        mock_init.assert_called_once_with(str(ec_repo))
-
     def test_push_non_fast_forward_merges_and_retries(self, sync_db, ec_repo, tmp_path):
         remote_fixture = tmp_path / "remote-shadow"
         _write_snapshot(

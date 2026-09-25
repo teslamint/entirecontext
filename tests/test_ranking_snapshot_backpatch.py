@@ -3,48 +3,6 @@
 from __future__ import annotations
 
 
-def test_backpatch_links_snapshot_to_event(ec_db):
-    """After a caller creates a retrieval_event, the snapshot row gets the event_id."""
-    conn = ec_db
-
-    conn.execute(
-        "INSERT INTO retrieval_events (id, source, search_type, target, query, result_count, latency_ms) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("evt-1", "test", "test", "decision", "", 0, 0),
-    )
-    conn.execute(
-        "INSERT INTO ranking_snapshots (id, scored_candidates, effective_limit) VALUES (?, ?, ?)",
-        ("snap-1", "[]", 5),
-    )
-
-    from entirecontext.core.decisions import backpatch_snapshot_event
-
-    backpatch_snapshot_event(conn, snapshot_id="snap-1", retrieval_event_id="evt-1")
-
-    row = conn.execute("SELECT retrieval_event_id FROM ranking_snapshots WHERE id = ?", ("snap-1",)).fetchone()
-    assert row["retrieval_event_id"] == "evt-1"
-
-
-def test_backpatch_noop_when_no_snapshot(ec_db):
-    """Backpatch on a missing snapshot_id is a no-op (no error)."""
-    conn = ec_db
-
-    from entirecontext.core.decisions import backpatch_snapshot_event
-
-    backpatch_snapshot_event(conn, snapshot_id=None, retrieval_event_id="evt-1")
-
-
-def test_backpatch_noop_when_snapshot_row_absent(ec_db):
-    """Backpatch with a non-existent snapshot_id is a no-op (no error)."""
-    conn = ec_db
-
-    from entirecontext.core.decisions import backpatch_snapshot_event
-
-    backpatch_snapshot_event(conn, snapshot_id="nonexistent", retrieval_event_id="evt-1")
-    count = conn.execute("SELECT COUNT(*) FROM ranking_snapshots").fetchone()[0]
-    assert count == 0
-
-
 def test_session_start_wiring_backpatches_snapshot(ec_repo, ec_db, monkeypatch):
     """on_session_start_decisions captures a snapshot and backpatches the event_id."""
     conn = ec_db

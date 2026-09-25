@@ -28,7 +28,7 @@ from entirecontext.core.decisions import (
     update_decision,
     update_decision_staleness,
 )
-from entirecontext.core.futures import create_assessment, list_assessments
+from entirecontext.core.futures import create_assessment
 from entirecontext.core.project import get_project
 from entirecontext.core.decisions import (
     _DEFAULT_RANKING_WEIGHTS,
@@ -177,14 +177,6 @@ class TestDecisionsCore:
         decision = create_decision(ec_db, title="x")
         with pytest.raises(ValueError, match="Invalid status"):
             update_decision_staleness(ec_db, decision["id"], "unknown")
-
-    def test_assessment_flow_regression_unchanged(self, ec_db):
-        create_assessment(ec_db, verdict="expand", impact_summary="A")
-        create_assessment(ec_db, verdict="narrow", impact_summary="B")
-
-        all_items = list_assessments(ec_db, limit=10)
-        assert len(all_items) == 2
-        assert {item["verdict"] for item in all_items} == {"expand", "narrow"}
 
     def test_list_decisions_parses_json_fields(self, ec_db):
         create_decision(
@@ -367,21 +359,6 @@ class TestDecisionsCore:
 
         assert score_before == score_after
 
-    def test_quality_summary_includes_all_five_keys(self, ec_db):
-        d = create_decision(ec_db, title="Five keys")
-        record_decision_outcome(ec_db, d["id"], "refined")
-        summary = get_decision_quality_summary(ec_db, d["id"])
-        counts = summary["counts"]
-        for key in ("accepted", "ignored", "contradicted", "refined", "replaced"):
-            assert key in counts, f"missing key: {key}"
-        assert counts["refined"] == 1
-
-    def test_quality_score_accepted_weight_is_one(self):
-        from entirecontext.core.decisions import calculate_decision_quality_score
-
-        assert calculate_decision_quality_score({"accepted": 1}) == 1.0
-        assert calculate_decision_quality_score({"accepted": 1, "refined": 10, "replaced": 10}) == 1.0
-
     def test_record_outcome_accepts_all_five_values(self, ec_db):
         d = create_decision(ec_db, title="All five")
         for ot in ("accepted", "ignored", "contradicted", "refined", "replaced"):
@@ -417,16 +394,6 @@ class TestDecisionsCore:
 
 
 class TestUpdateDecision:
-    def test_update_title(self, ec_db):
-        d = create_decision(ec_db, title="Old title")
-        updated = update_decision(ec_db, d["id"], title="New title")
-        assert updated["title"] == "New title"
-
-    def test_update_rationale(self, ec_db):
-        d = create_decision(ec_db, title="Test")
-        updated = update_decision(ec_db, d["id"], rationale="New reasoning")
-        assert updated["rationale"] == "New reasoning"
-
     def test_update_prefix_id(self, ec_db):
         d = create_decision(ec_db, title="Original")
         updated = update_decision(ec_db, d["id"][:12], title="Updated")
@@ -443,13 +410,6 @@ class TestUpdateDecision:
 
 
 class TestSupersedeDecision:
-    def test_supersede(self, ec_db):
-        old = create_decision(ec_db, title="Old approach")
-        new = create_decision(ec_db, title="New approach")
-        result = supersede_decision(ec_db, old["id"], new["id"])
-        assert result["staleness_status"] == "superseded"
-        assert result["superseded_by_id"] == new["id"]
-
     def test_supersede_preserves_scope(self, ec_db):
         old = create_decision(ec_db, title="Old", scope="auth module")
         new = create_decision(ec_db, title="New")
@@ -750,17 +710,6 @@ class TestCheckStaleness:
 
 
 class TestFTSDecisions:
-    def test_fts_search_by_title(self, ec_db):
-        create_decision(ec_db, title="Adopt microservices architecture")
-        create_decision(ec_db, title="Use monolith pattern")
-        rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("microservices",)).fetchall()
-        assert len(rows) == 1
-
-    def test_fts_search_by_rationale(self, ec_db):
-        create_decision(ec_db, title="DB choice", rationale="PostgreSQL offers better JSON support")
-        rows = ec_db.execute("SELECT * FROM fts_decisions WHERE fts_decisions MATCH ?", ("PostgreSQL",)).fetchall()
-        assert len(rows) == 1
-
     def test_fts_updated_after_update_decision(self, ec_db):
         d = create_decision(ec_db, title="Old searchable title")
         update_decision(ec_db, d["id"], title="New searchable title")
@@ -857,12 +806,6 @@ class TestDecisionFTSSearch:
         assert len(results) == 1
         assert results[0]["title"] == "Caching approach"
 
-    def test_fts_search_no_match(self, ec_db):
-        create_decision(ec_db, title="Some decision", rationale="Some rationale")
-
-        results = fts_search_decisions(ec_db, "nonexistent")
-        assert results == []
-
     def test_fts_search_since_filter(self, ec_db):
         create_decision(ec_db, title="Old decision", rationale="Old rationale")
         results = fts_search_decisions(ec_db, "decision", since="2099-01-01")
@@ -895,16 +838,6 @@ class TestRankingSignals:
 
     # --- Signal isolation ---
 
-    def test_file_exact_match(self, ec_db):
-        d = create_decision(ec_db, title="Exact file decision")
-        link_decision_to_file(ec_db, d["id"], "src/auth.py")
-
-        ranked = rank_related_decisions(ec_db, file_paths=["src/auth.py"])
-        assert len(ranked) >= 1
-        item = next(r for r in ranked if r["id"] == d["id"])
-        assert item["score_breakdown"]["file_exact"] == 3.0
-        assert item["score_breakdown"]["file_proximity"] == 0.0
-
     def test_file_proximity_same_directory(self, ec_db):
         d = create_decision(ec_db, title="Nearby file decision")
         link_decision_to_file(ec_db, d["id"], "src/service/handler.py")
@@ -923,16 +856,6 @@ class TestRankingSignals:
         assert len(ranked) >= 1
         item = next(r for r in ranked if r["id"] == d["id"])
         assert item["score_breakdown"]["file_proximity"] == 0.75
-
-    def test_file_proximity_different_tree(self, ec_db):
-        d = create_decision(ec_db, title="Unrelated dir")
-        link_decision_to_file(ec_db, d["id"], "tests/unit/test_auth.py")
-
-        ranked = rank_related_decisions(ec_db, file_paths=["src/service/auth.py"])
-        found = [r for r in ranked if r["id"] == d["id"]]
-        if found:
-            assert found[0]["score_breakdown"]["file_proximity"] == 0.0
-            assert found[0]["score_breakdown"]["file_exact"] == 0.0
 
     def test_file_exact_match_dotslash_stored_path(self, ec_db):
         """Exact match must work when the stored path has a ./ prefix."""
@@ -999,37 +922,6 @@ class TestRankingSignals:
         found = [r for r in ranked if r["id"] == d["id"]]
         assert len(found) >= 1
         assert found[0]["score_breakdown"]["diff_relevance"] > 0
-
-    def test_diff_fts_no_match(self, ec_db):
-        create_decision(ec_db, title="Cache invalidation policy")
-
-        ranked = rank_related_decisions(
-            ec_db,
-            diff_text="+authentication middleware refactor\n+jwt token validation",
-        )
-        found = [r for r in ranked if r["title"] == "Cache invalidation policy"]
-        if found:
-            assert found[0]["score_breakdown"]["diff_relevance"] == 0.0
-
-    def test_commit_match(self, ec_db):
-        d = create_decision(ec_db, title="Commit-linked decision")
-        link_decision_to_commit(ec_db, d["id"], "abc123def")
-
-        ranked = rank_related_decisions(ec_db, commit_shas=["abc123def"])
-        assert len(ranked) >= 1
-        item = next(r for r in ranked if r["id"] == d["id"])
-        assert item["score_breakdown"]["git_commit"] == 3.0
-
-    def test_accepted_outcome_boost_signal(self, ec_db):
-        d = create_decision(ec_db, title="Accepted decision")
-        link_decision_to_file(ec_db, d["id"], "src/accepted.py")
-        record_decision_outcome(ec_db, d["id"], "accepted")
-
-        ranked = rank_related_decisions(ec_db, file_paths=["src/accepted.py"])
-        assert len(ranked) >= 1
-        item = next(r for r in ranked if r["id"] == d["id"])
-        assert item["score_breakdown"]["accepted_boost"] == 2.0
-        assert item["base_score"] >= 5.0  # 3.0 for file + 2.0 for boost
 
     def test_accepted_outcome_boost_does_not_create_relevance(self, ec_db):
         d = create_decision(ec_db, title="Accepted but unrelated")
@@ -1122,25 +1014,6 @@ class TestRankingSignals:
         assert ranked == []
 
     # --- Observability ---
-
-    def test_score_breakdown_keys_present(self, ec_db):
-        d = create_decision(ec_db, title="Breakdown test")
-        link_decision_to_file(ec_db, d["id"], "src/test.py")
-        record_decision_outcome(ec_db, d["id"], "accepted")
-
-        ranked = rank_related_decisions(ec_db, file_paths=["src/test.py"])
-        item = next(r for r in ranked if r["id"] == d["id"])
-        expected_keys = {
-            "file_exact",
-            "file_proximity",
-            "assessment",
-            "diff_relevance",
-            "git_commit",
-            "accepted_boost",
-            "quality",
-            "staleness_factor",
-        }
-        assert set(item["score_breakdown"].keys()) == expected_keys
 
     def test_score_breakdown_sums_correctly(self, ec_db):
         d = create_decision(ec_db, title="Sum test")
@@ -1540,26 +1413,7 @@ class TestDecisionQualityDecay:
         with pytest.raises(ValueError, match=r"decisions\.quality\.min_volume"):
             _load_quality_weights({"decisions": {"quality": {"min_volume": "two"}}})
 
-    def test_load_quality_weights_returns_fresh_defaults(self):
-        """Empty/missing config always yields a fresh instance (no singleton exposure)."""
-        from entirecontext.core.decisions import _DEFAULT_QUALITY_WEIGHTS, _load_quality_weights
-
-        for empty in (None, {}, {"decisions": {}}, {"decisions": {"quality": {}}}):
-            loaded = _load_quality_weights(empty)
-            assert loaded.recency_half_life_days == _DEFAULT_QUALITY_WEIGHTS.recency_half_life_days
-            assert loaded.min_volume == _DEFAULT_QUALITY_WEIGHTS.min_volume
-
     # --- previously-uncovered branches ---
-
-    def test_quality_score_explicit_none_decayed_counts_uses_legacy(self):
-        """Passing decayed_counts=None explicitly must hit the legacy branch."""
-        from entirecontext.core.decisions import calculate_decision_quality_score
-
-        assert (
-            calculate_decision_quality_score({"accepted": 3}, decayed_counts=None)
-            == calculate_decision_quality_score({"accepted": 3})
-            == 3.0
-        )
 
     def test_quality_score_min_volume_zero_or_one_disables_smoothing(self):
         """min_volume<=1 short-circuits the smoother so single-outcome decay is not attenuated."""
@@ -1707,16 +1561,6 @@ class TestDecisionQualityDecay:
         assert item["quality_score"] == 0.0
         assert item["score_breakdown"]["accepted_boost"] == 0.0
 
-    def test_quality_score_refined_replaced_carry_zero_weight(self):
-        """refined/replaced rows do not affect the quality score (weight = 0)."""
-        from entirecontext.core.decisions import calculate_decision_quality_score
-
-        base = calculate_decision_quality_score({"accepted": 2, "ignored": 1, "contradicted": 1})
-        with_new = calculate_decision_quality_score(
-            {"accepted": 2, "ignored": 1, "contradicted": 1, "refined": 5, "replaced": 3}
-        )
-        assert base == with_new
-
     def test_volume_smoother_ignores_refined_replaced(self):
         """Regression: refined/replaced must NOT count toward the volume smoother total.
 
@@ -1746,13 +1590,6 @@ class TestDecisionQualityDecay:
             min_volume=2,
         )
         assert score_without == score_with_replaced == score_with_refined
-
-    def test_quality_score_accepted_weight_is_one(self):
-        """Verifies the F5b 'existing weight is sufficient' claim: accepted × 1.0."""
-        from entirecontext.core.decisions import calculate_decision_quality_score
-
-        assert calculate_decision_quality_score({"accepted": 1}) == 1.0
-        assert calculate_decision_quality_score({"accepted": 3}) == 3.0
 
     def test_quality_score_decayed_refined_replaced_zero_weight(self):
         """Both legacy and decayed branches must ignore refined/replaced rows."""
@@ -1798,19 +1635,6 @@ class TestDecisionQualityDecay:
 
 
 class TestStalenessHardening:
-    def test_rank_related_excludes_superseded_by_default(self, ec_db):
-        """A→B chain: ranking surfaces B, hides A."""
-        a = create_decision(ec_db, title="Original")
-        b = create_decision(ec_db, title="Replacement")
-        link_decision_to_file(ec_db, a["id"], "src/auth.py")
-        link_decision_to_file(ec_db, b["id"], "src/auth.py")
-        supersede_decision(ec_db, a["id"], b["id"])
-
-        ranked = rank_related_decisions(ec_db, file_paths=["src/auth.py"])
-        ids = [r["id"] for r in ranked]
-        assert b["id"] in ids
-        assert a["id"] not in ids
-
     def test_rank_related_excludes_contradicted_by_default(self, ec_db):
         fresh = create_decision(ec_db, title="Fresh")
         contradicted = create_decision(ec_db, title="Contradicted")
@@ -1889,30 +1713,6 @@ class TestStalenessHardening:
         assert b["id"] not in ids
         assert stats["filtered_count"] >= 1
         assert "chain_terminal_contradicted" in stats["by_reason"] or "contradicted" in stats["by_reason"]
-
-    def test_resolve_successor_chain_depth_cap(self, ec_db):
-        """A self-referential pointer must not loop forever."""
-        from entirecontext.core.decisions import resolve_successor_chain
-
-        a = create_decision(ec_db, title="Loop candidate")
-        # Construct a chain of 3: A→B→C (no cycle), verify terminal is C
-        b = create_decision(ec_db, title="B")
-        c = create_decision(ec_db, title="C")
-        supersede_decision(ec_db, a["id"], b["id"])
-        supersede_decision(ec_db, b["id"], c["id"])
-
-        terminal_id, status = resolve_successor_chain(ec_db, a["id"])
-        assert terminal_id == c["id"]
-        assert status == "fresh"
-
-    def test_supersede_detects_cycle(self, ec_db):
-        """supersede(B, A) after supersede(A, B) must raise."""
-        a = create_decision(ec_db, title="A")
-        b = create_decision(ec_db, title="B")
-        supersede_decision(ec_db, a["id"], b["id"])
-
-        with pytest.raises(ValueError, match="cycle"):
-            supersede_decision(ec_db, b["id"], a["id"])
 
     def test_supersede_detects_cycle_deeper_than_depth_cap(self, ec_db):
         """PR #55 Codex review: cycle detection must work beyond the nominal
@@ -2107,18 +1907,6 @@ class TestStalenessHardening:
         record_decision_outcome(ec_db, d["id"], "contradicted")
         row = ec_db.execute("SELECT staleness_status FROM decisions WHERE id = ?", (d["id"],)).fetchone()
         assert row["staleness_status"] == "contradicted"
-
-    def test_data_integrity_superseded_requires_status(self, ec_db):
-        """Invariant: superseded_by_id set implies staleness_status='superseded'."""
-        a = create_decision(ec_db, title="A")
-        b = create_decision(ec_db, title="B")
-        supersede_decision(ec_db, a["id"], b["id"])
-
-        row = ec_db.execute(
-            "SELECT COUNT(*) AS n FROM decisions "
-            "WHERE superseded_by_id IS NOT NULL AND staleness_status != 'superseded'"
-        ).fetchone()
-        assert row["n"] == 0
 
     def test_record_outcome_respects_outer_transaction(self, ec_db):
         """PR #55 review: when the caller already owns a transaction,

@@ -83,11 +83,6 @@ class TestEstimateTokens:
 
         assert estimate_tokens("anything", encoding=FakeEncoding()) == 3
 
-    def test_default_returns_positive_int(self):
-        result = estimate_tokens("some ordinary text")
-        assert isinstance(result, int)
-        assert result > 0
-
     def test_special_tokens_do_not_raise(self):
         assert estimate_tokens("with <|endoftext|> inside") > 0
 

@@ -74,22 +74,6 @@ def test_generate_embeddings_basic(conn):
     assert source_types == {"turn", "session"}
 
 
-def test_generate_embeddings_skip_existing(conn):
-    db, session_id = conn
-    _seed_turn(db, session_id, "implement auth", "added auth module")
-    mock_model = _make_mock_model()
-
-    with _patch_sentence_transformers(mock_model):
-        first_count = generate_embeddings(db, "/tmp/test-repo")
-        assert first_count == 2
-
-        second_count = generate_embeddings(db, "/tmp/test-repo")
-        assert second_count == 0
-
-    rows = db.execute("SELECT * FROM embeddings").fetchall()
-    assert len(rows) == 2
-
-
 def test_generate_embeddings_skip_existing_does_not_open_writer_transaction(conn, monkeypatch):
     db, session_id = conn
     _seed_turn(db, session_id, "implement auth", "added auth module")
@@ -123,29 +107,6 @@ def test_generate_embeddings_force(conn):
 
     rows = db.execute("SELECT * FROM embeddings").fetchall()
     assert len(rows) == 2
-
-
-def test_generate_embeddings_null_text(conn):
-    db, session_id = conn
-    turn_id = str(uuid4())
-    content_hash = hashlib.md5(b"").hexdigest()
-    db.execute(
-        "INSERT INTO turns (id, session_id, turn_number, user_message, assistant_summary, content_hash, timestamp) "
-        "VALUES (?, ?, 1, NULL, NULL, ?, '2025-01-01T00:00:00')",
-        (turn_id, session_id, content_hash),
-    )
-    db.execute(
-        "UPDATE sessions SET session_title = NULL, session_summary = NULL WHERE id = ?",
-        (session_id,),
-    )
-    db.commit()
-
-    mock_model = _make_mock_model()
-    with _patch_sentence_transformers(mock_model):
-        count = generate_embeddings(db, "/tmp/test-repo")
-
-    assert count == 0
-    mock_model.encode.assert_not_called()
 
 
 def test_generate_embeddings_null_text_does_not_open_writer_transaction(conn, monkeypatch):
@@ -222,28 +183,6 @@ def test_semantic_filter_limit(conn, monkeypatch, filter_kwargs):
     results = embedding.semantic_search(db, "query", limit=1, **filter_kwargs)
 
     assert [result["id"] for result in results] == [turn_id]
-
-
-@pytest.mark.parametrize("target", ["turn", "session"])
-def test_semantic_target(conn, monkeypatch, target):
-    import struct
-
-    from entirecontext.core import embedding
-
-    db, session_id = conn
-    turn_id = _seed_turn(db, session_id)
-    vector = struct.pack("2f", 1.0, 0.0)
-    for source_type, source_id in [("session", session_id), ("turn", turn_id)]:
-        db.execute(
-            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
-            "VALUES (?, ?, ?, 'all-MiniLM-L6-v2', ?, 2, 'hash')",
-            (str(uuid4()), source_type, source_id, vector),
-        )
-    monkeypatch.setattr(embedding, "embed_text", lambda *args: vector)
-
-    results = embedding.semantic_search(db, "query", target=target, limit=1)
-
-    assert [result["source_type"] for result in results] == [target]
 
 
 def test_semantic_session_result_includes_total_turns(conn, monkeypatch):

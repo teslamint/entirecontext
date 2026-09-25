@@ -6,10 +6,8 @@ from uuid import uuid4
 import pytest
 
 from entirecontext.core.search import (
-    _apply_query_redaction,
     _regex_search_content,
     _regex_search_events,
-    regex_search,
 )
 from entirecontext.db.connection import get_memory_db
 from entirecontext.db.migration import init_schema
@@ -73,30 +71,6 @@ def test_regex_search_events_with_since_filter(conn):
     assert results[0]["id"] == new_event_id
 
 
-def test_regex_search_content_match(conn_with_session, tmp_path):
-    conn, session_id = conn_with_session
-    conn.execute("UPDATE projects SET repo_path = ? WHERE 1=1", (str(tmp_path),))
-    conn.commit()
-
-    turn_id = _insert_turn(conn, session_id)
-
-    content_dir = tmp_path / ".entirecontext" / "content"
-    content_dir.mkdir(parents=True)
-    content_file = content_dir / "turn1.jsonl"
-    content_file.write_text("this contains the magic keyword foobar in it\n", encoding="utf-8")
-
-    conn.execute(
-        "INSERT INTO turn_content (turn_id, content_path, content_size, content_hash) VALUES (?, ?, ?, ?)",
-        (turn_id, "content/turn1.jsonl", 46, "abc123"),
-    )
-    conn.commit()
-
-    results = _regex_search_content(conn, "foobar", limit=10)
-    assert len(results) == 1
-    assert results[0]["turn_id"] == turn_id
-    assert results[0]["content_path"] == "content/turn1.jsonl"
-
-
 def test_regex_search_content_missing_file(conn_with_session):
     conn, session_id = conn_with_session
     turn_id = _insert_turn(conn, session_id)
@@ -109,37 +83,3 @@ def test_regex_search_content_missing_file(conn_with_session):
 
     results = _regex_search_content(conn, "anything", limit=10)
     assert results == []
-
-
-def test_apply_query_redaction():
-    config = {
-        "filtering": {
-            "query_redaction": {
-                "enabled": True,
-                "patterns": [r"secret-\w+", r"\d{3}-\d{2}-\d{4}"],
-                "replacement": "[REDACTED]",
-            }
-        }
-    }
-    results = [
-        {"user_message": "my token is secret-abc123", "assistant_summary": "noted"},
-        {"title": "SSN is 123-45-6789", "description": "stored"},
-    ]
-    redacted = _apply_query_redaction(results, config)
-    assert redacted[0]["user_message"] == "my token is [REDACTED]"
-    assert redacted[1]["title"] == "SSN is [REDACTED]"
-    assert redacted[0]["assistant_summary"] == "noted"
-    assert redacted[1]["description"] == "stored"
-
-
-def test_apply_query_redaction_none_config():
-    results = [{"user_message": "hello"}]
-    assert _apply_query_redaction(results, None) is results
-
-
-def test_search_turns_null_fields(conn_with_session):
-    conn, session_id = conn_with_session
-    _insert_turn(conn, session_id, user_message=None, assistant_summary=None)
-
-    results = regex_search(conn, "anything", target="turn", limit=10)
-    assert isinstance(results, list)

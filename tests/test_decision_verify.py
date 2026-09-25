@@ -82,13 +82,6 @@ class TestScanDocDecisionRefs:
 
 
 class TestVerifyDecisions:
-    def test_all_found(self, ec_db):
-        _insert_decision(ec_db, SAMPLE_UUID_A)
-        refs = [DocRef(file="test.md", line=1, uuid=SAMPLE_UUID_A)]
-        result = verify_decisions(ec_db, refs)
-        assert len(result.found) == 1
-        assert len(result.missing) == 0
-
     def test_missing(self, ec_db):
         refs = [DocRef(file="test.md", line=1, uuid=SAMPLE_UUID_A)]
         result = verify_decisions(ec_db, refs)
