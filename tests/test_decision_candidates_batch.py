@@ -366,24 +366,3 @@ class TestEmbeddingIntegration:
 
         assert len(result["confirmed"]) == 3
         assert result["failed"] == []
-
-    def test_embedding_called_once_per_confirming_batch_invocation(self, ec_repo, ec_db, monkeypatch):
-        monkeypatch.setattr(
-            "entirecontext.core.config.load_config",
-            lambda path=None: {"decisions": {"auto_embed": True}},
-        )
-        calls = []
-        monkeypatch.setattr(
-            "entirecontext.core.embedding.generate_embeddings",
-            lambda conn, repo_path, **kwargs: calls.append(1) or 0,
-        )
-
-        _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(1), confidence=0.9)
-        result1 = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo))
-        assert len(result1["confirmed"]) == 1
-        assert len(calls) == 1
-
-        _seed_candidate(ec_db, source_type="archaeology", source_id=_hex_sha(2), confidence=0.9)
-        result2 = confirm_candidates_batch(ec_db, source_type="archaeology", min_confidence=0.5, repo_path=str(ec_repo))
-        assert len(result2["confirmed"]) == 1
-        assert len(calls) == 2

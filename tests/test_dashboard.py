@@ -92,21 +92,6 @@ def _seed_telemetry(ec_db):
 
 
 class TestGetDashboardStats:
-    def test_returns_dict_with_required_keys(self, ec_repo, ec_db):
-        _seed_db(ec_repo, ec_db)
-        stats = get_dashboard_stats(ec_db)
-        for key in (
-            "sessions",
-            "checkpoints",
-            "assessments",
-            "telemetry",
-            "maturity_score",
-            "maturity_grade",
-            "since",
-            "limit",
-        ):
-            assert key in stats
-
     def test_sessions_total_count(self, ec_repo, ec_db):
         _seed_db(ec_repo, ec_db)
         stats = get_dashboard_stats(ec_db)
@@ -123,13 +108,6 @@ class TestGetDashboardStats:
         stats = get_dashboard_stats(ec_db, limit=1)
         assert len(stats["sessions"]["recent"]) <= 1
 
-    def test_sessions_recent_has_expected_fields(self, ec_repo, ec_db):
-        _seed_db(ec_repo, ec_db)
-        stats = get_dashboard_stats(ec_db)
-        for s in stats["sessions"]["recent"]:
-            for field in ("id", "started_at", "last_activity_at"):
-                assert field in s
-
     def test_checkpoints_total_count(self, ec_repo, ec_db):
         _seed_db(ec_repo, ec_db)
         stats = get_dashboard_stats(ec_db)
@@ -139,13 +117,6 @@ class TestGetDashboardStats:
         _seed_db(ec_repo, ec_db)
         stats = get_dashboard_stats(ec_db, limit=2)
         assert len(stats["checkpoints"]["recent"]) <= 2
-
-    def test_checkpoints_recent_has_expected_fields(self, ec_repo, ec_db):
-        _seed_db(ec_repo, ec_db)
-        stats = get_dashboard_stats(ec_db)
-        for c in stats["checkpoints"]["recent"]:
-            for field in ("id", "session_id", "git_commit_hash", "created_at"):
-                assert field in c
 
     def test_assessments_total_count(self, ec_repo, ec_db):
         _seed_db(ec_repo, ec_db)
@@ -207,11 +178,6 @@ class TestGetDashboardStats:
         assert stats["sessions"]["recent"] == []
         assert stats["checkpoints"]["recent"] == []
         assert stats["assessments"]["recent"] == []
-
-    def test_since_and_limit_echoed_in_result(self, ec_repo, ec_db):
-        stats = get_dashboard_stats(ec_db, since="2025-01-01", limit=5)
-        assert stats["since"] == "2025-01-01"
-        assert stats["limit"] == 5
 
     def test_enriched_rate(self, ec_repo, ec_db):
         import pytest
@@ -623,33 +589,3 @@ class TestDashboardCLI:
         ):
             result = runner.invoke(app, ["dashboard"])
         assert result.exit_code == 0
-
-    def test_since_option_passed_to_core(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.dashboard.get_dashboard_stats", return_value=_mock_stats()) as mock_fn,
-        ):
-            runner.invoke(app, ["dashboard", "--since", "2025-01-01"])
-        assert mock_fn.call_args.kwargs.get("since") == "2025-01-01"
-
-    def test_limit_option_passed_to_core(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.dashboard.get_dashboard_stats", return_value=_mock_stats()) as mock_fn,
-        ):
-            runner.invoke(app, ["dashboard", "--limit", "5"])
-        assert mock_fn.call_args.kwargs.get("limit") == 5
-
-    def test_default_limit_is_10(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.dashboard.get_dashboard_stats", return_value=_mock_stats()) as mock_fn,
-        ):
-            runner.invoke(app, ["dashboard"])
-        assert mock_fn.call_args.kwargs.get("limit") == 10

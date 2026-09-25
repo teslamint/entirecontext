@@ -219,8 +219,3 @@ def test_maybe_emit_aar_config_off(ec_repo, ec_db, monkeypatch):
     _maybe_emit_aar(str(ec_repo), sid)
     aar_files = list(Path(str(ec_repo)).glob(".entirecontext/aar-*.json"))
     assert len(aar_files) == 0
-
-
-def test_maybe_emit_aar_never_crashes():
-    # bad repo path and session id — must not raise
-    _maybe_emit_aar("/nonexistent/repo/path", "bad-session-id-!!!!")

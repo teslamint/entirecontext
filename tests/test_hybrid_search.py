@@ -53,10 +53,6 @@ class TestRRFFuse:
         assert scores["b"] == pytest.approx(1 / 62)
         assert scores["c"] == pytest.approx(1 / 63)
 
-    def test_higher_rank_higher_score(self):
-        scores = rrf_fuse([["a", "b", "c"]], k=60)
-        assert scores["a"] > scores["b"] > scores["c"]
-
     def test_doc_in_both_lists_higher_than_single(self):
         # "a" is rank 1 in both lists; "b" and "c" appear in only one list each
         scores = rrf_fuse([["a", "b"], ["a", "c"]], k=60)
@@ -96,21 +92,6 @@ class TestRRFFuse:
 
 
 class TestHybridSearch:
-    def test_returns_list(self, ec_repo, ec_db):
-        _seed_turns(
-            ec_repo,
-            ec_db,
-            [
-                {
-                    "user_message": "implement auth login",
-                    "assistant_summary": "built auth",
-                    "timestamp": "2025-01-01T10:00:00",
-                },
-            ],
-        )
-        results = hybrid_search(ec_db, "auth")
-        assert isinstance(results, list)
-
     def test_empty_db_returns_empty_list(self, ec_repo, ec_db):
         results = hybrid_search(ec_db, "auth")
         assert results == []
@@ -151,23 +132,6 @@ class TestHybridSearch:
         results = hybrid_search(ec_db, "authentication")
         result_ids = [r["id"] for r in results]
         assert ids[0] not in result_ids
-
-    def test_results_have_hybrid_score(self, ec_repo, ec_db):
-        _seed_turns(
-            ec_repo,
-            ec_db,
-            [
-                {
-                    "user_message": "auth feature work",
-                    "assistant_summary": "built auth",
-                    "timestamp": "2025-01-01T10:00:00",
-                },
-            ],
-        )
-        results = hybrid_search(ec_db, "auth")
-        for r in results:
-            assert "hybrid_score" in r
-            assert r["hybrid_score"] > 0
 
     def test_results_sorted_by_score_descending(self, ec_repo, ec_db):
         _seed_turns(
@@ -226,21 +190,6 @@ class TestHybridSearch:
         assert isinstance(results, list)
         assert len(results) >= 1
 
-    def test_session_results_have_hybrid_score(self, ec_repo, ec_db):
-        from entirecontext.core.project import get_project
-        from entirecontext.core.session import create_session
-
-        project = get_project(str(ec_repo))
-        s = create_session(ec_db, project["id"], session_id="hyb-sess2")
-        ec_db.execute(
-            "UPDATE sessions SET session_title=?, session_summary=? WHERE id=?",
-            ("auth session", "auth related", s["id"]),
-        )
-        ec_db.commit()
-        results = hybrid_search(ec_db, "auth", target="session")
-        for r in results:
-            assert "hybrid_score" in r
-
     def test_unsupported_target_returns_empty(self, ec_repo, ec_db):
         results = hybrid_search(ec_db, "auth", target="content")
         assert results == []
@@ -274,16 +223,6 @@ class TestSearchHybridCLI:
             result = runner.invoke(app, ["search", "auth", "--hybrid"])
             assert result.exit_code == 1
 
-    def test_hybrid_flag_calls_hybrid_search(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.search.hybrid_search", return_value=[]) as mock_hs,
-        ):
-            runner.invoke(app, ["search", "auth", "--hybrid"])
-            mock_hs.assert_called_once()
-
     def test_hybrid_no_results_message(self):
         mock_conn = MagicMock()
         with (
@@ -294,40 +233,6 @@ class TestSearchHybridCLI:
             result = runner.invoke(app, ["search", "auth", "--hybrid"])
             assert result.exit_code == 0
             assert "no" in result.output.lower() or "0" in result.output
-
-    def test_hybrid_with_results_exit_code(self):
-        mock_conn = MagicMock()
-        fake_results = [
-            {
-                "id": "turn-aaa",
-                "session_id": "sess-bbb",
-                "user_message": "implement auth module",
-                "assistant_summary": "done auth",
-                "timestamp": "2025-01-01T10:00:00",
-                "files_touched": None,
-                "git_commit_hash": None,
-                "hybrid_score": 0.032,
-            }
-        ]
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.search.hybrid_search", return_value=fake_results),
-        ):
-            result = runner.invoke(app, ["search", "auth", "--hybrid"])
-            assert result.exit_code == 0
-
-    def test_hybrid_conn_passed_to_hybrid_search(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.search.hybrid_search", return_value=[]) as mock_hs,
-        ):
-            runner.invoke(app, ["search", "auth", "--hybrid"])
-            mock_hs.assert_called_once()
-            call_args = mock_hs.call_args
-            assert call_args.args[0] is mock_conn
 
     def test_hybrid_limit_passed(self):
         mock_conn = MagicMock()

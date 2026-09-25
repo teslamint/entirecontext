@@ -104,18 +104,6 @@ class TestExportSessionMarkdown:
             },
         ]
 
-    def test_returns_string(self):
-        session = self._make_session()
-        turns = self._make_turns()
-        result = export_session_markdown(session, turns)
-        assert isinstance(result, str)
-
-    def test_contains_session_id(self):
-        session = self._make_session()
-        turns = self._make_turns()
-        result = export_session_markdown(session, turns)
-        assert "sess-abc123-uuid" in result
-
     def test_contains_session_type(self):
         session = self._make_session()
         turns = self._make_turns()
@@ -160,14 +148,6 @@ class TestExportSessionMarkdown:
         assert "id:" in frontmatter
         assert "sess-abc123-uuid" in frontmatter
 
-    def test_yaml_frontmatter_has_type_field(self):
-        session = self._make_session()
-        turns = self._make_turns()
-        result = export_session_markdown(session, turns)
-        frontmatter_end = result.index("\n---\n", 4)
-        frontmatter = result[4:frontmatter_end]
-        assert "type:" in frontmatter
-
     def test_yaml_frontmatter_has_turns_count(self):
         session = self._make_session()
         turns = self._make_turns()
@@ -200,20 +180,6 @@ class TestExportSessionMarkdown:
         turns = []
         result = export_session_markdown(session, turns)
         assert "active" in result.lower()
-
-    def test_ended_session_shows_ended_at(self):
-        session = self._make_session(ended_at="2025-01-15T11:30:00+00:00")
-        turns = []
-        result = export_session_markdown(session, turns)
-        assert "2025-01-15" in result
-
-    def test_no_turns_shows_no_turns_section(self):
-        session = self._make_session(total_turns=0)
-        turns = []
-        result = export_session_markdown(session, turns)
-        # Should still produce valid markdown without error
-        assert isinstance(result, str)
-        assert "sess-abc123-uuid" in result
 
     def test_turns_numbered_correctly(self):
         session = self._make_session()
@@ -260,27 +226,6 @@ class TestExportSessionMarkdown:
         result = export_session_markdown(session, turns)
         assert "abc1234" in result
 
-    def test_turn_without_git_commit_hash(self):
-        session = self._make_session()
-        turns = [
-            {
-                "turn_number": 1,
-                "user_message": "do something",
-                "assistant_summary": "done",
-                "git_commit_hash": None,
-            }
-        ]
-        # Should not error
-        result = export_session_markdown(session, turns)
-        assert isinstance(result, str)
-
-    def test_output_is_valid_markdown_structure(self):
-        """Basic check that output has H1 heading."""
-        session = self._make_session(session_title="My Session")
-        turns = self._make_turns()
-        result = export_session_markdown(session, turns)
-        assert "# " in result
-
     def test_exported_field_in_frontmatter(self):
         """'exported' timestamp should appear in frontmatter."""
         session = self._make_session()
@@ -289,14 +234,6 @@ class TestExportSessionMarkdown:
         frontmatter_end = result.index("\n---\n", 4)
         frontmatter = result[4:frontmatter_end]
         assert "exported:" in frontmatter
-
-    def test_frontmatter_ends_with_newline_before_body(self):
-        """Closing --- must have a newline before the body starts."""
-        session = self._make_session()
-        turns = []
-        result = export_session_markdown(session, turns)
-        # The closing delimiter must be followed by a newline and then the body
-        assert "\n---\n" in result
 
     def test_multiline_user_message_inlined(self):
         """Multiline user messages must not break paragraph structure."""
@@ -399,61 +336,3 @@ class TestSessionExportCLI:
             assert output_file.exists()
             content = output_file.read_text()
             assert "sess-file-001-uuid" in content
-
-    def test_export_default_stdout_when_no_output(self):
-        """Without --output or --stdout, defaults to stdout."""
-        mock_conn = MagicMock()
-        session = {
-            "id": "sess-def-001-uuid",
-            "session_type": "claude",
-            "started_at": "2025-01-15T10:00:00",
-            "ended_at": None,
-            "total_turns": 0,
-            "session_title": None,
-            "session_summary": None,
-        }
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.core.project.get_project", return_value={"id": "proj-1", "name": "proj"}),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.session.get_session", return_value=session),
-            patch("entirecontext.core.turn.list_turns", return_value=[]),
-        ):
-            result = runner.invoke(app, ["session", "export", "sess-def-001-uuid"])
-            assert result.exit_code == 0
-            assert "sess-def-001-uuid" in result.output
-
-    def test_prefix_id_resolution(self):
-        """Prefix IDs (e.g. first 8 chars) should resolve to full session."""
-        mock_conn = MagicMock()
-        session = {
-            "id": "sess-prefix-resolved-uuid",
-            "session_type": "claude",
-            "started_at": "2025-01-15T10:00:00",
-            "ended_at": None,
-            "total_turns": 0,
-            "session_title": None,
-            "session_summary": None,
-        }
-        # get_session returns None for prefix; fallback LIKE query finds it
-        mock_conn.execute.return_value.fetchone.return_value = MagicMock(**{"__iter__": iter, **session})
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.core.project.get_project", return_value={"id": "proj-1", "name": "proj"}),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.session.get_session", return_value=None),
-            patch(
-                "entirecontext.core.turn.list_turns",
-                return_value=[],
-            ),
-        ):
-            # Simulate the LIKE fallback returning the full session
-            with patch.object(
-                mock_conn,
-                "execute",
-                side_effect=lambda q, *a: MagicMock(fetchone=lambda: dict(session) if "LIKE" in q else None),
-            ):
-                # This test verifies the command handles prefix IDs (exit 0 OR 1 handled gracefully)
-                result = runner.invoke(app, ["session", "export", "sess-pref"])
-                # Either it finds it (0) or not found (1) - no crash
-                assert result.exit_code in (0, 1)

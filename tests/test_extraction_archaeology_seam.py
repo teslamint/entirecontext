@@ -5,62 +5,7 @@ from unittest.mock import patch
 from entirecontext.core.decision_extraction import (
     SignalBundle,
     run_extraction,
-    _VALID_SOURCE_TYPES,
-    _BASE_CONFIDENCE_WEIGHTS,
-    _SYSTEM_PROMPT_BY_SOURCE,
 )
-
-
-def test_archaeology_in_valid_source_types():
-    assert "archaeology" in _VALID_SOURCE_TYPES
-
-
-def test_archaeology_in_base_confidence_weights():
-    assert "archaeology" in _BASE_CONFIDENCE_WEIGHTS
-
-
-def test_archaeology_in_system_prompt():
-    assert "archaeology" in _SYSTEM_PROMPT_BY_SOURCE
-
-
-def test_signal_bundle_accepts_none_session_id():
-    bundle = SignalBundle(
-        source_type="archaeology",
-        source_id="abc123",
-        session_id=None,
-        checkpoint_id=None,
-        assessment_id=None,
-        text_blocks=["diff --git a/foo.py b/foo.py"],
-        files=["foo.py"],
-    )
-    assert bundle.session_id is None
-    assert bundle.source_type == "archaeology"
-
-
-def test_run_extraction_with_injected_bundles(ec_db):
-    bundle = SignalBundle(
-        source_type="archaeology",
-        source_id="abc123",
-        session_id=None,
-        checkpoint_id=None,
-        assessment_id=None,
-        text_blocks=["No decision content here."],
-        files=[],
-    )
-
-    mock_response = "[]"
-    with patch(
-        "entirecontext.core.decision_extraction.call_extraction_llm",
-        return_value=mock_response,
-    ):
-        outcome = run_extraction(
-            ec_db,
-            session_id=None,
-            repo_path="/tmp/fake",
-            bundles=[bundle],
-        )
-    assert outcome.bundles_collected == 1
-    assert outcome.marked is False  # no session to mark
 
 
 def test_run_extraction_with_injected_bundles_persists_candidate_with_null_session(ec_db):

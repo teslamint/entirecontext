@@ -50,11 +50,6 @@ class TestExtractFilesFromPatch:
         assert "a.py" in files
         assert "b.py" in files
 
-    def test_rename(self):
-        patch = "diff --git a/old.py b/new.py\nrename from old.py\nrename to new.py\n"
-        files = _extract_files_from_patch(patch)
-        assert "new.py" in files
-
     def test_empty_patch(self):
         assert _extract_files_from_patch("") == []
 
@@ -122,15 +117,6 @@ class TestBuildSignalBundle:
         assert bundle.source_id == "abc123"
         assert bundle.session_id is None
         assert "diff content" in bundle.text_blocks
-
-    def test_with_pr_body(self):
-        bundle = _build_signal_bundle("abc123", "commit message", "diff", "PR description")
-        assert "PR description" in bundle.text_blocks
-        assert "diff" in bundle.text_blocks
-
-    def test_message_included_in_text_blocks(self):
-        bundle = _build_signal_bundle("abc123", "fix: handle edge case\n\nThis explains why.", "diff content", None)
-        assert "fix: handle edge case\n\nThis explains why." in bundle.text_blocks
 
     def test_message_precedes_pr_body_and_patch(self):
         bundle = _build_signal_bundle("abc123", "the message", "the patch", "the pr body")

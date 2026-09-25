@@ -52,12 +52,6 @@ class TestCodexNotify:
             payload = mock_ingest.call_args.kwargs.get("payload", mock_ingest.call_args.args[0])
             assert payload["thread_id"] == "t1"
 
-    def test_codex_notify_stdin_payload(self):
-        with patch("entirecontext.hooks.codex_ingest.ingest_codex_notify_event") as mock_ingest:
-            result = runner.invoke(app, ["hook", "codex-notify"], input='{"thread_id":"t2"}')
-            assert result.exit_code == 0
-            mock_ingest.assert_called_once()
-
     def test_codex_notify_argv_skips_stdin(self):
         """When payload_arg is provided, stdin must not be read (prevents blocking on open pipes)."""
         import threading

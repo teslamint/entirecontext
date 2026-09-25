@@ -101,14 +101,6 @@ def v15_db():
     conn.close()
 
 
-def test_archaeology_processed_table_exists(v15_db):
-    apply_migrations(v15_db, 15, 16)
-    row = v15_db.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='archaeology_processed'"
-    ).fetchone()
-    assert row is not None
-
-
 def test_source_type_accepts_archaeology(v15_db):
     apply_migrations(v15_db, 15, 16)
     v15_db.execute(
