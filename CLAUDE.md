@@ -62,7 +62,7 @@ Claude Code hooks integration via stdin JSON protocol. Entry: `hooks/handler.py`
 
 Decision-file rename synchronization runs only at `SessionStart`, before decision ranking. It preserves historical `decision_files` rows and additively materializes committed destinations; query paths and `PostToolUse` must not invoke Git.
 
-Git worktrees: the project root (DB, config, content, pid files) is canonical via the git common dir (`core/repo_roots.py`), so all linked worktrees share the main worktree's `.entirecontext/`; Git operations use the workspace root. The `PostToolUse` decision hook resolves roots via `resolve_repo_roots_fs` without Git; `PostToolUse` turn capture still runs one `git rev-parse`. `get_db` refuses a linked-worktree root. See `docs/solutions/workflow-issues/worktree-canonical-project.md`.
+Git worktrees: all linked worktrees of a repository share one project root. `core/repo_roots.py` finds this root from the git common dir. The project root is the main worktree. Its `.entirecontext/` directory contains the DB, config, content and pid files. Git operations use the workspace root, which is the current checkout. The `PostToolUse` decision hook finds the roots with `resolve_repo_roots_fs` and does not run Git. `PostToolUse` turn capture runs one `git rev-parse`. `get_db` raises `LinkedWorktreeDatabaseError` for a linked-worktree root. See `docs/solutions/workflow-issues/worktree-canonical-project.md`.
 
 Return codes: 0=success, 2=block.
 

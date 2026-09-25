@@ -97,7 +97,7 @@ The distinction matters: a transcript can say what happened; a decision record s
 
 EntireContext uses local project state plus optional global state:
 
-- A repo-local `.entirecontext/` directory stores configuration, SQLite state, content files, fallback context files, and generated artifacts. Linked Git worktrees share the main worktree's `.entirecontext/` (see §3.5).
+- A repo-local `.entirecontext/` directory stores configuration, SQLite state, content files, fallback context files, and generated artifacts. Linked Git worktrees share the `.entirecontext/` directory of the main worktree (see §3.5).
 - A global user-level configuration file can provide defaults that repo-local config overrides.
 - A global registry database tracks repositories for cross-repo workflows.
 - Optional sync uses a git shadow branch for portable artifacts.
@@ -130,7 +130,7 @@ The project command surface is registered in `src/entirecontext/cli/project_cmds
 - `ec init` — create or initialize repo-local EntireContext state, then install the supported hooks and notification wiring.
 - `ec enable` — reinstall the supported hooks or notification wiring without touching repo-local state.
 - `ec disable` — remove supported hook or notification wiring.
-- `ec status` — show the logical project (name, project root, git common dir), the active workspace (checkout, branch, linked-worktree marker), and capture/session status, including the sessions recorded in the current workspace.
+- `ec status` — show the logical project, the active workspace, and the capture and session status. The logical project rows show the name, the project root and the git common dir. The workspace rows show the checkout, the branch and a linked-worktree marker. The status also shows the number of sessions in the current workspace.
 - `ec config` — read or write configuration values.
 - `ec doctor` — inspect installation and integration health.
 
@@ -170,16 +170,26 @@ Avoid examples containing real keys, private repository paths, or raw production
 
 ### 3.5 Git worktrees
 
-All linked worktrees of a repository (`git worktree add`) form one logical project. The project root is resolved from `git rev-parse --git-common-dir`, so the database, config, content files and worker pid files live in the main worktree's `.entirecontext/`. Running `ec init` inside a linked worktree joins that project, or initializes it at the main worktree when it does not exist yet.
+All linked worktrees of a repository (`git worktree add`) are one logical project. EntireContext finds the project root with `git rev-parse --git-common-dir`. The database, the config, the content files and the worker pid files are in the `.entirecontext/` directory of the main worktree.
 
-Each session records its workspace: the checkout toplevel, branch and per-worktree git dir. Git work follows the workspace: diffs and HEAD for decision surfacing, checkpoints, PostCommit, rewind, blame, archaeology and sync transport. The current-session lookup prefers sessions from the same workspace, so a commit in one worktree is not checkpointed onto another worktree's session. `ec session list --workspace` limits the list to the current checkout.
+When you run `ec init` in a linked worktree, the worktree joins this project. If the project does not exist, `ec init` makes it at the main worktree.
 
-Limitations and setup notes:
+Each session records its workspace: the checkout toplevel, the branch and the per-worktree git dir. These operations use the workspace:
 
-- Claude Code hooks live in each checkout's `.claude/settings.local.json`, so run `ec enable` once per worktree. `ec doctor` points this out.
-- Bare repositories with worktrees, `--separate-git-dir` checkouts and submodules keep one project per checkout.
-- A `.entirecontext/db/local.db` created inside a linked worktree by an earlier version is a legacy worktree DB. `ec status`, `ec init` and `ec doctor` report its path and read-only session and decision counts; it is never modified or used. `ec decision verify-docs --promote-from <path>` copies only the decisions referenced in `docs/adr`, `docs/specs`, `docs/plans` and `ROADMAP.md` (a pre-v21 source DB is accepted as is); the rest of that DB stays unmerged until the planned merge command exists.
-- Re-run `ec enable` after upgrading so `~/.claude/hooks/ec-inject.sh` also injects guidance in linked worktrees.
+- diffs and HEAD for decision surfacing
+- checkpoints and PostCommit
+- rewind and blame
+- archaeology and sync transport
+
+The current-session lookup prefers the sessions of the same workspace. Thus, a commit in one worktree does not go to the session of a different worktree. To show only the sessions of the current checkout, use `ec session list --workspace`.
+
+Limits and setup notes:
+
+- Claude Code hooks are in the `.claude/settings.local.json` file of each checkout. Run `ec enable` one time in each worktree. `ec doctor` tells you about this step.
+- Bare repositories with worktrees, `--separate-git-dir` checkouts and submodules keep one project for each checkout.
+- An earlier version could make a `.entirecontext/db/local.db` file in a linked worktree. This file is a legacy worktree DB. `ec status`, `ec init` and `ec doctor` open it read-only and show its path, session count and decision count. EntireContext does not change this file or use its data.
+- To copy decisions from a legacy worktree DB, use `ec decision verify-docs --promote-from <path>`. This command copies only the decisions that `docs/adr`, `docs/specs`, `docs/plans` and `ROADMAP.md` refer to. It accepts a source DB from before v21 without a migration. The other data stays in the legacy DB until a merge command is available.
+- After an upgrade, run `ec enable` again. The new `~/.claude/hooks/ec-inject.sh` also injects guidance in linked worktrees.
 
 ## 4. Agent Integration Guide
 
@@ -459,7 +469,7 @@ This chapter is intentionally workflow-oriented. Use `ec --help` and `ec <group>
 - `ec config`
 - `ec doctor`
 
-These commands manage repo state, hooks, supported agent integration, configuration, and diagnostics. In a linked Git worktree they act on the shared logical project; `ec status` lists the logical project and the active workspace separately (§3.5).
+These commands manage repo state, hooks, supported agent integration, configuration, and diagnostics. In a linked Git worktree, these commands use the shared logical project. `ec status` shows the logical project and the active workspace in different rows (§3.5).
 
 ### 8.2 Session inspection and export
 
@@ -759,7 +769,7 @@ Version and schema drift have been a repeated risk. When releasing or changing s
 | `ec` command not found | Package not installed or environment not activated | Check install environment, `uv run ec --help`, and PATH. |
 | Not a git repository | Commands requiring repo root cannot resolve project | Run inside a git repo or initialize one. |
 | No active session | Hooks not enabled, capture disabled, or session ended | `ec status`, hook config, `.entirecontext/config.toml`. |
-| Worktree history looks empty or a legacy worktree DB warning appears | Sessions from before the upgrade were recorded in a per-worktree DB | `ec status` in the worktree, `ec doctor`, `ec decision verify-docs --promote-from <path>` (§3.5). |
+| Worktree history is empty, or `ec status` shows a legacy worktree DB warning | An earlier version recorded the sessions in a per-worktree DB | `ec status` in the worktree, `ec doctor`, `ec decision verify-docs --promote-from <path>` (§3.5). |
 | Hook not firing | Agent hook config missing or overwritten | `ec doctor`, `ec enable`, hook files/config. |
 | Capture missing turns | `capture.auto_capture=false`, per-session disabled, or exclusions matched | Config `[capture]` and `[capture.exclusions]`. |
 | MCP server unavailable | MCP extra missing or stdio server not configured | `ec mcp serve`, package extras, agent MCP settings. |
