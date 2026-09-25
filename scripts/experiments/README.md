@@ -2,7 +2,7 @@
 
 ## Block Flip Automation
 
-Cron job flips `experiment_block` between ON/OFF when qualifying sessions reach N (default 5).
+The cron job flips `experiment_block` between ON and OFF when qualifying sessions reach N (default 5).
 
 ### Setup
 
@@ -33,11 +33,12 @@ crontab -l | grep -v flip_block | crontab -
 
 ## Token Savings Analysis
 
-Estimate token overhead of context injection and net per-session savings from the
-ON/OFF block experiment. Reads `operation_events` (`context_injection` rows) for
-injected-token totals and `turn_content` transcript sizes for session footprint.
-Pairs ON/OFF blocks (via `experiment-blocks.jsonl`) into per-pair deltas.
-Protocol and caveats: `docs/research/token-savings-experiment.md`.
+This script estimates token overhead from context injection and net per-session
+savings in the ON/OFF block experiment. It reads `operation_events` rows marked
+`context_injection` to total injected tokens. It reads transcript sizes in
+`turn_content` to measure the session footprint. It pairs ON/OFF blocks from
+`experiment-blocks.jsonl`. It calculates the delta for each pair. See the
+protocol and caveats in `docs/research/token-savings-experiment.md`.
 
 ```bash
 python scripts/experiments/token_savings.py --summary   # whole-DB baseline (no blocks)
@@ -45,5 +46,6 @@ python scripts/experiments/token_savings.py             # per-block A/B analysis
 python scripts/experiments/token_savings.py --json       # machine-readable output
 ```
 
-`--bytes-per-token` defaults to `4.0`. Fewer than 4 ON/OFF pairs and sub-80%
-turn-content coverage emit warnings rather than failure.
+The `--bytes-per-token` value defaults to `4.0`. The script warns instead of
+failing when it finds fewer than 4 ON/OFF pairs. It also warns instead of
+failing when turn-content coverage is sub-80%.

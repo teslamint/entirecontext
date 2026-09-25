@@ -28,7 +28,7 @@ tags:
 
 ## Problem
 
-`ec blame --decisions` built one SQL expression containing an exact match and one abbreviated-SHA prefix predicate per blamed SHA. A file spanning 1,200 distinct SHAs exceeded SQLite's expression-depth limit of 1,000.
+SHA means Secure Hash Algorithm. `ec blame --decisions` built one Structured Query Language (SQL) expression. The expression contained one exact match. It also contained one abbreviated-SHA prefix predicate for each blamed SHA. A file with 1,200 distinct SHAs exceeded SQLite's expression-depth limit of 1,000.
 
 ## Symptoms
 
@@ -38,18 +38,18 @@ tags:
 
 ## What Didn't Work
 
-Batching the original combined exact-plus-prefix query bounded expression depth but repeated the non-indexable `decision_commits` scan for every batch. The initial split-query implementation fixed SQLite complexity but did not bound downstream Git work: it passed every abbreviated candidate to Git and cached by the unnormalized stored SHA.
+Batching the original combined exact-plus-prefix query bounded expression depth. However, it repeated the non-indexable `decision_commits` scan for every batch. The initial split-query implementation fixed SQLite complexity but did not bound downstream Git work. It passed every abbreviated candidate to Git and cached resolutions by the unnormalized stored SHA.
 
 ## Solution
 
-Set the exact batch size to 400 and split candidate retrieval into indexed exact `IN` queries plus one abbreviated-candidate scan per blamed SHA width. For 1,200 SHA-1 values, this produces exactly three exact queries and one abbreviated query—the 3+1 SQL shape.
+Set the exact batch size to 400. Split candidate retrieval into indexed exact `IN` queries. Scan abbreviated candidates once per blamed SHA width. For 1,200 SHA-1 values, this produces exactly three exact queries and one abbreviated query. This is the 3+1 SQL shape.
 
-Before Git resolution, build the normalized set of blamed full SHAs and all valid prefixes, discard unrelated candidates, and cache resolutions by lowercase SHA. Keep Git verification and canonical `(resolved_sha, decision_id)` deduplication authoritative.
+Before Git resolution, build the normalized set of blamed full SHAs and all valid prefixes. Discard unrelated candidates. Cache resolutions by lowercase SHA. Keep Git verification and canonical `(resolved_sha, decision_id)` deduplication authoritative.
 
 ## Why This Works
 
-Each exact query stays below SQLite expression and variable limits while preserving index use. The abbreviated corpus is scanned once rather than once per exact batch. Prefix filtering prevents the 1,000 unrelated links from reaching Git, and lowercase cache identities collapse all 64 case variants to one resolution. Exact and abbreviated annotations retain the existing public behavior.
+Each exact query stays below SQLite's expression and variable limits while preserving index use. The implementation scans the abbreviated corpus once, not once per exact batch. Prefix filtering prevents the 1,000 unrelated links from reaching Git. Lowercase cache identities collapse all 64 case variants to one resolution. Exact and abbreviated annotations retain the existing public behavior.
 
 ## Prevention
 
-For lookup pipelines, define and test one end-to-end complexity budget across every multiplicative boundary: database expression size, query count, candidate rows, external-process calls, and cache identities. Normalize cache keys at the same equivalence boundary used for matching.
+Define an end-to-end complexity budget for every multiplicative boundary in a lookup pipeline. Include database expression size, query count, candidate rows, external-process calls, and cache identities in the budget. Test the budget. Normalize cache keys at the same equivalence boundary used for matching.

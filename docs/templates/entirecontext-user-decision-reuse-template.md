@@ -2,15 +2,15 @@
 
 Use this template in projects that have installed and enabled EntireContext and want coding agents to reuse stored decisions and lessons consistently.
 
-It is intentionally workflow-neutral. It works for solo repositories, small teams, PR-based workflows, direct-to-main workflows, TDD, and non-TDD processes.
+This template does not depend on a specific workflow. It works for solo repositories, small teams, pull request (PR)-based workflows, direct-to-main workflows, test-driven development (TDD), and non-TDD processes.
 
 Adoption is optional. The copied requirements apply when your project adopts them; your project owns and enforces that policy.
 EntireContext maintainer rules do not become requirements for your project.
-Existing project instructions and contribution rules govern changes, including when you decline this template.
+Current project instructions and contribution rules govern changes, including when you decline this template.
 
 The [project decision policy template](entirecontext-project-decision-policy-template.md) complements this reuse workflow.
 It helps your project choose what to record and when plans or evidence are needed.
-Creating an EC record does not grant permission to change code.
+An EntireContext (EC) record does not grant permission to change code.
 
 ## Suggested Insertion
 
@@ -78,14 +78,14 @@ Stored decisions are inputs to judgment, not blind rules. Agents should follow r
 
 ## Customization Checklist
 
-Teams adopting this template should adjust:
+Teams that adopt this template should adjust:
 
-- Which subsystems are considered high-risk or decision-sensitive
-- Which command or MCP path is preferred in their environment
-- Whether decision usage is required for medium-risk tasks or only high-risk tasks
-- Whether final reporting must always mention decision checks or only when decisions were found
-- Whether lesson checks are expected for medium-risk tasks or only high-risk tasks
+- Which subsystems your project considers high-risk or decision-sensitive
+- Which command or Model Context Protocol (MCP) path your project prefers in your environment
+- Whether your project requires agents to use prior decisions for medium-risk tasks or only high-risk tasks
+- Whether agents must mention decision checks in every final report or only when they find decisions
+- Whether your project requires lesson checks for medium-risk tasks or only high-risk tasks
 
 ## Minimal Adoption Guidance
 
-If a team wants the lowest-friction version, keep the policy text as-is and only add one short line listing the project's highest-risk areas.
+If a team wants the lowest-friction version, keep the policy text as-is. Add one short line that lists the project's highest-risk areas.

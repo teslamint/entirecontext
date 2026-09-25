@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-This directory contains Architecture Decision Records (ADR) for the EntireContext project.
+This directory contains Architecture Decision Records (ADRs) for the EntireContext project.
 
 ## Convention
 

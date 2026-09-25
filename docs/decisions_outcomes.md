@@ -1,8 +1,8 @@
 # Decision Outcome Semantics
 
-This document specifies the current behavior of the five decision outcome types.
-It records **how the system works now**, not a proposed change — any meaning change
-requires a separate decision record.
+This document describes how the five decision outcome types work now.
+It records current behavior, not a proposed change.
+Make a separate decision record for any change in meaning.
 
 ## Truth Table
 
@@ -16,17 +16,16 @@ requires a separate decision record.
 
 ### Notes
 
-- **`replaced` quality_score = 0**: intentional design. `decisions.py` contains an
-  explicit comment: *"paired with staleness superseded factor, no double-penalty"*.
-  The staleness factor already down-ranks superseded decisions; a second score hit
-  would double-penalise them unfairly.
+- **`replaced` quality_score = 0**: This is intentional. `decisions.py` contains an explicit comment: *"paired with staleness superseded factor, no double-penalty"*.
+  The staleness factor already down-ranks superseded decisions. A second score hit
+  would unfairly penalise them twice.
 
 - **`accepted` boost status**: accepted outcomes add a configurable binary boost
   only after another relevance signal already matched the decision. The boost is
   not a standalone retrieval seed.
 
 - **`contradicted` auto-promote**: `_maybe_auto_promote_contradicted` may surface a
-  competing candidate when a decision is contradicted. See `core/decisions.py` for
+  competing candidate when someone records a `contradicted` outcome for a decision. See `core/decisions.py` for
   the promotion logic.
 
 ## When to Use Each Outcome
@@ -43,13 +42,13 @@ requires a separate decision record.
 
 Both the CLI (`ec decision outcome`) and the MCP tool (`ec_decision_outcome`) accept
 the same valid set: `accepted`, `ignored`, `contradicted`, `refined`, `replaced`.
-The set is defined in `core/decisions.py` as `VALID_DECISION_OUTCOME_TYPES`.
-
-> **Ops note**: MCP stdio servers do not auto-restart after `uv sync`. After any
-> upgrade that changes `VALID_DECISION_OUTCOME_TYPES` or outcome logic, restart
-> Claude Code to pick up the new server binary.
+`core/decisions.py` defines the set as `VALID_DECISION_OUTCOME_TYPES`.
+> **Ops note**: MCP stdio servers do not restart automatically after `uv sync`.
+> After an upgrade changes `VALID_DECISION_OUTCOME_TYPES` or outcome logic, restart
+> Claude Code to use the new server binary.
 
 ## Resolved Questions
 
-- ~~Should `accepted` boost become weighted by outcome count or recency, or stay binary?~~ — Resolved: ranking uses `accepted_outcome_boost` (default 2.0, `[decisions.ranking]`), applied after another relevance signal matches. v0.7.0 separately added extraction confidence boost (`accepted_boost_amount=0.10`, `accepted_boost_threshold=0.6`, `[decisions.extraction]`). Both stay binary, not weighted.
+- ~~Should `accepted` boost become weighted by outcome count or recency, or stay binary?~~ — Resolved: Ranking uses `accepted_outcome_boost` (default 2.0, `[decisions.ranking]`).
+  The system applies it after another relevance signal matches. Version v0.7.0 separately added an extraction confidence boost (`accepted_boost_amount=0.10`, `accepted_boost_threshold=0.6`, `[decisions.extraction]`). Both boosts remain binary, not weighted.
 - Supersede chains show only the head decision in list views; `ec decision chain <id>` walks the full chain for debugging.
