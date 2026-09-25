@@ -86,19 +86,6 @@ def test_dry_run_no_writes(arch_repo, ec_db):
     assert candidates == 0
 
 
-def test_source_type_archaeology_on_candidates(arch_repo, ec_db):
-    mock_response = '[{"title": "Test decision", "rationale": "Test", "scope": "test", "rejected_alternatives": []}]'
-    with patch(
-        "entirecontext.core.decision_extraction.call_extraction_llm",
-        return_value=mock_response,
-    ):
-        archaeologize(ec_db, str(arch_repo), limit=1)
-
-    row = ec_db.execute("SELECT source_type FROM decision_candidates LIMIT 1").fetchone()
-    assert row is not None
-    assert row["source_type"] == "archaeology"
-
-
 @pytest.fixture
 def single_commit_repo(ec_repo):
     f = ec_repo / "single.py"

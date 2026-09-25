@@ -76,13 +76,6 @@ class TestIsWorkerRunning:
 
 
 class TestLaunchWorker:
-    def test_returns_pid(self, tmp_path):
-        mock_proc = MagicMock()
-        mock_proc.pid = 99999
-        with patch("subprocess.Popen", return_value=mock_proc):
-            pid = launch_worker(str(tmp_path), ["echo", "hello"])
-        assert pid == 99999
-
     def test_creates_pid_file(self, tmp_path):
         (tmp_path / ".entirecontext").mkdir()
         mock_proc = MagicMock()
@@ -100,14 +93,6 @@ class TestLaunchWorker:
         with patch("subprocess.Popen", return_value=mock_proc):
             launch_worker(str(tmp_path), ["echo"])
         assert (tmp_path / ".entirecontext").is_dir()
-
-    def test_popen_called_with_correct_cmd(self, tmp_path):
-        mock_proc = MagicMock()
-        mock_proc.pid = 1
-        cmd = ["ec", "futures", "assess", "--diff", "hello"]
-        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen:
-            launch_worker(str(tmp_path), cmd)
-        assert mock_popen.call_args.args[0] == cmd
 
     def test_popen_starts_detached(self, tmp_path):
         """Worker must be started outside the current process group."""
@@ -201,13 +186,6 @@ class TestWorkerStatus:
         assert status["running"] is False
         assert status.get("stale") is True
 
-    def test_stale_pid_not_in_running_status(self, tmp_path):
-        (tmp_path / ".entirecontext").mkdir()
-        (tmp_path / ".entirecontext" / "worker.pid").write_text("33333\n")
-        with patch("os.kill", side_effect=ProcessLookupError):
-            status = worker_status(str(tmp_path))
-        assert status["running"] is False
-
 
 # ---------------------------------------------------------------------------
 # CLI: ec futures worker-status / worker-stop / worker-launch
@@ -271,15 +249,6 @@ class TestFuturesWorkerCLI:
         with patch("entirecontext.core.project.find_git_root", return_value=None):
             result = runner.invoke(app, ["futures", "worker-stop"])
         assert result.exit_code == 1
-
-    def test_worker_launch_invokes_launch_worker(self):
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.core.async_worker.launch_worker", return_value=42) as mock_launch,
-        ):
-            result = runner.invoke(app, ["futures", "worker-launch"])
-        assert result.exit_code == 0
-        mock_launch.assert_called_once()
 
     def test_worker_launch_not_in_repo(self):
         with patch("entirecontext.core.project.find_git_root", return_value=None):

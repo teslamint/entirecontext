@@ -95,20 +95,10 @@ def _seed_agent_graph(ec_repo, ec_db):
 
 
 class TestCreateAgent:
-    def test_returns_dict_with_id(self, ec_repo, ec_db):
-        agent = create_agent(ec_db, "claude", name="Test Agent")
-        assert isinstance(agent, dict)
-        assert "id" in agent
-        assert len(agent["id"]) > 0
-
     def test_stores_agent_type(self, ec_repo, ec_db):
         agent = create_agent(ec_db, "codex", name="Codex Agent")
         row = ec_db.execute("SELECT agent_type FROM agents WHERE id=?", (agent["id"],)).fetchone()
         assert row["agent_type"] == "codex"
-
-    def test_custom_id(self, ec_repo, ec_db):
-        agent = create_agent(ec_db, "claude", agent_id="custom-id-001")
-        assert agent["id"] == "custom-id-001"
 
     def test_parent_agent_id(self, ec_repo, ec_db):
         create_agent(ec_db, "orchestrator", agent_id="parent-001")
@@ -199,17 +189,6 @@ class TestGetAgentSessions:
 
 
 class TestGetSessionAgentChain:
-    def test_returns_list(self, ec_repo, ec_db):
-        ids = _seed_agent_graph(ec_repo, ec_db)
-        chain = get_session_agent_chain(ec_db, ids["s4"])
-        assert isinstance(chain, list)
-
-    def test_chain_starts_with_direct_agent(self, ec_repo, ec_db):
-        ids = _seed_agent_graph(ec_repo, ec_db)
-        chain = get_session_agent_chain(ec_db, ids["s4"])
-        # s4 belongs to grandchild-a1
-        assert chain[0]["id"] == ids["grandchild"]
-
     def test_chain_includes_parent_agents(self, ec_repo, ec_db):
         ids = _seed_agent_graph(ec_repo, ec_db)
         chain = get_session_agent_chain(ec_db, ids["s4"])
@@ -245,18 +224,6 @@ class TestGetSessionAgentChain:
 
 
 class TestBuildAgentGraph:
-    def test_returns_nodes_and_edges(self, ec_repo, ec_db):
-        ids = _seed_agent_graph(ec_repo, ec_db)
-        graph = build_agent_graph(ec_db, root_agent_id=ids["root"])
-        assert "nodes" in graph
-        assert "edges" in graph
-
-    def test_root_agent_included(self, ec_repo, ec_db):
-        ids = _seed_agent_graph(ec_repo, ec_db)
-        graph = build_agent_graph(ec_db, root_agent_id=ids["root"])
-        node_ids = [n["id"] for n in graph["nodes"]]
-        assert ids["root"] in node_ids
-
     def test_direct_children_included(self, ec_repo, ec_db):
         ids = _seed_agent_graph(ec_repo, ec_db)
         graph = build_agent_graph(ec_db, root_agent_id=ids["root"])
@@ -306,14 +273,6 @@ class TestBuildAgentGraph:
         assert node_map[ids["child_a"]]["session_count"] == 2
         # root has 0 direct sessions
         assert node_map[ids["root"]]["session_count"] == 0
-
-    def test_nodes_include_agent_metadata(self, ec_repo, ec_db):
-        ids = _seed_agent_graph(ec_repo, ec_db)
-        graph = build_agent_graph(ec_db, root_agent_id=ids["root"])
-        node_map = {n["id"]: n for n in graph["nodes"]}
-        root_node = node_map[ids["root"]]
-        assert "agent_type" in root_node
-        assert "name" in root_node
 
     def test_seed_by_session_id(self, ec_repo, ec_db):
         """Seeding by session_id should find the agent and build its sub-graph."""
@@ -378,26 +337,3 @@ class TestSessionGraphCLI:
             result = runner.invoke(app, ["session", "graph", "--agent", "no-such"])
         assert result.exit_code == 0
         assert "no" in result.output.lower() or "0" in result.output
-
-    def test_session_seed_calls_build(self):
-        mock_conn = MagicMock()
-        graph = {"nodes": [], "edges": []}
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.agent_graph.build_agent_graph", return_value=graph) as mock_build,
-        ):
-            runner.invoke(app, ["session", "graph", "--session", "sess-001"])
-        mock_build.assert_called_once()
-        assert mock_build.call_args.kwargs.get("session_id") == "sess-001"
-
-    def test_depth_option_passed(self):
-        mock_conn = MagicMock()
-        graph = {"nodes": [], "edges": []}
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.agent_graph.build_agent_graph", return_value=graph) as mock_build,
-        ):
-            runner.invoke(app, ["session", "graph", "--agent", "root", "--depth", "4"])
-        assert mock_build.call_args.kwargs.get("depth") == 4

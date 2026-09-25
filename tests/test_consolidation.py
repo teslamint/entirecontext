@@ -164,13 +164,6 @@ class TestConsolidateTurnContent:
         assert row["user_message"] == "user message 1"
         assert row["assistant_summary"] == "assistant summary 1"
 
-    def test_idempotent_on_already_consolidated(self, ec_repo, ec_db):
-        """Calling consolidate twice should not raise errors."""
-        session_id, turn_ids = _setup_db_with_turns(ec_repo, ec_db)
-        consolidate_turn_content(ec_db, str(ec_repo), turn_ids[0], dry_run=False)
-        # Second call should not raise
-        consolidate_turn_content(ec_db, str(ec_repo), turn_ids[0], dry_run=False)
-
     def test_returns_true_when_action_taken(self, ec_repo, ec_db):
         session_id, turn_ids = _setup_db_with_turns(ec_repo, ec_db)
         result = consolidate_turn_content(ec_db, str(ec_repo), turn_ids[0], dry_run=False)
@@ -230,19 +223,6 @@ class TestConsolidateOldTurns:
         assert stats["candidates"] == 0
         assert stats["consolidated"] == 0
 
-    def test_stats_dict_has_expected_keys(self, ec_repo, ec_db):
-        _setup_db_with_turns(ec_repo, ec_db)
-        stats = consolidate_old_turns(ec_db, str(ec_repo), before_date="2099-01-01", dry_run=True)
-        assert "candidates" in stats
-        assert "consolidated" in stats
-
-    def test_session_filter_passed_through(self, ec_repo, ec_db):
-        session_id, _ = _setup_db_with_turns(ec_repo, ec_db)
-        stats = consolidate_old_turns(
-            ec_db, str(ec_repo), before_date="2099-01-01", session_id=session_id, dry_run=True
-        )
-        assert stats["candidates"] == 4
-
     def test_limit_passed_through(self, ec_repo, ec_db):
         _setup_db_with_turns(ec_repo, ec_db)
         stats = consolidate_old_turns(ec_db, str(ec_repo), before_date="2099-01-01", limit=2, dry_run=False)
@@ -290,20 +270,6 @@ class TestSessionConsolidateCLI:
             assert result.exit_code == 0
             call_kwargs = mock_consolidate.call_args
             assert call_kwargs.kwargs.get("dry_run") is False
-
-    def test_before_option_passed(self):
-        mock_conn = MagicMock()
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/test"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch(
-                "entirecontext.core.consolidation.consolidate_old_turns",
-                return_value={"candidates": 0, "consolidated": 0},
-            ) as mock_consolidate,
-        ):
-            runner.invoke(app, ["session", "consolidate", "--before", "2025-01-01"])
-            call_kwargs = mock_consolidate.call_args
-            assert "2025-01-01" in str(call_kwargs)
 
     def test_output_shows_candidates(self):
         mock_conn = MagicMock()

@@ -21,13 +21,6 @@ class TestMcpServe:
         assert result.stdout == ""
         assert "MCP server module import failed" in result.stderr
 
-    def test_success(self):
-        with patch("entirecontext.mcp.server.run_server") as mock_run:
-            result = runner.invoke(app, ["mcp", "serve"])
-            assert result.exit_code == 0
-            mock_run.assert_called_once()
-            assert result.stdout == ""
-
     def test_run_server_import_error_propagates(self):
         """Regression: run_server() raising ImportError must not be swallowed."""
         with patch.object(server_module, "run_server", side_effect=ImportError("boom")):

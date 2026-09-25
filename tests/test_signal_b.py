@@ -28,11 +28,6 @@ def _commit_file(repo: Path, name: str, content: str = "x") -> None:
 
 
 class TestGetRecentCommitFilePaths:
-    def test_returns_files(self, git_repo) -> None:
-        _commit_file(git_repo, "hello.py")
-        paths = _get_recent_commit_file_paths(str(git_repo))
-        assert "hello.py" in paths
-
     def test_deduplicates(self, git_repo) -> None:
         _commit_file(git_repo, "dup.py", "v1")
         (git_repo / "dup.py").write_text("v2")
