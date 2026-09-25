@@ -450,4 +450,4 @@ def test_cli_reports_error_for_non_worktree(ec_repo):
     result = runner.invoke(ec_app, ["project", "merge-worktree", str(ec_repo)])
 
     assert result.exit_code == 1
-    assert "not a linked Git worktree" in result.output
+    assert "not a linked Git worktree" in " ".join(result.output.split())

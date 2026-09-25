@@ -18,6 +18,7 @@ import sqlite3
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from .decision_verify import _get_source_schema_version, open_source_db_readonly
 from .project import ensure_project, legacy_worktree_db_path
@@ -96,11 +97,11 @@ class MergeReport:
     applied: bool = False
     inserted: dict[str, int] = field(default_factory=dict)
     identical: dict[str, int] = field(default_factory=dict)
-    divergent: list[dict] = field(default_factory=list)
-    collisions: list[dict] = field(default_factory=list)
+    divergent: list[dict[str, Any]] = field(default_factory=list)
+    collisions: list[dict[str, Any]] = field(default_factory=list)
     skipped_tables: list[str] = field(default_factory=list)
     content: dict[str, int] = field(default_factory=dict)
-    content_issues: list[dict] = field(default_factory=list)
+    content_issues: list[dict[str, Any]] = field(default_factory=list)
     source_backup: str | None = None
     target_backup: str | None = None
     repo_index_removed: int = 0
@@ -109,7 +110,7 @@ class MergeReport:
     def inserted_total(self) -> int:
         return sum(self.inserted.values())
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["inserted_total"] = self.inserted_total
         return data
@@ -266,6 +267,7 @@ def _copy_content(items: list[_ContentItem]) -> None:
     for item in items:
         if item.status not in ("copy", "copy_unverified"):
             continue
+        assert item.src_path is not None and item.dest is not None
         item.dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = item.dest.with_name(item.dest.name + ".merge-tmp")
         shutil.copy2(item.src_path, tmp)
@@ -337,7 +339,7 @@ def _merge_table(
     target: sqlite3.Connection,
     table: str,
     report: MergeReport,
-    overrides: dict,
+    overrides: dict[str, Any],
     roots: RepoRoots,
     content: dict[str, _ContentItem],
     apply: bool,
@@ -353,7 +355,7 @@ def _merge_table(
     self_ref = _SELF_REFS.get(table)
     pk_where = " AND ".join(f"{c} = ?" for c in pk)
     insert_sql = f"INSERT INTO {table} ({', '.join(insert_cols)}) VALUES ({', '.join('?' for _ in insert_cols)})"
-    deferred: list[tuple] = []
+    deferred: list[tuple[Any, tuple[Any, ...]]] = []
 
     inserted = identical = 0
     for row in source.execute(f"SELECT {', '.join(cols)} FROM {table}"):  # noqa: S608
@@ -407,7 +409,7 @@ def _merge_table(
         report.identical[table] = identical
 
 
-def _key(pk: list[str], key: tuple) -> dict:
+def _key(pk: list[str], key: tuple[Any, ...]) -> dict[str, Any]:
     return dict(zip(pk, key))
 
 
