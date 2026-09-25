@@ -94,6 +94,10 @@ Principles for automated code review (CI and agent review alike). These guide th
 - After first plausible issue, check second-order failures: empty-state handling, retries, stale state, rollback paths
 - Verify contract consistency: if CLAUDE.md, docstrings, or specs state X, code must match
 
+### Documentation Style
+- Changed English prose in living docs must follow ASD-STE100; `AGENTS.md` "Documentation Style" defines the scope and rules
+- Flag violations as Suggestion; do not flag historical records such as dated specs, plans, retros, or accepted ADRs
+
 ### False Positive Avoidance
 - Do not flag pre-existing issues unrelated to the change
 - Do not flag issues ruff, pytest, or other configured CI steps already enforce
