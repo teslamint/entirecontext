@@ -229,3 +229,26 @@ def test_fs_resolver_prefers_main_db_over_legacy(legacy_worktree_db, isolated_gl
 
     assert roots is not None
     assert roots.project_root == str(main)
+
+
+def test_fs_resolver_rejects_gitdir_without_back_pointer(tmp_path, git_repo):
+    wt = tmp_path / "wt"
+    _git("-C", str(git_repo), "worktree", "add", "-q", str(wt), "-b", "spoof")
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / ".git").write_text(f"gitdir: {git_repo / '.git' / 'worktrees' / 'wt'}\n", encoding="utf-8")
+
+    assert roots_for_workspace(wt).is_linked_worktree is True
+    spoofed = roots_for_workspace(other)
+    assert spoofed.project_root == str(other)
+    assert spoofed.is_linked_worktree is False
+
+
+def test_fs_resolver_rejects_non_worktree_gitdir(tmp_path, git_repo):
+    other = tmp_path / "other"
+    other.mkdir()
+    (other / ".git").write_text(f"gitdir: {git_repo / '.git'}\n", encoding="utf-8")
+
+    roots = roots_for_workspace(other)
+    assert roots.project_root == str(other)
+    assert roots.git_common_dir is None

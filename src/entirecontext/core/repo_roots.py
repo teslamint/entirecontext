@@ -155,16 +155,36 @@ def resolve_repo_roots(path: str | Path = ".") -> RepoRoots | None:
 
 
 def _read_gitdir_file(dot_git: Path) -> Path | None:
+    """Return the linked-worktree git dir named by a ``.git`` file, or None.
+
+    The pointer is only trusted when it has the ``<main>/.git/worktrees/<name>``
+    shape and that directory's ``gitdir`` back-pointer names this ``.git`` file
+    (the same consistency check Git applies). Other ``.git`` files (submodules,
+    ``--separate-git-dir``) fall back to per-checkout roots.
+    """
     try:
         text = dot_git.read_text(encoding="utf-8").strip()
     except OSError:
         return None
     if not text.startswith("gitdir:"):
         return None
-    raw = Path(text[len("gitdir:") :].strip())
-    if not raw.is_absolute():
-        raw = dot_git.parent / raw
-    return raw.resolve()
+    pointer = text[len("gitdir:") :].strip()
+    if not pointer or "\0" in pointer:
+        return None
+    candidate = Path(os.path.normpath(os.path.join(dot_git.parent, pointer)))
+    if candidate.parent.name != "worktrees" or candidate.parent.parent.name != ".git":
+        return None
+    try:
+        back = (candidate / "gitdir").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    back_path = Path(os.path.normpath(os.path.join(candidate, back)))
+    try:
+        if not os.path.samefile(back_path, dot_git):
+            return None
+    except OSError:
+        return None
+    return candidate.resolve()
 
 
 def _git_dirs_for_checkout(workspace: Path) -> tuple[Path, Path] | None:
@@ -178,18 +198,7 @@ def _git_dirs_for_checkout(workspace: Path) -> tuple[Path, Path] | None:
     gitdir = _read_gitdir_file(dot_git)
     if gitdir is None:
         return None
-    common = gitdir
-    commondir_file = gitdir / "commondir"
-    try:
-        rel = commondir_file.read_text(encoding="utf-8").strip()
-    except OSError:
-        rel = ""
-    if rel:
-        candidate = Path(rel)
-        if not candidate.is_absolute():
-            candidate = gitdir / candidate
-        common = candidate.resolve()
-    return common, gitdir
+    return gitdir.parent.parent, gitdir
 
 
 def roots_for_workspace(workspace_root: str | Path) -> RepoRoots:
