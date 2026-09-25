@@ -631,8 +631,8 @@ def _legacy_worktree_db_message(legacy: dict) -> str:
         f"Legacy per-worktree database found at {legacy['path']}{detail}. "
         "It was left untouched and is no longer used; this worktree now shares the logical project's database. "
         "Decisions referenced in docs (docs/adr, docs/specs, docs/plans, ROADMAP.md) can be copied with "
-        "'ec decision verify-docs --promote-from <path>'; other sessions and decisions stay only in that file "
-        "until the tracked worktree merge command exists."
+        "'ec decision verify-docs --promote-from <path>'; to merge all sessions, turns and decisions, run "
+        "'ec project merge-worktree <worktree>' (dry run) and then add '--apply'."
     )
 
 
@@ -1288,7 +1288,71 @@ def doctor(
         console.print("[green]All checks passed.[/green]")
 
 
+project_app = typer.Typer(help="Logical project maintenance")
+
+
+@project_app.command("merge-worktree")
+def merge_worktree_cmd(
+    path: str = typer.Argument(..., help="Linked worktree path, or its legacy .entirecontext/db/local.db"),
+    apply: bool = typer.Option(False, "--apply", help="Write the merge (default: dry run)"),
+    json_output: bool = typer.Option(False, "--json", help="Print the report as JSON"),
+):
+    """Merge a legacy per-worktree database into the logical project's database."""
+    from ..core.worktree_merge import WorktreeMergeError, merge_worktree
+
+    try:
+        report = merge_worktree(path, apply=apply)
+    except WorktreeMergeError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1)
+
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2))
+        return
+    _print_merge_report(report)
+
+
+def _print_merge_report(report) -> None:
+    from ..core.worktree_merge import UNLINKED_CONTENT
+
+    mode = "Applied" if report.applied else "Dry run"
+    console.print(f"[bold]{mode}:[/bold] {report.source_db} -> {report.project_root}")
+    console.print(f"Source schema: v{report.source_version}")
+    table = Table(title="Rows")
+    table.add_column("Table")
+    table.add_column("New", justify="right")
+    table.add_column("Identical", justify="right")
+    for name in sorted(set(report.inserted) | set(report.identical)):
+        table.add_row(name, str(report.inserted.get(name, 0)), str(report.identical.get(name, 0)))
+    console.print(table)
+    verb = "Inserted" if report.applied else "Would insert"
+    console.print(f"{verb} {report.inserted_total} rows")
+    if report.content:
+        console.print("Content files: " + ", ".join(f"{k}={v}" for k, v in sorted(report.content.items())))
+    for issue in report.content_issues:
+        note = "; row not merged" if issue["status"] in UNLINKED_CONTENT else ""
+        console.print(
+            f"[yellow]content {issue['status']}:[/yellow] {issue['content_path']} (turn {issue['turn_id']}{note})"
+        )
+    for item in report.divergent:
+        console.print(
+            f"[yellow]divergent[/yellow] {item['table']} {item['key']}: {', '.join(item['columns'])} (kept canonical)"
+        )
+    for item in report.collisions:
+        console.print(f"[yellow]collision[/yellow] {item['table']} {item['key']}: {item['error']} (skipped)")
+    if report.skipped_tables:
+        console.print("Not merged (per-database state): " + ", ".join(report.skipped_tables))
+    if report.applied:
+        console.print(f"Source backup: {report.source_backup}")
+        console.print(f"Canonical backup: {report.target_backup}")
+        console.print(f"Removed {report.repo_index_removed} stale global index row(s)")
+        console.print("The source database was left in place; delete it yourself once you have checked the result.")
+    else:
+        console.print("Nothing was written. Re-run with --apply to merge.")
+
+
 def register(app: typer.Typer) -> None:
+    app.add_typer(project_app, name="project")
     app.command()(init)
     app.command()(enable)
     app.command()(disable)

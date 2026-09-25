@@ -133,6 +133,7 @@ The project command surface is registered in `src/entirecontext/cli/project_cmds
 - `ec status` — show the logical project (name, project root, git common dir), the active workspace (checkout, branch, linked-worktree marker), and capture/session status, including the sessions recorded in the current workspace.
 - `ec config` — read or write configuration values.
 - `ec doctor` — inspect installation and integration health.
+- `ec project merge-worktree <path> [--apply]` — merge a legacy per-worktree database into the logical project's database (dry run by default).
 
 Enable/disable commands can modify local hook files or local agent configuration. Review their output before assuming capture is active.
 
@@ -178,7 +179,7 @@ Limitations and setup notes:
 
 - Claude Code hooks live in each checkout's `.claude/settings.local.json`, so run `ec enable` once per worktree. `ec doctor` points this out.
 - Bare repositories with worktrees, `--separate-git-dir` checkouts and submodules keep one project per checkout.
-- A `.entirecontext/db/local.db` created inside a linked worktree by an earlier version is a legacy worktree DB. `ec status`, `ec init` and `ec doctor` report its path and read-only session and decision counts; it is never modified or used. `ec decision verify-docs --promote-from <path>` copies only the decisions referenced in `docs/adr`, `docs/specs`, `docs/plans` and `ROADMAP.md` (a pre-v21 source DB is accepted as is); the rest of that DB stays unmerged until the planned merge command exists.
+- A `.entirecontext/db/local.db` created inside a linked worktree by an earlier version is a legacy worktree DB. `ec status`, `ec init` and `ec doctor` report its path and read-only session and decision counts; it is never modified or used. `ec decision verify-docs --promote-from <path>` copies only the decisions referenced in `docs/adr`, `docs/specs`, `docs/plans` and `ROADMAP.md` (a pre-v21 source DB is accepted as is); `ec project merge-worktree <worktree>` merges the whole DB: it is a dry run by default, and `--apply` backs up both databases, copies content files with an md5 check and reports divergent or colliding rows instead of overwriting them.
 - Re-run `ec enable` after upgrading so `~/.claude/hooks/ec-inject.sh` also injects guidance in linked worktrees.
 
 ## 4. Agent Integration Guide
@@ -794,7 +795,7 @@ Version and schema drift have been a repeated risk. When releasing or changing s
 | Product wedge and loop | Decision memory for coding agents; capture/distill/retrieve/intervene spine | `README.md`, `ROADMAP.md`, decision `629f4a79-61b5-46d5-8a22-8311bb83d1ae`. |
 | Version/runtime snapshot | Version 0.9.3, Python 3.12+, schema v14 | `pyproject.toml`, `src/entirecontext/__init__.py`, `src/entirecontext/db/schema.py`, `.github/workflows/ci.yml`. |
 | CLI registration | Root Typer app and command modules | `src/entirecontext/cli/__init__.py`, `src/entirecontext/cli/*_cmds.py`. |
-| Project setup commands | init/enable/disable/status/config/doctor | `src/entirecontext/cli/project_cmds.py`, `README.md`. |
+| Project setup commands | init/enable/disable/status/config/doctor/project merge-worktree | `src/entirecontext/cli/project_cmds.py`, `README.md`. |
 | MCP tool surface | 29 exported `ec_*` tools grouped by workflow | `src/entirecontext/mcp/server.py`, `src/entirecontext/mcp/tools/*.py`, `tests/test_contract_sync.py`, `README.md`. |
 | Hook lifecycle | SessionStart, UserPromptSubmit, Stop, PostToolUse, SessionEnd, PostCommit | `src/entirecontext/hooks/handler.py`, `session_lifecycle.py`, `turn_capture.py`, `decision_hooks.py`, `README.md`. |
 | Data model | Schema v14, table groups, FTS, candidates, retrieval telemetry | `src/entirecontext/db/schema.py`, `docs/spec.md`. |

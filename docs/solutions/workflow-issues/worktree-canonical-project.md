@@ -53,7 +53,9 @@ Entry points:
 
 ### Legacy per-worktree databases
 
-Databases created inside linked worktrees before v21 are detected and reported read-only (`mode=ro`) by `ec status`, `ec init` and `ec doctor`. They are never opened read-write, merged, copied or symlinked. Until a merge command exists, `ec decision verify-docs --promote-from <path>` copies only the decisions referenced in `docs/adr`, `docs/specs`, `docs/plans` and `ROADMAP.md`; it accepts a v20 source without migrating it, because v21 changed none of the promoted tables.
+Databases created inside linked worktrees before v21 are detected and reported read-only (`mode=ro`) by `ec status`, `ec init` and `ec doctor`. They are never opened read-write, copied in place or symlinked. `ec decision verify-docs --promote-from <path>` copies only the decisions referenced in `docs/adr`, `docs/specs`, `docs/plans` and `ROADMAP.md`; it accepts a v20 source without migrating it, because v21 changed none of the promoted tables.
+
+`ec project merge-worktree <path>` merges the whole database. It opens the source read-only, accepts v20 and v21, and is a dry run unless `--apply` is given. The dry run executes the row merge in a rolled-back transaction, so its report matches the apply. `--apply` writes SQLite backup-API snapshots of both databases to `.entirecontext/backups/`, copies content files with an md5 check, and inserts rows in one transaction. Inserts omit `rowid`, so the FTS triggers index each row under a new canonical rowid. Same-id rows with different values are reported as divergent and keep the canonical values. The stale global `repo_index` row is removed only after the commit. The source file stays in place for the user to delete.
 
 ### Prevention checklist
 
