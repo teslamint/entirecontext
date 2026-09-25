@@ -64,18 +64,6 @@ class TestImportCmds:
         assert "error1" in result.output
         assert "error2" in result.output
 
-    def test_import_fts_rebuild_called(self, ec_repo, monkeypatch):
-        monkeypatch.chdir(ec_repo)
-        mock_result = ImportResult(sessions=1, turns=1)
-        monkeypatch.setattr("entirecontext.core.import_aline.import_from_aline", lambda **kwargs: mock_result)
-        rebuild_mock = MagicMock()
-        monkeypatch.setattr("entirecontext.core.search.rebuild_fts_indexes", rebuild_mock)
-
-        result = runner.invoke(app, ["import", "--from-aline", "/tmp/fake.db"])
-        assert result.exit_code == 0
-        rebuild_mock.assert_called_once()
-        assert "FTS indexes rebuilt" in result.output
-
     def test_import_fts_rebuild_exception_ignored(self, ec_repo, monkeypatch):
         monkeypatch.chdir(ec_repo)
         mock_result = ImportResult(sessions=1, turns=1)

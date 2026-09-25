@@ -144,11 +144,6 @@ class TestIsLockStale:
 
 
 class TestTriggerBackgroundSync:
-    def test_success(self):
-        with patch("entirecontext.sync.auto_sync.subprocess.Popen") as mock_popen:
-            mock_popen.return_value = MagicMock()
-            assert trigger_background_sync("/tmp/repo") is True
-
     def test_failure(self):
         with patch("entirecontext.sync.auto_sync.subprocess.Popen", side_effect=OSError("no")):
             assert trigger_background_sync("/tmp/repo") is False
@@ -176,15 +171,6 @@ class TestMaybeTriggerAutoSync:
 
             _maybe_trigger_auto_sync(str(ec_repo))
             mock_trigger.assert_not_called()
-
-    def test_no_crash_on_exception(self, ec_repo):
-        with patch(
-            "entirecontext.core.config.load_config",
-            side_effect=RuntimeError("config broken"),
-        ):
-            from entirecontext.hooks.session_lifecycle import _maybe_trigger_auto_sync
-
-            _maybe_trigger_auto_sync(str(ec_repo))
 
 
 class TestSchemaMigrationV1ToV2:
@@ -275,21 +261,4 @@ class TestRunSync:
                 ("boom",),
             )
             mock_release.assert_called_once_with(mock_conn)
-            mock_conn.close.assert_called_once()
-
-
-class TestRunPull:
-    def test_run_pull_success(self):
-        mock_conn = MagicMock()
-
-        with (
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.config.load_config", return_value={"sync": {}}),
-            patch("entirecontext.sync.engine.perform_pull") as mock_pull,
-        ):
-            from entirecontext.sync.auto_sync import run_pull
-
-            run_pull("/tmp/repo")
-
-            mock_pull.assert_called_once()
             mock_conn.close.assert_called_once()

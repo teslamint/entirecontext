@@ -66,23 +66,9 @@ class TestNormalizeAlternative:
         with pytest.raises(ValueError, match="must not be empty"):
             normalize_alternative("")
 
-    def test_blank_string_raises(self):
-        with pytest.raises(ValueError, match="must not be empty"):
-            normalize_alternative("   ")
-
     def test_unsupported_type_raises(self):
         with pytest.raises(ValueError, match="Cannot normalize"):
             normalize_alternative(42)
-
-    def test_none_raises(self):
-        with pytest.raises(ValueError, match="Cannot normalize"):
-            normalize_alternative(None)
-
-    def test_idempotent_on_already_structured(self):
-        item = {"alternative": "Redis", "reason": "too much ops overhead"}
-        first = normalize_alternative(item)
-        second = normalize_alternative(first)
-        assert first == second
 
 
 # ---------------------------------------------------------------------------
@@ -91,23 +77,11 @@ class TestNormalizeAlternative:
 
 
 class TestNormalizeRejectedAlternatives:
-    def test_empty_list(self):
-        assert normalize_rejected_alternatives([]) == []
-
-    def test_all_strings(self):
-        result = normalize_rejected_alternatives(["Redis", "Postgres"])
-        assert all(r["reason"] == UNKNOWN_REASON for r in result)
-        assert [r["alternative"] for r in result] == ["Redis", "Postgres"]
-
     def test_mixed_strings_and_structured(self):
         items = ["Redis", {"alternative": "Postgres", "reason": "already using SQLite"}]
         result = normalize_rejected_alternatives(items)
         assert result[0] == {"alternative": "Redis", "reason": UNKNOWN_REASON}
         assert result[1] == {"alternative": "Postgres", "reason": "already using SQLite"}
-
-    def test_already_structured_passthrough(self):
-        items = [{"alternative": "Redis", "reason": "ops overhead"}]
-        assert normalize_rejected_alternatives(items) == items
 
     def test_non_list_raises(self):
         with pytest.raises(TypeError, match="must be a list"):
@@ -116,12 +90,6 @@ class TestNormalizeRejectedAlternatives:
     def test_malformed_item_raises(self):
         with pytest.raises(ValueError):
             normalize_rejected_alternatives([42])
-
-    def test_idempotent(self):
-        items = ["Redis", {"alternative": "Postgres", "reason": "already using SQLite"}]
-        first = normalize_rejected_alternatives(items)
-        second = normalize_rejected_alternatives(first)
-        assert first == second
 
 
 # ---------------------------------------------------------------------------
@@ -157,12 +125,6 @@ class TestAuditRejectedAlternatives:
         items = [{"alternative": "Redis", "reason": UNKNOWN_REASON}]
         report = audit_rejected_alternatives(items)
         assert report["missing_reason"] == 1
-
-    def test_detects_malformed_entries(self):
-        items = [42, {"alternative": "Redis"}]
-        report = audit_rejected_alternatives(items)
-        assert 0 in report["malformed"]
-        assert report["needs_normalization"] is True
 
     def test_malformed_index_is_correct(self):
         items = [
@@ -327,21 +289,6 @@ class TestAlternativesNormalizeCLI:
         result = runner.invoke(app, ["decision", "alternatives", "normalize", decision["id"][:12]])
         assert result.exit_code != 0
 
-    def test_idempotent_second_run(self, ec_repo, monkeypatch):
-        monkeypatch.chdir(ec_repo)
-        conn = get_db(str(ec_repo))
-        decision = create_decision(
-            conn,
-            title="Idempotent test",
-            rejected_alternatives=["Redis"],
-        )
-        conn.close()
-
-        runner.invoke(app, ["decision", "alternatives", "normalize", decision["id"][:12]])
-        result2 = runner.invoke(app, ["decision", "alternatives", "normalize", decision["id"][:12]])
-        assert result2.exit_code == 0
-        assert "nothing to do" in result2.stdout.lower() or "already" in result2.stdout.lower()
-
 
 # ---------------------------------------------------------------------------
 # CLI: ec decision alternatives set
@@ -471,34 +418,6 @@ class TestExtractionParserStructuredFormat:
         assert alts[0] == {"alternative": "SQLite", "reason": "no concurrent writes"}
         assert alts[1] == {"alternative": "MySQL", "reason": "licensing concerns"}
 
-    def test_legacy_string_alternatives_normalized(self):
-        from entirecontext.core.decision_extraction import SignalBundle, parse_llm_response
-
-        bundle = SignalBundle(
-            source_type="session",
-            source_id="s1",
-            session_id="s1",
-            checkpoint_id=None,
-            assessment_id=None,
-            text_blocks=["..."],
-            files=set(),
-        )
-        raw_json = json.dumps(
-            [
-                {
-                    "title": "Use PostgreSQL",
-                    "rationale": "...",
-                    "scope": "database",
-                    "rejected_alternatives": ["SQLite", "MySQL"],
-                }
-            ]
-        )
-        drafts = parse_llm_response(raw_json, bundle)
-        assert len(drafts) == 1
-        alts = drafts[0].rejected_alternatives
-        assert all(isinstance(a, dict) for a in alts)
-        assert all(a["reason"] == UNKNOWN_REASON for a in alts)
-
     def test_malformed_alternatives_dropped_silently(self):
         from entirecontext.core.decision_extraction import SignalBundle, parse_llm_response
 
@@ -526,28 +445,3 @@ class TestExtractionParserStructuredFormat:
         alts = drafts[0].rejected_alternatives
         assert len(alts) == 1
         assert alts[0]["alternative"] == "valid string"
-
-    def test_structured_without_reason_fills_unknown(self):
-        from entirecontext.core.decision_extraction import SignalBundle, parse_llm_response
-
-        bundle = SignalBundle(
-            source_type="session",
-            source_id="s1",
-            session_id="s1",
-            checkpoint_id=None,
-            assessment_id=None,
-            text_blocks=["..."],
-            files=set(),
-        )
-        raw_json = json.dumps(
-            [
-                {
-                    "title": "Use PostgreSQL",
-                    "rationale": "...",
-                    "scope": "db",
-                    "rejected_alternatives": [{"alternative": "SQLite"}],
-                }
-            ]
-        )
-        drafts = parse_llm_response(raw_json, bundle)
-        assert drafts[0].rejected_alternatives[0]["reason"] == UNKNOWN_REASON

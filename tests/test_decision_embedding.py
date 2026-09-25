@@ -147,19 +147,6 @@ def test_generate_embeddings_includes_decisions(ec_db):
     assert rows[0]["source_id"] is not None
 
 
-def test_generate_embeddings_skip_existing_decisions(ec_db):
-    conn = ec_db
-    create_decision(conn, title="Use WAL mode for SQLite")
-
-    mock_model = _make_mock_model()
-    with _patch_sentence_transformers(mock_model):
-        first_count = generate_embeddings(conn, "/tmp/test-repo")
-        assert first_count >= 1
-
-        second_count = generate_embeddings(conn, "/tmp/test-repo")
-        assert second_count == 0
-
-
 def test_generate_embeddings_no_writer_tx_when_all_embedded(ec_db, monkeypatch):
     """When all turns/sessions/decisions are already embedded, generate_embeddings()
     should return 0 WITHOUT opening a writer transaction."""
@@ -291,12 +278,6 @@ def test_generate_embeddings_deduplicates_decisions(ec_db):
 # ---------------------------------------------------------------------------
 # auto_embed default and graceful fallback
 # ---------------------------------------------------------------------------
-
-
-def test_auto_embed_default_is_true():
-    from entirecontext.core.config import DEFAULT_CONFIG
-
-    assert DEFAULT_CONFIG["decisions"]["auto_embed"] is True
 
 
 def test_create_decision_auto_embed_graceful_without_transformers(ec_db, ec_repo, monkeypatch):

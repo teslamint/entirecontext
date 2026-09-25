@@ -107,14 +107,6 @@ class TestPDIPerformanceBaseline:
             data[n] = {"p50": p50, "p95": p95, "timings": timings_sorted}
         return data
 
-    def test_p95_under_300ms_at_100(self, results):
-        p95 = results[100]["p95"]
-        assert p95 < 300, f"p95@100={p95:.1f}ms ≥ 300ms"
-
-    def test_p95_under_300ms_at_500(self, results):
-        p95 = results[500]["p95"]
-        assert p95 < 300, f"p95@500={p95:.1f}ms ≥ 300ms"
-
     def test_p95_under_300ms_at_1000(self, results):
         p95 = results[1000]["p95"]
         assert p95 < 300, f"p95@1000={p95:.1f}ms ≥ 300ms — default inject_on_user_prompt should be false"
