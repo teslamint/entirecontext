@@ -3,7 +3,7 @@
   "checkpoint_id": "01M3BPRFE95WX2X5CC17D1FEKE",
   "strategy": "manual-commit",
   "branch": "docs/ste100-prose",
-  "checkpoints_count": 2,
+  "checkpoints_count": 3,
   "files_touched": [
     "README.md",
     "docs/entirecontext-project-manual.md",
@@ -24,6 +24,13 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": "/2/prompt.txt"
     }
   ],
   "token_usage": {
