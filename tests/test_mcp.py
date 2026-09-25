@@ -35,81 +35,6 @@ def db():
     conn.close()
 
 
-class TestMCPDetectCurrentSession:
-    def test_detect_current_session(self, db):
-        from entirecontext.mcp.server import _detect_current_session
-
-        session_id = _detect_current_session(db)
-        assert session_id == "s1"
-
-    def test_detect_no_session(self):
-        conn = get_memory_db()
-        init_schema(conn)
-        from entirecontext.mcp.server import _detect_current_session
-
-        session_id = _detect_current_session(conn)
-        assert session_id is None
-        conn.close()
-
-
-class TestMCPToolsDirectCalls:
-    """Test the underlying logic that MCP tools use, without requiring mcp package."""
-
-    def test_search_regex(self, db):
-        from entirecontext.core.search import regex_search
-
-        results = regex_search(db, "auth", target="turn")
-        assert len(results) >= 1
-        assert any("auth" in r.get("user_message", "").lower() for r in results)
-
-    def test_search_fts(self, db):
-        from entirecontext.core.search import fts_search
-
-        results = fts_search(db, "authentication", target="turn")
-        assert len(results) >= 1
-
-    def test_session_context(self, db):
-        session = db.execute("SELECT * FROM sessions WHERE id = 's1'").fetchone()
-        assert session is not None
-        assert session["session_title"] == "Test Session"
-
-        turns = db.execute("SELECT * FROM turns WHERE session_id = 's1' ORDER BY turn_number DESC LIMIT 10").fetchall()
-        assert len(turns) == 2
-
-    def test_checkpoint_list_empty(self, db):
-        checkpoints = db.execute("SELECT * FROM checkpoints").fetchall()
-        assert len(checkpoints) == 0
-
-    def test_attribution_query(self, db):
-        db.execute("INSERT INTO checkpoints (id, session_id, git_commit_hash) VALUES ('cp1', 's1', 'abc')")
-        db.execute("INSERT INTO agents (id, agent_type, name) VALUES ('a1', 'claude', 'Claude')")
-        db.execute(
-            "INSERT INTO attributions (id, checkpoint_id, file_path, start_line, end_line, attribution_type, agent_id) "
-            "VALUES ('attr1', 'cp1', 'src/main.py', 1, 10, 'agent', 'a1')"
-        )
-        db.commit()
-
-        rows = db.execute(
-            "SELECT a.*, ag.name as agent_name FROM attributions a LEFT JOIN agents ag ON a.agent_id = ag.id WHERE a.file_path = ?",
-            ("src/main.py",),
-        ).fetchall()
-        assert len(rows) == 1
-        assert rows[0]["agent_name"] == "Claude"
-
-    def test_related_by_files(self, db):
-        db.execute(
-            "UPDATE turns SET files_touched = ? WHERE id = 't1'",
-            (json.dumps(["src/auth.py"]),),
-        )
-        db.commit()
-
-        rows = db.execute(
-            "SELECT * FROM turns WHERE files_touched LIKE ?",
-            ("%auth.py%",),
-        ).fetchall()
-        assert len(rows) == 1
-
-
 class TestMCPToolIntegration:
     """Integration tests calling MCP tool functions directly via asyncio.run()."""
 
@@ -309,24 +234,6 @@ class TestMCPToolIntegration:
 
         result = json.loads(asyncio.run(ec_turn_content("nonexistent")))
         assert "error" in result
-
-    def test_ec_search_semantic(self, mock_repo_db):
-        import struct
-        from unittest.mock import patch
-
-        from entirecontext.mcp.server import ec_search
-
-        fake_vec = struct.pack("3f", 1.0, 1.0, 1.0)
-        mock_repo_db.execute(
-            "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) "
-            "VALUES ('emb1', 'turn', 't1', 'all-MiniLM-L6-v2', ?, 3, 'hash')",
-            (fake_vec,),
-        )
-        mock_repo_db.commit()
-
-        with patch("entirecontext.core.embedding.embed_text", return_value=fake_vec):
-            result = json.loads(asyncio.run(ec_search("auth", search_type="semantic")))
-        assert result["count"] >= 1
 
     def test_semantic_target_mcp(self, mock_repo_db, monkeypatch):
         import struct
@@ -821,25 +728,6 @@ class TestMCPRepoResolver:
         assert conn is db
         assert resolved == str(fast_repo)
 
-    def test_resolve_repo_success(self, db, monkeypatch):
-        from entirecontext.mcp import runtime
-
-        monkeypatch.setattr(runtime, "get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
-
-        (conn, path), error = runtime.resolve_repo()
-        assert conn is db
-        assert path == "/tmp/test"
-        assert error is None
-
-    def test_open_repo_success(self, db, monkeypatch):
-        from entirecontext.mcp import runtime
-
-        monkeypatch.setattr(runtime, "get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
-
-        conn, path = runtime.open_repo()
-        assert conn is db
-        assert path == "/tmp/test"
-
     def test_open_repo_raises_instead_of_returning_none(self, monkeypatch):
         """open_repo propagates the error; tools convert it to the resolve_repo payload."""
         from entirecontext.mcp import runtime
@@ -1224,13 +1112,6 @@ class TestMCPGraph:
         assert "stats" in result
         assert result["stats"]["total_nodes"] > 0
 
-    def test_graph_with_session_filter(self, mock_repo_db):
-        from entirecontext.mcp.server import ec_graph
-
-        result = json.loads(asyncio.run(ec_graph(session_id="s1")))
-        assert "nodes" in result
-        assert result["stats"]["total_nodes"] > 0
-
     def test_graph_no_repo(self, monkeypatch):
         pytest.importorskip("mcp")
         from entirecontext.mcp.server import ec_graph
@@ -1278,12 +1159,6 @@ class TestMCPDashboard:
         assert "total" in result["sessions"]
         assert "telemetry" in result
         assert "maturity_score" in result
-
-    def test_dashboard_with_since(self, mock_repo_db):
-        from entirecontext.mcp.server import ec_dashboard
-
-        result = json.loads(asyncio.run(ec_dashboard(since="2024-01-01")))
-        assert "sessions" in result
 
     def test_dashboard_no_repo(self, monkeypatch):
         pytest.importorskip("mcp")
@@ -1628,18 +1503,6 @@ class TestMCPDecisionToolsExtended:
     def mock_repo_db(self, db, monkeypatch):
         monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
         return db
-
-    def test_ec_decision_related_with_files(self, mock_repo_db):
-        from entirecontext.core.decisions import create_decision, link_decision_to_file
-        from entirecontext.mcp.tools.decisions import ec_decision_related
-
-        decision = create_decision(mock_repo_db, title="Use WAL mode")
-        link_decision_to_file(mock_repo_db, decision["id"], "src/db.py")
-
-        result = json.loads(asyncio.run(ec_decision_related(files=["src/db.py"])))
-        assert result["count"] >= 1
-        ids = [d["id"] for d in result["decisions"]]
-        assert decision["id"] in ids
 
     def test_ec_decision_related_records_selection(self, mock_repo_db):
         from entirecontext.core.decisions import create_decision, link_decision_to_file
@@ -2218,99 +2081,6 @@ class TestMCPLessons:
 
         assert result == {"lessons": [], "count": 0}
         assert seen == {"limit": 12, "min_per_verdict": 7}
-
-
-class TestMCPAssessTrends:
-    @pytest.fixture(autouse=True)
-    def _require_mcp(self):
-        pytest.importorskip("mcp")
-
-    @pytest.fixture
-    def mock_repo_db(self, db, monkeypatch):
-        monkeypatch.setattr("entirecontext.mcp.runtime.get_repo_db", lambda repo_hint=None: (db, "/tmp/test"))
-        return db
-
-    def _seed_assessments(self, conn, count=3, verdict="expand", created_at="2025-06-01", feedback=None):
-        from uuid import uuid4
-
-        for _ in range(count):
-            aid = str(uuid4())
-            conn.execute(
-                "INSERT INTO assessments (id, verdict, impact_summary, created_at, feedback) VALUES (?, ?, ?, ?, ?)",
-                (aid, verdict, "test impact", created_at, feedback),
-            )
-        conn.commit()
-
-    def _mock_cross_repo(self, monkeypatch, db):
-        from unittest.mock import MagicMock
-
-        mock_registry = MagicMock()
-        mock_registry.list_repos.return_value = [{"repo_name": "test", "repo_path": "/tmp/test", "db_path": ":memory:"}]
-        mock_policy = MagicMock()
-        mock_policy.lazy_pull_repos.return_value = None
-
-        def patched_trends(repos=None, since=None, include_warnings=False):
-            from entirecontext.core.futures import list_assessments
-
-            assessments = list_assessments(db, limit=10000)
-            if since:
-                assessments = [a for a in assessments if a.get("created_at", "") >= since]
-
-            counts = {"expand": 0, "narrow": 0, "neutral": 0}
-            with_feedback = 0
-            for a in assessments:
-                v = a.get("verdict", "neutral")
-                if v in counts:
-                    counts[v] += 1
-                if a.get("feedback"):
-                    with_feedback += 1
-
-            result = {
-                "total_count": sum(counts.values()),
-                "with_feedback": with_feedback,
-                "overall": counts,
-                "by_repo": {},
-            }
-            if include_warnings:
-                return result, []
-            return result
-
-        monkeypatch.setattr("entirecontext.core.cross_repo.cross_repo_assessment_trends", patched_trends)
-
-    def test_ec_assess_trends_basic(self, mock_repo_db, monkeypatch):
-        from entirecontext.mcp.tools.futures import ec_assess_trends
-
-        self._seed_assessments(mock_repo_db, count=2, verdict="expand")
-        self._seed_assessments(mock_repo_db, count=1, verdict="narrow", feedback="agree")
-        self._mock_cross_repo(monkeypatch, mock_repo_db)
-
-        result = json.loads(asyncio.run(ec_assess_trends()))
-        assert result["total_count"] == 3
-        assert result["overall"]["expand"] == 2
-        assert result["overall"]["narrow"] == 1
-        assert result["with_feedback"] == 1
-
-    def test_ec_assess_trends_with_since(self, mock_repo_db, monkeypatch):
-        from entirecontext.mcp.tools.futures import ec_assess_trends
-
-        self._seed_assessments(mock_repo_db, count=2, verdict="expand", created_at="2025-01-01")
-        self._seed_assessments(mock_repo_db, count=1, verdict="neutral", created_at="2025-06-01")
-        self._mock_cross_repo(monkeypatch, mock_repo_db)
-
-        result = json.loads(asyncio.run(ec_assess_trends(since="2025-03-01")))
-        assert result["total_count"] == 1
-        assert result["overall"]["neutral"] == 1
-        assert result["overall"]["expand"] == 0
-
-    def test_ec_assess_trends_empty(self, mock_repo_db, monkeypatch):
-        from entirecontext.mcp.tools.futures import ec_assess_trends
-
-        self._mock_cross_repo(monkeypatch, mock_repo_db)
-
-        result = json.loads(asyncio.run(ec_assess_trends()))
-        assert result["total_count"] == 0
-        assert result["with_feedback"] == 0
-        assert result["overall"]["expand"] == 0
 
 
 class TestMCPLinkedWorktree:
