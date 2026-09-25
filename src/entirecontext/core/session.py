@@ -18,6 +18,9 @@ def create_session(
     session_id: str | None = None,
     agent_id: str | None = None,
     workspace_path: str | None = None,
+    workspace_root: str | None = None,
+    worktree_git_dir: str | None = None,
+    git_branch: str | None = None,
 ) -> dict:
     """Create a new session."""
     if session_id is None:
@@ -26,9 +29,21 @@ def create_session(
 
     conn.execute(
         """INSERT INTO sessions
-        (id, project_id, agent_id, session_type, workspace_path, started_at, last_activity_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (session_id, project_id, agent_id, session_type, workspace_path, now, now),
+        (id, project_id, agent_id, session_type, workspace_path, workspace_root, worktree_git_dir, git_branch,
+         started_at, last_activity_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            session_id,
+            project_id,
+            agent_id,
+            session_type,
+            workspace_path,
+            workspace_root,
+            worktree_git_dir,
+            git_branch,
+            now,
+            now,
+        ),
     )
     return {"id": session_id, "project_id": project_id, "started_at": now}
 
@@ -44,8 +59,9 @@ def list_sessions(
     project_id: str | None = None,
     limit: int = 20,
     include_ended: bool = True,
+    workspace_root: str | None = None,
 ) -> list[dict]:
-    """List sessions, optionally filtered by project."""
+    """List sessions, optionally filtered by project or workspace root."""
     query = "SELECT * FROM sessions"
     params: list[Any] = []
     conditions = []
@@ -53,6 +69,10 @@ def list_sessions(
     if project_id:
         conditions.append("project_id = ?")
         params.append(project_id)
+    if workspace_root:
+        clause, clause_params = workspace_filter(workspace_root)
+        conditions.append(clause)
+        params.extend(clause_params)
     if not include_ended:
         conditions.append("ended_at IS NULL")
 
@@ -66,11 +86,45 @@ def list_sessions(
     return [dict(r) for r in rows]
 
 
-def get_current_session(conn) -> dict | None:
-    """Get the most recently active session."""
-    row = conn.execute(
-        "SELECT * FROM sessions WHERE ended_at IS NULL ORDER BY last_activity_at DESC LIMIT 1"
-    ).fetchone()
+def _is_linked_worktree(workspace_root: str) -> bool:
+    from .repo_roots import is_linked_worktree_root
+
+    try:
+        return is_linked_worktree_root(workspace_root)
+    except OSError:
+        return False
+
+
+def workspace_filter(workspace_root: str) -> tuple[str, tuple[str, ...]]:
+    """SQL condition for the sessions that belong to ``workspace_root``.
+
+    Pre-v21 rows have no workspace and were recorded in the project's own
+    checkout, so they belong to that checkout but never to a linked worktree.
+    """
+    if _is_linked_worktree(workspace_root):
+        return "workspace_root = ?", (workspace_root,)
+    return "(workspace_root = ? OR workspace_root IS NULL)", (workspace_root,)
+
+
+def get_current_session(conn, workspace_root: str | None = None) -> dict | None:
+    """Get the most recently active session.
+
+    With ``workspace_root``, sessions recorded for that workspace win. Legacy
+    rows without a workspace (pre-v21) predate shared worktree databases, so
+    they were recorded in the project's own checkout; they are the fallback
+    for that checkout but never for a linked worktree.
+    """
+    if workspace_root is None:
+        row = conn.execute(
+            "SELECT * FROM sessions WHERE ended_at IS NULL ORDER BY last_activity_at DESC LIMIT 1"
+        ).fetchone()
+    else:
+        clause, params = workspace_filter(workspace_root)
+        row = conn.execute(
+            f"SELECT * FROM sessions WHERE ended_at IS NULL AND {clause} "
+            "ORDER BY (workspace_root IS NULL), last_activity_at DESC LIMIT 1",
+            params,
+        ).fetchone()
     return dict(row) if row else None
 
 

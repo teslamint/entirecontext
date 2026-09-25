@@ -36,6 +36,7 @@ cli/             business    SQLite     Claude Code   shadow branch
   import_cmds    async_worker
   compact_cmds   compact
                  decision_file_lineage
+                 repo_roots
   mcp_cmds
   archaeology_cmds
 ```
@@ -46,9 +47,9 @@ cli/             business    SQLite     Claude Code   shadow branch
 
 **Per-repo DB**: `.entirecontext/db/local.db`
 **Global DB**: `~/.entirecontext/db/ec.db`
-**Schema version**: 20
+**Schema version**: 21
 
-Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state`, `decision_assessments`, `decision_outcomes`, `ranking_snapshots`, `archaeology_processed`
+Key tables: `projects`, `sessions`, `turns`, `turn_content`, `checkpoints`, `agents`, `events`, `assessments`, `assessment_relationships`, `attributions`, `embeddings`, `ast_symbols`, `sync_metadata`, `decisions`, `decision_candidates`, `decision_commits`, `decision_checkpoints`, `decision_files`, `decision_file_lineage`, `decision_file_lineage_suppressions`, `decision_file_lineage_state`, `decision_file_lineage_worktree_state`, `decision_assessments`, `decision_outcomes`, `ranking_snapshots`, `archaeology_processed`
 
 FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates` (auto-synced via triggers)
 
@@ -61,6 +62,8 @@ Claude Code hooks integration via stdin JSON protocol. Entry: `hooks/handler.py`
 5 hook types: `SessionStart`, `UserPromptSubmit`, `Stop`, `PostToolUse`, `SessionEnd`
 
 Decision-file rename synchronization runs only at `SessionStart`, before decision ranking. It preserves historical `decision_files` rows and additively materializes committed destinations; query paths and `PostToolUse` must not invoke Git.
+
+Git worktrees: all linked worktrees of a repository share one project root. `core/repo_roots.py` finds this root from the git common dir. The project root is the main worktree. Its `.entirecontext/` directory contains the DB, config, content and pid files. Git operations use the workspace root, which is the current checkout. The `PostToolUse` decision hook finds the roots with `resolve_repo_roots_fs` and does not run Git. `PostToolUse` turn capture runs one `git rev-parse`. `get_db` raises `LinkedWorktreeDatabaseError` for a linked-worktree root. See `docs/solutions/workflow-issues/worktree-canonical-project.md`.
 
 Return codes: 0=success, 2=block.
 

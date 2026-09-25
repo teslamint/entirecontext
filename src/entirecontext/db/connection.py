@@ -27,9 +27,33 @@ def _configure_connection(conn: sqlite3.Connection) -> None:
     conn.row_factory = sqlite3.Row
 
 
+class LinkedWorktreeDatabaseError(RuntimeError):
+    """Raised when a caller asks for a DB rooted at a linked Git worktree.
+
+    All linked worktrees share the main worktree's database; opening one at the
+    worktree path would silently fork the project's memory.
+    """
+
+
+def db_path_for(project_root: str | Path) -> Path:
+    """Return the per-repo database path under a canonical project root."""
+    return Path(project_root) / ".entirecontext" / "db" / "local.db"
+
+
 def get_db(repo_path: str | Path) -> sqlite3.Connection:
-    """Get a connection to the per-repo database."""
-    db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
+    """Get a connection to the per-repo database.
+
+    ``repo_path`` must be the canonical project root; a linked worktree root
+    raises ``LinkedWorktreeDatabaseError`` instead of creating a new DB there.
+    """
+    if (Path(repo_path) / ".git").is_file():
+        from ..core.repo_roots import is_linked_worktree_root
+
+        if is_linked_worktree_root(repo_path):
+            raise LinkedWorktreeDatabaseError(
+                f"{repo_path} is a linked Git worktree; open the database at its canonical project root instead"
+            )
+    db_path = db_path_for(repo_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path), factory=_ECConnection)
     _configure_connection(conn)

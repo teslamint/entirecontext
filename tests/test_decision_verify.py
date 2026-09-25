@@ -341,3 +341,82 @@ class TestVerifyDocsCLI:
         assert result.exit_code == 0
         assert "Promoted 1" in result.output
         assert "verified after promotion" in result.output
+
+
+def _write_v20_worktree_db(db_path: Path, decision_id: str) -> None:
+    """Build a real pre-v21 per-worktree DB: current schema with the v21 additions removed."""
+    from entirecontext.db.connection import _configure_connection, _ECConnection
+    from entirecontext.db.migration import init_schema
+
+    db_path.parent.mkdir(parents=True)
+    conn = sqlite3.connect(str(db_path), factory=_ECConnection)
+    _configure_connection(conn)
+    init_schema(conn)
+    conn.execute("DROP INDEX IF EXISTS idx_sessions_workspace")
+    for column in ("workspace_root", "worktree_git_dir", "git_branch"):
+        conn.execute(f"ALTER TABLE sessions DROP COLUMN {column}")
+    conn.execute("DROP INDEX IF EXISTS idx_projects_git_common_dir")
+    conn.execute("ALTER TABLE projects DROP COLUMN git_common_dir")
+    conn.execute("DROP TABLE decision_file_lineage_worktree_state")
+    conn.execute("DELETE FROM schema_version")
+    conn.execute("INSERT INTO schema_version (version, description) VALUES (20, 'v20')")
+    _insert_decision(conn, decision_id, "Worktree decision")
+    conn.execute("INSERT INTO decision_files (decision_id, file_path) VALUES (?, ?)", (decision_id, "src/wt.py"))
+    conn.commit()
+    conn.close()
+
+
+class TestPromoteFromLegacyWorktreeDB:
+    def test_promote_from_v20_worktree_db_into_v21_target(self, ec_worktree, monkeypatch, isolated_global_db):
+        import os
+
+        from typer.testing import CliRunner
+
+        from entirecontext.cli import app as ec_app
+        from entirecontext.db import get_db
+        from entirecontext.db.migration import get_current_version
+        from entirecontext.db.schema import SCHEMA_VERSION
+
+        main, linked = ec_worktree
+        legacy_db = linked / ".entirecontext" / "db" / "local.db"
+        _write_v20_worktree_db(legacy_db, SAMPLE_UUID_A)
+        source = open_source_db_readonly(legacy_db)
+        try:
+            assert get_current_version(source) == 20
+        finally:
+            source.close()
+        before = (legacy_db.read_bytes(), os.stat(legacy_db).st_mtime_ns)
+        _write_doc(linked, "docs/adr/0001.md", f"EC Decision: `{SAMPLE_UUID_A}`\n")
+        monkeypatch.chdir(linked)
+
+        result = CliRunner().invoke(ec_app, ["decision", "verify-docs", "--promote-from", str(legacy_db)])
+
+        assert "Promoted 1 decision" in result.output, result.output
+        assert (legacy_db.read_bytes(), os.stat(legacy_db).st_mtime_ns) == before
+        conn = get_db(str(main))
+        try:
+            assert get_current_version(conn) == SCHEMA_VERSION
+            assert conn.execute("SELECT title FROM decisions WHERE id = ?", (SAMPLE_UUID_A,)).fetchone()[0] == (
+                "Worktree decision"
+            )
+            files = conn.execute("SELECT file_path FROM decision_files WHERE decision_id = ?", (SAMPLE_UUID_A,))
+            assert [r[0] for r in files] == ["src/wt.py"]
+        finally:
+            conn.close()
+
+    def test_source_older_than_promote_floor_is_rejected(self, ec_repo, ec_db, tmp_path):
+        from entirecontext.db.schema import SCHEMA_VERSION
+
+        legacy_db = tmp_path / "old" / "local.db"
+        _write_v20_worktree_db(legacy_db, SAMPLE_UUID_A)
+        raw = sqlite3.connect(str(legacy_db))
+        raw.execute("UPDATE schema_version SET version = 19")
+        raw.commit()
+        raw.close()
+
+        source = open_source_db_readonly(legacy_db)
+        try:
+            with pytest.raises(ValueError, match="Schema version mismatch: source=19"):
+                promote_decisions(source, ec_db, [SAMPLE_UUID_A], target_schema_version=SCHEMA_VERSION)
+        finally:
+            source.close()

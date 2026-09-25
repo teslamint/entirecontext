@@ -112,12 +112,14 @@ def _cleanup_lesson_fallback(repo_path: str) -> None:
 def _surface_lessons_on_start(data: dict[str, Any]) -> None:
     """Surface relevant lessons at SessionStart. Never raises to caller."""
     from ..core.config import is_experiment_off, load_config
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
 
     cwd = data.get("cwd", ".")
-    repo_path = find_git_root(cwd)
-    if not repo_path:
+    roots = get_repo_roots(cwd)
+    if not roots:
         return
+    repo_path = roots.project_root
+    workspace_root = roots.workspace_root
 
     config = load_config(repo_path)
     if is_experiment_off(config.get("decisions", {})):
@@ -143,8 +145,8 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
     )
     from ..db import get_db
 
-    file_paths = _get_uncommitted_file_paths(repo_path)
-    commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
+    file_paths = _get_uncommitted_file_paths(workspace_root)
+    commit_file_paths = _get_recent_commit_file_paths(workspace_root, limit=5)
     seen = set(file_paths)
     for p in commit_file_paths:
         if p not in seen:
@@ -157,7 +159,7 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
 
         untracked = _sp.run(
             ["git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"],
-            cwd=repo_path,
+            cwd=workspace_root,
             capture_output=True,
             text=True,
             timeout=5,
@@ -173,7 +175,7 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
 
     conn = get_db(repo_path)
     try:
-        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=5, repo_path=repo_path)
+        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=5, repo_path=workspace_root)
         if not lessons:
             _cleanup_lesson_fallback(repo_path)
             return
@@ -237,17 +239,19 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
     import threading
 
     from ..core.project import find_git_root
+    from ..core.repo_roots import roots_for_workspace
     from .turn_capture import on_user_prompt
 
     cwd = data.get("cwd", ".")
     # Resolve git root once — pass to on_user_prompt to avoid a second probe.
-    repo_path = find_git_root(cwd)
+    workspace_root = find_git_root(cwd)
 
-    on_user_prompt(data, _resolved_repo_path=repo_path)
+    on_user_prompt(data, _resolved_repo_path=workspace_root)
 
     session_id = data.get("session_id")
-    if not session_id or not repo_path:
+    if not session_id or not workspace_root:
         return 0
+    repo_path = roots_for_workspace(workspace_root).project_root
 
     prompt_text = data.get("prompt", "")
 
@@ -293,7 +297,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                         pass
                 surfaced, _, snap_id = rank_decisions_for_prompt(
                     conn,
-                    repo_path=repo_path,
+                    repo_path=workspace_root,
                     prompt_text=prompt_text,
                     config=config,
                     capture_snapshots=capture_snapshots,
@@ -353,7 +357,9 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
             def _lesson_wrapper() -> None:
                 try:
                     _lesson_result.append(
-                        _rank_and_format_lessons_for_pdi(repo_path, session_id, config, remaining_tokens)
+                        _rank_and_format_lessons_for_pdi(
+                            repo_path, session_id, config, remaining_tokens, workspace_root=workspace_root
+                        )
                     )
                 except Exception:
                     _lesson_result.append(None)
@@ -454,9 +460,17 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _rank_and_format_lessons_for_pdi(
-    repo_path: str, session_id: str | None, config: dict, remaining_tokens: int
+    repo_path: str,
+    session_id: str | None,
+    config: dict,
+    remaining_tokens: int,
+    *,
+    workspace_root: str | None = None,
 ) -> tuple[str, list[dict]] | None:
     """Rank, trim, and format lessons for PDI. No telemetry writes.
+
+    ``repo_path`` is the canonical project root (DB); Git probes run in
+    ``workspace_root`` when given.
 
     Returns (markdown, surviving_lessons) or None. Telemetry is recorded
     by the caller only when the result is actually used — this prevents
@@ -464,6 +478,7 @@ def _rank_and_format_lessons_for_pdi(
     """
     if remaining_tokens < 100:
         return None
+    workspace_root = workspace_root or repo_path
 
     from ..core.decision_prompt_surfacing import (
         _get_recent_commit_file_paths,
@@ -472,8 +487,8 @@ def _rank_and_format_lessons_for_pdi(
     from ..core.lesson_surfacing import format_lesson_entry, rank_lessons_for_prompt
     from ..db import get_db
 
-    file_paths = _get_uncommitted_file_paths(repo_path)
-    commit_file_paths = _get_recent_commit_file_paths(repo_path, limit=5)
+    file_paths = _get_uncommitted_file_paths(workspace_root)
+    commit_file_paths = _get_recent_commit_file_paths(workspace_root, limit=5)
     seen = set(file_paths)
     for p in commit_file_paths:
         if p not in seen:
@@ -486,7 +501,7 @@ def _rank_and_format_lessons_for_pdi(
 
         untracked = _sp.run(
             ["git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard"],
-            cwd=repo_path,
+            cwd=workspace_root,
             capture_output=True,
             text=True,
             timeout=5,
@@ -502,7 +517,7 @@ def _rank_and_format_lessons_for_pdi(
 
     conn = get_db(repo_path)
     try:
-        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=3, repo_path=repo_path)
+        lessons = rank_lessons_for_prompt(conn, file_paths=file_paths, limit=3, repo_path=workspace_root)
         if not lessons:
             return None
 

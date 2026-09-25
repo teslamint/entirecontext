@@ -254,3 +254,25 @@ def test_sync_exports_backdated_records(tmp_path, isolated_global_db):
     finally:
         writer.close()
         conn.close()
+
+
+def test_perform_sync_from_linked_worktree_leaves_main_checkout_untouched(ec_worktree):
+    main, linked = ec_worktree
+    (main / "draft.txt").write_text("uncommitted main edit\n", encoding="utf-8")
+    status_before = _run_git(["-C", str(main), "status", "--porcelain"]).stdout
+    main_branch = _run_git(["-C", str(main), "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    conn = get_db(str(main))
+    try:
+        project_id = conn.execute("SELECT id FROM projects").fetchone()["id"]
+        create_session(conn, project_id, session_id="wt-sync", workspace_root=str(linked))
+
+        result = perform_sync(conn, str(main), {}, quiet=True, workspace_root=str(linked))
+    finally:
+        conn.close()
+
+    assert result["error"] is None
+    assert result["exported_sessions"] >= 1
+    assert _run_git(["-C", str(main), "status", "--porcelain"]).stdout == status_before
+    assert _run_git(["-C", str(main), "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip() == main_branch
+    assert _run_git(["-C", str(linked), "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip() == "wt"
+    assert _run_git(["-C", str(main), "rev-parse", "--verify", f"refs/heads/{SHADOW_BRANCH}"]).returncode == 0

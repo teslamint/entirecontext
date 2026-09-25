@@ -7,8 +7,10 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
-from uuid import uuid4
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from ..core.repo_roots import RepoRoots
 
 
 def _now_iso() -> str:
@@ -30,22 +32,12 @@ def _extract_cwd(payload: dict[str, Any]) -> str:
     return ""
 
 
-def _find_git_root(cwd: str) -> str | None:
+def _resolve_roots(cwd: str) -> RepoRoots | None:
     if not cwd:
         return None
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    return None
+    from ..core.project import get_repo_roots
+
+    return get_repo_roots(cwd)
 
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -135,19 +127,6 @@ def _extract_turns(records: list[dict[str, Any]]) -> list[dict[str, str]]:
             pending_user = None
 
     return turns
-
-
-def _ensure_project(conn, repo_path: str) -> str:
-    row = conn.execute("SELECT id FROM projects WHERE repo_path = ?", (repo_path,)).fetchone()
-    if row:
-        return row["id"]
-
-    project_id = str(uuid4())
-    conn.execute(
-        "INSERT INTO projects (id, name, repo_path) VALUES (?, ?, ?)",
-        (project_id, Path(repo_path).name, repo_path),
-    )
-    return project_id
 
 
 def _find_session_file(codex_home: Path, *, thread_id: str, cwd: str) -> Path | None:
@@ -264,13 +243,16 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
     """Ingest a Codex notify event into EntireContext DB."""
     thread_id = _extract_thread_id(payload)
     cwd = _extract_cwd(payload)
-    repo_path = _find_git_root(cwd)
-    if not repo_path:
+    roots = _resolve_roots(cwd)
+    if not roots:
         return
+    repo_path = roots.project_root
+    workspace_root = roots.workspace_root
 
-    _run_upstream_notify(repo_path, payload_text)
+    state_root = workspace_root if _is_repo_enabled(workspace_root) else repo_path
+    _run_upstream_notify(state_root, payload_text)
 
-    if not _is_repo_enabled(repo_path):
+    if not _is_repo_enabled(state_root):
         return
 
     codex_home = (
@@ -289,22 +271,34 @@ def ingest_codex_notify_event(payload: dict[str, Any], *, payload_text: str = ""
         return
 
     from ..db import check_and_migrate, get_db
+    from ..core.project import ensure_project
     from ..core.turn import create_turn, save_turn_content
 
     conn = get_db(repo_path)
     try:
         check_and_migrate(conn)
 
-        project_id = _ensure_project(conn, repo_path)
+        project_id = ensure_project(conn, roots)
         session_id = meta["session_id"]
         existing_session = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
         now = _now_iso()
         if not existing_session:
             conn.execute(
                 """INSERT INTO sessions
-                (id, project_id, session_type, workspace_path, started_at, last_activity_at)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                (session_id, project_id, "codex", meta.get("cwd") or cwd, meta.get("started_at") or now, now),
+                (id, project_id, session_type, workspace_path, workspace_root, worktree_git_dir, git_branch,
+                 started_at, last_activity_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    session_id,
+                    project_id,
+                    "codex",
+                    meta.get("cwd") or cwd,
+                    workspace_root,
+                    roots.worktree_git_dir,
+                    roots.branch,
+                    meta.get("started_at") or now,
+                    now,
+                ),
             )
 
         existing_turns = conn.execute("SELECT COUNT(*) FROM turns WHERE session_id = ?", (session_id,)).fetchone()[0]

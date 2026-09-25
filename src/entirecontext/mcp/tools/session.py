@@ -56,7 +56,7 @@ async def ec_session_context(
 
     try:
         if not session_id:
-            session_id = runtime.detect_current_session(conn)
+            session_id = runtime.detect_current_session(conn, repo_path)
         if not session_id:
             return runtime.error_payload("No active session found")
         session = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
@@ -263,14 +263,14 @@ async def ec_context_apply(
     turn_id: str | None = None,
 ) -> str:
     try:
-        conn, _ = runtime.open_repo()
+        conn, repo_path = runtime.open_repo()
     except runtime.RepoResolutionError as exc:
         return runtime.error_payload(str(exc))
 
     try:
-        from ...core.telemetry import detect_current_context, record_context_application
+        from ...core.telemetry import record_context_application
 
-        current_session_id, current_turn_id = detect_current_context(conn)
+        current_session_id, current_turn_id = runtime.detect_current_context(conn, repo_path)
         application = record_context_application(
             conn,
             application_type=application_type,

@@ -10,10 +10,10 @@ purge_app = typer.Typer(help="Purge turns, sessions, or matching content.")
 
 
 def _get_conn_and_repo():
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db, check_and_migrate
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         typer.echo("Error: not in an EntireContext-initialized repo", err=True)
         raise typer.Exit(1)

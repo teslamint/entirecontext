@@ -152,3 +152,54 @@ class TestSessionStartOrdering:
             assert _handle_session_start({"cwd": "/repo"}) == 0
 
         assert calls == ["session", "decisions", "lessons"]
+
+
+class TestLinkedWorktreeHandler:
+    def test_user_prompt_git_signals_come_from_linked_worktree(self, ec_worktree, monkeypatch):
+        from entirecontext.hooks.handler import handle_hook
+        from entirecontext.hooks.session_lifecycle import on_session_start
+
+        main, linked = ec_worktree
+        on_session_start({"session_id": "wt-prompt", "cwd": str(linked), "source": "startup"})
+        ranked_with: list[str] = []
+        probed: list[str] = []
+
+        def fake_rank(conn, *, repo_path, **_kwargs):
+            ranked_with.append(repo_path)
+            return [], [], None
+
+        def fake_uncommitted(repo_path):
+            probed.append(repo_path)
+            return []
+
+        monkeypatch.setattr("entirecontext.core.decision_prompt_surfacing.rank_decisions_for_prompt", fake_rank)
+        monkeypatch.setattr(
+            "entirecontext.core.decision_prompt_surfacing._get_uncommitted_file_paths", fake_uncommitted
+        )
+
+        handle_hook(
+            "UserPromptSubmit",
+            data={"session_id": "wt-prompt", "cwd": str(linked), "prompt": "refactor the parser"},
+        )
+
+        assert ranked_with == [str(linked)]
+        assert probed and set(probed) == {str(linked)}
+        assert not (linked / ".entirecontext").exists()
+
+    def test_session_start_lessons_probe_linked_worktree(self, ec_worktree, monkeypatch):
+        from entirecontext.hooks.handler import _surface_lessons_on_start
+
+        main, linked = ec_worktree
+        probed: list[str] = []
+
+        def fake_uncommitted(repo_path):
+            probed.append(repo_path)
+            return []
+
+        monkeypatch.setattr(
+            "entirecontext.core.decision_prompt_surfacing._get_uncommitted_file_paths", fake_uncommitted
+        )
+
+        _surface_lessons_on_start({"session_id": "wt-lessons", "cwd": str(linked), "source": "startup"})
+
+        assert probed == [str(linked)]

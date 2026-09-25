@@ -20,10 +20,10 @@ def graph_cmd(
     Displays a summary table of node/edge counts by type.
     """
     from ..core.knowledge_graph import build_knowledge_graph, get_graph_stats
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)

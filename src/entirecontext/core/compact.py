@@ -7,6 +7,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from ..db.connection import db_path_for
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,7 +78,7 @@ def measure_storage(repo_path: str) -> dict[str, int]:
     """Measure current storage usage for content files and DB."""
     base = Path(repo_path) / ".entirecontext"
     content_dir = base / "content"
-    db_path = base / "db" / "local.db"
+    db_path = db_path_for(repo_path)
 
     content_bytes = 0
     content_count = 0
@@ -125,7 +127,7 @@ def vacuum_db(repo_path: str) -> dict[str, int]:
     never propagate — VACUUM is a minor hygiene step and must not
     abort a successful compact run.
     """
-    db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
+    db_path = db_path_for(repo_path)
     if not db_path.exists():
         return {"db_before": 0, "db_after": 0}
 

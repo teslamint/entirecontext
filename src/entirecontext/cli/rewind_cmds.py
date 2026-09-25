@@ -15,10 +15,14 @@ def rewind(
     restore: bool = typer.Option(False, "--restore", help="Restore working tree to checkpoint state"),
     global_search: bool = typer.Option(False, "--global", "-g", help="Search across all registered repos"),
     repo: Optional[List[str]] = typer.Option(None, "--repo", "-r", help="Filter by repo name (repeatable)"),
+    force: bool = typer.Option(
+        False, "--force", help="Allow --restore of a checkpoint recorded in a different worktree checkout"
+    ),
 ):
     """Show or restore code state at a checkpoint.
 
     With --restore: requires clean working tree. Aborts if uncommitted changes exist.
+    Restores only the current worktree checkout.
     """
     is_cross_repo = global_search or repo
 
@@ -64,19 +68,21 @@ def rewind(
             console.print(f"[dim]{w}[/dim]")
         return
 
+    import os
     import subprocess
 
     from ..core.checkpoint import get_checkpoint
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
     from ..core.session import get_session
     from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    workspace_root = roots.workspace_root
 
-    conn = get_db(repo_path)
+    conn = get_db(roots.project_root)
     try:
         cp = get_checkpoint(conn, checkpoint_id)
 
@@ -118,13 +124,22 @@ def rewind(
                 console.print(f"  ... and {len(snapshot) - 20} more")
 
     if restore:
+        session_workspace = (session.get("workspace_root") or roots.project_root) if session else None
+        if session_workspace and os.path.realpath(session_workspace) != os.path.realpath(workspace_root):
+            console.print(
+                f"\n[yellow]Warning:[/yellow] checkpoint was recorded in worktree {session_workspace}, "
+                f"not the current checkout {workspace_root}."
+            )
+            if not force:
+                console.print("Re-run with --force to restore it into the current checkout.")
+                raise typer.Exit(1)
         try:
             result = subprocess.run(
                 ["git", "status", "--porcelain"],
                 capture_output=True,
                 text=True,
                 timeout=5,
-                cwd=repo_path,
+                cwd=workspace_root,
             )
             if result.stdout.strip():
                 console.print("\n[red]Working tree has uncommitted changes.[/red]")
@@ -140,7 +155,7 @@ def rewind(
         try:
             subprocess.run(
                 ["git", "checkout", commit_hash, "--", "."],
-                cwd=repo_path,
+                cwd=workspace_root,
                 capture_output=True,
                 text=True,
                 timeout=30,

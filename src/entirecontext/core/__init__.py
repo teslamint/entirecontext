@@ -1,6 +1,7 @@
 """Core business logic for EntireContext."""
 
-from .project import init_project, get_project, get_status, find_git_root
+from .project import init_project, get_project, get_status, find_git_root, find_project_root, get_repo_roots
+from .repo_roots import RepoRoots, resolve_repo_roots
 from .session import create_session, get_session, list_sessions, get_current_session
 from .turn import create_turn, get_turn, list_turns, content_hash
 from .search import regex_search, fts_search
@@ -13,6 +14,10 @@ __all__ = [
     "get_project",
     "get_status",
     "find_git_root",
+    "find_project_root",
+    "get_repo_roots",
+    "resolve_repo_roots",
+    "RepoRoots",
     "create_session",
     "get_session",
     "list_sessions",

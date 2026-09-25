@@ -31,10 +31,10 @@ def ast_search_cmd(
     Index files first with ``ec ast-index <file>`` or via the post-turn hook.
     """
     from ..core.ast_index import search_ast_symbols
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)

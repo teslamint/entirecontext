@@ -13,14 +13,15 @@ def sync(
     if_enabled: bool = typer.Option(False, "--if-enabled", help="Only run if auto_sync_on_push is enabled in config"),
 ):
     """Export to shadow branch and push."""
-    from ..core.project import find_git_root, get_project
+    from ..core.project import get_project, get_repo_roots
     from ..db import get_db
     from ..sync.engine import perform_sync
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.project_root
 
     if if_enabled:
         from ..core.config import load_config
@@ -39,7 +40,7 @@ def sync(
     conn = get_db(repo_path)
     try:
         config = {"security": {"filter_secrets": not no_filter}}
-        result = perform_sync(conn, repo_path, config=config)
+        result = perform_sync(conn, repo_path, config=config, workspace_root=roots.workspace_root)
 
         if result["error"]:
             console.print(f"[red]Sync failed: {result['error']}[/red]")
@@ -65,14 +66,15 @@ def sync(
 
 def pull():
     """Fetch shadow branch and import."""
-    from ..core.project import find_git_root, get_project
+    from ..core.project import get_project, get_repo_roots
     from ..db import get_db
     from ..sync.engine import perform_pull
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.project_root
 
     project = get_project(repo_path)
     if not project:
@@ -83,7 +85,7 @@ def pull():
 
     conn = get_db(repo_path)
     try:
-        result = perform_pull(conn, repo_path, config={})
+        result = perform_pull(conn, repo_path, config={}, workspace_root=roots.workspace_root)
 
         if result["error"] == "no_shadow_branch":
             console.print("[yellow]No shadow branch found. Run 'ec sync' first.[/yellow]")

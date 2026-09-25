@@ -35,10 +35,10 @@ def _import_from_aline(
     dry_run: bool,
     skip_content: bool,
 ) -> None:
-    from ..core.project import find_git_root, get_project
+    from ..core.project import find_project_root, get_project
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)

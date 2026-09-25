@@ -18,19 +18,19 @@ def blame_cmd(
     decisions: bool = typer.Option(False, "--decisions", help="Annotate with decision history"),
 ):
     """Show per-line human/agent attribution for a file."""
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
     from ..db import check_and_migrate, get_db
 
     if decisions and summary:
         console.print("[red]--summary and --decisions are mutually exclusive.[/red]")
         raise typer.Exit(1)
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
 
-    conn = get_db(repo_path)
+    conn = get_db(roots.project_root)
     try:
         if decisions:
             check_and_migrate(conn)
@@ -60,7 +60,9 @@ def blame_cmd(
                 from ..core.blame_decisions import annotate_file
 
                 try:
-                    decision_result = annotate_file(conn, repo_path, file, start_line=start_line, end_line=end_line)
+                    decision_result = annotate_file(
+                        conn, roots.workspace_root, file, start_line=start_line, end_line=end_line
+                    )
                 except ValueError as exc:
                     console.print(f"[red]{exc}[/red]")
                     raise typer.Exit(1) from exc

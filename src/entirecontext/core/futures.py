@@ -265,8 +265,14 @@ def distill_lessons(assessments: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def auto_distill_lessons(repo_path: str | Path) -> bool:
-    """Auto-distill lessons to file if futures.auto_distill is enabled. Returns True if file was written."""
+def auto_distill_lessons(repo_path: str | Path, workspace_root: str | Path | None = None) -> bool:
+    """Auto-distill lessons to file if futures.auto_distill is enabled. Returns True if file was written.
+
+    Config and lessons come from the canonical project at ``repo_path``. The
+    output is a checkout file, so it is written under ``workspace_root`` (the
+    active checkout; a linked worktree writes its own copy) and falls back
+    to ``repo_path``.
+    """
     from .config import load_config
     from ..db import get_db
 
@@ -285,7 +291,7 @@ def auto_distill_lessons(repo_path: str | Path) -> bool:
 
     text = distill_lessons(lessons)
     output_name = config.get("futures", {}).get("lessons_output", "LESSONS.md")
-    output_path = Path(repo_path) / output_name
+    output_path = Path(workspace_root or repo_path) / output_name
     output_path.write_text(text, encoding="utf-8")
     return True
 

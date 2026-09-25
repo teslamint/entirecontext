@@ -75,10 +75,10 @@ def futures_assess(
 ):
     """Assess current staged diff or a checkpoint against project roadmap."""
     from ..core.futures import create_assessment
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -149,10 +149,10 @@ def futures_list(
 ):
     """List futures assessments."""
     from ..core.futures import list_assessments
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -201,13 +201,14 @@ def futures_feedback(
 ):
     """Add feedback to an assessment."""
     from ..core.futures import add_feedback, auto_distill_lessons
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
     from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.project_root
 
     conn = get_db(repo_path)
     try:
@@ -223,7 +224,7 @@ def futures_feedback(
     from ..core.config import load_config
 
     config = load_config(repo_path)
-    if auto_distill_lessons(repo_path):
+    if auto_distill_lessons(repo_path, workspace_root=roots.workspace_root):
         output = config.get("futures", {}).get("lessons_output", "LESSONS.md")
         console.print(f"[dim]Auto-updated {output}[/dim]")
 
@@ -237,10 +238,10 @@ def futures_lessons(
 ):
     """Generate LESSONS.md from assessed changes with feedback."""
     from ..core.futures import DEFAULT_LESSONS_MIN_PER_VERDICT, distill_lessons, get_lessons
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -265,13 +266,14 @@ def futures_enrich_backlog():
     """Enrich rule-based assessments with LLM analysis. Fallback: git-evidence feedback."""
     from ..core.auto_assess import enrich_assessment, get_enrichment_candidates
     from ..core.config import load_config
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
     from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.project_root
 
     config = load_config(repo_path)
     window_days = config.get("futures", {}).get("assess_backfill_window_days", 7)
@@ -303,7 +305,7 @@ def futures_enrich_backlog():
                     (aid,),
                 ).fetchone()
                 if row and row["feedback"] is None:
-                    msgs = get_commit_messages(repo_path, row["git_commit_hash"], "HEAD")
+                    msgs = get_commit_messages(roots.workspace_root, row["git_commit_hash"], "HEAD")
                     if msgs:
                         add_feedback(conn, aid, "agree", feedback_reason="auto:committed")
                         fallback += 1
@@ -325,10 +327,10 @@ def futures_relate(
     Example: ec futures relate abc123 causes def456
     """
     from ..core.futures import add_assessment_relationship
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -358,10 +360,10 @@ def futures_relationships(
 ):
     """List typed relationships for an assessment."""
     from ..core.futures import get_assessment_relationships
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -418,10 +420,10 @@ def futures_unrelate(
 ):
     """Remove a typed relationship between two assessments."""
     from ..core.futures import remove_assessment_relationship
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -514,11 +516,11 @@ def futures_report(
     from pathlib import Path
 
     from ..core.futures import list_assessments
-    from ..core.project import find_git_root, get_project
+    from ..core.project import find_project_root, get_project
     from ..core.report import generate_futures_report
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -555,11 +557,11 @@ def futures_tidy_pr(
     """Generate a tidy PR draft from narrow assessment suggestions (rule-based)."""
     from pathlib import Path
 
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..core.tidy_pr import generate_tidy_pr
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -581,9 +583,9 @@ def futures_tidy_pr(
 def futures_worker_status():
     """Show background assessment worker status (running / idle / stale)."""
     from ..core.async_worker import worker_status
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -603,9 +605,9 @@ def futures_worker_status():
 def futures_worker_stop():
     """Stop the background assessment worker (sends SIGTERM)."""
     from ..core.async_worker import stop_worker
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -637,12 +639,13 @@ def futures_worker_launch(
     import sys
 
     from ..core.async_worker import launch_worker
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.project_root
 
     # Build the command: use the same Python executable that's running now
     # so the worker picks up the correct virtualenv/installation.
@@ -650,7 +653,8 @@ def futures_worker_launch(
     if diff:
         cmd.extend(["--diff", diff])
 
-    pid = launch_worker(repo_path, cmd)
+    worker_kwargs = {"cwd": roots.workspace_root} if roots.is_linked_worktree else {}
+    pid = launch_worker(repo_path, cmd, **worker_kwargs)
     console.print(f"[green]Worker launched[/green] (PID {pid})")
 
 

@@ -45,18 +45,18 @@ def _restore_compat_symbols(originals: dict[str, object]) -> None:
     _export_flow.update_manifest = originals["update_manifest"]
 
 
-def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False) -> dict:
+def perform_sync(conn, repo_path: str, config: dict, quiet: bool = False, *, workspace_root: str | None = None) -> dict:
     originals = _bind_compat_symbols()
     try:
-        return _coordinator.perform_sync(conn, repo_path, config, quiet=quiet)
+        return _coordinator.perform_sync(conn, repo_path, config, quiet=quiet, workspace_root=workspace_root)
     finally:
         _restore_compat_symbols(originals)
 
 
-def perform_pull(conn, repo_path: str, config: dict, quiet: bool = False) -> dict:
+def perform_pull(conn, repo_path: str, config: dict, quiet: bool = False, *, workspace_root: str | None = None) -> dict:
     originals = _bind_compat_symbols()
     try:
-        return _coordinator.perform_pull(conn, repo_path, config, quiet=quiet)
+        return _coordinator.perform_pull(conn, repo_path, config, quiet=quiet, workspace_root=workspace_root)
     finally:
         _restore_compat_symbols(originals)
 

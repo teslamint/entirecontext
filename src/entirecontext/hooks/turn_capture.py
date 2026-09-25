@@ -9,9 +9,17 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .session_lifecycle import _find_git_root
+from ..core.repo_roots import RepoRoots, roots_for_workspace
+from .session_lifecycle import _find_git_root, _workspace_kwargs
 
 _GIT_ROOT_UNSET = object()  # sentinel: caller did not pre-resolve the git root
+
+
+def _resolve_roots(cwd: str) -> RepoRoots | None:
+    workspace_root = _find_git_root(cwd)
+    if not workspace_root:
+        return None
+    return roots_for_workspace(workspace_root)
 
 
 def _now_iso() -> str:
@@ -58,6 +66,8 @@ def _maybe_launch_prompt_surfacing_worker(
     turn_id: str,
     redacted_prompt: str,
     config: dict[str, Any],
+    *,
+    workspace_root: str | None = None,
 ) -> None:
     """Write the redacted prompt to a 0600 tmp file and launch the surfacing worker.
 
@@ -103,23 +113,23 @@ def _maybe_launch_prompt_surfacing_worker(
         # collide on the same PID file. launch_worker writes to
         # .entirecontext/<pid_name>.pid.
         pid_name = f"prompt-{safe_session}-{safe_turn}"[:100]
-        launch_worker(
+        cmd = [
+            "ec",
+            "decision",
+            "surface-prompt",
+            "--repo-path",
             repo_path,
-            [
-                "ec",
-                "decision",
-                "surface-prompt",
-                "--repo-path",
-                repo_path,
-                "--session",
-                session_id,
-                "--turn",
-                turn_id,
-                "--prompt-file",
-                str(tmp_path),
-            ],
-            pid_name=pid_name,
-        )
+            "--session",
+            session_id,
+            "--turn",
+            turn_id,
+            "--prompt-file",
+            str(tmp_path),
+        ]
+        worker_kwargs = _workspace_kwargs(repo_path, workspace_root, "cwd")
+        if worker_kwargs:
+            cmd += ["--workspace-path", worker_kwargs["cwd"]]
+        launch_worker(repo_path, cmd, pid_name=pid_name, **worker_kwargs)
     except Exception:
         # Surfacing must never disrupt the turn insert. Best-effort tmp
         # cleanup on exception — the worker's finally block is the primary
@@ -134,8 +144,9 @@ def _maybe_launch_prompt_surfacing_worker(
 def on_user_prompt(data: dict[str, Any], *, _resolved_repo_path: object = _GIT_ROOT_UNSET) -> None:
     """Handle UserPromptSubmit — record turn start with user message.
 
-    Pass ``_resolved_repo_path`` to skip the git-root subprocess probe when the
-    caller has already done the lookup (avoids a double probe in handler.py).
+    Pass ``_resolved_repo_path`` (the checkout toplevel) to skip the git-root
+    subprocess probe when the caller has already done the lookup (avoids a
+    double probe in handler.py). It is mapped to the canonical project root.
     """
     session_id = data.get("session_id")
     cwd = data.get("cwd", ".")
@@ -145,11 +156,12 @@ def on_user_prompt(data: dict[str, Any], *, _resolved_repo_path: object = _GIT_R
         return
 
     if _resolved_repo_path is _GIT_ROOT_UNSET:
-        repo_path: str | None = _find_git_root(cwd)
+        roots = _resolve_roots(cwd)
     else:
-        repo_path = _resolved_repo_path  # type: ignore[assignment]
-    if not repo_path:
+        roots = roots_for_workspace(_resolved_repo_path) if _resolved_repo_path else None  # type: ignore[arg-type]
+    if not roots:
         return
+    repo_path = roots.project_root
 
     from ..core.config import load_config
     from ..core.content_filter import redact_content, should_skip_turn
@@ -204,7 +216,9 @@ def on_user_prompt(data: dict[str, Any], *, _resolved_repo_path: object = _GIT_R
         if not is_experiment_off(config.get("decisions", {})) and config.get("decisions", {}).get(
             "surface_on_user_prompt", False
         ):
-            _maybe_launch_prompt_surfacing_worker(repo_path, session_id, turn_id, prompt, config)
+            _maybe_launch_prompt_surfacing_worker(
+                repo_path, session_id, turn_id, prompt, config, workspace_root=roots.workspace_root
+            )
     finally:
         conn.close()
 
@@ -218,9 +232,10 @@ def on_stop(data: dict[str, Any]) -> None:
     if not session_id:
         return
 
-    repo_path = _find_git_root(cwd)
-    if not repo_path:
+    roots = _resolve_roots(cwd)
+    if not roots:
         return
+    repo_path = roots.project_root
 
     from ..db import get_db
 
@@ -302,9 +317,10 @@ def on_tool_use(data: dict[str, Any]) -> None:
     if not session_id or not tool_name:
         return
 
-    repo_path = _find_git_root(cwd)
-    if not repo_path:
+    roots = _resolve_roots(cwd)
+    if not roots:
         return
+    repo_path = roots.project_root
 
     from ..db import get_db
     import json

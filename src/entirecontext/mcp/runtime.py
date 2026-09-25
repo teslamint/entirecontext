@@ -27,6 +27,25 @@ class RepoResolutionError(RuntimeError):
 # (`_list_valid_registered_repos`) would block on unmounted network volumes.
 _cached_repo_path: str | None = None
 
+# Canonical project root -> active workspace (checkout) root, recorded when a
+# repo is resolved. Git-reading tools use the workspace; DB work uses the
+# canonical root returned by ``get_repo_db``.
+_workspace_roots: dict[str, str] = {}
+
+
+def _remember(context: Any) -> tuple[sqlite3.Connection, str]:
+    workspace_root = getattr(context, "workspace_root", None)
+    if workspace_root:
+        _workspace_roots[context.repo_path] = workspace_root
+    return context.conn, context.repo_path
+
+
+def get_workspace_root(repo_path: str | None) -> str | None:
+    """Return the checkout to run Git in for a resolved canonical ``repo_path``."""
+    if repo_path is None:
+        return None
+    return _workspace_roots.get(repo_path, repo_path)
+
 
 def _path_exists_timeout(path: str, timeout: float = 1.0) -> bool:
     """Return Path(path).exists() or False if the check blocks longer than `timeout` s.
@@ -64,7 +83,7 @@ def _resolve_explicit_repo(repo_path: str, *, source_label: str) -> tuple[sqlite
             f"{source_label}={repo_path} points to a repo at {resolved_path} that is not initialized. Run 'ec init'."
         )
     # Caller takes ownership of conn; context is intentionally not closed here
-    return context.conn, context.repo_path
+    return _remember(context)
 
 
 _CWD_NO_GIT = "no_git"
@@ -86,7 +105,7 @@ def _resolve_from_cwd() -> tuple[sqlite3.Connection, str] | str:
     if context.project is None:
         context.close()
         return _CWD_UNINIT
-    return context.conn, context.repo_path
+    return _remember(context)
 
 
 def _list_valid_registered_repos() -> list[dict[str, Any]]:
@@ -117,7 +136,7 @@ def _open_single_registered_repo(valid_repos: list[dict[str, Any]]) -> tuple[sql
         context = RepoContext.from_repo_path(repo_path, require_project=True)
         if context is None:
             raise RepoResolutionError(f"Repo at {repo_path} became unavailable. Set ENTIRECONTEXT_REPO_PATH.")
-        return context.conn, context.repo_path
+        return _remember(context)
     if len(valid_repos) > 1:
         names = ", ".join(sorted(repo.get("repo_name") or Path(repo["repo_path"]).name for repo in valid_repos))
         raise RepoResolutionError(f"Multiple repos registered. Set ENTIRECONTEXT_REPO_PATH to disambiguate: {names}")
@@ -179,10 +198,23 @@ def resolve_repo() -> tuple[tuple[sqlite3.Connection, str] | tuple[None, None], 
         return (None, None), error_payload(str(exc))
 
 
-def detect_current_session(conn: sqlite3.Connection) -> str | None:
+def detect_current_session(conn: sqlite3.Connection, repo_path: str | None = None) -> str | None:
+    """Return the active session for the checkout this MCP server resolved."""
     from . import server
 
-    return server._detect_current_session(conn)
+    return server._detect_current_session(conn, workspace_root=get_workspace_root(repo_path))
+
+
+def detect_current_context(conn: sqlite3.Connection, repo_path: str | None) -> tuple[str | None, str | None]:
+    """Workspace-scoped ``core.telemetry.detect_current_context`` for MCP tools.
+
+    Linked worktrees share one database, so the active session must be the
+    one recorded for the checkout this server resolved, not the most recent
+    session of any worktree.
+    """
+    from ..core.telemetry import detect_current_context as _detect
+
+    return _detect(conn, workspace_root=get_workspace_root(repo_path))
 
 
 def record_search_event(conn: sqlite3.Connection, **kwargs: Any) -> str:

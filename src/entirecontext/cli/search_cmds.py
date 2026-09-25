@@ -33,10 +33,11 @@ def search(
         console.print("[red]--semantic, --hybrid, and --fts are mutually exclusive.[/red]")
         raise typer.Exit(1)
 
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
     from ..core.tql import TQLContext, TQLError, resolve_temporal_ref, resolve_until
 
-    _repo_path = find_git_root()
+    roots = get_repo_roots()
+    _repo_path = roots.workspace_root if roots else None
     resolved_since: str | None = None
     resolved_until: str | None = None
     until_exclusive: bool = False
@@ -80,7 +81,7 @@ def search(
         from ..core.telemetry import detect_current_context, record_retrieval_event
         from ..db import check_and_migrate, get_db
 
-        repo_path = _repo_path
+        repo_path = roots.project_root if roots else None
         if not repo_path:
             console.print("[red]Not in a git repository.[/red]")
             raise typer.Exit(1)
@@ -165,7 +166,7 @@ def search(
                 )
                 latency_ms = int((time.perf_counter() - started_at) * 1000)
 
-            session_id, turn_id = detect_current_context(conn)
+            session_id, turn_id = detect_current_context(conn, workspace_root=roots.workspace_root if roots else None)
             retrieval_event = record_retrieval_event(
                 conn,
                 source="cli",

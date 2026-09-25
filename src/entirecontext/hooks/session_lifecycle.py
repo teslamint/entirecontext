@@ -7,26 +7,43 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from ..core.repo_roots import RepoRoots, resolve_repo_roots, roots_for_workspace
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def _find_git_root(cwd: str) -> str | None:
-    """Find the git repo root from cwd."""
+    """Find the workspace (checkout) root from cwd."""
+    roots = resolve_repo_roots(cwd)
+    return roots.workspace_root if roots else None
+
+
+def _resolve_roots(cwd: str) -> RepoRoots | None:
+    """Resolve canonical project root and workspace root for a hook cwd."""
+    workspace_root = _find_git_root(cwd)
+    if not workspace_root:
+        return None
+    return roots_for_workspace(workspace_root)
+
+
+def _workspace_kwargs(repo_path: str, workspace_root: str | None, key: str = "workspace_root") -> dict[str, str]:
+    """Pass the workspace only when it differs from the project root (linked worktree)."""
+    if workspace_root and workspace_root != repo_path:
+        return {key: workspace_root}
+    return {}
+
+
+def _session_workspace_root(conn, session_id: str, fallback: str, project_root: str) -> str:
+    """Return the checkout a session ran in; pre-v21 rows ran in ``project_root``."""
     try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            return result.stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
-    return None
+        row = conn.execute("SELECT workspace_root FROM sessions WHERE id = ?", (session_id,)).fetchone()
+    except Exception:
+        return fallback
+    if row is None:
+        return fallback
+    return row["workspace_root"] or project_root
 
 
 def _record_hook_warning(repo_path: str | None, phase: str, exc: Exception) -> None:
@@ -54,47 +71,35 @@ def _record_hook_warning(repo_path: str | None, phase: str, exc: Exception) -> N
         return
 
 
-def _ensure_project(conn, repo_path: str) -> str:
-    """Ensure project exists, return project_id."""
-    row = conn.execute("SELECT id FROM projects WHERE repo_path = ?", (repo_path,)).fetchone()
-    if row:
-        return row["id"]
-
-    from pathlib import Path
-
-    project_id = str(uuid4())
-    conn.execute(
-        "INSERT INTO projects (id, name, repo_path) VALUES (?, ?, ?)",
-        (project_id, Path(repo_path).name, repo_path),
-    )
-    return project_id
-
-
 def on_session_start(data: dict[str, Any]) -> None:
     """Handle SessionStart hook — create or resume a session."""
     session_id = data.get("session_id")
     cwd = data.get("cwd", ".")
     source = data.get("source", "startup")
 
-    repo_path = _find_git_root(cwd)
-    if not repo_path:
+    roots = _resolve_roots(cwd)
+    if not roots:
         return
+    repo_path = roots.project_root
+    workspace_root = roots.workspace_root
 
+    from ..core.project import ensure_project
     from ..db import get_db, check_and_migrate
 
     conn = get_db(repo_path)
     try:
         check_and_migrate(conn)
 
-        project_id = _ensure_project(conn, repo_path)
+        project_id = ensure_project(conn, roots)
         now = _now_iso()
 
         if source == "resume" and session_id:
             row = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
             if row:
                 conn.execute(
-                    "UPDATE sessions SET ended_at = NULL, last_activity_at = ?, updated_at = ? WHERE id = ?",
-                    (now, now, session_id),
+                    """UPDATE sessions SET ended_at = NULL, last_activity_at = ?, updated_at = ?,
+                    workspace_root = ?, worktree_git_dir = ?, git_branch = ? WHERE id = ?""",
+                    (now, now, workspace_root, roots.worktree_git_dir, roots.branch, session_id),
                 )
                 return
 
@@ -103,9 +108,10 @@ def on_session_start(data: dict[str, Any]) -> None:
 
         conn.execute(
             """INSERT OR IGNORE INTO sessions
-            (id, project_id, session_type, workspace_path, started_at, last_activity_at)
-            VALUES (?, ?, ?, ?, ?, ?)""",
-            (session_id, project_id, "claude", cwd, now, now),
+            (id, project_id, session_type, workspace_path, workspace_root, worktree_git_dir, git_branch,
+             started_at, last_activity_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (session_id, project_id, "claude", cwd, workspace_root, roots.worktree_git_dir, roots.branch, now, now),
         )
 
         try:
@@ -113,7 +119,7 @@ def on_session_start(data: dict[str, Any]) -> None:
 
             git_result = subprocess.run(
                 ["git", "rev-parse", "HEAD"],
-                cwd=repo_path,
+                cwd=workspace_root,
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -130,7 +136,7 @@ def on_session_start(data: dict[str, Any]) -> None:
     finally:
         conn.close()
 
-    _maybe_catchup_assessments(repo_path)
+    _maybe_catchup_assessments(repo_path, workspace_root=workspace_root)
 
 
 def _populate_session_summary(conn, session_id: str) -> None:
@@ -241,9 +247,10 @@ def on_session_end(data: dict[str, Any]) -> None:
     if not session_id:
         return
 
-    repo_path = _find_git_root(cwd)
-    if not repo_path:
+    roots = _resolve_roots(cwd)
+    if not roots:
         return
+    repo_path = roots.project_root
 
     from ..db import get_db
 
@@ -255,6 +262,7 @@ def on_session_end(data: dict[str, Any]) -> None:
             "UPDATE sessions SET ended_at = ?, updated_at = ? WHERE id = ?",
             (now, now, session_id),
         )
+        workspace_root = _session_workspace_root(conn, session_id, roots.workspace_root, repo_path)
 
         _populate_session_summary(conn, session_id)
 
@@ -280,14 +288,14 @@ def on_session_end(data: dict[str, Any]) -> None:
         _record_hook_warning(repo_path, "session_end_global_counts", exc)
 
     _maybe_auto_cleanup_no_changes(repo_path, session_id)
-    _maybe_create_auto_checkpoint(repo_path, session_id)
-    _maybe_backfill_assessments(repo_path, session_id)
-    _maybe_trigger_auto_sync(repo_path)
-    _maybe_trigger_auto_distill(repo_path)
-    _maybe_trigger_auto_embed(repo_path)
-    _maybe_check_stale_decisions(repo_path)
-    _maybe_extract_decisions(repo_path, session_id)
-    _maybe_infer_applied_decisions(repo_path, session_id)
+    _maybe_create_auto_checkpoint(repo_path, session_id, workspace_root=workspace_root)
+    _maybe_backfill_assessments(repo_path, session_id, workspace_root=workspace_root)
+    _maybe_trigger_auto_sync(repo_path, workspace_root=workspace_root)
+    _maybe_trigger_auto_distill(repo_path, workspace_root=workspace_root)
+    _maybe_trigger_auto_embed(repo_path, workspace_root=workspace_root)
+    _maybe_check_stale_decisions(repo_path, workspace_root=workspace_root)
+    _maybe_extract_decisions(repo_path, session_id, workspace_root=workspace_root)
+    _maybe_infer_applied_decisions(repo_path, session_id, workspace_root=workspace_root)
     _maybe_infer_ignored_decisions(repo_path, session_id)
     _maybe_close_stale_codex_sessions(repo_path)
     _maybe_emit_aar(repo_path, session_id)
@@ -315,14 +323,16 @@ def on_stop(data: dict[str, Any]) -> None:
     if not session_id:
         return
 
-    repo_path = _find_git_root(cwd)
-    if not repo_path:
+    roots = _resolve_roots(cwd)
+    if not roots:
         return
 
-    _maybe_extract_decisions(repo_path, session_id, source="stop")
+    _maybe_extract_decisions(
+        roots.project_root, session_id, source="stop", **_workspace_kwargs(roots.project_root, roots.workspace_root)
+    )
 
 
-def _maybe_infer_applied_decisions(repo_path: str, session_id: str) -> None:
+def _maybe_infer_applied_decisions(repo_path: str, session_id: str, *, workspace_root: str | None = None) -> None:
     """Infer 'accepted' outcome for decisions whose files were modified. Config-gated."""
     try:
         from ..core.config import load_config
@@ -337,7 +347,9 @@ def _maybe_infer_applied_decisions(repo_path: str, session_id: str) -> None:
 
         conn = get_db(repo_path)
         try:
-            infer_applied_decisions(conn, session_id, repo_path=repo_path)
+            infer_applied_decisions(
+                conn, session_id, repo_path=repo_path, **_workspace_kwargs(repo_path, workspace_root)
+            )
         finally:
             conn.close()
     except Exception as exc:
@@ -529,8 +541,11 @@ def _maybe_auto_cleanup_no_changes(repo_path: str, session_id: str) -> None:
         _record_hook_warning(repo_path, "auto_cleanup_no_changes", exc)
 
 
-def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
-    """Auto-create checkpoint on session end if enabled. Never crashes the hook."""
+def _maybe_create_auto_checkpoint(repo_path: str, session_id: str, *, workspace_root: str | None = None) -> None:
+    """Auto-create checkpoint on session end if enabled. Never crashes the hook.
+
+    Git state is read from the session's workspace; the DB lives at ``repo_path``.
+    """
     try:
         from ..core.config import load_config
 
@@ -544,11 +559,12 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
         from ..core.git_utils import get_current_branch, get_current_commit, get_diff_stat
         from ..db import get_db
 
-        git_commit = get_current_commit(repo_path)
+        git_path = workspace_root or repo_path
+        git_commit = get_current_commit(git_path)
         if not git_commit:
             return
 
-        git_branch = get_current_branch(repo_path)
+        git_branch = get_current_branch(git_path)
         conn = get_db(repo_path)
         try:
             prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
@@ -564,7 +580,7 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
                     except Exception:
                         pass
 
-            diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
+            diff_summary = get_diff_stat(git_path, from_commit=from_commit)
 
             cp = create_checkpoint(
                 conn,
@@ -577,7 +593,7 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
             try:
                 from ..core.auto_assess import auto_assess_checkpoint
 
-                auto_assess_checkpoint(conn, cp["id"], repo_path, session_id)
+                auto_assess_checkpoint(conn, cp["id"], git_path, session_id)
             except Exception as exc:
                 _record_hook_warning(repo_path, "auto_checkpoint_assess", exc)
         finally:
@@ -586,7 +602,7 @@ def _maybe_create_auto_checkpoint(repo_path: str, session_id: str) -> None:
         _record_hook_warning(repo_path, "auto_checkpoint", exc)
 
 
-def _maybe_backfill_assessments(repo_path: str, session_id: str) -> None:
+def _maybe_backfill_assessments(repo_path: str, session_id: str, *, workspace_root: str | None = None) -> None:
     """Backfill unassessed checkpoints and apply git-evidence feedback. Never crashes."""
     try:
         from ..core.auto_assess import apply_git_evidence_feedback, backfill_unassessed_checkpoints
@@ -598,8 +614,9 @@ def _maybe_backfill_assessments(repo_path: str, session_id: str) -> None:
 
         conn = get_db(repo_path)
         try:
-            backfill_unassessed_checkpoints(conn, repo_path, session_id=session_id, window_days=window_days)
-            apply_git_evidence_feedback(conn, repo_path, session_id=session_id, window_days=window_days)
+            git_path = workspace_root or repo_path
+            backfill_unassessed_checkpoints(conn, git_path, session_id=session_id, window_days=window_days)
+            apply_git_evidence_feedback(conn, git_path, session_id=session_id, window_days=window_days)
         finally:
             conn.close()
 
@@ -610,12 +627,14 @@ def _maybe_backfill_assessments(repo_path: str, session_id: str) -> None:
 
             if not worker_status(repo_path, pid_name="worker-assess").get("running"):
                 cmd = [sys.executable, "-m", "entirecontext.cli", "futures", "enrich-backlog"]
-                launch_worker(repo_path, cmd, pid_name="worker-assess")
+                launch_worker(
+                    repo_path, cmd, pid_name="worker-assess", **_workspace_kwargs(repo_path, workspace_root, "cwd")
+                )
     except Exception as exc:
         _record_hook_warning(repo_path, "backfill_assessments", exc)
 
 
-def _maybe_catchup_assessments(repo_path: str) -> None:
+def _maybe_catchup_assessments(repo_path: str, *, workspace_root: str | None = None) -> None:
     """Catch up unassessed checkpoints from prior sessions. Never crashes."""
     try:
         from ..core.auto_assess import backfill_unassessed_checkpoints
@@ -627,7 +646,7 @@ def _maybe_catchup_assessments(repo_path: str) -> None:
 
         conn = get_db(repo_path)
         try:
-            backfill_unassessed_checkpoints(conn, repo_path, window_days=window_days)
+            backfill_unassessed_checkpoints(conn, workspace_root or repo_path, window_days=window_days)
         finally:
             conn.close()
     except Exception as exc:
@@ -639,9 +658,11 @@ def on_post_commit(data: dict[str, Any]) -> None:
     repo_path = data.get("cwd", ".")
     try:
         cwd = data.get("cwd", ".")
-        repo_path = _find_git_root(cwd)
-        if not repo_path:
+        roots = _resolve_roots(cwd)
+        if not roots:
             return
+        repo_path = roots.project_root
+        workspace_root = roots.workspace_root
 
         import json
 
@@ -650,18 +671,18 @@ def on_post_commit(data: dict[str, Any]) -> None:
         from ..core.session import get_current_session
         from ..db import get_db
 
-        git_commit = get_current_commit(repo_path)
+        git_commit = get_current_commit(workspace_root)
         if not git_commit:
             return
 
         conn = get_db(repo_path)
         try:
-            session = get_current_session(conn)
+            session = get_current_session(conn, workspace_root=workspace_root)
             if not session:
                 return
 
             session_id = session["id"]
-            git_branch = get_current_branch(repo_path)
+            git_branch = get_current_branch(workspace_root)
 
             prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
             if prev_checkpoints:
@@ -676,7 +697,7 @@ def on_post_commit(data: dict[str, Any]) -> None:
                     except Exception:
                         pass
 
-            diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
+            diff_summary = get_diff_stat(workspace_root, from_commit=from_commit)
 
             cp = create_checkpoint(
                 conn,
@@ -689,7 +710,7 @@ def on_post_commit(data: dict[str, Any]) -> None:
             try:
                 from ..core.auto_assess import auto_assess_checkpoint
 
-                auto_assess_checkpoint(conn, cp["id"], repo_path, session_id)
+                auto_assess_checkpoint(conn, cp["id"], workspace_root, session_id)
             except Exception as exc:
                 _record_hook_warning(repo_path, "post_commit_assess", exc)
         finally:
@@ -698,7 +719,7 @@ def on_post_commit(data: dict[str, Any]) -> None:
         _record_hook_warning(repo_path, "post_commit", exc)
 
 
-def _maybe_trigger_auto_embed(repo_path: str) -> None:
+def _maybe_trigger_auto_embed(repo_path: str, *, workspace_root: str | None = None) -> None:
     """Trigger background embedding indexing if auto_embed is enabled. Never crashes the hook."""
     try:
         from ..core.config import load_config
@@ -713,40 +734,49 @@ def _maybe_trigger_auto_embed(repo_path: str) -> None:
 
         if worker_status(repo_path).get("running"):
             return
-        launch_worker(repo_path, [sys.executable, "-m", "entirecontext.cli", "index", "rebuild", "--semantic"])
+        launch_worker(
+            repo_path,
+            [sys.executable, "-m", "entirecontext.cli", "index", "rebuild", "--semantic"],
+            **_workspace_kwargs(repo_path, workspace_root, "cwd"),
+        )
     except Exception as exc:
         _record_hook_warning(repo_path, "auto_embed", exc)
 
 
-def _maybe_check_stale_decisions(repo_path: str) -> None:
+def _maybe_check_stale_decisions(repo_path: str, *, workspace_root: str | None = None) -> None:
     try:
         from .decision_hooks import maybe_check_stale_decisions
 
-        maybe_check_stale_decisions(repo_path)
+        maybe_check_stale_decisions(repo_path, **_workspace_kwargs(repo_path, workspace_root))
     except Exception as exc:
         _record_hook_warning(repo_path, "decision_stale_dispatch", exc)
 
 
-def _maybe_extract_decisions(repo_path: str, session_id: str, *, source: str = "session_end") -> None:
+def _maybe_extract_decisions(
+    repo_path: str, session_id: str, *, source: str = "session_end", workspace_root: str | None = None
+) -> None:
     try:
         from .decision_hooks import maybe_extract_decisions
 
-        maybe_extract_decisions(repo_path, session_id, source=source)
+        maybe_extract_decisions(repo_path, session_id, source=source, **_workspace_kwargs(repo_path, workspace_root))
     except Exception as exc:
         _record_hook_warning(repo_path, "decision_extract_dispatch", exc)
 
 
-def _maybe_trigger_auto_distill(repo_path: str) -> None:
-    """Auto-distill lessons if enabled. Never crashes the hook."""
+def _maybe_trigger_auto_distill(repo_path: str, *, workspace_root: str | None = None) -> None:
+    """Auto-distill lessons if enabled. Never crashes the hook.
+
+    ``LESSONS.md`` is a checkout file, so it goes to the active workspace.
+    """
     try:
         from ..core.futures import auto_distill_lessons
 
-        auto_distill_lessons(repo_path)
+        auto_distill_lessons(repo_path, **_workspace_kwargs(repo_path, workspace_root))
     except Exception as exc:
         _record_hook_warning(repo_path, "auto_distill", exc)
 
 
-def _maybe_trigger_auto_sync(repo_path: str) -> None:
+def _maybe_trigger_auto_sync(repo_path: str, *, workspace_root: str | None = None) -> None:
     """Trigger background sync if auto_sync is enabled. Never crashes the hook."""
     try:
         from ..core.config import load_config
@@ -756,6 +786,6 @@ def _maybe_trigger_auto_sync(repo_path: str) -> None:
             return
         from ..sync.auto_sync import trigger_background_sync
 
-        trigger_background_sync(repo_path)
+        trigger_background_sync(repo_path, **_workspace_kwargs(repo_path, workspace_root))
     except Exception as exc:
         _record_hook_warning(repo_path, "auto_sync", exc)

@@ -19,10 +19,10 @@ def dashboard_cmd(
 ) -> None:
     """Show a team dashboard: session stats, checkpoint stats, and assessment trends."""
     from ..core.dashboard import get_dashboard_stats
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import check_and_migrate, get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)

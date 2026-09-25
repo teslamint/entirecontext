@@ -19,19 +19,52 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "not initialized" in result.output.lower() or "ec init" in result.output.lower()
 
-    @patch("entirecontext.core.project.get_status")
-    def test_status_initialized(self, mock_status):
-        mock_status.return_value = {
+    @staticmethod
+    def _status(**overrides):
+        project = {"id": "abc12345-uuid", "name": "myproject", "repo_path": "/tmp/test"}
+        status = {
             "initialized": True,
-            "project": {"id": "abc12345-uuid", "name": "myproject", "repo_path": "/tmp/test"},
+            "project": project,
+            "logical_project": {**project, "git_common_dir": "/tmp/test/.git"},
+            "workspace": {
+                "root": "/tmp/wt",
+                "branch": "feature",
+                "worktree_git_dir": "/tmp/test/.git/worktrees/wt",
+                "is_linked": True,
+            },
             "session_count": 5,
+            "workspace_session_count": 2,
             "turn_count": 42,
             "checkpoint_count": 10,
             "active_session": None,
+            "legacy_worktree_db": None,
         }
+        status.update(overrides)
+        return status
+
+    @patch("entirecontext.core.project.get_status")
+    def test_status_initialized(self, mock_status):
+        mock_status.return_value = self._status()
         result = runner.invoke(app, ["status"])
         assert result.exit_code == 0
         assert "myproject" in result.output
+        assert "Logical project" in result.output
+        assert "Active workspace" in result.output
+        assert "/tmp/wt (linked worktree)" in result.output
+        assert "feature" in result.output
+        assert "Workspace sessions" in result.output
+
+    @patch("entirecontext.core.project.get_status")
+    def test_status_warns_about_legacy_worktree_db(self, mock_status):
+        mock_status.return_value = self._status(
+            legacy_worktree_db={"path": "/tmp/wt/.entirecontext/db/local.db", "session_count": 3, "decision_count": 1}
+        )
+        result = runner.invoke(app, ["status"])
+        assert result.exit_code == 0
+        output = " ".join(result.output.split())
+        assert "Legacy per-worktree database found at /tmp/wt/.entirecontext/db/local.db" in output
+        assert "3 sessions, 1 decisions" in output
+        assert "verify-docs --promote-from" in output
 
 
 class TestConfigCommand:

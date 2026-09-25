@@ -100,3 +100,22 @@ class TestHookInstall:
         result = runner.invoke(app, ["doctor"])
         assert result.exit_code == 0
         assert "passed" in result.output.lower()
+
+    def test_enable_in_linked_worktree_installs_settings_in_linked(self, ec_worktree, monkeypatch):
+        main, linked = ec_worktree
+        monkeypatch.chdir(linked)
+        fake_home = linked.parent / "fakehome"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        result = runner.invoke(app, ["enable"])
+
+        assert result.exit_code == 0, result.output
+        settings = json.loads((linked / ".claude" / "settings.local.json").read_text())
+        assert any(_is_ec_hook(h) for h in settings["hooks"]["SessionStart"])
+        assert not (main / ".claude" / "settings.local.json").exists()
+        assert not (linked / ".entirecontext").exists()
+
+        doctor = runner.invoke(app, ["doctor"])
+        assert doctor.exit_code == 0
+        assert "passed" in doctor.output.lower()

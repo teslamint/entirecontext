@@ -71,11 +71,18 @@ def _is_lock_stale(conn: sqlite3.Connection) -> bool:
         return True
 
 
-def trigger_background_sync(repo_path: str) -> bool:
-    """Spawn a detached subprocess to run sync. Returns True if spawned."""
+def trigger_background_sync(repo_path: str, *, workspace_root: str | None = None) -> bool:
+    """Spawn a detached subprocess to run sync. Returns True if spawned.
+
+    ``repo_path`` is the canonical project root (DB, config); Git transport
+    runs in ``workspace_root`` when given.
+    """
+    cmd = [sys.executable, "-m", "entirecontext.sync.auto_sync", "sync", repo_path]
+    if workspace_root and workspace_root != repo_path:
+        cmd.append(workspace_root)
     try:
         subprocess.Popen(
-            [sys.executable, "-m", "entirecontext.sync.auto_sync", "sync", repo_path],
+            cmd,
             start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -86,7 +93,7 @@ def trigger_background_sync(repo_path: str) -> bool:
         return False
 
 
-def run_sync(repo_path: str) -> None:
+def run_sync(repo_path: str, workspace_root: str | None = None) -> None:
     """Entry point for background subprocess. Opens DB, acquires lock, syncs, releases."""
     from ..core.config import load_config
     from ..db import get_db
@@ -101,7 +108,7 @@ def run_sync(repo_path: str) -> None:
     try:
         from .engine import perform_sync
 
-        result = perform_sync(conn, repo_path, config, quiet=True)
+        result = perform_sync(conn, repo_path, config, quiet=True, workspace_root=workspace_root)
         if result.get("error"):
             conn.execute(
                 "UPDATE sync_metadata SET last_sync_error = ? WHERE id = 1",
@@ -120,7 +127,7 @@ def run_sync(repo_path: str) -> None:
         conn.close()
 
 
-def run_pull(repo_path: str) -> None:
+def run_pull(repo_path: str, workspace_root: str | None = None) -> None:
     """Inline pull before cross-repo query."""
     from ..core.config import load_config
     from ..db import get_db
@@ -131,7 +138,7 @@ def run_pull(repo_path: str) -> None:
     try:
         from .engine import perform_pull
 
-        perform_pull(conn, repo_path, config, quiet=True)
+        perform_pull(conn, repo_path, config, quiet=True, workspace_root=workspace_root)
     except Exception:
         logger.debug("Lazy pull failed for %s", repo_path, exc_info=True)
     finally:
@@ -142,4 +149,4 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) >= 3 and sys.argv[1] == "sync":
-        run_sync(sys.argv[2])
+        run_sync(sys.argv[2], sys.argv[3] if len(sys.argv) >= 4 else None)

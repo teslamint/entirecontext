@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Optional
 
 import typer
@@ -39,10 +38,10 @@ def compact_cmd(
     """
     from ..core.compact import compact_repo
     from ..core.config import load_config
-    from ..core.project import find_git_root
-    from ..db import check_and_migrate, get_db
+    from ..core.project import find_project_root
+    from ..db import check_and_migrate, db_path_for, get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -51,7 +50,7 @@ def compact_cmd(
         config = load_config(repo_path)
         retention_days = config.get("capture", {}).get("content_retention_days", 30)
 
-    db_path = Path(repo_path) / ".entirecontext" / "db" / "local.db"
+    db_path = db_path_for(repo_path)
     if not db_path.exists():
         if execute:
             console.print(

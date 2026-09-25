@@ -2760,3 +2760,116 @@ class TestExtractionRetryCap:
         maybe_extract_decisions(str(ec_repo), session["id"])
 
         assert len(launched) == 1, "Default source should bypass cap"
+
+
+class TestWorktreeDecisionHooks:
+    """Linked worktrees read the canonical project's decisions and their own Git state."""
+
+    @staticmethod
+    def _open_turn(conn, session_id):
+        project_id = conn.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
+        conn.execute(
+            "INSERT INTO sessions (id, project_id, session_type, started_at, last_activity_at) "
+            "VALUES (?, ?, 'claude', '2025-01-01', '2025-01-01')",
+            (session_id, project_id),
+        )
+        conn.execute(
+            "INSERT INTO turns (id, session_id, turn_number, user_message, content_hash, timestamp, "
+            "tools_used, files_touched, turn_status) "
+            "VALUES (?, ?, 1, 'u', 'h', '2025-01-01', '[]', '[]', 'in_progress')",
+            (f"{session_id}-t1", session_id),
+        )
+
+    @staticmethod
+    def _enable_surface_on_tool_use(monkeypatch):
+        from entirecontext.core.config import load_config as real_load_config
+
+        def patched_load(repo_path=None):
+            cfg = real_load_config(repo_path)
+            cfg.setdefault("decisions", {})["surface_on_tool_use"] = True
+            return cfg
+
+        monkeypatch.setattr("entirecontext.core.config.load_config", patched_load)
+
+    def test_post_tool_use_in_linked_reads_main_db_without_git(self, ec_worktree, ec_db, monkeypatch):
+        from entirecontext.core import repo_roots
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        main, linked = ec_worktree
+        self._enable_surface_on_tool_use(monkeypatch)
+        self._open_turn(ec_db, "wt-post")
+        decision = create_decision(ec_db, title="Worktree-shared routing")
+        link_decision_to_file(ec_db, decision["id"], "src/app.py")
+        sub = linked / "sub"
+        sub.mkdir()
+        git_run = MagicMock(side_effect=AssertionError("PostToolUse invoked a subprocess"))
+        monkeypatch.setattr(repo_roots.subprocess, "run", git_run)
+        monkeypatch.setattr("entirecontext.hooks.decision_hooks.subprocess.run", git_run)
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(sub),
+                "session_id": "wt-post",
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Worktree-shared routing" in result
+        git_run.assert_not_called()
+        assert (main / ".entirecontext" / "decisions-context-tooluse-wt-post.md").exists()
+        assert not (linked / ".entirecontext").exists()
+
+    def test_post_tool_use_ignores_legacy_worktree_db(self, legacy_worktree_db, isolated_global_db, monkeypatch):
+        from entirecontext.core.project import init_project
+        from entirecontext.db import get_db
+        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
+
+        main, linked, _legacy = legacy_worktree_db
+        init_project(str(main))
+        self._enable_surface_on_tool_use(monkeypatch)
+        conn = get_db(str(main))
+        try:
+            self._open_turn(conn, "wt-legacy")
+            decision = create_decision(conn, title="Canonical decision")
+            link_decision_to_file(conn, decision["id"], "src/app.py")
+        finally:
+            conn.close()
+
+        result = on_post_tool_use_decisions(
+            {
+                "cwd": str(linked),
+                "session_id": "wt-legacy",
+                "tool_name": "Edit",
+                "tool_input": {"file_path": "src/app.py"},
+            }
+        )
+
+        assert result is not None
+        assert "Canonical decision" in result
+        assert "Legacy decision" not in result
+
+    def test_session_start_decisions_use_linked_branch_changes(self, ec_worktree, ec_db, monkeypatch):
+        from entirecontext.hooks.decision_hooks import on_session_start_decisions
+
+        main, linked = ec_worktree
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks._load_decisions_config",
+            lambda _: {"show_related_on_start": True},
+        )
+        decision = create_decision(ec_db, title="Worktree-only module decision")
+        link_decision_to_file(ec_db, decision["id"], "src/wt_only.py")
+        target = linked / "src" / "wt_only.py"
+        target.parent.mkdir(parents=True)
+        target.write_text("x = 1")
+        _subprocess.run(["git", "-C", str(linked), "add", "."], check=True, capture_output=True)
+        _subprocess.run(["git", "-C", str(linked), "commit", "-m", "wt only"], check=True, capture_output=True)
+
+        linked_result = on_session_start_decisions({"cwd": str(linked), "session_id": "wt-start"})
+        main_result = on_session_start_decisions({"cwd": str(main), "session_id": "main-start"})
+
+        assert linked_result is not None
+        assert "Worktree-only module decision" in linked_result
+        assert main_result is None or "Worktree-only module decision" not in main_result
+        assert not (linked / ".entirecontext").exists()

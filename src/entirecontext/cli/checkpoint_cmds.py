@@ -22,23 +22,24 @@ def checkpoint_create(
     """Create a checkpoint at the current git state."""
     from ..core.checkpoint import create_checkpoint, list_checkpoints
     from ..core.git_utils import get_current_branch, get_current_commit, get_diff_stat, get_tracked_files_snapshot
-    from ..core.project import find_git_root
+    from ..core.project import get_repo_roots
     from ..core.session import get_current_session, get_session
     from ..db import get_db
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    workspace_root = roots.workspace_root
 
-    git_commit = get_current_commit(repo_path)
+    git_commit = get_current_commit(workspace_root)
     if not git_commit:
         console.print("[red]Could not determine current git commit.[/red]")
         raise typer.Exit(1)
 
-    git_branch = get_current_branch(repo_path)
+    git_branch = get_current_branch(workspace_root)
 
-    conn = get_db(repo_path)
+    conn = get_db(roots.project_root)
     try:
         if session:
             sess = get_session(conn, session)
@@ -47,7 +48,7 @@ def checkpoint_create(
                 raise typer.Exit(1)
             session_id = session
         else:
-            sess = get_current_session(conn)
+            sess = get_current_session(conn, workspace_root=workspace_root)
             if not sess:
                 console.print("[red]No active session found. Use --session to specify one.[/red]")
                 raise typer.Exit(1)
@@ -57,11 +58,11 @@ def checkpoint_create(
         if not diff_summary:
             prev_checkpoints = list_checkpoints(conn, session_id=session_id, limit=1)
             from_commit = prev_checkpoints[0]["git_commit_hash"] if prev_checkpoints else None
-            diff_summary = get_diff_stat(repo_path, from_commit=from_commit)
+            diff_summary = get_diff_stat(workspace_root, from_commit=from_commit)
 
         files_snapshot = None
         if snapshot:
-            files_snapshot = get_tracked_files_snapshot(repo_path)
+            files_snapshot = get_tracked_files_snapshot(workspace_root)
 
         cp = create_checkpoint(
             conn,
@@ -75,7 +76,7 @@ def checkpoint_create(
         try:
             from ..core.auto_assess import auto_assess_checkpoint
 
-            assessment = auto_assess_checkpoint(conn, cp["id"], repo_path, session_id)
+            assessment = auto_assess_checkpoint(conn, cp["id"], workspace_root, session_id)
             if assessment:
                 console.print(f"  Verdict: {assessment['verdict']}")
         except Exception:
@@ -136,10 +137,10 @@ def checkpoint_list(
         return
 
     from ..core.checkpoint import list_checkpoints
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -222,11 +223,11 @@ def checkpoint_show(
         return
 
     from ..core.checkpoint import get_checkpoint
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..core.session import get_session
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -281,10 +282,10 @@ def checkpoint_diff(
 ):
     """Diff between two checkpoints."""
     from ..core.checkpoint import diff_checkpoints
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
@@ -328,10 +329,10 @@ def checkpoint_diff(
 def assess_accuracy():
     """Show verdict accuracy baseline from enrichment feedback."""
     from ..core.auto_assess import compute_verdict_accuracy
-    from ..core.project import find_git_root, get_project
+    from ..core.project import find_project_root, get_project
     from ..db import get_db
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)

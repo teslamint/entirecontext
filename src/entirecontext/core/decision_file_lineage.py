@@ -184,12 +184,38 @@ def _collect_rename_records(
     return _parse_rename_log(raw)
 
 
-def _last_scanned_commit(conn: sqlite3.Connection) -> str | None:
+def _last_scanned_commit(
+    conn: sqlite3.Connection, worktree_key: str | None = None, *, is_main_worktree: bool = True
+) -> str | None:
+    """Read the lineage watermark for one worktree.
+
+    The main worktree falls back to the pre-v21 single-row watermark until it
+    has a row of its own; linked worktrees start from a full scan.
+    """
+    if worktree_key is not None:
+        row = conn.execute(
+            "SELECT last_scanned_commit FROM decision_file_lineage_worktree_state WHERE worktree_git_dir = ?",
+            (worktree_key,),
+        ).fetchone()
+        if row is not None:
+            value = row["last_scanned_commit"]
+            return str(value) if value else None
+        if not is_main_worktree:
+            return None
     row = conn.execute("SELECT last_scanned_commit FROM decision_file_lineage_state WHERE id = 1").fetchone()
     if row is None:
         return None
     value = row["last_scanned_commit"]
     return str(value) if value else None
+
+
+def _worktree_identity(repo_path: str) -> tuple[str | None, bool]:
+    from .repo_roots import roots_for_workspace
+
+    roots = roots_for_workspace(repo_path)
+    if roots.worktree_git_dir is None:
+        return None, True
+    return roots.worktree_git_dir, roots.worktree_git_dir == roots.git_common_dir
 
 
 def _insert_lineage_records(conn: sqlite3.Connection, records: list[RenameRecord]) -> int:
@@ -266,8 +292,14 @@ def sync_decision_file_lineage(
     repo_path: str,
     *,
     timeout_seconds: float = _DEFAULT_GIT_TIMEOUT_SECONDS,
+    worktree_key: str | None = None,
 ) -> RenameSyncResult:
     """Synchronize committed rename history into the decision-file read model.
+
+    ``repo_path`` is the checkout whose history is scanned (the active
+    workspace). The watermark is kept per worktree git dir so worktrees on
+    divergent branches do not force each other into full rescans; the main
+    worktree also keeps the legacy single-row watermark current.
 
     Git reads happen before the transaction. Lineage insertion, transitive link
     propagation, and watermark advancement then commit atomically. Any raised
@@ -275,12 +307,15 @@ def sync_decision_file_lineage(
     """
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
+    detected_key, is_main_worktree = _worktree_identity(repo_path)
+    if worktree_key is None:
+        worktree_key = detected_key
     deadline = time.monotonic() + timeout_seconds
     head_commit = _read_head(
         repo_path,
         timeout_seconds=_remaining_timeout(deadline),
     )
-    last_scanned = _last_scanned_commit(conn)
+    last_scanned = _last_scanned_commit(conn, worktree_key, is_main_worktree=is_main_worktree)
 
     full_scan = last_scanned is None
     scanned_from: str | None = None
@@ -310,12 +345,22 @@ def sync_decision_file_lineage(
     with transaction(conn):
         renames_recorded = _insert_lineage_records(conn, records)
         links_added = _propagate_destination_links(conn)
-        conn.execute(
-            """INSERT INTO decision_file_lineage_state (id, last_scanned_commit)
-            VALUES (1, ?)
-            ON CONFLICT(id) DO UPDATE SET last_scanned_commit = excluded.last_scanned_commit""",
-            (head_commit,),
-        )
+        if worktree_key is not None:
+            conn.execute(
+                """INSERT INTO decision_file_lineage_worktree_state (worktree_git_dir, last_scanned_commit)
+                VALUES (?, ?)
+                ON CONFLICT(worktree_git_dir) DO UPDATE SET
+                    last_scanned_commit = excluded.last_scanned_commit,
+                    updated_at = datetime('now')""",
+                (worktree_key, head_commit),
+            )
+        if worktree_key is None or is_main_worktree:
+            conn.execute(
+                """INSERT INTO decision_file_lineage_state (id, last_scanned_commit)
+                VALUES (1, ?)
+                ON CONFLICT(id) DO UPDATE SET last_scanned_commit = excluded.last_scanned_commit""",
+                (head_commit,),
+            )
 
     return RenameSyncResult(
         scanned_from=scanned_from,

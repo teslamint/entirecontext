@@ -419,7 +419,14 @@ def archaeologize(
     min_confidence: float = 0.35,
     extraction_weights: ExtractionWeights | None = None,
     progress_callback: Callable[[str], None] | None = None,
+    workspace_path: str | None = None,
 ) -> ArchaeologyResult:
+    """Extract decision candidates from commit history.
+
+    ``repo_path`` is the canonical project root (config); Git runs in
+    ``workspace_path`` when given, so a linked worktree scans its own branch.
+    """
+    git_path = workspace_path or repo_path
     result = ArchaeologyResult()
     token = None
     if pr_bodies:
@@ -431,7 +438,7 @@ def archaeologize(
 
     commits_scanned = 0
     already_processed = 0
-    commit_iter = _stream_commits(repo_path, since, until, limit, warnings=result.warnings)
+    commit_iter = _stream_commits(git_path, since, until, limit, warnings=result.warnings)
 
     if dry_run:
         for sha, _, _ in commit_iter:
@@ -505,6 +512,7 @@ def archaeologize(
                     extraction_weights=extraction_weights,
                     progress_callback=progress_callback,
                     consecutive_pr_failures=pr_fail_count,
+                    git_path=git_path,
                 )
                 batch = []
 
@@ -519,6 +527,7 @@ def archaeologize(
                 extraction_weights=extraction_weights,
                 progress_callback=progress_callback,
                 consecutive_pr_failures=pr_fail_count,
+                git_path=git_path,
             )
     except KeyboardInterrupt:
         # Commits already marked processed (via _mark_processed, autocommit)
@@ -547,12 +556,13 @@ def _process_batch(
     extraction_weights: ExtractionWeights | None,
     progress_callback: Callable[[str], None] | None,
     consecutive_pr_failures: int = 0,
+    git_path: str | None = None,
 ) -> int:
     """Returns updated consecutive_pr_failures count."""
     for sha, message, patch_text, state, act in batch:
         pr_fetch: _PrBodyFetch | None = None
         if act.needs_pr and token and consecutive_pr_failures < _PR_BODY_FAIL_THRESHOLD:
-            pr_fetch = _fetch_pr_body(sha, repo_path, token)
+            pr_fetch = _fetch_pr_body(sha, git_path or repo_path, token)
             if pr_fetch.status is _PrBodyStatus.FAILURE:
                 consecutive_pr_failures += 1
                 if pr_fetch.warning:

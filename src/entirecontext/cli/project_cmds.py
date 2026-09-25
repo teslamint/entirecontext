@@ -27,13 +27,17 @@ _GUIDANCE_MARKER = "<!-- EntireContext: managed guidance -->"
 
 _INJECT_SCRIPT = """\
 #!/bin/sh
-# EntireContext: inject guidance into SessionStart when .entirecontext/ exists at git root.
+# EntireContext: inject guidance into SessionStart when .entirecontext/ exists at the project root.
+# Linked worktrees resolve the main worktree through the git common dir.
 set -e
 command -v jq >/dev/null 2>&1 || exit 0
 payload=$(cat)
 cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
 [ -n "$cwd" ] || cwd="${CLAUDE_PROJECT_DIR:-$PWD}"
-root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
+top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
+common=$(cd "$top" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P || true)
+root="$top"
+case "$common" in */.git) [ -d "${common%/.git}/.entirecontext" ] && root="${common%/.git}";; esac
 [ -d "$root/.entirecontext" ] || exit 0
 guidance="$HOME/.claude/hooks/entirecontext-guidance.md"
 [ -f "$guidance" ] || exit 0
@@ -590,8 +594,14 @@ def init(
 
     try:
         project = init_project()
-        console.print(f"[green]Initialized EntireContext[/green] in {project['repo_path']}")
+        if project.get("is_linked_worktree"):
+            verb = "Joined existing" if project.get("joined_existing") else "Initialized"
+            console.print(f"[green]{verb} logical project[/green] {project['name']} at {project['repo_path']}")
+            console.print(f"  Workspace: {project['workspace_root']} (linked worktree)")
+        else:
+            console.print(f"[green]Initialized EntireContext[/green] in {project['repo_path']}")
         console.print(f"  Project: {project['name']} ({project['id'][:8]}...)")
+        _print_legacy_worktree_db_warning(project.get("legacy_worktree_db"))
     except RuntimeError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1)
@@ -601,13 +611,34 @@ def init(
         return
 
     try:
-        _install_integrations(project["repo_path"], agent, no_git_hooks)
+        _install_integrations(project.get("workspace_root") or project["repo_path"], agent, no_git_hooks)
     except Exception as exc:
         retry = f"ec enable --agent {agent}"
         if no_git_hooks:
             retry += " --no-git-hooks"
         console.print(f"[yellow]Warning:[/yellow] hook installation failed: {exc}")
         console.print(f"  Run [bold]{retry}[/bold] to retry.")
+
+
+def _legacy_worktree_db_message(legacy: dict) -> str:
+    counts = []
+    if legacy.get("session_count") is not None:
+        counts.append(f"{legacy['session_count']} sessions")
+    if legacy.get("decision_count") is not None:
+        counts.append(f"{legacy['decision_count']} decisions")
+    detail = f" ({', '.join(counts)})" if counts else ""
+    return (
+        f"Legacy per-worktree database found at {legacy['path']}{detail}. "
+        "It was left untouched and is no longer used; this worktree now shares the logical project's database. "
+        "Decisions referenced in docs (docs/adr, docs/specs, docs/plans, ROADMAP.md) can be copied with "
+        "'ec decision verify-docs --promote-from <path>'; other sessions and decisions stay only in that file "
+        "until the tracked worktree merge command exists."
+    )
+
+
+def _print_legacy_worktree_db_warning(legacy: dict | None) -> None:
+    if legacy:
+        console.print(f"[yellow]Warning:[/yellow] {_legacy_worktree_db_message(legacy)}")
 
 
 def _git_capture(repo_path: str, args: list[str]) -> str | None:
@@ -974,7 +1005,7 @@ def status(
     agent: str = typer.Option("claude", "--agent", help="View status for claude|codex|both"),
 ):
     """Show EntireContext capture status."""
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
     from ..core.project import get_status
 
     agent = _parse_agent_option(agent)
@@ -990,9 +1021,19 @@ def status(
     table.add_column("Value")
 
     p = st["project"]
-    table.add_row("Project", f"{p['name']} ({p['id'][:8]}...)")
-    table.add_row("Repo", p["repo_path"])
+    lp = st.get("logical_project") or p
+    ws = st.get("workspace") or {}
+    table.add_row("Logical project", f"{lp['name']} ({lp['id'][:8]}...)")
+    table.add_row("Project root", lp["repo_path"])
+    if lp.get("git_common_dir"):
+        table.add_row("Git common dir", lp["git_common_dir"])
+    if ws.get("root"):
+        marker = " (linked worktree)" if ws.get("is_linked") else ""
+        table.add_row("Active workspace", f"{ws['root']}{marker}")
+        table.add_row("Branch", ws.get("branch") or "(detached)")
     table.add_row("Sessions", str(st["session_count"]))
+    if "workspace_session_count" in st:
+        table.add_row("Workspace sessions", str(st["workspace_session_count"]))
     table.add_row("Turns", str(st["turn_count"]))
     table.add_row("Checkpoints", str(st["checkpoint_count"]))
 
@@ -1002,7 +1043,11 @@ def status(
     else:
         table.add_row("Active Session", "None")
 
-    repo_path = find_git_root()
+    legacy = st.get("legacy_worktree_db")
+    if legacy:
+        table.add_row("[yellow]Legacy worktree DB[/yellow]", legacy["path"])
+
+    repo_path = find_project_root()
     if repo_path and agent in {"codex", "both"}:
         from ..db import get_db
 
@@ -1020,6 +1065,7 @@ def status(
         table.add_row("Codex Turns", str(codex_turns))
 
     console.print(table)
+    _print_legacy_worktree_db_warning(legacy)
 
 
 def config(
@@ -1028,9 +1074,9 @@ def config(
 ):
     """Get or set configuration."""
     from ..core.config import get_config_value, load_config, save_config
-    from ..core.project import find_git_root
+    from ..core.project import find_project_root
 
-    repo_path = find_git_root()
+    repo_path = find_project_root()
 
     if key is None:
         cfg = load_config(repo_path)
@@ -1132,16 +1178,18 @@ def doctor(
     agent: str = typer.Option("claude", "--agent", help="Validate claude|codex|both integrations"),
 ):
     """Diagnose EntireContext issues."""
-    from ..core.project import find_git_root
+    from ..core.project import detect_legacy_worktree_db, get_repo_roots
 
     agent = _parse_agent_option(agent)
     issues: list[str] = []
     warnings: list[str] = []
 
-    repo_path = find_git_root()
-    if not repo_path:
+    roots = get_repo_roots()
+    if not roots:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+    repo_path = roots.workspace_root
+    project_root = roots.project_root
 
     provenance_warning = _build_provenance_warning(repo_path)
     if provenance_warning is not None:
@@ -1151,7 +1199,7 @@ def doctor(
     if interpreter_warning is not None:
         warnings.append(interpreter_warning)
 
-    ec_dir = Path(repo_path) / ".entirecontext"
+    ec_dir = Path(project_root) / ".entirecontext"
     if not ec_dir.exists():
         issues.append("EntireContext not initialized. Run 'ec init'.")
     else:
@@ -1161,7 +1209,7 @@ def doctor(
         else:
             from ..db import SCHEMA_VERSION, get_current_version, get_db
 
-            conn = get_db(repo_path)
+            conn = get_db(project_root)
             try:
                 v = get_current_version(conn)
                 if v < SCHEMA_VERSION:
@@ -1184,7 +1232,8 @@ def doctor(
         settings_path = Path(repo_path) / ".claude" / "settings.json"
         active_settings_path = local_settings_path if local_settings_path.exists() else settings_path
         if not active_settings_path.exists():
-            warnings.append("No .claude/settings.local.json found. Run 'ec enable'.")
+            hint = " in this worktree (hooks are installed per checkout)" if roots.is_linked_worktree else ""
+            warnings.append(f"No .claude/settings.local.json found. Run 'ec enable'{hint}.")
         else:
             settings = json.loads(active_settings_path.read_text(encoding="utf-8"))
             hooks = settings.get("hooks", {})
@@ -1208,8 +1257,9 @@ def doctor(
                 warnings.append("Codex notify does not point to EntireContext hook.")
             else:
                 state = _read_global_state()
-                repo_enrolled = repo_path in state.get("repos", {})
-                legacy_state = Path(repo_path) / ".entirecontext" / "state" / "codex_notify.json"
+                repos = state.get("repos", {})
+                repo_enrolled = repo_path in repos or project_root in repos
+                legacy_state = Path(project_root) / ".entirecontext" / "state" / "codex_notify.json"
                 if not repo_enrolled and not legacy_state.exists():
                     warnings.append(
                         "This repo is not enrolled for Codex capture. Run 'ec enable --agent codex' in this repo."
@@ -1223,6 +1273,10 @@ def doctor(
                 warnings.append("MCP server not configured. Run 'ec enable' to add MCP support.")
         else:
             warnings.append("MCP server not configured. Run 'ec enable' to add MCP support.")
+
+    legacy = detect_legacy_worktree_db(roots)
+    if legacy:
+        warnings.append(_legacy_worktree_db_message(legacy))
 
     if issues:
         for issue in issues:

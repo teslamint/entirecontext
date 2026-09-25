@@ -125,6 +125,21 @@ _PROMOTE_TABLES = (
     "decision_commits",
 )
 
+# Oldest source schema whose promoted tables (``decisions`` plus
+# ``_PROMOTE_TABLES``) match the current schema. v21 only added session,
+# project and worktree-state columns, so a pre-v21 per-worktree DB (v20) can
+# be promoted into a v21 target without migrating it. Raise this floor when a
+# migration changes any promoted table.
+_PROMOTE_MIN_SOURCE_VERSION = 20
+
+
+def _promote_versions_compatible(source_version: int, target_version: int) -> bool:
+    if source_version == target_version:
+        return True
+    from ..db.schema import SCHEMA_VERSION
+
+    return _PROMOTE_MIN_SOURCE_VERSION <= source_version < target_version <= SCHEMA_VERSION
+
 
 def promote_decisions(
     source_conn: sqlite3.Connection,
@@ -136,7 +151,7 @@ def promote_decisions(
     from .context import transaction
 
     source_version = _get_source_schema_version(source_conn)
-    if target_schema_version is not None and source_version != target_schema_version:
+    if target_schema_version is not None and not _promote_versions_compatible(source_version, target_schema_version):
         raise ValueError(
             f"Schema version mismatch: source={source_version}, target={target_schema_version}. "
             "Migrate the source DB first."
