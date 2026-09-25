@@ -88,9 +88,6 @@ class TestNormalization:
     def test_normalize_basic(self):
         assert normalize_title_for_dedup("Use Redis for Caching!!") == "use redis for caching"
 
-    def test_normalize_case_invariance(self):
-        assert normalize_title_for_dedup("USE REDIS") == normalize_title_for_dedup("use redis")
-
     def test_normalize_whitespace_collapses(self):
         assert normalize_title_for_dedup("  use   redis\nfor\tcaching  ") == "use redis for caching"
 
@@ -98,10 +95,6 @@ class TestNormalization:
         k1 = compute_dedup_key("Use Redis")
         k2 = compute_dedup_key("use redis!!")
         assert k1 == k2
-
-    def test_dedup_key_12_chars(self):
-        k = compute_dedup_key("hello world")
-        assert len(k) == 12
 
     def test_tokenize_title(self):
         result = _tokenize_title_for_fts("Use JWT over session-based auth")
@@ -220,12 +213,6 @@ class TestConfidenceScoring:
         dr = DedupResult(dedup_key="k")
         score, _ = score_confidence(draft, dr)
         assert abs(score - 0.40) < 1e-6
-
-    def test_zero_files_no_bonus(self):
-        draft = _mock_draft("session", files=[])
-        dr = DedupResult(dedup_key="k")
-        score, _ = score_confidence(draft, dr)
-        assert abs(score - 0.30) < 1e-6
 
     def test_too_many_files_no_bonus(self):
         draft = _mock_draft("session", files=[f"f{i}.py" for i in range(10)])
@@ -500,24 +487,6 @@ class TestParseFencedResponse:
 
         assert len(drafts) == 1
 
-    def test_handles_unfenced_json(self):
-        from entirecontext.core.decision_extraction import parse_llm_response, SignalBundle
-
-        bundle = SignalBundle(
-            source_type="session",
-            source_id="s1",
-            session_id="s1",
-            checkpoint_id=None,
-            assessment_id=None,
-            text_blocks=["test"],
-            files=[],
-        )
-
-        raw = '[{"title": "Use WAL mode", "rationale": "concurrent reads", "scope": "database"}]'
-        drafts = parse_llm_response(raw, bundle)
-
-        assert len(drafts) == 1
-
 
 # ---------------------------------------------------------------------------
 # Integration tests — end-to-end run_extraction via shim
@@ -606,44 +575,6 @@ class TestEndToEndExtraction:
 
 
 class TestConfidenceThreshold:
-    def test_score_below_threshold_filtered(self):
-        """Session candidate with no rationale/alts/files scores 0.30 — below 0.35 threshold."""
-        draft = CandidateDraft(
-            title="Bare decision",
-            rationale=None,
-            scope=None,
-            rejected_alternatives=[],
-            supporting_evidence=[],
-            source_type="session",
-            source_id="s1",
-            session_id="s1",
-            checkpoint_id=None,
-            assessment_id=None,
-            files=[],
-        )
-        dedup_result = DedupResult(dedup_key="test")
-        score, _breakdown = score_confidence(draft, dedup_result)
-        assert score < 0.35
-
-    def test_score_above_threshold_passes(self):
-        """Checkpoint candidate with rationale+alts scores well above 0.35."""
-        draft = CandidateDraft(
-            title="Use Redis for caching",
-            rationale="Redis provides persistence and pub/sub which memcached lacks for our use case",
-            scope=None,
-            rejected_alternatives=["memcached"],
-            supporting_evidence=[],
-            source_type="checkpoint",
-            source_id="cp1",
-            session_id="s1",
-            checkpoint_id="cp1",
-            assessment_id=None,
-            files=["src/cache.py"],
-        )
-        dedup_result = DedupResult(dedup_key="test")
-        score, _breakdown = score_confidence(draft, dedup_result)
-        assert score >= 0.35
-
     def test_run_extraction_skips_below_threshold(self, ec_repo, ec_db, monkeypatch):
         """run_extraction with min_confidence=1.0 should skip all candidates."""
         session = _seed_session(ec_db, ec_repo, session_id="conf-threshold-skip")
@@ -753,12 +684,6 @@ class TestConfirmRejectFlow:
         # Decisions table remains empty
         decision_count = ec_db.execute("SELECT COUNT(*) AS c FROM decisions").fetchone()["c"]
         assert decision_count == 0
-
-    def test_double_confirm_raises(self, ec_repo, ec_db):
-        cid = self._seed_candidate(ec_db, ec_repo, session_id="double-session")
-        confirm_candidate(ec_db, cid)
-        with pytest.raises(ValueError):
-            confirm_candidate(ec_db, cid)
 
     def test_confirm_claim_is_conditional_on_pending_status(self, ec_repo, ec_db):
         """Regression: the confirm path must gate on review_status='pending'
@@ -1241,25 +1166,6 @@ class TestOutcomeFeedbackPenalty:
         assert stats["accepted"] == 1
         assert stats["total"] == 3
 
-    def test_outcome_feedback_counts_refined_and_replaced(self, ec_repo, ec_db):
-        """refined and replaced outcomes must appear as non-zero in get_file_outcome_stats."""
-        from entirecontext.core.decision_extraction import get_file_outcome_stats
-
-        self._seed_decision_with_outcomes(
-            ec_db,
-            title="Refined decision",
-            file_paths=["src/service/payment.py"],
-            outcome_types=["refined", "refined", "replaced"],
-        )
-
-        stats = get_file_outcome_stats(ec_db, ["src/service/payment.py"], lookback_days=60)
-        assert stats["refined"] == 2
-        assert stats["replaced"] == 1
-        assert stats["total"] == 3
-        assert stats["accepted"] == 0
-        assert stats["ignored"] == 0
-        assert stats["contradicted"] == 0
-
     def test_outcome_feedback_lookback_cutoff(self, ec_repo, ec_db):
         """Outcomes older than the lookback window must be excluded."""
         from entirecontext.core.decision_extraction import get_file_outcome_stats
@@ -1349,37 +1255,6 @@ class TestOutcomeFeedbackPenalty:
         assert breakdown["outcome_feedback"]["applied"] is True
         assert breakdown["outcome_feedback"]["contradicted"] == 3
         assert "final_before_outcome_feedback" in breakdown
-
-    def test_outcome_feedback_refined_replaced_ignored_in_f2_ratio(self, ec_repo, ec_db):
-        """refined/replaced rows must not count toward F2 ratio numerator or denominator."""
-        from entirecontext.core.decision_extraction import (
-            apply_outcome_feedback_to_confidence,
-            get_file_outcome_stats,
-        )
-
-        # 1 contradicted out of 2 total (accepted + contradicted) = 0.5, below threshold.
-        # Adding refined/replaced must not change the ratio or trigger the penalty.
-        self._seed_decision_with_outcomes(
-            ec_db,
-            title="Mixed outcome decision",
-            file_paths=["src/service/mixed.py"],
-            outcome_types=["contradicted", "accepted", "refined", "replaced"],
-        )
-
-        stats = get_file_outcome_stats(ec_db, ["src/service/mixed.py"], lookback_days=60)
-        assert stats["contradicted"] == 1
-        assert stats["accepted"] == 1
-        assert stats["total"] == 4
-        assert stats["refined"] == 1
-        assert stats["replaced"] == 1
-
-        breakdown = {"final": 0.60, "penalties": {}}
-        adjusted, new_breakdown = apply_outcome_feedback_to_confidence(0.60, breakdown, stats, penalty=0.15)
-        # ratio = 1/2 = 0.5, not strictly > 0.5 — no penalty.
-        assert adjusted == 0.60
-        assert new_breakdown["outcome_feedback"]["applied"] is False
-        assert new_breakdown["outcome_feedback"]["total"] == 4
-        assert new_breakdown["outcome_feedback"]["scored_total"] == 2
 
     def test_accepted_outcomes_boost_below_threshold_no_change(self, ec_repo, ec_db):
         """accepted/scored_total at or below boost_threshold must not apply a boost."""

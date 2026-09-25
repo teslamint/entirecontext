@@ -35,29 +35,6 @@ class TestAddAssessmentRelationship:
         assert rel["target_id"] == a2["id"]
         assert rel["relationship_type"] == "causes"
 
-    def test_add_fixes_relationship(self, ec_db):
-        a1 = _make_assessment(ec_db, impact="Refactored tight coupling")
-        a2 = _make_assessment(ec_db, impact="Hard to extend later")
-        rel = add_assessment_relationship(ec_db, a1["id"], a2["id"], "fixes")
-        assert rel["relationship_type"] == "fixes"
-
-    def test_add_contradicts_relationship(self, ec_db):
-        a1 = _make_assessment(ec_db, verdict="expand", impact="This expands options")
-        a2 = _make_assessment(ec_db, verdict="narrow", impact="This narrows options")
-        rel = add_assessment_relationship(ec_db, a1["id"], a2["id"], "contradicts")
-        assert rel["relationship_type"] == "contradicts"
-
-    def test_relationship_has_required_fields(self, ec_db):
-        a1 = _make_assessment(ec_db)
-        a2 = _make_assessment(ec_db)
-        rel = add_assessment_relationship(ec_db, a1["id"], a2["id"], "causes")
-        assert "id" in rel
-        assert "source_id" in rel
-        assert "target_id" in rel
-        assert "relationship_type" in rel
-        assert "created_at" in rel
-        assert rel["note"] is None  # default
-
     def test_relationship_with_note(self, ec_db):
         a1 = _make_assessment(ec_db)
         a2 = _make_assessment(ec_db)

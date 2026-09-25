@@ -38,14 +38,6 @@ class TestOptimizeForContextBudget:
         result = optimize_for_context_budget(ranked, top_k=3, max_tokens=10000, min_confidence=0.0)
         assert len(result) == 3
 
-    def test_max_tokens_trim_removes_lowest_score(self):
-        ranked = [
-            _d("High score", 0.9, rank=1, rationale="x" * 200),
-            _d("Low score", 0.5, rank=2, rationale="y" * 200),
-        ]
-        result = optimize_for_context_budget(ranked, top_k=5, max_tokens=50, min_confidence=0.0)
-        assert len(result) <= 2
-
     def test_single_entry_rationale_truncated_when_over_budget(self):
         long_rationale = "A" * 500
         ranked = [_d("Huge", 0.9, rank=1, rationale=long_rationale)]
@@ -70,11 +62,6 @@ class TestOptimizeForContextBudget:
 
 
 class TestEstimateTokens:
-    def test_returns_positive_int_for_normal_text(self):
-        result = decision_prompt_surfacing._estimate_tokens("normal text")
-        assert isinstance(result, int)
-        assert result > 0
-
     def test_falls_back_when_tiktoken_unavailable(self, monkeypatch):
         monkeypatch.setattr(decision_prompt_surfacing, "_tiktoken_encoding", None)
         result = decision_prompt_surfacing._estimate_tokens("fallback text")

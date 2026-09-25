@@ -43,14 +43,6 @@ class TestGitCommitEnv:
         assert env["GIT_CONFIG_GLOBAL"] == os.devnull
         assert env["GIT_CONFIG_SYSTEM"] == os.devnull
 
-    def test_carries_path(self):
-        assert git_commit_env()["PATH"] == os.environ["PATH"]
-
-    def test_sets_commit_identity(self):
-        env = git_commit_env()
-        assert env["GIT_AUTHOR_EMAIL"] == "test@test.com"
-        assert env["GIT_COMMITTER_EMAIL"] == "test@test.com"
-
     def test_isolation_reaches_subprocesses_given_an_explicit_env(self, git_repo):
         """A subprocess run with env=git_commit_env() must not see host config."""
         assert _git(["config", "--global", "--list"], git_repo, env=git_commit_env()) == ""

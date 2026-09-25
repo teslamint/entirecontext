@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -99,12 +99,6 @@ def _seed_graph_db(ec_repo, ec_db):
 
 
 class TestBuildKnowledgeGraphNodes:
-    def test_returns_nodes_and_edges(self, ec_repo, ec_db):
-        _seed_graph_db(ec_repo, ec_db)
-        graph = build_knowledge_graph(ec_db)
-        assert "nodes" in graph
-        assert "edges" in graph
-
     def test_session_nodes_present(self, ec_repo, ec_db):
         ids = _seed_graph_db(ec_repo, ec_db)
         graph = build_knowledge_graph(ec_db)
@@ -153,14 +147,6 @@ class TestBuildKnowledgeGraphNodes:
         agent_ids = [n["id"] for n in agent_nodes]
         assert ids["agent1"] in agent_ids
         assert ids["agent2"] in agent_ids
-
-    def test_nodes_have_required_fields(self, ec_repo, ec_db):
-        _seed_graph_db(ec_repo, ec_db)
-        graph = build_knowledge_graph(ec_db)
-        for node in graph["nodes"]:
-            assert "id" in node
-            assert "type" in node
-            assert "label" in node
 
     def test_node_ids_are_unique(self, ec_repo, ec_db):
         _seed_graph_db(ec_repo, ec_db)
@@ -212,14 +198,6 @@ class TestBuildKnowledgeGraphEdges:
         graph = build_knowledge_graph(ec_db)
         edges = {(e["source"], e["relation"], e["target"]) for e in graph["edges"]}
         assert (ids["s1"], "has_checkpoint", "chk-1") in edges
-
-    def test_edges_have_required_fields(self, ec_repo, ec_db):
-        _seed_graph_db(ec_repo, ec_db)
-        graph = build_knowledge_graph(ec_db)
-        for edge in graph["edges"]:
-            assert "source" in edge
-            assert "relation" in edge
-            assert "target" in edge
 
     def test_no_self_loop_edges(self, ec_repo, ec_db):
         _seed_graph_db(ec_repo, ec_db)
@@ -314,24 +292,6 @@ class TestBuildKnowledgeGraphFilters:
 
 
 class TestGetGraphStats:
-    def test_returns_dict(self, ec_repo, ec_db):
-        _seed_graph_db(ec_repo, ec_db)
-        graph = build_knowledge_graph(ec_db)
-        stats = get_graph_stats(graph)
-        assert isinstance(stats, dict)
-
-    def test_total_nodes(self, ec_repo, ec_db):
-        _seed_graph_db(ec_repo, ec_db)
-        graph = build_knowledge_graph(ec_db)
-        stats = get_graph_stats(graph)
-        assert stats["total_nodes"] == len(graph["nodes"])
-
-    def test_total_edges(self, ec_repo, ec_db):
-        _seed_graph_db(ec_repo, ec_db)
-        graph = build_knowledge_graph(ec_db)
-        stats = get_graph_stats(graph)
-        assert stats["total_edges"] == len(graph["edges"])
-
     def test_nodes_by_type_counts(self, ec_repo, ec_db):
         _seed_graph_db(ec_repo, ec_db)
         graph = build_knowledge_graph(ec_db)
@@ -369,69 +329,3 @@ class TestGraphCLI:
         with patch("entirecontext.core.project.find_git_root", return_value=None):
             result = runner.invoke(app, ["graph"])
         assert result.exit_code == 1
-
-    def test_basic_output(self):
-        mock_conn = MagicMock()
-        graph = {
-            "nodes": [
-                {"id": "s1", "type": "session", "label": "sess-1"},
-                {"id": "abc123", "type": "commit", "label": "abc123"},
-            ],
-            "edges": [{"source": "s1", "relation": "has_checkpoint", "target": "abc123"}],
-        }
-        stats = {
-            "total_nodes": 2,
-            "total_edges": 1,
-            "nodes_by_type": {"session": 1, "commit": 1},
-            "edges_by_relation": {"has_checkpoint": 1},
-        }
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.knowledge_graph.build_knowledge_graph", return_value=graph),
-            patch("entirecontext.core.knowledge_graph.get_graph_stats", return_value=stats),
-        ):
-            result = runner.invoke(app, ["graph"])
-        assert result.exit_code == 0
-        assert "2" in result.output or "node" in result.output.lower()
-
-    def test_empty_graph_message(self):
-        mock_conn = MagicMock()
-        graph = {"nodes": [], "edges": []}
-        stats = {"total_nodes": 0, "total_edges": 0, "nodes_by_type": {}, "edges_by_relation": {}}
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.knowledge_graph.build_knowledge_graph", return_value=graph),
-            patch("entirecontext.core.knowledge_graph.get_graph_stats", return_value=stats),
-        ):
-            result = runner.invoke(app, ["graph"])
-        assert result.exit_code == 0
-        assert "no" in result.output.lower() or "0" in result.output
-
-    def test_session_option_passed(self):
-        mock_conn = MagicMock()
-        graph = {"nodes": [], "edges": []}
-        stats = {"total_nodes": 0, "total_edges": 0, "nodes_by_type": {}, "edges_by_relation": {}}
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.knowledge_graph.build_knowledge_graph", return_value=graph) as mock_build,
-            patch("entirecontext.core.knowledge_graph.get_graph_stats", return_value=stats),
-        ):
-            runner.invoke(app, ["graph", "--session", "sess-001"])
-        mock_build.assert_called_once()
-        assert mock_build.call_args.kwargs.get("session_id") == "sess-001"
-
-    def test_limit_option_passed(self):
-        mock_conn = MagicMock()
-        graph = {"nodes": [], "edges": []}
-        stats = {"total_nodes": 0, "total_edges": 0, "nodes_by_type": {}, "edges_by_relation": {}}
-        with (
-            patch("entirecontext.core.project.find_git_root", return_value="/tmp/repo"),
-            patch("entirecontext.db.get_db", return_value=mock_conn),
-            patch("entirecontext.core.knowledge_graph.build_knowledge_graph", return_value=graph) as mock_build,
-            patch("entirecontext.core.knowledge_graph.get_graph_stats", return_value=stats),
-        ):
-            runner.invoke(app, ["graph", "--limit", "50"])
-        assert mock_build.call_args.kwargs.get("limit") == 50

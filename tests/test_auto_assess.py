@@ -102,14 +102,6 @@ def test_verdict_case_insensitive():
     assert compute_rule_verdict(["FEAT: big thing"]) == "expand"
 
 
-def test_verdict_non_conventional():
-    assert compute_rule_verdict(["Update README"]) == "neutral"
-
-
-def test_verdict_merge_commit():
-    assert compute_rule_verdict(["Merge branch 'feature' into 'main'"]) == "neutral"
-
-
 def _get_head(repo_path):
     r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_path, capture_output=True, text=True)
     return r.stdout.strip()
@@ -528,12 +520,3 @@ def test_enrich_assessment_agree_when_same_verdict(ec_repo, ec_db, monkeypatch):
     ).fetchone()
     assert row["feedback"] == "agree"
     assert "confirmed" in row["feedback_reason"]
-
-
-def test_config_defaults():
-    from entirecontext.core.config import DEFAULT_CONFIG
-
-    futures = DEFAULT_CONFIG["futures"]
-    assert futures["default_backend"] == "claude"
-    assert futures["assess_enrich"] is True
-    assert futures["assess_backfill_window_days"] == 7

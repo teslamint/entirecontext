@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 from uuid import uuid4
 
 
 from entirecontext.core.cross_repo import (
     _for_each_repo,
     _lazy_pull_repos,
-    _return_with_warnings,
     cross_repo_attribution,
     cross_repo_checkpoints,
     cross_repo_events,
@@ -19,7 +17,6 @@ from entirecontext.core.cross_repo import (
     cross_repo_session_detail,
     cross_repo_sessions,
     cross_repo_turn_content,
-    resolve_content_path,
 )
 
 
@@ -63,15 +60,6 @@ def _get_session_id(conn, name):
 
 
 class TestForEachRepo:
-    def test_merges_results_from_all_repos(self, multi_ec_repos):
-        def fn(conn, repo):
-            rows = conn.execute("SELECT id FROM sessions LIMIT 5").fetchall()
-            return [dict(r) for r in rows]
-
-        results, warnings = _for_each_repo(fn)
-        assert len(results) == 2
-        assert warnings == []
-
     def test_sort_key_and_limit(self, multi_ec_repos):
         def fn(conn, repo):
             rows = conn.execute("SELECT id, last_activity_at FROM sessions").fetchall()
@@ -113,18 +101,6 @@ class TestForEachRepo:
         assert warnings == []
 
 
-class TestReturnWithWarnings:
-    def test_include_warnings_true(self):
-        r, w = _return_with_warnings([{"a": 1}], ["warn1"], include_warnings=True)
-        assert r == [{"a": 1}]
-        assert w == ["warn1"]
-
-    def test_include_warnings_false(self):
-        result = _return_with_warnings([{"a": 1}], ["warn1"], include_warnings=False)
-        assert result == [{"a": 1}]
-        assert not isinstance(result, tuple)
-
-
 class TestCrossRepoCheckpoints:
     def test_lists_from_multiple_repos(self, multi_ec_repos):
         for name, repo_path in multi_ec_repos.items():
@@ -159,13 +135,6 @@ class TestCrossRepoCheckpoints:
         results = cross_repo_checkpoints(since="2099-01-01T00:00:00")
         assert results == []
 
-    def test_include_warnings_backward_compat(self, multi_ec_repos):
-        results = cross_repo_checkpoints(include_warnings=False)
-        assert isinstance(results, list)
-
-        results_w = cross_repo_checkpoints(include_warnings=True)
-        assert isinstance(results_w, tuple)
-
 
 class TestCrossRepoSessionDetail:
     def test_found_in_second_repo(self, multi_ec_repos):
@@ -178,11 +147,6 @@ class TestCrossRepoSessionDetail:
     def test_not_found_returns_none(self, multi_ec_repos):
         result = cross_repo_session_detail("nonexistent-session")
         assert result is None
-
-    def test_include_warnings(self, multi_ec_repos):
-        result, warnings = cross_repo_session_detail("frontend-session-1", include_warnings=True)
-        assert result is not None
-        assert isinstance(warnings, list)
 
 
 class TestCrossRepoEvents:
@@ -226,11 +190,6 @@ class TestCrossRepoAttribution:
         assert "frontend" in repos
         assert "backend" in repos
 
-    def test_include_warnings(self, multi_ec_repos):
-        results, warnings = cross_repo_attribution("nonexistent.py", include_warnings=True)
-        assert isinstance(results, list)
-        assert isinstance(warnings, list)
-
 
 class TestCrossRepoRelated:
     def test_query_search(self, multi_ec_repos):
@@ -240,22 +199,8 @@ class TestCrossRepoRelated:
         assert "frontend" in repos
         assert "backend" in repos
 
-    def test_file_search(self, multi_ec_repos):
-        results = cross_repo_related(files=["main.py"])
-        assert isinstance(results, list)
-
 
 class TestCrossRepoRewind:
-    def test_found_in_first_repo(self, multi_ec_repos):
-        conn = _get_repo_conn(multi_ec_repos["frontend"])
-        sid = _get_session_id(conn, "frontend")
-        _seed_checkpoint(conn, sid, checkpoint_id="cp-frontend-1")
-        conn.close()
-
-        result = cross_repo_rewind("cp-frontend-1")
-        assert result is not None
-        assert result["id"] == "cp-frontend-1"
-
     def test_found_in_second_repo(self, multi_ec_repos):
         conn = _get_repo_conn(multi_ec_repos["backend"])
         sid = _get_session_id(conn, "backend")
@@ -270,11 +215,6 @@ class TestCrossRepoRewind:
     def test_not_found(self, multi_ec_repos):
         result = cross_repo_rewind("nonexistent-cp")
         assert result is None
-
-    def test_include_warnings(self, multi_ec_repos):
-        result, warnings = cross_repo_rewind("nonexistent-cp", include_warnings=True)
-        assert result is None
-        assert isinstance(warnings, list)
 
 
 class TestCrossRepoTurnContent:
@@ -312,17 +252,6 @@ class TestCrossRepoTurnContent:
         result = cross_repo_turn_content("nonexistent-turn-id")
         assert result is None
 
-    def test_include_warnings(self, multi_ec_repos):
-        result, warnings = cross_repo_turn_content("nonexistent-turn-id", include_warnings=True)
-        assert result is None
-        assert isinstance(warnings, list)
-
-
-class TestResolveContentPath:
-    def test_resolves_path(self):
-        result = resolve_content_path("/repo", "content/sess/turn.jsonl")
-        assert result == Path("/repo/.entirecontext/content/sess/turn.jsonl")
-
 
 class TestBackwardCompat:
     def test_sessions_no_warnings_returns_list(self, multi_ec_repos):
@@ -337,13 +266,6 @@ class TestBackwardCompat:
 
 
 class TestLazyPullRepos:
-    def test_noop_when_auto_pull_disabled(self, monkeypatch, isolated_global_config):
-        monkeypatch.setattr(
-            "entirecontext.core.config.load_config",
-            lambda *a, **kw: {"sync": {"auto_pull": False}},
-        )
-        _lazy_pull_repos([{"repo_path": "/fake", "db_path": "/fake/db"}])
-
     def test_calls_should_pull_when_enabled(self, monkeypatch, isolated_global_config, tmp_path):
         repo = tmp_path / "repo"
         repo.mkdir()

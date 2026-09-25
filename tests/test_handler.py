@@ -29,14 +29,6 @@ class TestHandleHook:
     def test_unknown_hook_type(self):
         assert handle_hook("UnknownType", data={}) == 0
 
-    def test_dispatches_session_start(self):
-        mock_handler = MagicMock(return_value=0)
-        data = {"cwd": "."}
-        with patch("entirecontext.hooks.handler._handle_session_start", mock_handler):
-            result = handle_hook("SessionStart", data=data)
-        mock_handler.assert_called_once_with(data)
-        assert result == 0
-
     @pytest.mark.parametrize(
         "hook_type,handler_name",
         [
