@@ -217,7 +217,7 @@ def _backup(conn: sqlite3.Connection, dest: Path) -> Path:
 
 
 def _md5(path: Path) -> str:
-    digest = hashlib.md5()
+    digest = hashlib.md5(usedforsecurity=False)
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             digest.update(chunk)
