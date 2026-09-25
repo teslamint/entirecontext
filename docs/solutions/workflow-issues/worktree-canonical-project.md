@@ -61,9 +61,18 @@ Thus, a call site that uses the wrong root fails with an error. It does not make
 
 ### Legacy per-worktree databases
 
-Before v21, EntireContext made a database in each linked worktree. `ec status`, `ec init` and `ec doctor` find these databases. They open them read-only (`mode=ro`) and show them. EntireContext does not open them read-write, merge them, copy them or symlink them.
+Before v21, EntireContext made a database in each linked worktree. `ec status`, `ec init` and `ec doctor` find these databases. They open them read-only (`mode=ro`) and show them. These commands do not open them read-write, copy them or symlink them.
 
-A merge command is not available yet. Until it is available, use `ec decision verify-docs --promote-from <path>`. This command copies only the decisions that `docs/adr`, `docs/specs`, `docs/plans` and `ROADMAP.md` refer to. It accepts a v20 source without a migration, because v21 did not change the tables that it copies.
+To copy only decisions, use `ec decision verify-docs --promote-from <path>`. This command copies only the decisions that `docs/adr`, `docs/specs`, `docs/plans` and `ROADMAP.md` refer to. It accepts a v20 source without a migration, because v21 did not change the tables that it copies.
+
+To merge all data, use `ec project merge-worktree <path>`:
+
+- The command opens the source read-only. It accepts schema v20 and v21.
+- Without `--apply`, the command does the row merge in a transaction and then rolls it back. Thus, the report is the same as the report of `--apply`.
+- With `--apply`, the command first writes SQLite backup-API snapshots of the two databases to `.entirecontext/backups/`. Then it copies the content files with an md5 check and inserts the rows in one transaction.
+- Inserts do not set `rowid`. Thus, the FTS triggers index each row under a new canonical rowid.
+- If a row has the same id but different values, the command keeps the canonical values and reports the row as divergent.
+- The command removes the stale global `repo_index` row only after the commit. It does not delete the source file.
 
 ### Prevention checklist
 
