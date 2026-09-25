@@ -50,13 +50,13 @@ pipx install 'entirecontext[mcp]'
 It avoids mutable system or Conda interpreter paths changing Python minor versions
 behind an existing environment.
 
-The `[mcp]` extra installs the MCP SDK that `ec mcp serve` needs. `ec init` registers that server by default, so omit the extra only when you do not use MCP.
+The `[mcp]` extra installs the MCP SDK that `ec mcp serve` needs. Install it before you run the default `ec init`, because `ec init` registers that server. `ec init --no-hooks` skips MCP registration, but it also skips hook installation.
 
 `ec search --semantic` needs the `semantic` extra (`entirecontext[mcp,semantic]`), which installs `sentence-transformers` and PyTorch. The first embedding run downloads the `all-MiniLM-L6-v2` model (about 87 MB) into the Hugging Face cache. Search also needs stored embeddings: run `ec index --semantic` first, or set `index.auto_embed = true`. Without embeddings, semantic search returns no results.
 
 Tagged GitHub releases also include the built wheel and source tarball as release assets. PyPI remains the primary install path.
 
-Use the same workflow after either install path:
+Use the same workflow after either install path. After a local dependency install, run each command through `uv run` (for example, `uv run ec init`) or activate the project environment. After a global install, use `ec` directly.
 
 ```bash
 # 2. Initialize in your repo — installs Claude Code hooks, git hooks, and MCP config
