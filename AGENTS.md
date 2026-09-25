@@ -12,6 +12,11 @@ Tests use real git repos via fixtures (`git_repo`, `ec_repo`, `ec_db`, `isolated
 
 When modifying a source module, always run the existing tests for that module before committing — not just newly written tests. Test verification scope must match the change scope.
 
+### Test-writing rules
+- Never write unit tests after you write code.
+- Highly prefer E2E tests (`tests/test_e2e_*.py`) as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- If you must test a system in isolation, first write down all the ways it could fail, then write the code.
+
 ## Commit & Pull Request Guidelines
 - Conventional Commit prefixes: `feat(...)`, `fix(...)`, `refactor(...)`, `docs(...)`.
 - Keep each commit focused on one change area with scope (example: `feat(search): add hybrid reranking`).
