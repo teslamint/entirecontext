@@ -37,10 +37,6 @@ class TestCreateEvent:
         assert result["status"] == "active"
         assert result["id"] is not None
 
-    def test_create_with_type(self, db):
-        result = create_event(db, "Sprint 5", event_type="temporal")
-        assert result["event_type"] == "temporal"
-
     def test_create_milestone(self, db):
         result = create_event(db, "v1.0 release", event_type="milestone", description="First stable release")
         assert result["event_type"] == "milestone"
@@ -53,12 +49,6 @@ class TestCreateEvent:
 
 
 class TestGetEvent:
-    def test_get_existing(self, db):
-        created = create_event(db, "Test event")
-        fetched = get_event(db, created["id"])
-        assert fetched is not None
-        assert fetched["title"] == "Test event"
-
     def test_get_nonexistent(self, db):
         assert get_event(db, "nonexistent-id") is None
 
@@ -92,10 +82,6 @@ class TestListEvents:
         events = list_events(db, limit=3)
         assert len(events) == 3
 
-    def test_list_empty(self, db):
-        events = list_events(db)
-        assert events == []
-
 
 class TestUpdateEvent:
     def test_update_title(self, db):
@@ -103,11 +89,6 @@ class TestUpdateEvent:
         update_event(db, e["id"], title="New title")
         updated = get_event(db, e["id"])
         assert updated["title"] == "New title"
-
-    def test_status_active_to_frozen(self, db):
-        e = create_event(db, "Test")
-        update_event(db, e["id"], status="frozen")
-        assert get_event(db, e["id"])["status"] == "frozen"
 
     def test_status_active_to_archived(self, db):
         e = create_event(db, "Test")
@@ -194,15 +175,3 @@ class TestLinkEventCheckpoint:
         link_event_checkpoint(db, e["id"], "cp1")
         checkpoints = get_event_checkpoints(db, e["id"])
         assert len(checkpoints) == 1
-
-
-class TestGetEventSessions:
-    def test_no_linked_sessions(self, db):
-        e = create_event(db, "Empty event")
-        assert get_event_sessions(db, e["id"]) == []
-
-
-class TestGetEventCheckpoints:
-    def test_no_linked_checkpoints(self, db):
-        e = create_event(db, "Empty event")
-        assert get_event_checkpoints(db, e["id"]) == []

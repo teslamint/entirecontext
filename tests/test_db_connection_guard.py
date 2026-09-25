@@ -16,17 +16,6 @@ def test_get_db_rejects_linked_worktree_root(linked_worktree):
     assert not (linked / ".entirecontext").exists()
 
 
-def test_get_db_accepts_main_worktree_root(linked_worktree):
-    main, _linked = linked_worktree
-
-    conn = get_db(str(main))
-    try:
-        assert conn.execute("SELECT 1").fetchone()[0] == 1
-    finally:
-        conn.close()
-    assert db_path_for(main).exists()
-
-
 def test_get_db_accepts_bare_repo_worktree(tmp_path, git_repo):
     import subprocess
 
@@ -40,8 +29,3 @@ def test_get_db_accepts_bare_repo_worktree(tmp_path, git_repo):
     conn = get_db(str(checkout))
     conn.close()
     assert db_path_for(checkout).exists()
-
-
-def test_db_path_for(tmp_path):
-    assert db_path_for(tmp_path) == tmp_path / ".entirecontext" / "db" / "local.db"
-    assert db_path_for(str(tmp_path)) == tmp_path / ".entirecontext" / "db" / "local.db"

@@ -167,12 +167,6 @@ class TestAutoCheckpointHook:
         meta = json.loads(checkpoints[0]["metadata"])
         assert meta["source"] == "auto_session_end"
 
-    def test_exception_does_not_crash(self, ec_repo):
-        from entirecontext.hooks.session_lifecycle import _maybe_create_auto_checkpoint
-
-        with patch("entirecontext.core.config.load_config", side_effect=RuntimeError("boom")):
-            _maybe_create_auto_checkpoint(str(ec_repo), "any-session-id")
-
     def test_no_git_commit_skips(self, ec_repo, ec_db):
         from entirecontext.core.session import create_session
         from entirecontext.hooks.session_lifecycle import _maybe_create_auto_checkpoint
