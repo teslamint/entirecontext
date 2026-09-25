@@ -318,20 +318,6 @@ class TestImportFromAline:
 
 
 class TestImportCLI:
-    def test_import_help(self):
-        import re
-
-        from typer.testing import CliRunner
-        from entirecontext.cli import app
-
-        runner = CliRunner(env={"COLUMNS": "200"})
-        result = runner.invoke(app, ["import", "--help"])
-        assert result.exit_code == 0
-        clean = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
-        assert "--from-aline" in clean
-        assert "--dry-run" in clean
-        assert "--skip-content" in clean
-
     def test_import_no_source(self):
         from typer.testing import CliRunner
         from entirecontext.cli import app

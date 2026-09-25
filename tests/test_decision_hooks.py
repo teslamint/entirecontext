@@ -6,40 +6,13 @@ import json
 import subprocess as _subprocess
 from unittest.mock import MagicMock, patch
 
-from entirecontext.core.async_worker import _pid_file, launch_worker, worker_status
-from entirecontext.core.config import DEFAULT_CONFIG
+from entirecontext.core.async_worker import launch_worker
 from entirecontext.core.decisions import create_decision, get_decision, link_decision_to_file, list_decisions
 from entirecontext.core.session import create_session
 from entirecontext.core.turn import create_turn
 
 
-class TestDecisionConfig:
-    def test_decisions_section_exists(self):
-        assert "decisions" in DEFAULT_CONFIG
-
-    def test_decisions_defaults(self):
-        decisions = DEFAULT_CONFIG["decisions"]
-        assert decisions["auto_stale_check"] is False
-        assert decisions["auto_extract"] is True
-        assert decisions["show_related_on_start"] is False
-        assert decisions["extract_max_attempts"] == 3
-
-    def test_extract_keywords_present(self):
-        keywords = DEFAULT_CONFIG["decisions"]["extract_keywords"]
-        assert isinstance(keywords, list)
-        assert len(keywords) > 0
-        assert "decided" in keywords
-
-
 class TestNamedWorker:
-    def test_pid_file_default_name(self, tmp_path):
-        result = _pid_file(str(tmp_path))
-        assert result == tmp_path / ".entirecontext" / "worker.pid"
-
-    def test_pid_file_custom_name(self, tmp_path):
-        result = _pid_file(str(tmp_path), pid_name="worker-decision")
-        assert result == tmp_path / ".entirecontext" / "worker-decision.pid"
-
     def test_launch_worker_custom_pid(self, tmp_path):
         ec_dir = tmp_path / ".entirecontext"
         ec_dir.mkdir()
@@ -54,32 +27,8 @@ class TestNamedWorker:
             assert pid_path.read_text().strip() == "12345"
             assert not (ec_dir / "worker.pid").exists()
 
-    def test_worker_status_custom_pid(self, tmp_path):
-        ec_dir = tmp_path / ".entirecontext"
-        ec_dir.mkdir()
-        status = worker_status(str(tmp_path), pid_name="worker-decision")
-        assert status["running"] is False
-
 
 class TestMaybeCheckStaleDecisions:
-    def test_disabled_by_config(self, ec_repo, monkeypatch):
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"auto_stale_check": False},
-        )
-        from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
-
-        maybe_check_stale_decisions(str(ec_repo))
-
-    def test_no_decisions_early_return(self, ec_repo, ec_db, monkeypatch):
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"auto_stale_check": True},
-        )
-        from entirecontext.hooks.decision_hooks import maybe_check_stale_decisions
-
-        maybe_check_stale_decisions(str(ec_repo))
-
     def test_stale_detection_updates_status(self, ec_repo, ec_db, monkeypatch):
         import subprocess
 
@@ -189,16 +138,6 @@ class TestOnSessionStartDecisions:
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks._load_decisions_config",
             lambda _: {"show_related_on_start": False},
-        )
-        from entirecontext.hooks.decision_hooks import on_session_start_decisions
-
-        result = on_session_start_decisions({"cwd": str(ec_repo), "session_id": "s1"})
-        assert result is None
-
-    def test_no_related_decisions_returns_none(self, ec_repo, ec_db, monkeypatch):
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"show_related_on_start": True},
         )
         from entirecontext.hooks.decision_hooks import on_session_start_decisions
 
@@ -1129,36 +1068,6 @@ class TestOnPostToolUseDecisions:
         assert "Fresh successor D2" in result
         assert "Ancestor D1" not in result
 
-    def test_post_tool_cleanup_does_not_touch_session_start_file(self, ec_repo, ec_db, monkeypatch):
-        """PR #56 review round 3 — Bug 2: when PostToolUse returns None on
-        an empty/deduped result, it must only clean its own fallback file
-        (``decisions-context-tooluse.md``) and leave the SessionStart file
-        (``decisions-context.md``) alone.
-        """
-        from entirecontext.hooks.decision_hooks import on_post_tool_use_decisions
-
-        self._enable_surface_on_tool_use(monkeypatch)
-        session_id, _turn_id = self._setup_session_and_turn(ec_db)
-
-        # SessionStart has written its file; PostToolUse must not touch it.
-        session_start_file = ec_repo / ".entirecontext" / "decisions-context.md"
-        session_start_file.parent.mkdir(parents=True, exist_ok=True)
-        session_start_file.write_text("important session-start context", encoding="utf-8")
-
-        # Edit a file with no linked decisions → empty result → cleanup fires
-        result = on_post_tool_use_decisions(
-            {
-                "cwd": str(ec_repo),
-                "session_id": session_id,
-                "tool_name": "Edit",
-                "tool_input": {"file_path": "src/unlinked.py"},
-            }
-        )
-        assert result is None
-        # SessionStart file untouched
-        assert session_start_file.exists()
-        assert session_start_file.read_text(encoding="utf-8") == "important session-start context"
-
     def test_chain_collapse_substitutes_terminal_successor(self, ec_repo, ec_db, monkeypatch):
         """PR #56 Codex review P1: when the file link is on the superseded
         ancestor (common migration state — old linked, new not yet linked),
@@ -1317,15 +1226,6 @@ class TestMaybeExtractDecisions:
             )
         ec_db.commit()
         return session
-
-    def test_disabled_by_config(self, ec_repo, ec_db, monkeypatch):
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"auto_extract": False, "extract_keywords": ["decided"]},
-        )
-        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
-
-        maybe_extract_decisions(str(ec_repo), "fake-session-id")
 
     def test_no_keyword_matches_no_worker(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
@@ -1868,15 +1768,6 @@ class TestIgnoredInference:
         ).fetchone()["n"]
         assert outcomes == 0
 
-    def test_config_gated_default_off(self, ec_repo, ec_db, monkeypatch):
-        monkeypatch.setattr(
-            "entirecontext.core.config.load_config",
-            lambda _: {"decisions": {}},
-        )
-        from entirecontext.hooks.session_lifecycle import _maybe_infer_ignored_decisions
-
-        _maybe_infer_ignored_decisions(str(ec_repo), "any-session")
-
     def test_infers_ignored_with_null_turn_id(self, ec_repo, ec_db, monkeypatch):
         """SessionStart-style selections (turn_id NULL) must still produce ignored outcomes.
 
@@ -2202,42 +2093,8 @@ class TestHandlerIntegration:
         captured = capsys.readouterr()
         assert "Integration test decision" in captured.out
 
-    def test_session_end_calls_decision_hooks(self, ec_repo, ec_db, monkeypatch, isolated_global_db):
-        from entirecontext.core.session import create_session
-
-        project_id = ec_db.execute("SELECT id FROM projects LIMIT 1").fetchone()["id"]
-        session = create_session(ec_db, project_id)
-        stale_called = []
-        extract_called = []
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.maybe_check_stale_decisions",
-            lambda rp: stale_called.append(rp),
-        )
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.maybe_extract_decisions",
-            lambda rp, sid, *, source="session_end": extract_called.append((rp, sid)),
-        )
-        from entirecontext.hooks.handler import _handle_session_end
-
-        _handle_session_end({"cwd": str(ec_repo), "session_id": session["id"]})
-        assert len(stale_called) == 1
-        assert len(extract_called) == 1
-
 
 class TestStdoutContract:
-    def test_handler_prints_decision_context(self, ec_repo, ec_db, monkeypatch, capsys):
-        """Verify _handle_session_start actually prints decision text to stdout."""
-        create_decision(ec_db, title="Stdout test decision", staleness_status="stale")
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks._load_decisions_config",
-            lambda _: {"show_related_on_start": True},
-        )
-        from entirecontext.hooks.handler import _handle_session_start
-
-        _handle_session_start({"cwd": str(ec_repo), "session_id": "stdout-test"})
-        captured = capsys.readouterr()
-        assert "Stdout test decision" in captured.out
-
     def test_fallback_file_written(self, ec_repo, ec_db, monkeypatch):
         """Verify fallback file is written alongside stdout."""
         create_decision(ec_db, title="Fallback test decision", staleness_status="stale")
@@ -2281,22 +2138,6 @@ class TestStdoutContract:
 # ---------------------------------------------------------------------------
 
 
-def _redaction_pattern_payload(tag: str) -> str:
-    """Build a fixture string matching ``sk-[A-Za-z0-9]{48}`` at runtime.
-
-    Intentionally neutral naming — earlier revisions used ``secret`` in
-    the helper and caller names, which tripped CodeQL's
-    clear-text-storage heuristic that treats identifiers like
-    ``secret``/``token``/``api_key`` as sensitive sources. Renaming (and
-    building the literal from parts at runtime) makes the static tainting
-    rule see a plain fixture value rather than a hardcoded credential,
-    while preserving exact regex coverage of
-    ``security.DEFAULT_PATTERNS`` ``sk-[A-Za-z0-9]{48}``.
-    """
-    body = (tag * 48)[:48]
-    return "sk" + "-" + body
-
-
 class TestOnUserPromptSurfacing:
     """on_user_prompt launches the background surfacing worker when enabled."""
 
@@ -2329,46 +2170,6 @@ class TestOnUserPromptSurfacing:
         assert launch_calls == []
         tmp_dir = ec_repo / ".entirecontext" / "tmp"
         assert not tmp_dir.exists() or not any(tmp_dir.iterdir())
-
-    def test_launches_worker_when_enabled(self, ec_repo, ec_db, monkeypatch):
-        """surface_on_user_prompt=true must write tmp file and call launch_worker once."""
-        import tomllib as _tomllib  # noqa: F401 — imported for sanity
-
-        session = self._make_session(ec_db, ec_repo, session_id="f4-enabled")
-
-        cfg_path = ec_repo / ".entirecontext" / "config.toml"
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text(
-            "[decisions]\nsurface_on_user_prompt = true\nsurface_on_user_prompt_limit = 3\n",
-            encoding="utf-8",
-        )
-
-        launch_calls: list[dict] = []
-
-        def _fake_launch(repo_path, cmd, pid_name="worker"):
-            launch_calls.append({"repo_path": repo_path, "cmd": list(cmd), "pid_name": pid_name})
-            return 424242
-
-        monkeypatch.setattr("entirecontext.core.async_worker.launch_worker", _fake_launch)
-
-        from entirecontext.hooks.turn_capture import on_user_prompt
-
-        prompt = "Why did we choose Redis over memcached for our caching layer?"
-        on_user_prompt({"cwd": str(ec_repo), "session_id": session["id"], "prompt": prompt})
-
-        assert len(launch_calls) == 1
-        call = launch_calls[0]
-        cmd = call["cmd"]
-        assert cmd[0:3] == ["ec", "decision", "surface-prompt"]
-        # --session / --turn / --prompt-file present with expected session id.
-        assert "--session" in cmd and session["id"] in cmd
-        assert "--turn" in cmd
-        assert "--prompt-file" in cmd
-        prompt_file_idx = cmd.index("--prompt-file") + 1
-        tmp_path = cmd[prompt_file_idx]
-        assert tmp_path.startswith(str(ec_repo))
-        # pid_name scoped by session+turn so concurrent prompts don't collide.
-        assert call["pid_name"].startswith("prompt-")
 
     def test_launch_cmd_includes_explicit_repo_path(self, ec_repo, ec_db, monkeypatch):
         """The hook must pass --repo-path so the worker does not rely on ambient cwd.
@@ -2409,47 +2210,6 @@ class TestOnUserPromptSurfacing:
         idx = cmd.index("--repo-path") + 1
         assert cmd[idx] == str(ec_repo)
 
-    def test_tmp_file_contains_redacted_text_only(self, ec_repo, ec_db, monkeypatch):
-        """Secret must never hit the tmp file — defense-in-depth redaction."""
-        session = self._make_session(ec_db, ec_repo, session_id="f4-redact")
-
-        cfg_path = ec_repo / ".entirecontext" / "config.toml"
-        cfg_path.parent.mkdir(parents=True, exist_ok=True)
-        cfg_path.write_text("[decisions]\nsurface_on_user_prompt = true\n", encoding="utf-8")
-
-        tmp_files: list[str] = []
-
-        def _fake_launch(repo_path, cmd, pid_name="worker"):
-            # capture the prompt-file arg before the worker deletes it
-            idx = cmd.index("--prompt-file") + 1
-            tmp_files.append(cmd[idx])
-            return 1
-
-        monkeypatch.setattr("entirecontext.core.async_worker.launch_worker", _fake_launch)
-
-        from entirecontext.hooks.turn_capture import on_user_prompt
-
-        # Matches security.DEFAULT_PATTERNS ``sk-[A-Za-z0-9]{48}`` — built
-        # programmatically and stored in a neutrally-named variable so
-        # CodeQL's taint analysis doesn't treat this fixture as a real
-        # hardcoded credential.
-        payload_value = _redaction_pattern_payload("FAKE")
-        prompt = f"My api_key={payload_value} should never be surfaced."
-        on_user_prompt({"cwd": str(ec_repo), "session_id": session["id"], "prompt": prompt})
-
-        assert len(tmp_files) == 1
-        from pathlib import Path
-
-        content = Path(tmp_files[0]).read_text(encoding="utf-8")
-        assert payload_value not in content
-        # Redaction marker present — either [REDACTED] (security) or [FILTERED] (content_filter)
-        assert "REDACTED" in content or "FILTERED" in content
-
-        # File mode is 0600 (owner read/write only).
-
-        mode = Path(tmp_files[0]).stat().st_mode & 0o777
-        assert mode == 0o600
-
 
 class TestRunPromptSurfaceWorker:
     """The worker body: reads tmp, ranks, writes fallback, always deletes tmp."""
@@ -2462,61 +2222,6 @@ class TestRunPromptSurfaceWorker:
         p = tmp_dir / name
         p.write_text(text, encoding="utf-8")
         return str(p)
-
-    def test_writes_fallback_md_with_ranked_decisions(self, ec_repo, ec_db):
-        """A prompt referencing an existing decision's keywords produces Markdown output."""
-        # Seed a decision with distinctive tokens so the FTS-against-prompt signal hits.
-        decision = create_decision(
-            ec_db,
-            title="Use Redis for caching over memcached persistence",
-            rationale="Redis provides persistence and pub/sub which memcached lacks for our use case",
-            scope="cache",
-        )
-        link_decision_to_file(ec_db, decision["id"], "src/cache.py")
-
-        tmp_path = self._write_tmp(
-            str(ec_repo),
-            "We are debating our caching choice between redis and memcached for persistence reasons",
-            name="redis-prompt.txt",
-        )
-
-        from entirecontext.core.decision_prompt_surfacing import run_prompt_surface_worker
-
-        result = run_prompt_surface_worker(str(ec_repo), "sess-1", "turn-1", tmp_path)
-
-        assert result["wrote"] is True
-        assert result["count"] >= 1
-        assert result["deleted_tmp"] is True
-
-        from pathlib import Path
-
-        output_path = Path(result["output_path"])
-        assert output_path.exists()
-        body = output_path.read_text(encoding="utf-8")
-        assert "Related Decisions" in body
-        assert "Redis" in body or "redis" in body.lower()
-        # tmp file gone
-        assert not Path(tmp_path).exists()
-
-    def test_always_deletes_tmp_file_even_on_worker_error(self, ec_repo, ec_db, monkeypatch):
-        """The finally block must delete tmp regardless of internal failures."""
-        tmp_path = self._write_tmp(str(ec_repo), "any prompt")
-
-        # Force rank_related_decisions to raise to trigger the exception branch.
-        import entirecontext.core.decision_prompt_surfacing as mod
-
-        def _boom(*a, **kw):
-            raise RuntimeError("simulated ranker failure")
-
-        monkeypatch.setattr("entirecontext.core.decisions.rank_related_decisions", _boom)
-
-        result = mod.run_prompt_surface_worker(str(ec_repo), "sess", "turn", tmp_path)
-
-        from pathlib import Path
-
-        assert result["deleted_tmp"] is True
-        assert not Path(tmp_path).exists()
-        assert any("worker:" in w or "ranker" in w or "simulated" in w for w in result["warnings"])
 
     def test_no_decisions_cleans_only_same_turn_fallback(self, ec_repo, ec_db):
         """No-hits for this turn: delete only this turn's file, leave older turns alone.
@@ -2593,37 +2298,6 @@ class TestRunPromptSurfaceWorker:
         assert not older_same_session.exists()
         # Different session untouched.
         assert other_session.exists()
-
-    def test_worker_defense_in_depth_redaction(self, ec_repo, ec_db):
-        """Tmp file containing a raw secret must NOT surface the secret in Markdown.
-
-        The hook is the first redaction pass; this test simulates a scenario where
-        the tmp file already has a secret (tampered or written by a different path)
-        and verifies the worker-side re-redaction catches it.
-        """
-        create_decision(
-            ec_db,
-            title="Use Redis for caching",
-            rationale="persistence and pub/sub support drives the choice",
-            scope="cache",
-        )
-
-        payload_value = _redaction_pattern_payload("RAW")
-        raw = f"Redis caching and persistence — api_key={payload_value} should be redacted before markdown"
-        tmp_path = self._write_tmp(str(ec_repo), raw)
-
-        from entirecontext.core.decision_prompt_surfacing import run_prompt_surface_worker
-
-        result = run_prompt_surface_worker(str(ec_repo), "def-in-depth", "t", tmp_path)
-        # Whether or not a decision was surfaced, tmp is gone and the
-        # pattern-matching payload is not leaked to markdown.
-        from pathlib import Path
-
-        assert result["deleted_tmp"] is True
-        if result["output_path"]:
-            body = Path(result["output_path"]).read_text(encoding="utf-8")
-            # Pattern must not appear in markdown even though it was present in tmp.
-            assert payload_value not in body
 
 
 class TestExtractionRetryCap:

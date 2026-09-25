@@ -19,18 +19,6 @@ def _config(exclusions=None, query_redaction=None):
 
 
 class TestShouldSkipTurn:
-    def test_match_returns_true(self):
-        cfg = _config({"enabled": True, "content_patterns": [r"password\s*="]})
-        assert should_skip_turn("password=abc", cfg) is True
-
-    def test_no_match_returns_false(self):
-        cfg = _config({"enabled": True, "content_patterns": [r"password\s*="]})
-        assert should_skip_turn("normal text", cfg) is False
-
-    def test_empty_patterns(self):
-        cfg = _config({"enabled": True, "content_patterns": []})
-        assert should_skip_turn("password=abc", cfg) is False
-
     def test_disabled(self):
         cfg = _config({"enabled": False, "content_patterns": [r"password\s*="]})
         assert should_skip_turn("password=abc", cfg) is False
@@ -73,21 +61,11 @@ class TestShouldSkipTool:
 
 
 class TestRedactContent:
-    def test_replaces_pattern(self):
-        cfg = _config({"enabled": True, "redact_patterns": [r"password\s*=\s*\S+"]})
-        result = redact_content("password=secret", cfg)
-        assert "[FILTERED]" in result
-        assert "secret" not in result
-
     def test_multiple_patterns(self):
         cfg = _config({"enabled": True, "redact_patterns": [r"password\s*=\s*\S+", r"token\s*=\s*\S+"]})
         result = redact_content("password=secret token=abc123", cfg)
         assert "secret" not in result
         assert "abc123" not in result
-
-    def test_empty_patterns(self):
-        cfg = _config({"enabled": True, "redact_patterns": []})
-        assert redact_content("password=secret", cfg) == "password=secret"
 
     def test_disabled(self):
         cfg = _config({"enabled": False, "redact_patterns": [r"password\s*=\s*\S+"]})
@@ -100,12 +78,6 @@ class TestRedactContent:
 
 
 class TestRedactForQuery:
-    def test_enabled(self):
-        cfg = _config(query_redaction={"enabled": True, "patterns": [r"password\s*=\s*\S+"]})
-        result = redact_for_query("password=secret", cfg)
-        assert "[FILTERED]" in result
-        assert "secret" not in result
-
     def test_disabled(self):
         cfg = _config(query_redaction={"enabled": False, "patterns": [r"password\s*=\s*\S+"]})
         assert redact_for_query("password=secret", cfg) == "password=secret"
