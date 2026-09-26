@@ -2,7 +2,7 @@
 
 Use this template in `AGENTS.md` for work inside the `entirecontext` repository itself.
 
-It is process-neutral by design. It does not assume TDD, PR review, trunk-based development, or any specific release workflow. It only requires agents to treat stored decisions as a mandatory input for non-trivial work.
+This template is process-neutral by design. It does not assume test-driven development (TDD), pull request (PR) review, trunk-based development, or any specific release workflow. It only requires agents to treat stored decisions as a mandatory input for non-trivial work.
 
 ## Suggested Insertion
 

@@ -2,7 +2,11 @@
 
 _Last reviewed: 2026-06-22_
 
-EntireContext is **git-anchored decision memory for coding agents**. It captures engineering work as it happens, distills reusable decisions and lessons, retrieves the right context when related work appears, and helps agents or maintainers intervene before repeating old mistakes.
+EntireContext is **git-anchored decision memory for coding agents**.
+It captures engineering work as it happens.
+It distills reusable decisions and lessons.
+It retrieves the right context when related work appears.
+It helps agents or maintainers intervene before they repeat old mistakes.
 
 This manual is a long-form orientation and maintenance guide. It does not replace the narrower source-of-truth documents:
 
@@ -12,16 +16,20 @@ This manual is a long-form orientation and maintenance guide. It does not replac
 - `AGENTS.md` owns repository workflow policy for agents.
 - `CLAUDE.md` remains the compact contributor and compatibility reference.
 - `ROADMAP.md` owns product direction and future intent.
-
-When this manual summarizes a drift-prone fact, prefer the cited code path, contract test, or canonical document over the prose here.
+If a fact can change, prefer the cited code path, contract test, or canonical document over this prose.
 
 ## 1. Executive Overview
 
 ### 1.1 What EntireContext is
 
-EntireContext is a local-first memory system for software work. Its core object is not a chat transcript; it is reusable engineering judgment: decisions, rejected alternatives, lessons, feedback, checkpoints, and retrieval traces tied back to git repositories.
+EntireContext is a local-first memory system for software work.
+Its core object is reusable engineering judgment, not a chat transcript.
+That judgment includes decisions, rejected alternatives, lessons, feedback, checkpoints, and retrieval traces tied back to git repositories.
 
-The product wedge is narrow on purpose. Coding agents already produce plenty of raw history. The hard part is making previous reasoning reappear at the next useful moment. EntireContext focuses on this loop:
+The product focuses on a narrow problem by design.
+Coding agents already produce plenty of raw history.
+The hard part is to make previous reasoning appear again at the next useful moment.
+EntireContext focuses on this loop:
 
 ```text
 capture -> distill -> retrieve -> intervene -> outcome
@@ -33,11 +41,16 @@ capture -> distill -> retrieve -> intervene -> outcome
 - **Intervene** surfaces relevant decisions or lessons before and during related work.
 - **Outcome** records whether surfaced guidance was accepted, ignored, contradicted, refined, or replaced.
 
-The implementation is anchored in git and SQLite. Hooks collect local activity; CLI commands expose human workflows; MCP tools expose agent workflows; optional sync exports artifacts through a shadow branch.
+Git and SQLite anchor the implementation.
+Hooks collect local activity.
+The command-line interface (CLI) exposes human workflows.
+Model Context Protocol (MCP) tools expose agent workflows.
+Optional sync exports artifacts through a shadow branch.
 
 ### 1.2 What problem it solves
 
-Without a dedicated memory loop, engineering judgment is scattered across terminal scrollback, agent chats, PR threads, commits, and local notes. A future agent can search code, but it usually cannot answer:
+Without a dedicated memory loop, engineering judgment stays scattered across terminal scrollback, agent chats, pull request (PR) threads, commits, and local notes.
+A future agent can search code but usually cannot answer these questions:
 
 - Why did this pattern win over the rejected alternative?
 - Which prior decision is now stale because the linked file changed?
@@ -49,7 +62,8 @@ EntireContext stores those relationships explicitly so agents can reuse them.
 
 ### 1.3 What is current behavior versus intent
 
-Current behavior is implemented in the Python package under `src/entirecontext/`, the tests under `tests/`, and the user documentation in `README.md` and `docs/spec.md`. Roadmap items, brainstorms, research notes, and plan documents are useful context but are not shipped behavior unless code or tests confirm them.
+Current behavior is implemented in the Python package under `src/entirecontext/`, the tests under `tests/`, and the user documentation in `README.md` and `docs/spec.md`.
+Roadmap items, brainstorms, research notes, and plan documents are useful context. They are not shipped behavior unless code or tests confirm them.
 
 Treat these categories separately:
 
@@ -63,17 +77,27 @@ Treat these categories separately:
 
 ### 1.4 Package and platform snapshot
 
-At the time of this review, package metadata and runtime constants agree on version **0.9.3** (`pyproject.toml`, `src/entirecontext/__init__.py`). Python support is **3.12+** in project metadata and CI. The local schema version is **14** (`src/entirecontext/db/schema.py`).
+At the time of this review, package metadata and runtime constants agree on version **0.16.1** (`pyproject.toml`, `src/entirecontext/__init__.py`).
+Project metadata and continuous integration (CI) support Python **3.12+**.
+The local schema version is **20** (`src/entirecontext/db/schema.py`).
 
-Those facts are intentionally called out as drift-sensitive. If they change, update the package metadata, code constant, changelog/schema references, and docs together.
+This manual intentionally calls those facts drift-sensitive.
+If they change, update the package metadata, code constant, changelog/schema references, and docs together.
 
 ## 2. Concepts and Terminology
 
 ### 2.1 Repository memory versus chat memory
 
-Chat memory preserves conversation. Repository memory preserves work context in relation to a git repository. EntireContext records sessions, turns, files, checkpoints, events, assessments, decisions, outcomes, and retrieval telemetry so a future agent can relate a new task to past repository state.
+Chat memory preserves conversation.
+Repository memory preserves work context in relation to a git repository.
+EntireContext records sessions, turns, files, checkpoints, events, assessments, decisions, outcomes, and retrieval telemetry.
+A future agent can use these records to relate a new task to past repository state.
 
-The distinction matters: a transcript can say what happened; a decision record should say what was chosen, why, what alternatives were rejected, and which files or checkpoints make the decision relevant.
+The distinction matters.
+A transcript can say what happened.
+A decision record should state the chosen option and its rationale.
+It should identify rejected alternatives.
+It should name the files or checkpoints that make the decision relevant.
 
 ### 2.2 Core records
 
@@ -106,9 +130,16 @@ This manual avoids machine-specific absolute paths. Use command output and confi
 
 ### 2.4 Decision states and outcomes
 
-Decision records carry `staleness_status` values such as fresh, stale, superseded, and contradicted. Retrieval treats those states differently: fresh guidance is preferred; stale guidance is demoted or optionally included; superseded guidance should resolve to the successor; contradicted guidance is hidden from normal retrieval surfaces.
+Decision records carry `staleness_status` values such as fresh, stale, superseded, and contradicted.
+Retrieval treats those states differently.
+Retrieval prefers fresh guidance.
+It demotes stale guidance or optionally includes it.
+It should resolve superseded guidance to the successor.
+It hides contradicted guidance from normal retrieval surfaces.
 
-Decision outcomes are the feedback vocabulary: `accepted`, `ignored`, `contradicted`, `refined`, and `replaced`. The canonical semantics live in `docs/decisions_outcomes.md`; this manual links to that file instead of duplicating every rule.
+Decision outcomes define the feedback vocabulary: `accepted`, `ignored`, `contradicted`, `refined`, and `replaced`.
+`docs/decisions_outcomes.md` defines the canonical semantics.
+This manual links to that file instead of repeating every rule.
 
 ## 3. First Run and Daily Use
 
@@ -117,7 +148,10 @@ Decision outcomes are the feedback vocabulary: `accepted`, `ignored`, `contradic
 The package is Python-based and currently targets Python 3.12+. The README is the source for installation commands and optional extras. At a conceptual level:
 
 1. Install the package and any desired extras.
-2. Initialize a git repository with `ec init`, which also installs the capture integrations for the relevant agent surface. Pass `--agent codex` or `--agent both` to target Codex; pass `--no-hooks` to initialize without installing anything.
+2. Initialize a git repository with `ec init`.
+   This command also installs the capture integrations for the relevant agent surface.
+   Pass `--agent codex` or `--agent both` to target Codex.
+   Pass `--no-hooks` to initialize without installing anything.
 3. Use the agent normally.
 4. Inspect status, sessions, decisions, checkpoints, and lessons through CLI or MCP.
 
@@ -139,19 +173,19 @@ Enable/disable commands can modify local hook files or local agent configuration
 
 ### 3.3 Day-to-day workflows
 
-Common workflows are grouped by intent rather than by module:
+The manual groups common workflows by intent rather than by module:
 
 | Workflow | Commands to start with | Notes |
 |---|---|---|
-| Search memory | `ec search`, `ec related`, `ec ast-search` | Regex/FTS/session-related and symbol search. |
+| Search memory | `ec search`, `ec related`, `ec ast-search` | Regular expression, full-text search (FTS), session-related, and symbol search. |
 | Inspect sessions | `ec session list`, `ec session show`, `ec session current`, `ec session export` | Session commands live under the `session` typer group. |
-| Create checkpoints | `ec checkpoint create`, `ec checkpoint list`, `ec checkpoint show`, `ec checkpoint diff` | Checkpoints are git-anchored and can be created manually or by hooks. |
-| Rewind context | `ec rewind` | Shows state at a checkpoint; it is not a magic rollback guarantee. |
+| Create checkpoints | `ec checkpoint create`, `ec checkpoint list`, `ec checkpoint show`, `ec checkpoint diff` | The system anchors checkpoints in git. You can create checkpoints manually or use hooks to create them. |
+| Rewind context | `ec rewind` | The command shows state at a checkpoint. It does not guarantee a rollback. |
 | Record decisions | `ec decision create`, `ec decision link`, `ec decision outcome`, `ec decision supersede` | Link decisions to files, commits, checkpoints, or assessments when possible. |
 | Assess and learn | `ec futures assess`, `ec futures feedback`, `ec futures lessons` | Feedback is what turns assessments into durable lessons. |
 | Sync artifacts | `ec sync`, `ec pull` | Uses shadow-branch artifact flow when configured. |
 | Serve MCP | `ec mcp serve` | Starts stdio MCP transport when MCP dependencies are installed. |
-| Maintain storage | `ec purge`, `ec compact`, `ec index` | Use with care; inspect command help and output. |
+| Maintain storage | `ec purge`, `ec compact`, `ec index` | Use these commands with care. Inspect command help and output. |
 
 For exhaustive flags, run `ec <command> --help` instead of relying on this manual.
 
@@ -197,7 +231,9 @@ Limits and setup notes:
 
 ### 4.1 MCP as the agent-facing interface
 
-MCP tools are the preferred surface for agents that need context during work. The stdio MCP server is in `src/entirecontext/mcp/server.py`; tools are registered from modules under `src/entirecontext/mcp/tools/`.
+Agents should use MCP tools when they need context during work.
+The `src/entirecontext/mcp/server.py` file runs the stdio MCP server.
+Modules under `src/entirecontext/mcp/tools/` register its tools.
 
 Tool categories:
 
@@ -215,7 +251,8 @@ Tool categories:
 
 ### 4.2 When an agent should retrieve context
 
-Agents should prefer proactive context when available, then explicit retrieval when the task needs more grounding.
+Agents should use proactive context when it is available.
+They should use explicit retrieval when the task needs more grounding.
 
 Use `ec_decision_context` when:
 
@@ -242,15 +279,23 @@ After applying retrieved context, record usage with `ec_context_apply` or decisi
 
 ### 4.3 Proactive decision injection
 
-The `UserPromptSubmit` hook can rank top decisions against the current prompt and inject them as additional context. This is controlled by `[decisions.injection]` config keys such as `inject_on_user_prompt`, `top_k`, `max_tokens`, `min_confidence`, and `inject_timeout_ms`.
+The `UserPromptSubmit` hook can rank top decisions against the current prompt.
+It can inject them as additional context.
+The `[decisions.injection]` config keys control this behavior.
+These keys include `inject_on_user_prompt`, `top_k`, `max_tokens`, `min_confidence`, and `inject_timeout_ms`.
 
-The hook path is timeout-aware. If injection cannot complete within the configured budget, the agent should continue and optionally use explicit MCP retrieval.
+The hook path is timeout-aware.
+If injection cannot complete within the configured budget, the agent should continue.
+The agent can optionally use explicit MCP retrieval.
 
 ### 4.4 Mid-session surfacing
 
-When configured, `PostToolUse` can surface decisions linked to files just edited. The current implementation writes a session-scoped fallback file named like `.entirecontext/decisions-context-tooluse-<session>.md` and avoids colliding with the SessionStart fallback.
+When configured, `PostToolUse` can surface decisions linked to just-edited files.
+The current implementation writes a session-scoped fallback file named like `.entirecontext/decisions-context-tooluse-<session>.md`.
+It avoids collisions with the SessionStart fallback.
 
-This is meant to catch decisions at edit time, not only at session start. It is deduplicated to reduce repeated noise.
+The hook is meant to surface decisions at edit time, not only at session start.
+It deduplicates surfaced decisions to reduce repeated noise.
 
 ### 4.5 Templates
 
@@ -260,7 +305,8 @@ This is meant to catch decisions at edit time, not only at session start. It is 
 - `entirecontext-user-decision-reuse-template.md`
 - `entirecontext-proactive-guidance.md`
 
-Use those templates as policy snippets for agents; keep them aligned with implemented MCP tools and hook behavior.
+Use those templates as policy snippets for agents.
+Keep them aligned with implemented MCP tools and hook behavior.
 
 ## 5. Architecture Walkthrough
 
@@ -293,7 +339,10 @@ Key layers:
 
 ### 5.2 CLI layer
 
-`src/entirecontext/cli/__init__.py` creates the root Typer app and imports command modules. Each module exposes `register(app)` and either adds a command or a Typer sub-application. This keeps the CLI grouped by workflow while preserving a single `ec` entry point.
+The `src/entirecontext/cli/__init__.py` file creates the root Typer app and imports command modules.
+Each module exposes `register(app)`.
+Each module either adds a command or adds a Typer sub-application.
+This groups CLI commands by workflow and preserves a single `ec` entry point.
 
 Major command groups include project setup, search, sessions, hooks, checkpoints, sync/pull, rewind, repo, events, blame, indexing, MCP serving, import, futures, purge, graph, dashboard, context telemetry, decision memory, and compacting.
 
@@ -310,7 +359,9 @@ SessionEnd -> session_lifecycle.on_session_end
 PostCommit -> session_lifecycle.on_post_commit
 ```
 
-The hook layer is intentionally defensive: hook failures should not crash the host agent session. It records warnings or operation events where possible.
+The hook layer is intentionally defensive against failures.
+Hook failures should not crash the host agent session.
+The layer records warnings or operation events where possible.
 
 ### 5.4 Hook-to-storage sequence
 
@@ -343,7 +394,7 @@ sequenceDiagram
 
 The core package is intentionally broad. Important modules include:
 
-- `config.py` — default/global/repo-local TOML config merge.
+- `config.py` — merges default, global, and repo-local configuration in Tom's Obvious, Minimal Language (TOML) files.
 - `search.py`, `embedding.py`, `ast_index.py` — retrieval and indexing.
 - `decisions.py`, `decision_candidates.py`, `decision_extraction.py`, `decision_prompt_surfacing.py` — decision memory lifecycle.
 - `futures.py`, `auto_assess.py`, `lesson_surfacing.py` — assessments, feedback, lessons.
@@ -365,13 +416,17 @@ flowchart TD
   G --> H[import sessions/checkpoints]
 ```
 
-The sync coordinator initializes or updates a shadow branch, exports artifacts, commits changes, pushes when configured, and can fetch/merge/import remote artifacts. Security filtering is enabled by default for exported session text unless explicitly disabled.
+The sync coordinator initializes or updates a shadow branch and exports artifacts.
+It commits changes and pushes them when configured.
+It can fetch, merge, and import remote artifacts.
+The sync coordinator enables security filtering for exported session text by default.
+Users can disable it explicitly.
 
 ## 6. Data Model and Storage
 
 ### 6.1 Schema version and SQLite posture
 
-The local schema version is **14** and the minimum SQLite version is **3.38.0+**. Schema definitions live in `src/entirecontext/db/schema.py`; migrations live under `src/entirecontext/db/migrations/`.
+The local schema version is **20** and the minimum SQLite version is **3.38.0+**. Schema definitions live in `src/entirecontext/db/schema.py`; migrations live under `src/entirecontext/db/migrations/`.
 
 ### 6.2 Table groups
 
@@ -389,19 +444,30 @@ The schema is best understood by group:
 
 ### 6.3 FTS and embeddings
 
-The project uses FTS5 virtual tables for searchable text surfaces, including turns, events, sessions, AST symbols, decisions, and decision candidates. Embeddings are stored separately by source type, source ID, model, dimensions, vector blob, and text hash. Semantic search is optional and should degrade gracefully if the semantic extra is unavailable.
+The project uses full-text search version 5 (FTS5) virtual tables for searchable text surfaces.
+The tables cover turns, events, sessions, abstract syntax tree (AST) symbols, decisions, and decision candidates.
+The system stores embeddings separately by source type, source ID, model, dimensions, vector blob, and text hash.
+Semantic search is optional.
+The system should degrade it gracefully if the semantic extra is unavailable.
 
 ### 6.4 Content externalization
 
-Large turn content can be stored outside the main row and referenced by `turn_content.content_path`, size, and hash. This keeps the core turn table compact while preserving full content when enabled and retained.
+The system can store large turn content outside the main row.
+The row references the content through `turn_content.content_path`, size, and hash.
+This keeps the core turn table compact and preserves full content when enabled and retained.
 
 ### 6.5 Local and global databases
 
-The repo-local database owns repository-specific sessions, turns, decisions, and checkpoints. The global registry schema tracks repositories and supports cross-repo discovery. Cross-repo behavior should not be described as a replacement for local source-of-truth data; it is a registry and retrieval aid.
+The repo-local database owns repository-specific sessions, turns, decisions, and checkpoints.
+The global registry schema tracks repositories and supports cross-repo discovery.
+Do not describe cross-repo behavior as a replacement for local source-of-truth data.
+It serves as a registry and retrieval aid.
 
 ### 6.6 Migration and compatibility posture
 
-Migrations are versioned Python modules. When changing schema or long-lived data contracts, update migrations, schema constants, docs, changelog/schema references, and contract tests together. Repository policy requires extra care around version/schema drift.
+Migrations are versioned Python modules.
+When you change the schema or long-lived data contracts, update migrations, schema constants, docs, changelog/schema references, and contract tests.
+Repository policy calls for extra care around version/schema drift.
 
 ## 7. Configuration and Environment
 
@@ -419,7 +485,7 @@ defaults <- global config <- repo-local config
 
 | Section | Purpose |
 |---|---|
-| `[capture]` | Auto-capture, checkpoint hooks, content retention, AAR, Codex idle closing, lesson surfacing. |
+| `[capture]` | Auto-capture, checkpoint hooks, content retention, after-action review (AAR), Codex idle closing, lesson surfacing. |
 | `[capture.exclusions]` | Capture-time content/file/tool exclusions and redaction patterns. |
 | `[search]` | Default search mode and semantic model. |
 | `[sync]` | Auto-sync, pull/push timing, cooldowns, quiet mode. |
@@ -452,7 +518,7 @@ top_k = 5
 max_tokens = 800
 ```
 
-Do not publish real API keys or model-provider credentials in config snippets.
+Do not publish real application programming interface (API) keys or model-provider credentials in config snippets.
 
 ### 7.4 Defaults that affect side effects
 
@@ -485,7 +551,10 @@ These commands manage repo state, hooks, supported agent integration, configurat
 - `ec session backfill-ended-at`
 - `ec session backfill-applied`
 
-Use these to inspect captured work, export session content, build session graphs, and repair/backfill session metadata.
+Use these commands to inspect captured work.
+Use them to export session content.
+Use them to build session graphs.
+Use them to repair or backfill session metadata.
 
 ### 8.3 Search and graph exploration
 
@@ -505,7 +574,10 @@ Search commands can operate over turns/sessions and symbols. Graph/dashboard/bla
 - `ec event list/show/create/link`
 - `ec context select/apply`
 
-Use checkpoints to preserve git-anchored state, events to group work, rewind to inspect checkpoint state, and context telemetry to record retrieval use.
+Use checkpoints to preserve git-anchored state.
+Use events to group work.
+Use rewind to inspect checkpoint state.
+Use context telemetry to record retrieval use.
 
 ### 8.5 Decision memory
 
@@ -528,7 +600,9 @@ Use checkpoints to preserve git-anchored state, events to group work, rewind to 
 - `ec decision candidates ...`
 - `ec decision alternatives ...`
 
-Decision commands are central to the product. Prefer linking decisions to files/checkpoints/assessments and recording outcomes after use.
+Decision commands are central to the product.
+Link decisions to files, checkpoints, or assessments when possible.
+Prefer to record outcomes after use.
 
 ### 8.6 Futures, feedback, lessons, and workers
 
@@ -553,7 +627,9 @@ Futures commands evaluate change impact, capture feedback, generate lessons, and
 - `ec index`
 - `ec mcp serve`
 
-These commands affect storage, import/export, or agent-server behavior. Treat destructive cleanup and sync operations as operational actions; inspect help/output before use.
+These commands affect storage, import/export, or agent-server behavior.
+Treat destructive cleanup and sync operations as operational actions.
+Inspect command help and output before use.
 
 ## 9. MCP Reference by Workflow
 
@@ -595,37 +671,65 @@ Decision candidate tools list, inspect, confirm, or reject candidate decisions b
 
 ### 9.5 Error and repo-resolution expectations
 
-MCP tools resolve repository context through the MCP runtime and repo database helpers. They should return structured or JSON-like payloads rather than crashing the agent host. Input normalization is especially important for agent callers; repository filters may accept strings or lists depending on the tool implementation.
+MCP tools resolve repository context through the MCP runtime and repo database helpers.
+They should return structured or JavaScript Object Notation (JSON)-like payloads instead of crashing the agent host.
+Input normalization is especially important for agent callers.
+Repository filters may accept strings or lists, depending on the tool implementation.
 
 ## 10. Hook Lifecycle and Automation
 
 ### 10.1 SessionStart
 
-Creates or resumes a session and can surface broad-context decisions or lessons. It may write fallback Markdown under `.entirecontext/` when direct context injection is unavailable or inappropriate.
+The SessionStart hook creates or resumes a session.
+It can surface broad-context decisions or lessons.
+It may write fallback Markdown under `.entirecontext/` when direct context injection is unavailable or inappropriate.
 
 ### 10.2 UserPromptSubmit
 
-Records the start of a turn and can run proactive decision injection. The prompt path applies capture exclusions and redaction before storage or surfacing work. Injection is bounded by configuration limits so the agent session can continue if ranking times out.
+The hook records the start of a turn.
+It can run proactive decision injection (PDI).
+The prompt path applies capture exclusions and redaction before storage or surfacing work.
+Configuration limits bound injection, so the agent session can continue if ranking times out.
 
 ### 10.3 Stop
 
-Records assistant response summary and, where available, transcript-derived content. Content is redacted according to config before storage.
+The hook records the assistant response summary.
+It also records transcript-derived content when available.
+The hook redacts content according to config before storage.
 
 ### 10.4 PostToolUse
 
-Tracks tool usage and files touched for the active turn. When enabled, decision surfacing can identify decisions linked to just-edited files and write a session-scoped fallback file.
+The hook tracks tool usage and files touched for the active turn.
+When enabled, the hook can identify decisions linked to just-edited files.
+It can write a session-scoped fallback file.
 
 ### 10.5 SessionEnd
 
-Marks sessions ended, updates global counts, may infer applied or ignored decisions, can emit after-action review output, consolidate old turns, create auto-checkpoints, backfill or catch up assessments, trigger embedding/distillation, check stale decisions, extract candidates, and trigger background sync depending on configuration.
+The `SessionEnd` hook marks sessions as ended and updates global counts.
+It may infer applied or ignored decisions.
+Depending on configuration, SessionEnd can do the following:
+
+- Emit after-action review output.
+- Consolidate old turns.
+- Create auto-checkpoints.
+- Backfill or catch up assessments.
+- Trigger embedding/distillation.
+- Check stale decisions.
+- Extract candidates.
+- Trigger background sync.
 
 ### 10.6 PostCommit and pre-push sync
 
-`PostCommit` creates checkpoints for active sessions and can trigger assessment-related work. Git pre-push sync is documented in repository policy and should be treated as enabled only when the local hook/config actually installs it.
+`PostCommit` creates checkpoints for active sessions and can trigger assessment-related work.
+Repository policy documents Git pre-push sync.
+Only treat Git pre-push sync as enabled when the local hook/config actually installs it.
 
 ### 10.7 Capture-disabled and fallback behavior
 
-Capture can be disabled globally or per session. Filtering can skip turns, files, or tools. Fallback context files are operational artifacts, not source files; they should not be confused with durable documentation.
+Users can disable capture globally or per session.
+Filters can skip turns, files, or tools.
+Fallback context files are operational artifacts, not source files.
+Do not treat them as durable documentation.
 
 ## 11. Decision Memory Deep Dive
 
@@ -639,7 +743,8 @@ A decision should contain:
 - Rejected alternatives when known.
 - Supporting evidence or links to commits, checkpoints, files, or assessments.
 
-Linking matters because retrieval uses file, commit, assessment, and session signals. A decision with no links can still be searched by text, but it is less likely to surface at the right moment.
+Links matter because retrieval uses file, commit, assessment, and session signals.
+Users can still search for a decision with no links by text, but that decision is less likely to appear at the right moment.
 
 ### 11.2 Staleness and supersession
 
@@ -647,41 +752,59 @@ Staleness prevents old guidance from dominating new work. Decisions can be fresh
 
 ### 11.3 Outcome recording
 
-Outcomes record what happened when guidance was surfaced or applied:
+Outcomes describe what happened when someone surfaced guidance or applied it:
 
-- `accepted`: the decision was followed.
-- `ignored`: the decision was surfaced but not used.
-- `contradicted`: later evidence showed the decision was wrong.
-- `refined`: the decision was partially adapted.
+- `accepted`: someone followed the decision.
+- `ignored`: someone surfaced the decision but did not use it.
+- `contradicted`: later evidence showed that the decision was wrong.
+- `refined`: someone adapted the decision in part.
 - `replaced`: a newer decision superseded it.
 
 Use `docs/decisions_outcomes.md` for canonical semantics and edge cases.
 
 ### 11.4 Quality signals and ranking
 
-Decision ranking uses text, file overlap, git commit signals, assessment relationships, staleness, and quality/outcome signals. Defaults are configurable under `[decisions.ranking]`, `[decisions.quality]`, and `[decisions.extraction]`.
+Decision ranking uses text, file overlap, git commit signals, assessment relationships, staleness, and quality/outcome signals.
+You can configure defaults under `[decisions.ranking]`, `[decisions.quality]`, and `[decisions.extraction]`.
 
 ### 11.5 Context applications
 
-A context application records that a retrieved item influenced work. This is separate from raw retrieval. Recording applications and outcomes is what turns retrieval into a closed feedback loop.
+A context application records that a retrieved item influenced work.
+This is separate from raw retrieval.
+Applications and outcomes close the feedback loop.
 
 ### 11.6 Candidate extraction
 
-Decision candidates are extracted from sessions, checkpoints, or assessments and remain pending until confirmed or rejected. This avoids automatically turning noisy history into durable policy. Candidate promotion should preserve rationale, alternatives, source links, and confidence context.
+Decision candidates come from sessions, checkpoints, or assessments.
+They remain pending until someone confirms or rejects them.
+This prevents noisy history from automatically becoming durable policy.
+When you promote a candidate, preserve its rationale, alternatives, source links, and confidence context.
 
 ### 11.7 Lessons and assessments
 
-Assessments evaluate changes; feedback confirms or rejects that evaluation; lessons distill repeated guidance. Lessons are not a replacement for decisions. Decisions capture engineering choices; lessons capture generalized guidance from assessed outcomes.
+Assessments evaluate changes.
+Feedback confirms or rejects those evaluations.
+Lessons distill repeated guidance.
+Lessons do not replace decisions.
+Decisions capture engineering choices.
+Lessons capture generalized guidance from assessed outcomes.
 
 ## 12. Sync, Filtering, and Cross-Repo Memory
 
 ### 12.1 Shadow branch purpose
 
-Shadow-branch sync exports portable artifacts rather than raw local database files. This makes sync git-native while keeping the working branch separate from memory artifacts.
+Shadow-branch sync exports portable artifacts instead of raw local database files.
+This makes sync git-native.
+It keeps the working branch separate from memory artifacts.
 
 ### 12.2 Export/import model
 
-`perform_sync` exports sessions and checkpoints since the last export, commits artifacts in a shadow worktree, pushes when configured, fetches remote shadow state when needed, merges artifacts, and records sync metadata. `perform_pull` imports remote artifacts into the local database.
+`perform_sync` exports all sessions, their turns, and checkpoints.
+It commits artifacts in a shadow worktree.
+It pushes when the export creates a commit, unless the `[sync]` config it receives sets `push_on_sync = false`.
+It fetches remote shadow state when needed.
+It merges artifacts and records sync metadata.
+`perform_pull` imports remote artifacts into the local database.
 
 ### 12.3 Filtering boundaries
 
@@ -691,15 +814,20 @@ There are multiple filtering layers:
 - Query redaction can filter prompts before semantic or external processing.
 - Sync/export secret filtering redacts exported text by default.
 
-Filtering reduces exposure risk but is not a license to store secrets. Prefer not capturing secrets in the first place.
+Filtering reduces exposure risk, but it does not give you permission to store secrets.
+Avoid capturing secrets.
 
 ### 12.4 Cross-repo memory
 
-The global registry and cross-repo tools help locate memory across repositories. They do not remove the need to verify current repo state. A decision from another repo can be useful context, but local code and current tests decide applicability.
+The global registry and cross-repo tools help locate memory across repositories.
+They do not remove the need to verify current repo state.
+A decision from another repo can provide useful context.
+Use local code and current tests to decide whether it applies.
 
 ### 12.5 Operational risks and recovery
 
-Sync can fail due to missing shadow refs, merge conflicts, transport errors, or filtering assumptions. Inspect `sync_metadata`, operation events, command output, and shadow branch artifacts before retrying blindly.
+Sync can fail due to missing shadow refs, merge conflicts, transport errors, or filtering assumptions.
+Inspect `sync_metadata`, operation events, command output, and shadow branch artifacts before you retry blindly.
 
 ## 13. Development and Maintenance
 
@@ -719,7 +847,8 @@ Sync can fail due to missing shadow refs, merge conflicts, transport errors, or 
 
 ### 13.2 Development setup and tests
 
-CI runs linting with ruff, type checking with mypy, and tests on Python 3.12 and 3.13. Repository policy says that when modifying a source module, run the existing tests for that module, not only newly written tests.
+Continuous integration (CI) runs linting with ruff, type checking with mypy, and tests on Python 3.12 and 3.13.
+Repository policy says: when you modify a source module, run its existing tests, not only new tests.
 
 Useful validation commands from repo docs and CI include:
 
@@ -730,7 +859,8 @@ uv run pytest
 uv run pytest tests/test_contract_sync.py
 ```
 
-If local cache permissions fail, use a writable cache location such as a temporary directory and record that choice in verification evidence.
+If local cache permissions fail, use a writable cache location such as a temporary directory.
+Record that choice in verification evidence.
 
 ### 13.3 Adding CLI commands
 
@@ -744,17 +874,28 @@ Repository policy requires new CLI commands to:
 
 ### 13.4 Adding MCP tools
 
-MCP tools should be implemented in `src/entirecontext/mcp/tools/`, registered through `register_tools()`, exported in `server.__all__`, and documented in the README Available Tools table. `tests/test_contract_sync.py` is the guard for registration/README drift.
+Implement MCP tools in `src/entirecontext/mcp/tools/`.
+Register them through `register_tools()`.
+Export them in `server.__all__`.
+Document them in the README Available Tools table.
+`tests/test_contract_sync.py` guards against registration/README drift.
 
 ### 13.5 ADR and decision reuse policy
 
-Durable architecture decisions belong in `docs/adr/` using the ADR process. EC decisions can stay lightweight, but decisions that become project-wide policy should graduate to an ADR or reference one.
+Record durable architecture decisions in `docs/adr/` through the architecture decision record (ADR) process.
+EntireContext (EC) decisions can stay lightweight.
+Decisions that become project-wide policy should move to an ADR or refer to one.
 
-Agents working in this repository must retrieve and apply relevant decisions and lessons for non-trivial work. Decisions are inputs to judgment, not unquestioned rules; verify fit against current code and task intent.
+Agents working in this repository must retrieve relevant decisions and lessons for non-trivial work.
+They must apply them.
+Decisions are inputs to judgment, not unquestioned rules.
+Verify each decision against current code and task intent.
 
 ### 13.6 Measure-first principle
 
-Before implementing feature or behavior changes, define the measurable success criterion and verify the measurement infrastructure. This is especially important for dashboard, assessment, telemetry, retrieval, and ranking work.
+Before you implement a feature or behavior change, define the measurable success criterion.
+Verify the measurement infrastructure.
+This is especially important for dashboard, assessment, telemetry, retrieval, and ranking work.
 
 ### 13.7 Release/version alignment
 
@@ -780,7 +921,7 @@ Version and schema drift have been a repeated risk. When releasing or changing s
 | Sync conflict or missing snapshot | Shadow branch missing, fetch/push failed, merge conflict | `ec sync` output, `sync_metadata`, shadow branch refs. |
 | Decisions not surfacing | Config disabled, no links/signals, timeout, stale/contradicted filtering | `[decisions]`, retrieval telemetry, decision links, PDI config. |
 | Lessons stale or absent | No assessed feedback, lessons not regenerated, SessionStart surfacing disabled | `ec futures lessons`, `LESSONS.md`, `[capture] surface_lessons_on_start`. |
-| Docs contract failure | README/tool/schema/fallback drift | Read failure message in `tests/test_contract_sync.py` and update both sides. |
+| Docs contract failure | README/tool/schema/fallback drift | Read the failure message in `tests/test_contract_sync.py`. Update both sides. |
 | Long docs automation timed out | Agent automation produced partial artifacts but did not finish | Inspect `.agent-loop/runs/*/artifacts/*` and summaries before rerunning. |
 
 ## 15. Documentation Ownership and Evidence Appendix
@@ -804,7 +945,7 @@ Version and schema drift have been a repeated risk. When releasing or changing s
 | Manual area | Major claims | Evidence sources |
 |---|---|---|
 | Product wedge and loop | Decision memory for coding agents; capture/distill/retrieve/intervene spine | `README.md`, `ROADMAP.md`, decision `629f4a79-61b5-46d5-8a22-8311bb83d1ae`. |
-| Version/runtime snapshot | Version 0.9.3, Python 3.12+, schema v14 | `pyproject.toml`, `src/entirecontext/__init__.py`, `src/entirecontext/db/schema.py`, `.github/workflows/ci.yml`. |
+| Version/runtime snapshot | Version 0.16.1, Python 3.12+, schema v20 | `pyproject.toml`, `src/entirecontext/__init__.py`, `src/entirecontext/db/schema.py`, `.github/workflows/ci.yml`. |
 | CLI registration | Root Typer app and command modules | `src/entirecontext/cli/__init__.py`, `src/entirecontext/cli/*_cmds.py`. |
 | Project setup commands | init/enable/disable/status/config/doctor/project merge-worktree | `src/entirecontext/cli/project_cmds.py`, `README.md`. |
 | MCP tool surface | 29 exported `ec_*` tools grouped by workflow | `src/entirecontext/mcp/server.py`, `src/entirecontext/mcp/tools/*.py`, `tests/test_contract_sync.py`, `README.md`. |

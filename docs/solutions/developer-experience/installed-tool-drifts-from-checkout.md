@@ -22,62 +22,60 @@ tags:
 
 ## Context
 
-PR #214 fixed MD024 duplicate headings in `LESSONS.md` by appending an assessment-ID suffix
-to each heading (`src/entirecontext/core/futures.py:176`). One day later the file appeared in
-`git status` with uncommitted changes that removed every suffix — the merged fix undoing
-itself.
+Pull request (PR) #214 fixed MD024 duplicate headings in `LESSONS.md`.
+The fix added an assessment identifier (ID) suffix to each heading (`src/entirecontext/core/futures.py:176`).
+One day later, `git status` showed uncommitted changes in the file.
+These changes removed every suffix.
+They undid the merged fix.
 
-The repository source was correct. The `ec` that the agent hooks invoke is a uv tool install
-at `~/.local/share/uv/tools/entirecontext`, and that install predated PR #214. Hook-driven
-`auto_distill` therefore regenerated `LESSONS.md` with the pre-fix code and silently reverted
-a shipped change.
+The repository source was correct.
+Agent hooks invoked `ec` from the uv tool install at `~/.local/share/uv/tools/entirecontext`.
+That install predated PR #214.
+Hook-driven `auto_distill` regenerated `LESSONS.md` with the pre-fix code.
+The regeneration silently reverted a shipped change.
 
-Both copies reported version `0.14.0`.
+Both copies reported the version `0.14.0`.
 
 ## Guidance
 
-Treat the globally installed CLI as a **second copy of the code with no provenance link to
-the checkout**. In a repo that dogfoods its own tool through hooks, the code that runs is not
-the code you edited or reviewed.
+Treat the globally installed command-line interface (CLI) as **another code copy without a provenance link to the checkout**. In a repository that uses its own tool through hooks, the code that runs is not the code you edited or reviewed.
 
-1. When a merged fix appears to revert itself in a generated or hook-written file, resolve
-   which binary produced the file *before* diagnosing the source. `which -a <cmd>`, then read
-   the shebang, then locate the package with
-   `<that-python> -c 'import <pkg>, os; print(os.path.dirname(<pkg>.__file__))'`, then grep
-   the fixed line inside *that* directory.
-2. Do not use the version string as the drift check. Same-version drift is the normal case:
-   a global install made before a fix and the checkout after it both report the last released
-   version, so any `__version__` comparison passes while the code differs.
-3. Detect drift by provenance, not version. Stamp the git SHA at build time and have the
-   tool's `doctor` command compare that stamp against `git rev-parse HEAD` for the repository
-   it is running in.
-4. Reinstall from the checkout after merging anything the hooks execute
-   (`uv tool install --force .`), and verify the fixed line is present in the installed
-   package rather than assuming the reinstall took.
-5. Prefer stamping over routing hooks through `uv run` in the checkout. Routing fixes the
-   developer-machine problem by changing behavior for every user, including those who
-   deliberately installed the tool outside a checkout.
+1. When a merged fix appears to revert itself, first identify which binary produced the generated or hook-written file. Run `which -a <cmd>`. Read the shebang. Locate the package with `<that-python> -c 'import <pkg>, os; print(os.path.dirname(<pkg>.__file__))'`. Grep the fixed line in that directory.
+2. Do not use the version string as the drift check. Same-version drift is the normal case. A global install made before a fix and the checkout after it both report the last released version. As a result, any `__version__` comparison passes even when the code differs.
+3. Detect drift by provenance, not by version. Stamp the git commit hash at build time. Make the tool's `doctor` command compare that stamp with `git rev-parse HEAD` for the repository where it runs.
+4. Reinstall from the checkout after you merge changes to code that hooks execute: `uv tool install --force .`. Verify that the fixed line appears in the installed package. Do not assume that the reinstall succeeded.
+5. Prefer a provenance stamp to a route that runs hooks through `uv run` in the checkout. This route fixes the developer-machine problem. It changes behavior for every user, including users who deliberately installed the tool outside a checkout.
 
 ### Capture the broken state before repairing it
 
-The repair destroys the measurement. Running `uv tool install --force .` overwrote the stale
-package before its source revision was recorded, so the staleness window could only be bounded
-at one end: the fix merged at 03:09Z, one hook-driven regeneration ran at 03:35Z, the reinstall
-happened around 05:47Z. How long the install had been stale before the fix is unrecoverable.
+The repair destroys the measurement.
+The `uv tool install --force .` command overwrote the stale package before anyone recorded its source revision.
+As a result, the staleness window has only one known end.
 
-When a defect is found in a mutable environment — an installed package, a cache, a running
-container, a database row — record its identifying state first, then repair.
+The fix merged at 03:09Z.
+One hook-driven regeneration ran at 03:35Z.
+The reinstall happened around 05:47Z.
+No one can recover how long the install had been stale before the fix.
+
+When you find a defect in a mutable environment, record its identifying state before you repair it. Examples include an installed package, a cache, a running container, or a database row.
 
 ## Why this matters
 
-Every check that exists compares the repository against itself: tests run from the checkout,
-CI builds from the branch, review reads the diff. None of them observe the artifact the hooks
-actually execute. A fix can pass review, pass CI, merge, and still not take effect in the one
-environment whose output lands back in the repository.
+Every existing check compares the repository against itself.
+Tests run from the checkout.
+Continuous integration (CI) builds from the branch.
+Reviewers read the diff.
+None of these checks observes the artifact that the hooks actually execute.
 
-The failure is also self-concealing. The stale tool rewrites the generated file on every run,
-so the evidence of the drift looks like an ordinary uncommitted change — noise to be reverted
-rather than a signal that the shipped fix is inert.
+A fix can pass review.
+It can pass CI.
+It can merge.
+It can still fail to affect the environment whose output returns to the repository.
+
+The failure also hides itself.
+The stale tool rewrites the generated file on every run.
+As a result, the evidence of drift looks like an ordinary uncommitted change.
+That change looks like noise to revert, not a signal that the shipped fix does not work.
 
 ## When to apply
 

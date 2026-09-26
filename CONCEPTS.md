@@ -2,11 +2,11 @@
 
 ## Lookup pipelines
 
-**Cost domain** — An independently scaling resource dimension within a pipeline. Bounding one cost domain does not establish a bound on another.
+**Cost domain** — A resource dimension that scales independently within a pipeline. Bounding one cost domain does not establish a bound on another.
 
-**Lookup pipeline** — A sequence that retrieves candidates, filters them, resolves external identities, and assembles results. Each transition can introduce a separate multiplicative cost.
+**Lookup pipeline** — A sequence that retrieves and filters candidates, resolves external identities, and assembles results. Each transition can add a separate multiplicative cost.
 
-**Cache identity** — The canonical representation used to decide whether two lookups can reuse one result. It must match the lookup's equivalence rules.
+**Cache identity** — The canonical representation that determines whether two lookups can reuse one result. It must match the lookup's equivalence rules.
 
 ## Git worktrees
 
@@ -18,18 +18,18 @@
 
 ## Cross-repo queries
 
-**Repo warning** — A per-repo failure recorded and returned alongside the results instead of aborting the whole query. One unreachable or corrupt repository degrades the answer rather than failing it.
+**Repo warning** — A per-repo failure that the query records and returns with the results instead of aborting the whole query. One unreachable or corrupt repository degrades the answer instead of causing the query to fail.
 
-**Partial cross-repo result** — A result set that is complete for the repositories that answered and silently missing the ones that did not. It is indistinguishable from a complete result unless the accompanying repo warnings are surfaced, which is why surfacing them is a caller's explicit choice.
+**Partial cross-repo result** — A result set that contains complete results for repositories that answered. It silently omits repositories that did not answer. A caller cannot distinguish it from a complete result unless the caller surfaces the accompanying repo warnings. The caller chooses whether to surface those warnings.
 
 ## Tool provenance
 
-**Install provenance** — The link from an installed artifact back to the source revision it was built from. Absent provenance, an installation cannot be shown to contain any particular change. *Avoid: build lineage.*
+**Install provenance** — The link from an installed artifact to the source revision used to build it. Without provenance, no one can show that an installation contains a particular change. *Avoid: build lineage.*
 
-**Same-version drift** — Two installations reporting an identical version string while carrying different code, because the version advanced only at release while the source advanced at every commit. Version comparison cannot detect it.
+**Same-version drift** — Two installations can report the same version string but contain different code. This happens because the version changes only at release, while the source changes at every commit. Version comparison cannot detect this difference.
 
-**Executing copy** — The artifact that actually runs when a command is invoked, as distinct from the source that was edited and reviewed. Tests, review, and CI observe the source; hooks and installed commands observe the executing copy.
+**Executing copy** — The artifact that runs when someone invokes a command, distinct from the source that someone edited and reviewed. Tests, review, and CI observe the source. Hooks and installed commands observe the executing copy.
 
 ## Verification contracts
 
-**Fail-closed verification** — A property of a verification command whose overall result fails whenever any required check fails, including failures inside a compound command. A later successful step must not mask an earlier error.
+**Fail-closed verification** — A verification command fails overall whenever any required check fails, including a failure inside a compound command. A later successful step must not mask an earlier error.

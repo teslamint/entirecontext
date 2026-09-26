@@ -10,11 +10,13 @@
 
 ## 1. Scope and Source of Truth
 
-This document describes the behavior implemented in the current codebase at a reference level. For user onboarding and product framing, start with `README.md`; for exact runtime behavior, use the source modules named below and the corresponding tests.
+This document describes behavior in the current codebase at a reference level.
+For user onboarding and product framing, start with `README.md`.
+For exact runtime behavior, use the source modules named below and the corresponding tests.
 
 - Runtime behavior: `src/entirecontext/`
-- CLI surface: `src/entirecontext/cli/__init__.py` and `src/entirecontext/cli/*_cmds.py`
-- MCP surface: `src/entirecontext/mcp/server.py` and `src/entirecontext/mcp/tools/*.py`
+- Command-line interface (CLI) surface: `src/entirecontext/cli/__init__.py` and `src/entirecontext/cli/*_cmds.py`
+- Model Context Protocol (MCP) surface: `src/entirecontext/mcp/server.py` and `src/entirecontext/mcp/tools/*.py`
 - Data schema: `src/entirecontext/db/schema.py`
 - Hook behavior: `src/entirecontext/hooks/handler.py`, `session_lifecycle.py`, `turn_capture.py`, `decision_hooks.py`
 - Public user guide: `README.md`
@@ -58,10 +60,10 @@ Storage
 
 ### 2.2 Data flow `[Implemented]`
 
-- Capture: hooks write sessions/turns into per-repo SQLite.
-- Search: runs against per-repo DB or cross-repo index + per-repo DB fanout.
-- Sync export (`ec sync`): DB data exported to shadow branch artifacts.
-- Sync import (`ec pull`): shadow branch artifacts imported back into DB.
+- Capture: hooks write sessions and turns to a per-repo SQLite database.
+- Search: the system queries a per-repo database (DB) or uses a cross-repo index plus per-repo DB fanout.
+- Sync export (`ec sync`): exports DB data to shadow branch artifacts.
+- Sync import (`ec pull`): imports shadow branch artifacts into the DB.
 
 ---
 
@@ -87,8 +89,8 @@ Reference:
 
 ### 3.2 Search indexes `[Implemented]`
 
-- FTS5 virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates`
-- Trigger-based synchronization for insert/update/delete where defined in `schema.py`
+- Full-text search (FTS5) virtual tables: `fts_turns`, `fts_events`, `fts_sessions`, `fts_ast_symbols`, `fts_decisions`, `fts_decision_candidates`
+- Triggers synchronize inserts, updates, and deletes where `schema.py` defines them.
 
 ### 3.3 Global DB `[Implemented]`
 
@@ -118,7 +120,9 @@ Validated command set (from `ec --help`, 2026-06-20):
 
 ## 4.2 MCP interface `[Implemented]`
 
-Transport: stdio. Source of truth is `src/entirecontext/mcp/server.py` plus the `register_tools()` functions under `src/entirecontext/mcp/tools/`. `tests/test_contract_sync.py` asserts that this registered set matches the README `### Available Tools` table.
+Transport: stdio. The source of truth is `src/entirecontext/mcp/server.py` together with the `register_tools()` functions under `src/entirecontext/mcp/tools/`.
+Those functions define the registered tools.
+The `tests/test_contract_sync.py` test checks that the registered set matches the README `### Available Tools` table.
 
 Implemented tools (29):
 
@@ -154,7 +158,7 @@ Implemented tools (29):
 
 Cross-repo support:
 
-- Tools accept a `repos` parameter (`null` current repo, `["*"]` all repos, `["name"]` selected repos) where applicable; MCP runtime normalizes scalar/list/wildcard shapes at the boundary.
+- Where applicable, tools accept a `repos` parameter: `null` means the current repo, `["*"]` means all repos, and `["name"]` means selected repos. The MCP runtime normalizes scalar, list, and wildcard shapes at the boundary.
 
 ## 4.3 Hook contract `[Implemented]`
 
@@ -169,16 +173,16 @@ Hook dispatcher handles:
 
 Runtime entrypoint:
 
-- `ec hook handle [--type HOOK_TYPE]` reads JSON stdin
+- `ec hook handle [--type HOOK_TYPE]` reads JavaScript Object Notation (JSON) from stdin.
 
 Install location and format:
 
-- Claude Code hooks are installed by `ec init` into `.claude/settings.local.json` using Claude hook object format with `matcher` + nested `hooks`. `ec enable` performs the same installation and exists as the re-install path.
-- User-level MCP config is installed by `ec init` into `~/.claude/settings.json` under `mcpServers.entirecontext`, and by `ec enable` on the same terms.
+- Claude Code hooks use the Claude hook object format with `matcher` and nested `hooks`. The `ec init` command installs them in `.claude/settings.local.json`. The `ec enable` command performs the same installation. Use it to reinstall the hooks.
+- The `ec init` command installs the user-level MCP config in `~/.claude/settings.json` under `mcpServers.entirecontext`. The `ec enable` command installs it on the same terms.
 
-`ec disable` removes the selected agent integration and the agent-neutral repository Git hooks. It preserves the shared user-level MCP entry by default. `--remove-mcp` explicitly removes only a standard `entirecontext` stdio entry while preserving sibling servers, unrelated settings, and nonstandard entries; an identical standard entry configured manually is also eligible because the explicit flag authorizes global cleanup.
+`ec disable` removes the selected agent integration and the agent-neutral repository Git hooks. By default, it preserves the shared user-level MCP entry. `--remove-mcp` explicitly removes only a standard `entirecontext` stdio entry. It preserves sibling servers, unrelated settings, and nonstandard entries. The flag also authorizes removal of an identical standard entry that a user configured manually.
 
-Package health and MCP activation are separate checks. A successful `ec --help` or package reinstall does not enable a Codex MCP registration whose `~/.codex/config.toml` entry has `enabled = false`; enable that registration in Codex configuration.
+Package health and MCP activation are separate checks. A successful `ec --help` or package reinstall does not enable a Codex MCP registration with `enabled = false` in `~/.codex/config.toml`. Enable that registration in Codex configuration.
 
 Exit codes:
 
@@ -187,18 +191,25 @@ Exit codes:
 
 ## 4.4 Git hooks `[Implemented]`
 
-Installed by `ec init` (or `ec enable`) for every target agent (`claude`, `codex`, or `both`) unless `--no-git-hooks` is passed. The git hooks are agent-neutral: `--agent codex` installs them without installing Claude Code hooks, while `ec init --no-hooks` skips them along with every other integration:
+`ec init` or `ec enable` installs these hooks for every target agent (`claude`, `codex`, or `both`), unless you pass `--no-git-hooks`. These Git hooks are agent-neutral. `--agent codex` installs them without Claude Code hooks. `ec init --no-hooks` skips these hooks and every other integration:
 
 - `.git/hooks/post-commit` -> invokes `ec hook handle --type PostCommit`
 - `.git/hooks/pre-push` -> invokes `ec sync --if-enabled`
 
-`ec disable` removes these EntireContext-owned repository hooks for every target agent. Existing ownership guards preserve foreign hooks and configured shared hook paths.
+`ec disable` removes these EntireContext-owned repository hooks for every target agent. Ownership guards preserve foreign hooks and configured shared hook paths.
 
 ## 4.5 Installed-tool build provenance `[Implemented]`
 
-Wheel and source-distribution builds contain a generated `entirecontext._build_provenance` module with the source checkout's full Git SHA and tracked-file dirty state. A wheel rebuilt from an unpacked source distribution preserves the source distribution's stamp even though `.git` is unavailable.
+Wheel and source-distribution builds contain a generated `entirecontext._build_provenance` module.
+This module stores the source checkout's full Git SHA and tracked-file dirty state.
+A wheel rebuilt from an unpacked source distribution preserves the source distribution's stamp when `.git` is unavailable.
 
-When `ec doctor` is executing from an installed distribution inside the EntireContext source checkout, it compares the stamped SHA with the checkout's current `HEAD`. It warns when provenance is unavailable, the build was made from a dirty tracked tree, or the SHA differs. Missing or mismatched installed stamps direct the operator to run `uv tool install --force .`; dirty stamps first require committing or restoring tracked changes; an unresolved checkout `HEAD` requires creating or checking out a commit before rebuilding. Direct checkout/editable execution and unrelated consumer repositories do not receive this warning.
+When `ec doctor` runs from an installed distribution inside the EntireContext source checkout, it compares the stamped SHA with the checkout's current `HEAD`.
+It warns if provenance is unavailable, if the build came from a dirty tracked tree, or if the SHA differs.
+Missing or mismatched installed stamps direct the operator to run `uv tool install --force .`.
+Dirty stamps first require the operator to commit or restore tracked changes.
+If checkout `HEAD` is unresolved, the operator must create or check out a commit before rebuilding.
+Direct checkout/editable execution and unrelated consumer repositories do not receive this warning.
 
 ---
 
@@ -209,7 +220,7 @@ When `ec doctor` is executing from an installed distribution inside the EntireCo
 - Regex (default)
 - FTS5 (`--fts`)
 - Semantic (`--semantic`, `sentence-transformers` extra required)
-- Hybrid (`--hybrid`, FTS5 + recency RRF reranking)
+- Hybrid (`--hybrid`, FTS5 + recency-based reciprocal rank fusion (RRF) reranking)
 
 ### 5.2 Filters `[Implemented]`
 
@@ -237,40 +248,40 @@ Artifacts:
 
 ### 6.1 `ec sync` current workflow `[Implemented]`
 
-1. Ensure shadow branch exists (create orphan branch if absent)
-2. Create temporary git worktree on local shadow branch
+1. Ensure that the shadow branch exists. Create an orphan branch if it does not.
+2. Create a temporary Git worktree on the local shadow branch
 3. Export all sessions, their turns, and checkpoints, regardless of timestamps
-4. Update `manifest.json`
-5. Commit changes when present
-6. Push when enabled by runtime config path
-7. If push is rejected as non-fast-forward:
+4. Update `manifest.json`.
+5. Commit the changes when present.
+6. Push when the export created a commit. The `ec sync` command always pushes in that case, because it does not pass `push_on_sync` and the default is `true`. Background auto-sync passes the `[sync]` section, so `sync.push_on_sync = false` disables its push.
+7. If the push is rejected as non-fast-forward:
    - fetch `origin/<shadow-branch>`
-   - create detached worktrees for local `HEAD` snapshot and remote tracking snapshot
-   - merge artifacts at app level only
-   - create one merge retry commit and retry push once
-8. Update `sync_metadata.last_export_at` and duration fields only after successful sync completion
+   - create detached worktrees for the local `HEAD` snapshot and the remote tracking snapshot
+   - merge artifacts at the application level only
+   - create one merge retry commit. Retry the push once.
+8. Update `sync_metadata.last_export_at` and the duration fields only after the sync completes successfully.
 
 The export timestamp controls telemetry and automatic-sync cooldown only. It does not filter records.
 Writes after export selection appear on the next sync. See [ADR 0020](adr/0020-full-sync-export.md).
 
 ### 6.2 `ec pull` current workflow `[Implemented]`
 
-1. Fetch shadow branch from `origin`
+1. Fetch the shadow branch from `origin`
 2. Resolve the latest remote tracking snapshot from `origin/<shadow-branch>`
-3. Create a detached temporary git worktree on that remote tracking ref
-4. Import missing sessions/checkpoints (idempotent-by-ID)
+3. Create a detached temporary Git worktree on that remote tracking ref
+4. Import the missing sessions and checkpoints (idempotent-by-ID)
 5. Update `sync_metadata.last_import_at`
 
 ### 6.3 Merge strategy status `[Implemented]`
 
-- Automatic retry is fixed at one attempt and only triggers for non-fast-forward push rejection
-- There is no git 3-way merge and no interactive conflict UI
-- Merge policy is artifact-level only:
+- The workflow retries automatically once. It does so only after a non-fast-forward push rejection.
+- The workflow does not use a Git 3-way merge. It has no interactive conflict UI.
+- The merge policy applies only at the artifact level:
   - `manifest.json`: key union, session entry with higher `total_turns` wins, ties preserve non-null fields
   - `sessions/<id>/meta.json`: higher `total_turns` wins, ties preserve non-null fields, `started_at` uses earlier value, `ended_at` uses later value
   - `sessions/<id>/transcript.jsonl`: union by turn `id`
   - `checkpoints/*.json`: filename union
-- Malformed merge artifacts, missing remote snapshot, or failed retry push are explicit sync errors
+- Malformed merge artifacts, a missing remote snapshot, or a failed retry push each produce an explicit sync error.
 
 ---
 
@@ -278,11 +289,14 @@ Writes after export selection appear on the next sync. See [ADR 0020](adr/0020-f
 
 ## 7.1 Data and CLI `[Implemented]`
 
-- `assessments` table stores verdict/feedback metadata.
-- `assessment_relationships` stores typed relationships between assessments.
+- The `assessments` table stores verdict/feedback metadata.
+- The `assessment_relationships` table stores typed relationships between assessments.
 - CLI commands: `assess`, `list`, `feedback`, `lessons`, `enrich-backlog`, `trend`, `relate`, `relationships`, `unrelate`, `tidy-pr`, `report`, `worker-status`, `worker-stop`, `worker-launch`.
 
-LLM backends for `ec futures assess -b BACKEND` (sources: `src/entirecontext/core/llm.py`, `src/entirecontext/cli/futures_cmds.py`). `--model` defaults to `gpt-4o-mini` and is passed to every backend. The constructor fallback applies only when a caller passes no model.
+`src/entirecontext/core/llm.py` defines the large language model (LLM) backends for `ec futures assess -b BACKEND`. `src/entirecontext/cli/futures_cmds.py` calls them.
+The `--model` option defaults to `gpt-4o-mini`.
+The command passes this value to every backend.
+A constructor fallback applies only when a caller passes no model.
 
 | Backend | Auth | Model when `--model` is omitted | Constructor fallback |
 |---|---|---|---|
@@ -303,8 +317,8 @@ LLM backends for `ec futures assess -b BACKEND` (sources: `src/entirecontext/cor
 ## 7.3 Auto-distill and feedback behavior `[Implemented]`
 
 - `futures feedback` triggers auto-distill checks.
-- Session end lifecycle can trigger auto-distill checks.
-- Assessment enrichment/backlog processing is controlled by `[futures]` config keys such as `auto_distill`, `assess_enrich`, `assess_backfill_window_days`, and `lessons_min_per_verdict`.
+- The session end lifecycle can trigger auto-distill checks.
+- Config keys in the `[futures]` section, such as `auto_distill`, `assess_enrich`, `assess_backfill_window_days`, and `lessons_min_per_verdict`, control assessment enrichment and backlog processing.
 
 ---
 
@@ -320,31 +334,31 @@ Source:
 - `src/entirecontext/cli/purge_cmds.py`
 
 **Layer 1: Capture-time exclusion** (`capture.exclusions`)
-- `content_patterns`: regex list — skip entire turn if user message matches
+- `content_patterns`: regex list — skip an entire turn if the user message matches
 - `file_patterns`: glob list — exclude file paths from `files_touched` tracking
 - `tool_names`: exact match list — skip tool usage recording
 - `redact_patterns`: regex list — replace matches with `[FILTERED]` before DB storage
-- `enabled` flag gates all exclusion behavior
+- The `enabled` flag gates all exclusion behavior
 
 **Layer 2: Query-time redaction** (`filtering.query_redaction`)
-- Applied to `regex_search`, `fts_search` results and MCP tool responses (`ec_search`, `ec_session_context`, `ec_turn_content`)
+- Query-time redaction applies to `regex_search` and `fts_search` results and to MCP tool responses (`ec_search`, `ec_session_context`, `ec_turn_content`)
 - `patterns`: regex list — redact matches in returned text fields
 - `replacement`: configurable replacement string (default `[FILTERED]`)
-- `enabled` flag gates redaction
+- The `enabled` flag gates redaction
 
 **Layer 3: Post-hoc purge** (`ec purge`)
-- `ec purge session SESSION_ID` — delete session + cascading turns/turn_content/checkpoints
-- `ec purge turn TURN_ID...` — delete specific turns + content files
-- `ec purge match PATTERN` — regex match against `user_message`/`assistant_summary`, delete matched turns
-- All commands default to dry-run; `--execute` performs actual deletion
-- Active sessions (ended_at IS NULL) cannot be purged (raises `ActiveSessionError`)
-- JSONL content files deleted on disk; empty directories cleaned up
-- FTS5 cleanup handled automatically via existing delete triggers
+- `ec purge session SESSION_ID` — delete the session and its cascading turns, `turn_content`, and checkpoints
+- `ec purge turn TURN_ID...` — delete the specified turns and their content files
+- `ec purge match PATTERN` matches `PATTERN` against `user_message`/`assistant_summary` with a regex. The command deletes the matched turns.
+- All commands default to dry-run; `--execute` performs actual deletion.
+- The purge command cannot purge active sessions (`ended_at IS NULL`). It raises `ActiveSessionError` for those sessions.
+- The command deletes JSON Lines (JSONL) content files on disk. It also removes empty directories.
+- Existing delete triggers handle FTS5 cleanup automatically.
 
 ### 7b.2 Selective capture toggle
 
 - Global: `capture.auto_capture = false` skips all turn creation
-- Per-session: session `metadata.capture_disabled = true` skips turns for that session only
+- Per-session: A session with `metadata.capture_disabled = true` skips turns for that session only
 
 ---
 
@@ -436,7 +450,10 @@ enabled = false
 patterns = []
 replacement = "[FILTERED]"
 ```
-Lesson selection reserves slots per verdict inside the total lesson cap, so a run of one verdict cannot evict every lesson of another; the reservation never exceeds half the cap, and `0` restores pure recency ordering.
+Lesson selection reserves slots for each verdict within the total lesson cap.
+A run of one verdict cannot evict every lesson from another verdict.
+The reservation never exceeds half the cap.
+The value `0` restores pure recency ordering.
 
 ---
 
@@ -457,7 +474,7 @@ Lesson selection reserves slots per verdict inside the total lesson cap, so a ru
 
 ## Phase 4: Attribution + Multi-agent
 
-- `[Implemented]` line attribution CLI/API and agent hierarchy fields
+- `[Implemented]` Line attribution CLI and application programming interface (API), plus agent hierarchy fields
 - `[Implemented]` session graph and spreading activation retrieval
 
 ## Phase 5: Sharing + Cross-repo
@@ -479,7 +496,7 @@ Lesson selection reserves slots per verdict inside the total lesson cap, so a ru
 
 - `[Implemented]` Team dashboard (`ec dashboard`)
 - `[Implemented]` Knowledge graph (`ec graph`)
-- `[Implemented]` Code AST search (`ec ast-search`)
+- `[Implemented]` Code search over abstract syntax trees (AST) (`ec ast-search`)
 - `[Implemented]` Memory consolidation (`ec session consolidate`) and storage compaction (`ec compact`)
 - `[Implemented]` Hybrid search (`--hybrid`)
 - `[Implemented]` Session export (`ec session export`)
@@ -496,13 +513,14 @@ Lesson selection reserves slots per verdict inside the total lesson cap, so a ru
 
 ## 10. Follow-up Notes
 
-Previously tracked sync-policy gaps in this section have been closed. The notes below record the current implementation-alignment state.
+The previously tracked sync-policy gaps in this section are now closed.
+The notes below record the current alignment with the implementation.
 
 Sync policy notes:
 
-- `pre-push` is currently installed as `ec sync --if-enabled`, so push-triggered sync is gated by `sync.auto_sync_on_push`.
-- `ec sync --no-filter` currently propagates to runtime sync config and is covered by CLI tests.
-- Sync merge/retry and remote-tracking pull behavior are implemented; keep docs/tests aligned with the artifact-level policy above.
+- The `ec init` and `ec enable` commands currently install the `pre-push` hook as `ec sync --if-enabled`. The `sync.auto_sync_on_push` setting gates push-triggered sync.
+- CLI tests cover the runtime sync config propagation from `ec sync --no-filter`.
+- The code implements sync merge/retry and remote-tracking pull behavior. Keep docs and tests aligned with the artifact-level policy above.
 
 ---
 
@@ -520,8 +538,8 @@ Sync policy notes:
 
 ## MCP checks
 
-- `tests/test_contract_sync.py` source-extracts `mcp/server.py` registration modules and confirms 29 `ec_*` tools match `server.__all__` and README.
-- Query-time redaction applies to search/session/turn MCP responses where implemented by tool modules.
+- The `tests/test_contract_sync.py` test extracts registrations from the `mcp/server.py` modules. It checks that 29 `ec_*` tools match `server.__all__` and the README.
+- Tool modules apply query-time redaction to search, session, and turn MCP responses where they implement that behavior.
 
 ## Config checks
 
@@ -531,17 +549,17 @@ Sync policy notes:
 ## Hook checks
 
 - Source-level confirmation of handled hook types, including `PostCommit` dispatch.
-- Decision fallback filenames are guarded by `tests/test_contract_sync.py`: `decisions-context.md` and `decisions-context-tooluse`.
-- Content filtering integrated in `on_user_prompt`, `on_stop`, and `on_tool_use` paths.
+- The `tests/test_contract_sync.py` test checks the decision fallback filenames `decisions-context.md` and `decisions-context-tooluse`.
+- The `on_user_prompt`, `on_stop`, and `on_tool_use` paths apply content filtering.
 
 ## Sync policy checks
 
-- `ec sync --no-filter` propagates runtime filtering config and is covered by CLI tests.
-- Shadow-branch export/import and artifact-level merge behavior remain covered by sync tests.
+- The `ec sync --no-filter` option propagates runtime filtering config. CLI tests cover this behavior.
+- Sync tests still cover shadow-branch export/import and artifact-level merge behavior.
 
 ---
 
 ## 12. Migration Notes from Previous Draft
 
 - The previous draft emphasized design intent; this document now prioritizes implemented behavior.
-- Where intent and implementation differ, this spec records both explicitly via status tags and backlog items.
+- When intent and implementation differ, this spec records both with status tags and backlog items.

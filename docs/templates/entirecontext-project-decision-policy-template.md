@@ -3,10 +3,10 @@
 Use this template to define your project's decision records and implementation requirements.
 Adoption is optional. Your project owns the policy and chooses enforcement through agents, reviewers, or continuous integration (CI).
 EntireContext (EC) stores and retrieves decisions; it does not enforce this policy or require particular decision fields.
-EC maintainer rules do not apply automatically to consuming projects.
+EC maintainer rules do not apply automatically to projects that use EntireContext.
 
 The [user reuse template](entirecontext-user-decision-reuse-template.md) describes how agents consult prior decisions and lessons.
-This complementary template defines what your project records and when supporting plans or evidence are needed.
+This complementary template defines what your project records. It also defines when your project needs plans or evidence for its decisions.
 Neither template requires a particular development tool.
 
 ## Adapt before copying
@@ -14,7 +14,7 @@ Neither template requires a particular development tool.
 Replace every `{{...}}` placeholder with your project's choice.
 Choose one canonical location: the authoritative copy of this policy in your repository.
 Remove the optional approval and exception sections if your project does not need them.
-Keep any existing approval or exception rules that apply elsewhere.
+Keep any current approval or exception rules that apply elsewhere.
 Copy only the following block into your chosen location.
 
 ## Copyable policy
@@ -95,13 +95,13 @@ The record preserves the reason for the current parser. It grants no code-change
 - Success criterion: An operation with persistent failures makes exactly three attempts, then returns failure without a fourth attempt.
 - Verification reference: `docs/evidence/retry-limit-check.md` would record the executed check, observed attempt count, result, and remaining gaps.
 
-These references illustrate the project's chosen supporting records. They do not claim that a check ran or passed.
+These references illustrate records the project chose to support its decisions. They do not claim that a check ran or passed.
 The maintainer's project approval authorizes the change; EC preserves that decision and its rationale.
 
 ## If you do not adopt this policy
 
-You can still use EC and make the same retry change through your existing project workflow.
-For example, a maintainer can request the change under the project's existing instructions and contribution rules.
+You can still use EC in your current project workflow to make the same retry change.
+For example, a maintainer can request the change under the project's current instructions and contribution rules.
 Follow any approvals, plans, tests, or evidence requirements those rules already impose.
-Declining this template neither prohibits the change nor waives those requirements.
-EC can record and retrieve the decision without this policy; creating that record does not grant permission.
+Declining this template does not prohibit the change. It also does not waive those requirements.
+EC can record and retrieve the decision without this policy. The record does not grant permission to make the change.

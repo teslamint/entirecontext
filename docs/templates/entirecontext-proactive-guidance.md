@@ -1,6 +1,6 @@
 # Proactive EntireContext Guidance for AGENTS.md
 
-Add this block to your `AGENTS.md` to have agents proactively check broader EntireContext memory — not only decisions, but also assessments, lessons, checkpoints, attribution, sessions, and turns.
+Add this block to your `AGENTS.md`. It tells agents to check broader EntireContext memory proactively, not only decisions. This memory includes assessments, lessons, checkpoints, attribution, sessions, and turns.
 
 ## Recommended Placement
 

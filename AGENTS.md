@@ -24,6 +24,17 @@ When modifying a source module, always run the existing tests for that module be
 - Include CLI output snippets or screenshots when user-facing command behavior changes.
 - Decision traceability chain: Spec (`docs/specs/`) → ADR (`docs/adr/`) → Plan → Code. PRs that change behavior should reference the governing ADR or EC decision.
 
+## Documentation Style (ASD-STE100)
+
+Write English prose in living technical docs to ASD-STE100 (Simplified Technical English).
+
+- Scope: `README.md`, `CONCEPTS.md`, `docs/spec.md`, `docs/entirecontext-project-manual.md`, `docs/decisions_outcomes.md`, `docs/RELEASE.md`, `docs/adr/README.md`, `docs/templates/`, `docs/solutions/`, and tool READMEs such as `integrations/omp/README.md`.
+- Keep procedural sentences to 20 words or fewer. Keep descriptive sentences to 25 words or fewer.
+- Write one instruction per sentence. Use active voice, simple tenses, and one term per concept.
+- Keep paragraphs to one topic and six sentences or fewer. Define abbreviations at first use.
+- Do not change code blocks, inline code, commands, quoted output, link targets, or heading text for style alone.
+- Do not rewrite historical records for style: dated specs, plans, retros, brainstorms, research, reviews, `docs/superpowers/`, accepted ADRs, and released `CHANGELOG.md` entries. Sealed plans and recorded plan evidence depend on exact bytes.
+
 ## Dogfooding Workflow
 
 This project's own features should be actively used during development sessions.
