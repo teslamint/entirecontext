@@ -79,7 +79,7 @@ Treat these categories separately:
 
 At the time of this review, package metadata and runtime constants agree on version **0.16.1** (`pyproject.toml`, `src/entirecontext/__init__.py`).
 Project metadata and continuous integration (CI) support Python **3.12+**.
-The local schema version is **20** (`src/entirecontext/db/schema.py`).
+The local schema version is **21** (`src/entirecontext/db/schema.py`).
 
 This manual intentionally calls those facts drift-sensitive.
 If they change, update the package metadata, code constant, changelog/schema references, and docs together.
@@ -426,7 +426,7 @@ Users can disable it explicitly.
 
 ### 6.1 Schema version and SQLite posture
 
-The local schema version is **20** and the minimum SQLite version is **3.38.0+**. Schema definitions live in `src/entirecontext/db/schema.py`; migrations live under `src/entirecontext/db/migrations/`.
+The local schema version is **21** and the minimum SQLite version is **3.38.0+**. Schema definitions live in `src/entirecontext/db/schema.py`; migrations live under `src/entirecontext/db/migrations/`.
 
 ### 6.2 Table groups
 
@@ -945,7 +945,7 @@ Version and schema drift have been a repeated risk. When releasing or changing s
 | Manual area | Major claims | Evidence sources |
 |---|---|---|
 | Product wedge and loop | Decision memory for coding agents; capture/distill/retrieve/intervene spine | `README.md`, `ROADMAP.md`, decision `629f4a79-61b5-46d5-8a22-8311bb83d1ae`. |
-| Version/runtime snapshot | Version 0.16.1, Python 3.12+, schema v20 | `pyproject.toml`, `src/entirecontext/__init__.py`, `src/entirecontext/db/schema.py`, `.github/workflows/ci.yml`. |
+| Version/runtime snapshot | Version 0.16.1, Python 3.12+, schema v21 | `pyproject.toml`, `src/entirecontext/__init__.py`, `src/entirecontext/db/schema.py`, `.github/workflows/ci.yml`. |
 | CLI registration | Root Typer app and command modules | `src/entirecontext/cli/__init__.py`, `src/entirecontext/cli/*_cmds.py`. |
 | Project setup commands | init/enable/disable/status/config/doctor/project merge-worktree | `src/entirecontext/cli/project_cmds.py`, `README.md`. |
 | MCP tool surface | 29 exported `ec_*` tools grouped by workflow | `src/entirecontext/mcp/server.py`, `src/entirecontext/mcp/tools/*.py`, `tests/test_contract_sync.py`, `README.md`. |
