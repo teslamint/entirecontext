@@ -294,15 +294,15 @@ Writes after export selection appear on the next sync. See [ADR 0020](adr/0020-f
 - CLI commands: `assess`, `list`, `feedback`, `lessons`, `enrich-backlog`, `trend`, `relate`, `relationships`, `unrelate`, `tidy-pr`, `report`, `worker-status`, `worker-stop`, `worker-launch`.
 
 `src/entirecontext/core/llm.py` defines the large language model (LLM) backends for `ec futures assess -b BACKEND`. `src/entirecontext/cli/futures_cmds.py` calls them.
-The `--model` option defaults to `gpt-4o-mini`.
-The command passes this value to every backend.
-A constructor fallback applies only when a caller passes no model.
+The command resolves the model in this order: `--model`, then `futures.default_model`, then the backend constructor fallback.
+The default value of `futures.default_model` is `""`, so the constructor fallback applies.
+The `model_name` column stores the resolved value. This value is empty when the constructor fallback applies.
 
-| Backend | Auth | Model when `--model` is omitted | Constructor fallback |
+| Backend | Auth | Model when `--model` is omitted (default config) | Constructor fallback |
 |---|---|---|---|
 | `openai` | `OPENAI_API_KEY` | `gpt-4o-mini` | `gpt-4o-mini` |
-| `github` | `GITHUB_TOKEN` | `gpt-4o-mini` | `openai/gpt-4o-mini` |
-| `ollama` | None (local) | `gpt-4o-mini` | `llama3` |
+| `github` | `GITHUB_TOKEN` | `openai/gpt-4o-mini` | `openai/gpt-4o-mini` |
+| `ollama` | None (local) | `llama3` | `llama3` |
 | `codex` | CLI subprocess | Ignored; the CLI uses its own model | — |
 | `claude` | CLI subprocess | Ignored; the CLI uses its own model | — |
 

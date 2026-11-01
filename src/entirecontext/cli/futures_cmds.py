@@ -70,10 +70,13 @@ def _render_assessment(assessment: dict) -> None:
 def futures_assess(
     checkpoint: Optional[str] = typer.Option(None, "--checkpoint", "-c", help="Checkpoint ID to assess"),
     roadmap: str = typer.Option("ROADMAP.md", "--roadmap", "-r", help="Path to roadmap file"),
-    model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="LLM model name"),
+    model: Optional[str] = typer.Option(
+        None, "--model", "-m", help="LLM model name (default: futures.default_model, then backend default)"
+    ),
     backend: str = typer.Option("openai", "--backend", "-b", help="LLM backend (openai|codex|claude|ollama)"),
 ):
     """Assess current staged diff or a checkpoint against project roadmap."""
+    from ..core.config import load_config
     from ..core.futures import create_assessment
     from ..core.project import find_project_root
     from ..db import get_db
@@ -82,6 +85,8 @@ def futures_assess(
     if not repo_path:
         console.print("[red]Not in a git repository.[/red]")
         raise typer.Exit(1)
+
+    resolved_model = model or load_config(repo_path).get("futures", {}).get("default_model", "")
 
     conn = get_db(repo_path)
     try:
@@ -120,7 +125,7 @@ def futures_assess(
         # Call LLM
         console.print("[dim]Analyzing with LLM...[/dim]")
         try:
-            result = _call_llm(backend, model, SYSTEM_PROMPT, user_prompt)
+            result = _call_llm(backend, resolved_model, SYSTEM_PROMPT, user_prompt)
         except Exception as e:
             console.print(f"[red]LLM call failed: {e}[/red]")
             raise typer.Exit(1)
@@ -134,7 +139,7 @@ def futures_assess(
             roadmap_alignment=result.get("roadmap_alignment"),
             tidy_suggestion=result.get("tidy_suggestion"),
             diff_summary=diff[:2000],
-            model_name=model,
+            model_name=resolved_model,
         )
     finally:
         conn.close()

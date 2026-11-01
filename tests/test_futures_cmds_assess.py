@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import io
+import json
+import subprocess
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from entirecontext.cli import app
 from entirecontext.core.checkpoint import create_checkpoint
+from entirecontext.core.config import save_config
 from entirecontext.core.futures import add_feedback, create_assessment
 from entirecontext.core.project import get_project
 from entirecontext.core.session import create_session
@@ -90,6 +95,72 @@ def test_assess_llm_error(ec_repo, monkeypatch):
         result = runner.invoke(app, ["futures", "assess"])
     assert result.exit_code == 1
     assert "LLM call failed" in result.output
+
+
+_LLM_JSON = json.dumps({"verdict": "neutral", "impact_summary": "s", "roadmap_alignment": "a", "tidy_suggestion": "t"})
+
+
+def _stage_and_capture_requests(ec_repo, monkeypatch) -> list[dict]:
+    """Stage a real diff and replace the HTTP transport so no API is called.
+
+    Backend constructors and payload building stay real; only ``urlopen`` is faked.
+    """
+    monkeypatch.chdir(ec_repo)
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    (ec_repo / "feature.py").write_text("x = 1\n")
+    subprocess.run(["git", "add", "feature.py"], cwd=ec_repo, check=True)
+
+    sent: list[dict] = []
+
+    def fake_urlopen(req):
+        sent.append(json.loads(req.data))
+        if req.full_url.endswith("/api/chat"):
+            body = {"message": {"content": _LLM_JSON}}
+        else:
+            body = {"choices": [{"message": {"content": _LLM_JSON}}]}
+        return io.BytesIO(json.dumps(body).encode())
+
+    monkeypatch.setattr("entirecontext.core.llm.urlopen", fake_urlopen)
+    return sent
+
+
+@pytest.mark.parametrize(
+    ("backend", "argv", "expected"),
+    [
+        ("github", [], "openai/gpt-4o-mini"),
+        ("ollama", [], "llama3"),
+        ("openai", [], "gpt-4o-mini"),
+        ("github", ["--model", "openai/gpt-4.1"], "openai/gpt-4.1"),
+        ("ollama", ["--model", "qwen2.5"], "qwen2.5"),
+    ],
+)
+def test_assess_model_reaches_backend(ec_repo, isolated_global_config, monkeypatch, backend, argv, expected):
+    """Omitted --model must not override backend defaults (#261)."""
+    sent = _stage_and_capture_requests(ec_repo, monkeypatch)
+
+    result = runner.invoke(app, ["futures", "assess", "-b", backend, *argv])
+
+    assert result.exit_code == 0, result.output
+    assert [payload["model"] for payload in sent] == [expected]
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        ([], "qwen2.5"),
+        (["--model", "llama3.1"], "llama3.1"),
+    ],
+)
+def test_assess_model_precedence_over_config(ec_repo, isolated_global_config, monkeypatch, argv, expected):
+    """--model beats futures.default_model, which beats the backend default (#261)."""
+    sent = _stage_and_capture_requests(ec_repo, monkeypatch)
+    save_config(str(ec_repo), "futures.default_model", "qwen2.5")
+
+    result = runner.invoke(app, ["futures", "assess", "-b", "ollama", *argv])
+
+    assert result.exit_code == 0, result.output
+    assert [payload["model"] for payload in sent] == [expected]
 
 
 def test_list_default(ec_repo, monkeypatch):
