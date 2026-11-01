@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **uv tool interpreter drift diagnostics** — `ec doctor` now reports mismatched configured and active Python minor versions and provides clean uv-managed environment recreation commands. Installation and recovery guidance now avoids mutable Conda interpreter bindings.
+- **`ec futures assess` model default** — the CLI no longer sends `gpt-4o-mini` to every backend when `--model` is omitted. It now uses `futures.default_model`, then the backend fallback, the same as `ec_assess_create`. The `github` backend gets `openai/gpt-4o-mini` and the `ollama` backend gets `llama3`. (#261)
 
 ## [0.16.1] - 2026-08-20
 
