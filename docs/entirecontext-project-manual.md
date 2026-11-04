@@ -77,7 +77,7 @@ Treat these categories separately:
 
 ### 1.4 Package and platform snapshot
 
-At the time of this review, package metadata and runtime constants agree on version **0.16.1** (`pyproject.toml`, `src/entirecontext/__init__.py`).
+At the time of this review, package metadata and runtime constants agree on version **0.17.0** (`pyproject.toml`, `src/entirecontext/__init__.py`).
 Project metadata and continuous integration (CI) support Python **3.12+**.
 The local schema version is **21** (`src/entirecontext/db/schema.py`).
 
@@ -945,7 +945,7 @@ Version and schema drift have been a repeated risk. When releasing or changing s
 | Manual area | Major claims | Evidence sources |
 |---|---|---|
 | Product wedge and loop | Decision memory for coding agents; capture/distill/retrieve/intervene spine | `README.md`, `ROADMAP.md`, decision `629f4a79-61b5-46d5-8a22-8311bb83d1ae`. |
-| Version/runtime snapshot | Version 0.16.1, Python 3.12+, schema v21 | `pyproject.toml`, `src/entirecontext/__init__.py`, `src/entirecontext/db/schema.py`, `.github/workflows/ci.yml`. |
+| Version/runtime snapshot | Version 0.17.0, Python 3.12+, schema v21 | `pyproject.toml`, `src/entirecontext/__init__.py`, `src/entirecontext/db/schema.py`, `.github/workflows/ci.yml`. |
 | CLI registration | Root Typer app and command modules | `src/entirecontext/cli/__init__.py`, `src/entirecontext/cli/*_cmds.py`. |
 | Project setup commands | init/enable/disable/status/config/doctor/project merge-worktree | `src/entirecontext/cli/project_cmds.py`, `README.md`. |
 | MCP tool surface | 29 exported `ec_*` tools grouped by workflow | `src/entirecontext/mcp/server.py`, `src/entirecontext/mcp/tools/*.py`, `tests/test_contract_sync.py`, `README.md`. |
