@@ -386,9 +386,9 @@ sit unscheduled.
 - [x] **Decide whether to ship `py.typed`** — deferred until stable status. No external typed consumers exist, alpha semver permits typing surface changes, and the overload contract (ADR 0008) should remain internal-only while evolving. See ADR 0019. Revisit when the package reaches `Development Status :: 5 - Production/Stable`. Surfaced by the 2026-08-12 cross-repo-overload retro (T6); revisit condition recorded in ADR 0008 and ADR 0019. _(architecture, P4)_
 - [x] **Persist feature-worktree decisions before loop archival** — `ec decision verify-docs` scans `docs/adr/`, `docs/specs/`, `docs/plans/`, and `ROADMAP.md` for decision UUIDs and verifies each resolves in the local DB. `--promote-from <db-path>` copies missing decisions from a worktree DB before removal. Exit code 0 = all resolved; nonzero = misses remain. Added to Pre-Tag Verification in `docs/RELEASE.md`. EC decision `75a52552-22d9-4751-89c6-ad6cbf622897`. _(decision traceability, P2)_
 
-## Unreleased (merged on `main` after v0.16.1)
+## v0.17.0 — Worktree Projects + Capture Reach (Shipped 2026-11-04)
 
-v0.16.1 (2026-08-20) was a patch release for `verify-docs` edge cases. The items below are merged on `main` but not yet tagged.
+v0.16.1 (2026-08-20) was a patch release for `verify-docs` edge cases. v0.17.0 ships the work merged on `main` after it. Maturity at release: 71 (`applied_context_rate` 0.5%, `lesson_reuse_rate` 21%); the injection ON/OFF experiment is in block 3 (ON) with 2/5 qualifying sessions.
 
 - [x] **Git worktrees share one logical project (schema v21)** — linked worktrees use the main worktree's `.entirecontext/`; `ec project merge-worktree` merges legacy per-worktree databases. _(PRs #264, #266)_
 - [x] **omp session capture** — an omp extension plugin forwards omp lifecycle events to EntireContext hooks. _(PR #253)_
@@ -397,6 +397,12 @@ v0.16.1 (2026-08-20) was a patch release for `verify-docs` edge cases. The items
 - [x] **`ec futures assess` model default** — the CLI uses `futures.default_model`, then the backend fallback. _(#261, PR #279)_
 - [x] **Install hints keep the `mcp` extra** — every printed install and reinstall hint names the extra; [ADR 0021](docs/adr/0021-keep-mcp-extra-optional.md) keeps `mcp` optional. _(#262, #263, PR #280)_
 - [x] **Token-savings experiment** — scripts measure LLM token savings from context injection; SessionStart lesson surfacing now honors `experiment_block`, and injected lessons count in `user_prompt` telemetry. _(PRs #232, #237)_
+
+Retro carry-forward review (2026-08-21 retro):
+- [x] **Branch-protection-aware release flow in `docs/RELEASE.md`** — the release commit merges through a PR before the tag.
+- [x] **`_FakeMCP` test helper rename** — renamed to `_FakeMCPServer` in `tests/test_contract_sync.py`.
+- Carried forward: **Reach maturity 75** → tracked under v0.13.0 **applied_context_rate ≥ 10%**.
+- Carried forward: **Decide whether to ship `py.typed`** → deferred by ADR 0019 until stable status (v0.16.0 row).
 
 ## v1.0 — Loop Completes Autonomously
 

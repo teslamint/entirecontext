@@ -50,6 +50,8 @@ Work through in order. CI can enforce the [auto] items. The [manual] items requi
 
 ### 4. Tag & Publish
 - [ ] Ordering: all above green → tag push → CI publish
+- [ ] Branch protection blocks direct pushes to `main`. Put the version bump and CHANGELOG section on a `release/vX.Y.Z` branch, and merge it through a PR.
+- [ ] After the PR merges, switch to `main` and update it: `git switch main && git pull --ff-only`. Check that `HEAD` is the merge commit. Then tag it and push only the tag: `git tag vX.Y.Z && git push origin vX.Y.Z`. A tag made on the release branch, or pushed before the merge, points to a commit that `main` cannot reach. See [release tag ordering](solutions/workflow-issues/release-tag-ordering-under-branch-protection.md).
 - [ ] Never re-tag after PyPI publish. Bump the version number instead.
 - [ ] Docs-only changes (zero code diff) do not warrant a standalone tag. Bundle them into the next feature release.
 

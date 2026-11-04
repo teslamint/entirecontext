@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-04
+
+Git worktrees as one logical project, agent guidance injection, omp capture, full sync export, and install-hint fixes. Dogfooding maturity at release: 71/100 (`applied_context_rate` 0.5%, `lesson_reuse_rate` 21%).
+
 ### Added
 
 - **`ec project merge-worktree <path>`** — merges a legacy per-worktree database (`<linked-worktree>/.entirecontext/db/local.db`, schema v20 or v21) into the canonical project database. Without `--apply`, the command runs the merge in a transaction, rolls it back and copies no files. With `--apply`, it first writes SQLite backup-API snapshots of the source and canonical databases to `.entirecontext/backups/`. Then it copies `content/` files with an md5 check and merges all rows in one transaction. If a content file is missing, has a bad md5, conflicts with a canonical file or is outside `.entirecontext/`, the turn keeps its `turns` row but gets no `turn_content` row. The report lists these turns. Merged sessions get the canonical `project_id` and the `workspace_root`, `worktree_git_dir` and `git_branch` of the worktree. The command does not overwrite a row whose id exists with different values. It reports the row as divergent. It reports unique-constraint conflicts as collisions. The FTS triggers update the indexes, and the command runs an FTS integrity check before the commit. After a successful apply, the command removes the stale global `repo_index` row of the worktree. It opens the source database read-only and does not change or delete it.

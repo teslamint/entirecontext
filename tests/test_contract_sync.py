@@ -17,7 +17,7 @@ drift. The parity test below is strictly stronger.
 
 IMPLICIT CONTRACT NOTE: the parity test assumes tools register via the
 ``mcp.tool()(fn)`` pattern with ``registered_name == fn.__name__``. The
-``_FakeMCP.tool()`` honors an optional ``name=`` kwarg override (matching
+``_FakeMCPServer.tool()`` honors an optional ``name=`` kwarg override (matching
 real ``MCPServer.tool()``'s signature) but does NOT capture ``mcp.add_tool()``
 calls. If a future registration uses either of those escape hatches, update
 the fake and/or the AST extractor at that time.
@@ -36,7 +36,7 @@ CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 SERVER_PY = REPO_ROOT / "src" / "entirecontext" / "mcp" / "server.py"
 
 
-class _FakeMCP:
+class _FakeMCPServer:
     """Minimal MCPServer stand-in that captures tool-registration names.
 
     Honors the ``name=`` kwarg override like real ``MCPServer.tool()`` does,
@@ -93,12 +93,12 @@ def _extract_server_module_names() -> list[str]:
 
 
 def _collect_registered_tools() -> set[str]:
-    """Drive each tool module's ``register_tools()`` against a ``_FakeMCP``.
+    """Drive each tool module's ``register_tools()`` against a ``_FakeMCPServer``.
 
     The module tuple is pulled from ``server.py`` via AST, NOT hardcoded
     here, so the test follows the real registration path.
     """
-    fake = _FakeMCP()
+    fake = _FakeMCPServer()
     for name in _extract_server_module_names():
         mod = importlib.import_module(f"entirecontext.mcp.tools.{name}")
         mod.register_tools(fake)
