@@ -14,6 +14,7 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from .._build_provenance import BUILD_DIRTY, BUILD_SHA
@@ -1122,7 +1123,11 @@ def _build_provenance_warning(repo_path: str) -> str | None:
     from ..core.git_utils import get_current_commit
 
     checkout_sha = get_current_commit(repo_path)
-    reinstall = "Run 'uv tool install --force .' from this checkout."
+    reinstall_step = (
+        "\"uv tool install --force '.[mcp]'\" from this checkout. "
+        "Add any other extras you use, for example '.[mcp,semantic]'."
+    )
+    reinstall = f"Run {reinstall_step}"
     if checkout_sha is None:
         return (
             "Build provenance unavailable: could not resolve checkout HEAD. "
@@ -1133,7 +1138,7 @@ def _build_provenance_warning(repo_path: str) -> str | None:
     if BUILD_DIRTY:
         return (
             f"Build provenance is dirty at {BUILD_SHA[:7]} and cannot prove checkout equivalence. "
-            f"Commit or restore tracked changes, then {reinstall.lower()}"
+            f"Commit or restore tracked changes, then run {reinstall_step}"
         )
     if BUILD_SHA != checkout_sha:
         return (
@@ -1164,13 +1169,13 @@ def _python_interpreter_drift_warning(repo_path: str) -> str | None:
     if configured is None or configured == active:
         return None
 
-    install_target = "." if _is_entirecontext_checkout(repo_path) else "entirecontext"
+    install_target = "'.[mcp]'" if _is_entirecontext_checkout(repo_path) else "'entirecontext[mcp]'"
     return (
         f"Python interpreter drift: virtual environment configured {configured[0]}.{configured[1]}, "
         f"active {active[0]}.{active[1]}. Recreate the tool environment; "
         "'uv tool install --force' can leave the stale interpreter binding in place. "
-        "Run 'uv tool uninstall entirecontext', then "
-        f"'uv tool install --managed-python --python 3.13 {install_target}'."
+        'Run "uv tool uninstall entirecontext", then '
+        f'"uv tool install --managed-python --python 3.13 {install_target}".'
     )
 
 
@@ -1280,10 +1285,10 @@ def doctor(
 
     if issues:
         for issue in issues:
-            console.print(f"[red]ERROR:[/red] {issue}")
+            console.print(f"[red]ERROR:[/red] {escape(issue)}")
     if warnings:
         for warning in warnings:
-            console.print(f"[yellow]WARN:[/yellow] {warning}")
+            console.print(f"[yellow]WARN:[/yellow] {escape(warning)}")
     if not issues and not warnings:
         console.print("[green]All checks passed.[/green]")
 

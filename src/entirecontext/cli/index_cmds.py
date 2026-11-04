@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 
 console = Console()
 
@@ -40,7 +41,7 @@ def index_cmd(
                 count = generate_embeddings(conn, repo_path, model_name=model, force=force)
                 console.print(f"[green]Generated {count} embeddings[/green] (model: {model})")
             except ImportError as e:
-                console.print(f"[red]{e}[/red]")
+                console.print(f"[red]{escape(str(e))}[/red]")
                 raise typer.Exit(1)
     finally:
         conn.close()

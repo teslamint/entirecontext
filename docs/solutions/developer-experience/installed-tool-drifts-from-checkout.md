@@ -43,7 +43,7 @@ Treat the globally installed command-line interface (CLI) as **another code copy
 1. When a merged fix appears to revert itself, first identify which binary produced the generated or hook-written file. Run `which -a <cmd>`. Read the shebang. Locate the package with `<that-python> -c 'import <pkg>, os; print(os.path.dirname(<pkg>.__file__))'`. Grep the fixed line in that directory.
 2. Do not use the version string as the drift check. Same-version drift is the normal case. A global install made before a fix and the checkout after it both report the last released version. As a result, any `__version__` comparison passes even when the code differs.
 3. Detect drift by provenance, not by version. Stamp the git commit hash at build time. Make the tool's `doctor` command compare that stamp with `git rev-parse HEAD` for the repository where it runs.
-4. Reinstall from the checkout after you merge changes to code that hooks execute: `uv tool install --force .`. Verify that the fixed line appears in the installed package. Do not assume that the reinstall succeeded.
+4. Reinstall from the checkout after you merge changes to code that hooks execute: `uv tool install --force '.[mcp]'`. Add any other extras you use. Verify that the fixed line appears in the installed package. Do not assume that the reinstall succeeded.
 5. Prefer a provenance stamp to a route that runs hooks through `uv run` in the checkout. This route fixes the developer-machine problem. It changes behavior for every user, including users who deliberately installed the tool outside a checkout.
 
 ### Capture the broken state before repairing it

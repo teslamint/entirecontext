@@ -111,7 +111,7 @@ def search(
                 except ImportError:
                     console.print(
                         "[red]sentence-transformers is required for semantic search. "
-                        "Install with: pip install 'entirecontext[semantic]'[/red]"
+                        "Install with: pip install 'entirecontext\\[semantic]'[/red]"
                     )
                     raise typer.Exit(1)
             elif hybrid:

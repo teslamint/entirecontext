@@ -5,6 +5,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from ..install_hints import MCP_INSTALL_HINT
+
 MCPServer: Any
 _MCP_IMPORT_ERROR: ImportError | None = None
 try:
@@ -137,8 +139,7 @@ def run_server() -> None:
         # diagnosis. Raising (instead of print+return) gives a non-zero exit
         # code and keeps stdout clean of non-JSON-RPC text.
         raise RuntimeError(
-            "MCP SDK unavailable: 'from mcp.server import MCPServer' failed. "
-            "Install the extra: uv tool install --force 'entirecontext[mcp] @ <repo path>'"
+            f"MCP SDK unavailable: 'from mcp.server import MCPServer' failed. {MCP_INSTALL_HINT}"
         ) from _MCP_IMPORT_ERROR
     import sys
     from entirecontext import __version__
