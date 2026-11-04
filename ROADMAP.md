@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-07-23._
+_Updated 2026-11-04._
 
 ## Product Thesis
 
@@ -34,6 +34,8 @@ That foundation is useful, but it is broader than the product wedge. The next ph
 **Target users (through v1.0):** individual developers (1) + agent frameworks via MCP (3). Team-scoped features are deferred to v1.x+.
 
 With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61. v0.8.1 corrected measurement infrastructure (codex session auto-close, rate normalization, verdict accuracy baseline). v0.9.0 automates the weakest dimension (intervene=5) with SessionEnd auto-apply inference, backfill tooling, and Signal C activation. v0.10.0 adds dual-channel lesson surfacing (SessionStart + PDI) to activate `lesson_reuse_rate`, and Layer 2 git-evidence outcome inference (refined/replaced) to close the v1.0 autonomous-loop gate. v0.11.0 adds hypothesis validation infrastructure — ranking snapshots for retrieval auditing and experiment block config for ON/OFF crossover experiments.
+
+v0.13.0–v0.14.0 added git archaeology for the decision corpus. v0.16.0 (2026-08-20) shipped the never-tagged v0.15.0 scope (self-archaeology, decision-annotated blame, TQL) together with hook installation correctness and the MCP SDK 2.0 migration. Maturity has stayed at 71 since v0.14.0. The one remaining Closed Loop score gate is tracked under v0.13.0 **applied_context_rate ≥ 10%**.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -201,12 +203,12 @@ The `capture→distill→retrieve→intervene` loop has stalled at `distill=0` f
 
 - [x] **Auto-assess on checkpoint create** (primary trigger) — `ec checkpoint create` automatically triggers `auto_assess_checkpoint()` (rule-based assessment) before the command returns; no session ends with a checkpoint and zero assessments. PR #157.
 - [x] **SessionEnd safety net + AAR** — SessionEnd hook backfills un-assessed checkpoints (safety net via `_maybe_backfill_assessments`), SessionStart catches up crashed sessions (`_maybe_catchup_assessments`), then emits a structured AAR (After-Action Report): decisions surfaced, PDI retrieve→intervene delta, assessments created. AAR written to `.entirecontext/aar-{session_id}.json` and printed to stdout. Config: `[capture] emit_aar` (default true).
-- [ ] **Maturity ≥75 (Closed Loop)** — current maturity is 71 (`capture=17`, `distill=17`, `retrieve=25`, `intervene=12`); distill automation and lesson reuse are sustained. The remaining discrete score gate is `applied_context_rate ≥10%`, currently 8/1,159 ended sessions with a retrieval selection (0.7%). Closure needs genuine applications in 108 already-counted selection-bearing sessions if the denominator stays fixed, or 120 new selection-bearing sessions when each new session increases both numerator and denominator; no synthetic backfill.
+- Carried forward: **Maturity ≥75 (Closed Loop)** → the remaining score gate is tracked once under v0.13.0 **applied_context_rate ≥ 10%**.
 
 ### Signal Assembly
 
 - [x] **Signal B: working-file inference** — `_get_recent_commit_file_paths()` extracts file paths from recent commits via `git log --name-only`; merged into `rank_decisions_for_prompt()` alongside Signal A (uncommitted diff) paths. Decisions linked to recently-committed files now surface even when the working tree is clean.
-- [~] **Signal C: semantic similarity** — v0.8.0 ships the foundation: `_build_decision_embed_text()`, `semantic_search_decisions()`, and decision embedding in `generate_embeddings()` (source_type='decision'). Auto-embed on `create_decision()` gated by `[decisions] auto_embed` (default false, requires `entirecontext[semantic]`). Full 2-pass async architecture (background ranking feeding next prompt's PDI, SessionStart pre-warm) deferred to v0.9.0.
+- [~] **Signal C: semantic similarity** — v0.8.0 ships the foundation: `_build_decision_embed_text()`, `semantic_search_decisions()`, and decision embedding in `generate_embeddings()` (source_type='decision'). Auto-embed on `create_decision()` gated by `[decisions] auto_embed` (default false, requires `entirecontext[semantic]`). Full 2-pass async architecture (background ranking feeding next prompt's PDI, SessionStart pre-warm) deferred to v0.9.0. The v0.9.0 scope never registered it; carried forward to **Later** as **Signal C prompt-time ranking** (registered 2026-11-04).
 
 ## v0.8.1 — Measurement Accuracy (Shipped 2026-06-07)
 
@@ -218,7 +220,7 @@ Follows the v0.8.0 retro lesson: "측정 인프라가 측정 대상보다 먼저
 - [x] **Maturity calculation normalization** — `retrieval_assisted_session_rate` numerator and denominator both filter on `ended_at IS NOT NULL`, consistent with `checkpoint_coverage_rate`. Previously, 383 codex sessions with `ended_at=NULL` inflated the denominator without contributing ended-session semantics, and retrieval events in active sessions could inflate the numerator.
 - [x] **Verdict accuracy baseline** — `ec checkpoint assess-accuracy` reports agree/disagree rate from LLM enrichment feedback. Current data: 10 enriched (all agree), 8 rule-based pending. v0.9.0 verdict tuning should gate on n≥30.
 
-## v0.9.0 — Intervene Automation
+## v0.9.0 — Intervene Automation (Shipped 2026-06-09)
 
 Theme: automate the weakest maturity dimension (intervene=5), activate deferred signal depth, and fix measurement gaps — all measured against v0.8.1's corrected baseline.
 
@@ -230,13 +232,13 @@ Theme: automate the weakest maturity dimension (intervene=5), activate deferred 
 - [x] **Duplicate notify regression test** — guards 150faab auto-close accuracy invariant.
 - [x] **Rule-based verdict mapping tuning** — evaluated after verdict-balanced enrichment reached n=63 with 98.4% agreement: `neutral` 59 agree / 1 disagree, `expand` 3 / 0, and no eligible `narrow` row in the seven-day backlog. No mapping change was warranted: the sole disagreement covered refactor/fix/docs commits with no `feat` or `revert` prefix, so the rule's `neutral` result matched the documented commit-prefix contract. Deterministic per-verdict selection now prevents neutral volume from hiding available minority-verdict evidence; ADR-0014.
 
-## v0.9.1 — Measurement Calibration
+## v0.9.1 — Measurement Calibration (Shipped 2026-06-09)
 
 Theme: fix measurement formulas so maturity scores reflect actual loop completion, and establish the retro carry-forward process.
 
 - [x] **`applied_context_rate` session-based formula** — numerator/denominator changed from per-selection counts to per-session counts. Old formula structurally capped at ~6.7%; new formula `sessions_with_application / sessions_with_selection` reaches threshold naturally. ec decision `b09d1aed`.
 
-## v0.9.2 — Process & Measurement Housekeeping
+## v0.9.2 — Process & Measurement Housekeeping (Process-only, not tagged)
 
 Theme: codify deferred process rules, evaluate measurement edge cases, add dev process conventions.
 
@@ -245,7 +247,7 @@ Theme: codify deferred process rules, evaluate measurement edge cases, add dev p
 - [x] **Dev process conventions** (PR #165) — Conventional Commits CI gate, ADR directory, measure-first principle, mypy strict with grandfather overrides.
 - Deferred: **`auto_extract` default true** → v1.0 (measure-first: 2-month dead code path requires live verification before default-on). ec decision `309d472a`.
 
-## v0.9.3 — Cleanup & Version Sync
+## v0.9.3 — Cleanup & Version Sync (Shipped 2026-06-09)
 
 Theme: remove legacy shims, fix version drift, correct ADR-0003 trigger documentation.
 
@@ -253,7 +255,7 @@ Theme: remove legacy shims, fix version drift, correct ADR-0003 trigger document
 - [x] **`__version__` sync** — runtime version in `__init__.py` was stuck at `0.7.1` since v0.7.1; now synced to release version.
 - [x] **ADR-0003 correction** — "self-healing via idle timeout" was inaccurate; corrected to event-driven re-closure.
 
-## v0.10.0 — Lesson Surfacing + Git-Evidence Outcome Inference
+## v0.10.0 — Lesson Surfacing + Git-Evidence Outcome Inference (Shipped 2026-06-29)
 
 Close retro carry-forward debt, activate lesson-reuse path for maturity 75, add layered outcome inference.
 
@@ -262,7 +264,7 @@ Close retro carry-forward debt, activate lesson-reuse path for maturity 75, add 
 - [x] **Lesson surfacing: PDI** — narrow-context lesson injection into `additionalContext`; decisions priority, lessons fill remaining token budget; timeout-isolated (100ms)
 - [x] **Auto-apply lesson extension** — lesson/assessment file-overlap detection at SessionEnd using checkpoint `files_snapshot`; drives `lesson_reuse_rate` for intervene score
 - [x] **Git-evidence outcome inference: Layer 2** — `refined`/`replaced` classification via new-decision gate + diff pattern; `infer_outcome_type` config (default true)
-- [ ] **Maturity ≥ 75** — current maturity is 71 after lesson reuse reached 21%. Closure now depends on the v0.13.0 `applied_context_rate ≥10%` dogfooding gate rather than missing lesson-surfacing infrastructure.
+- Carried forward: **Maturity ≥ 75** → lesson reuse passed its threshold; the remaining gate is tracked once under v0.13.0 **applied_context_rate ≥ 10%**.
 - Out-of-band: ghost release cleanup (1a), `auto_extract` production verification (1e)
 
 ## v0.11.0 — Hypothesis Validation Infrastructure (Shipped 2026-07-07)
@@ -274,7 +276,7 @@ Theme: build measurement infrastructure to answer "does decision surfacing actua
 - [x] **Automated block flip** — `scripts/experiments/flip_block.py` runs every 30 min via cron, auto-flips when qualifying session threshold reached. Treatment-independent gate (total_turns >= 5).
 - [x] **Audit sampler fixes** — path normalization and content turn selection edge cases.
 
-## v0.12.0 — Carry-Forward Graduation
+## v0.12.0 — Carry-Forward Graduation (Process-only, not tagged)
 
 Theme: graduate all 8 v0.11.0 retro carry-forward items. Diagnosis-first approach — all items pre-diagnosed, results recorded. Zero code changes.
 
@@ -292,12 +294,12 @@ Carry-forward to v0.13.0:
 - File-link coverage gap (91% decisions without file links)
 - Intervene improvement via dogfooding volume
 
-## v0.13.0 — Git Archaeology + Intervene Graduation
+## v0.13.0 — Git Archaeology + Intervene Graduation (Shipped 2026-07-12)
 
 Theme: close the 91% file-link gap via retroactive git archaeology, push intervene past the 10% applied_context_rate threshold, and analyze experiment data.
 
 ### Intervene graduation
-- [ ] **applied_context_rate ≥ 10%** — current 1% (8/1,159 ended sessions with a retrieval selection; exact rate 0.7%). Closure needs genuine applications in 108 already-counted selection-bearing sessions if the denominator stays fixed, or 120 new selection-bearing sessions when each new session increases both numerator and denominator. No code change or synthetic historical backfill — dogfooding discipline only.
+- [ ] **applied_context_rate ≥ 10%** — current 0.5% (8/1,728 ended sessions with a retrieval selection; measured 2026-11-04 with `get_dashboard_stats`). Closure needs genuine applications in 165 already-counted selection-bearing sessions if the denominator stays fixed, or 184 new selection-bearing sessions when each new session increases both numerator and denominator. No code change or synthetic historical backfill — dogfooding discipline only. This is the single tracked row for the Maturity 75 gate.
 - [x] **lesson_reuse_rate progress** — reached 21% (21/102 context applications) after recording past lessons that materially guided current work, up from the v0.13.0 baseline of 2% (1/40). The stated steady-upward-trend target is met; the 20% intervene threshold is also crossed.
 
 ### Experiment analysis
@@ -310,7 +312,7 @@ Carry-forward conditions:
 - Experiment analysis may carry forward if qualifying session count insufficient
 - Git Archaeology may split into design (v0.13.0) + implementation (v0.14.0) if scope warrants
 
-## v0.13.1 — Archaeology Hardening
+## v0.13.1 — Archaeology Hardening (Shipped 2026-07-12)
 
 Theme: harden `ec archaeologize` for production-scale repos and close linkage gaps surfaced during dogfooding.
 
@@ -323,7 +325,7 @@ Carry-forward to v0.14.0:
 - [x] Tokenless `--pr-bodies` re-run support (P3)
 - [x] `dir b/name` path parsing (P4)
 
-## v0.14.0 — Archaeology Carry-Forward Completion
+## v0.14.0 — Archaeology Carry-Forward Completion (Shipped 2026-07-12)
 
 Theme: close every concrete v0.13.1 archaeology carry-forward and lock production-scale behavior with regression evidence.
 
@@ -333,11 +335,32 @@ Theme: close every concrete v0.13.1 archaeology carry-forward and lock productio
 - [x] **Source-filter and compatibility proof** — `--source archaeology`, read-only v16 dry-runs, circuit recovery, and live counter conservation are covered.
 
 Carry-forward after v0.14.0:
-- [x] **Maturity 75 dogfooding carry-forward** — remeasured at maturity 71, `applied_context_rate=1%` (8/1,159), and `lesson_reuse_rate=21%` (21/102). Lesson reuse crossed its threshold; the still-open applied-context work is re-registered once under the v0.15.0 **Maturity 75 dogfooding** carry-forward and quantified at v0.13.0 line 300. _(measurement carry-forward registered)_
+- [x] **Maturity 75 dogfooding carry-forward** — remeasured at maturity 71, `applied_context_rate=1%` (8/1,159), and `lesson_reuse_rate=21%` (21/102). Lesson reuse crossed its threshold; the still-open applied-context work is tracked once under v0.13.0 **applied_context_rate ≥ 10%**. _(measurement carry-forward registered)_
 - [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
 - [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
 
-## v0.16.0 — Hook Installation Correctness
+## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Feature merged 2026-07-20; shipped in v0.16.0, 2026-08-20)
+
+v0.15.0 was never tagged. Its feature scope shipped in the v0.16.0 release (2026-08-20), as `CHANGELOG.md` records.
+
+Theme: bootstrap the repository's own decision history, promote archaeology candidates safely in batches, and answer why a line exists from `ec blame`.
+
+- [x] **Full feature-branch history archaeologized** — 334/334 eligible non-merge commits processed before merge; 138 archaeology candidates promoted.
+- [x] **Decision linkage coverage** — commit-linked decisions increased 0→138 and file-linked coverage increased 8.6%→56.0%.
+- [x] **Batch candidate confirmation** — source-filtered thresholding, dry-run distribution, finite-value validation, atomic per-candidate promotion, and once-per-batch embedding.
+- [x] **Decision-annotated blame** — mixed linked/unlinked ranges, binary-safe porcelain parsing, SHA-1/SHA-256 headers, abbreviated-link resolution, migration-before-query, and canonical annotation deduplication.
+- [x] **Release-loop migration cleanup** — repository-local skill implementation removed after migration to `compound-loop`; historical specs and runtime evidence retained.
+
+Carry-forward after v0.15.0:
+- [x] **Bound abbreviated-SHA blame lookup complexity** — exact SHA queries are batched, abbreviated candidates are scanned once per width and filtered before Git resolution, and the 1,200-SHA regression passes. _(completed by `5a24ebf`, PR #199)_
+- [ ] **Post-squash archaeology convergence** — with explicit repository-content export authorization, process squash commit `11fb9ad`; measure completion by intersecting reachable non-merge SHAs with `archaeology_processed` rather than comparing raw counts. _(process/measurement, P3)_
+- [x] **TQL `--until` for semantic search** — upper bound enforced in local semantic path. _(feature gap, P3; completed by commits `7b74b84..1bdfe5c`)_
+- [x] **TQL `--until` for global search** — upper bound propagated through cross-repo search. _(feature gap, P3; completed by commits `a5ad64d..1bdfe5c`)_
+- Carried forward: **Maturity 75 dogfooding** → tracked once under v0.13.0 **applied_context_rate ≥ 10%**.
+- [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
+- Carried forward: **General Git C-style path escapes** → tracked once under the v0.14.0 carry-forward list.
+
+## v0.16.0 — Hook Installation Correctness (Shipped 2026-08-20)
 
 Carry-forward from PR #205 (`ec init` installs hooks). Moving installation into `ec init` made
 `_install_git_hooks()` and `_is_ec_hook()` reachable by every new user's first command, which
@@ -363,26 +386,17 @@ sit unscheduled.
 - [x] **Decide whether to ship `py.typed`** — deferred until stable status. No external typed consumers exist, alpha semver permits typing surface changes, and the overload contract (ADR 0008) should remain internal-only while evolving. See ADR 0019. Revisit when the package reaches `Development Status :: 5 - Production/Stable`. Surfaced by the 2026-08-12 cross-repo-overload retro (T6); revisit condition recorded in ADR 0008 and ADR 0019. _(architecture, P4)_
 - [x] **Persist feature-worktree decisions before loop archival** — `ec decision verify-docs` scans `docs/adr/`, `docs/specs/`, `docs/plans/`, and `ROADMAP.md` for decision UUIDs and verifies each resolves in the local DB. `--promote-from <db-path>` copies missing decisions from a worktree DB before removal. Exit code 0 = all resolved; nonzero = misses remain. Added to Pre-Tag Verification in `docs/RELEASE.md`. EC decision `75a52552-22d9-4751-89c6-ad6cbf622897`. _(decision traceability, P2)_
 
-## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Feature merged 2026-07-20)
+## Unreleased (merged on `main` after v0.16.1)
 
-The feature scope is merged, but release artifacts remain at v0.14.0 (`v0.14.0` tag, `CHANGELOG.md`, `pyproject.toml`, and `src/entirecontext/__init__.py`). This section does not claim a published or tagged v0.15.0 release.
+v0.16.1 (2026-08-20) was a patch release for `verify-docs` edge cases. The items below are merged on `main` but not yet tagged.
 
-Theme: bootstrap the repository's own decision history, promote archaeology candidates safely in batches, and answer why a line exists from `ec blame`.
-
-- [x] **Full feature-branch history archaeologized** — 334/334 eligible non-merge commits processed before merge; 138 archaeology candidates promoted.
-- [x] **Decision linkage coverage** — commit-linked decisions increased 0→138 and file-linked coverage increased 8.6%→56.0%.
-- [x] **Batch candidate confirmation** — source-filtered thresholding, dry-run distribution, finite-value validation, atomic per-candidate promotion, and once-per-batch embedding.
-- [x] **Decision-annotated blame** — mixed linked/unlinked ranges, binary-safe porcelain parsing, SHA-1/SHA-256 headers, abbreviated-link resolution, migration-before-query, and canonical annotation deduplication.
-- [x] **Release-loop migration cleanup** — repository-local skill implementation removed after migration to `compound-loop`; historical specs and runtime evidence retained.
-
-Carry-forward after v0.15.0:
-- [x] **Bound abbreviated-SHA blame lookup complexity** — exact SHA queries are batched, abbreviated candidates are scanned once per width and filtered before Git resolution, and the 1,200-SHA regression passes. _(completed by `5a24ebf`, PR #199)_
-- [ ] **Post-squash archaeology convergence** — with explicit repository-content export authorization, process squash commit `11fb9ad`; measure completion by intersecting reachable non-merge SHAs with `archaeology_processed` rather than comparing raw counts. _(process/measurement, P3)_
-- [x] **TQL `--until` for semantic search** — upper bound enforced in local semantic path. _(feature gap, P3; completed by commits `7b74b84..1bdfe5c`)_
-- [x] **TQL `--until` for global search** — upper bound propagated through cross-repo search. _(feature gap, P3; completed by commits `a5ad64d..1bdfe5c`)_
-- [ ] **Maturity 75 dogfooding** — continue explicit `ec context apply` usage across distinct selection-bearing sessions; current telemetry is `applied_context_rate=1%` (8/1,159), `lesson_reuse_rate=21%` (21/102), maturity 71. Lesson reuse is no longer the blocker; this row converges with the v0.13.0 applied-context gate. _(measurement, ongoing)_
-- [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
-- [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
+- [x] **Git worktrees share one logical project (schema v21)** — linked worktrees use the main worktree's `.entirecontext/`; `ec project merge-worktree` merges legacy per-worktree databases. _(PRs #264, #266)_
+- [x] **omp session capture** — an omp extension plugin forwards omp lifecycle events to EntireContext hooks. _(PR #253)_
+- [x] **Record-omission and audit fixes** — search, hook, sync export, and hook-lifecycle fixes. _(PRs #249, #252)_
+- [x] **uv tool interpreter drift diagnostics** — `ec doctor` reports Python minor-version drift in the tool environment. _(#243, PR #244)_
+- [x] **`ec futures assess` model default** — the CLI uses `futures.default_model`, then the backend fallback. _(#261, PR #279)_
+- [x] **Install hints keep the `mcp` extra** — every printed install and reinstall hint names the extra; [ADR 0021](docs/adr/0021-keep-mcp-extra-optional.md) keeps `mcp` optional. _(#262, #263, PR #280)_
+- [x] **Token-savings experiment** — scripts measure LLM token savings from context injection; SessionStart lesson surfacing now honors `experiment_block`, and injected lessons count in `user_prompt` telemetry. _(PRs #232, #237)_
 
 ## v1.0 — Loop Completes Autonomously
 
@@ -418,6 +432,8 @@ All PR #205 carry-forwards are registered under v0.16.0 above.
   - EC handles surfacing only; enforcement is out of scope (CI/linter/review bot territory)
   - Capture recurring team preferences and architectural constraints as decisions, not policies
 
+- [ ] **Signal C prompt-time ranking** — carry-forward from v0.8.0 Signal C. `[decisions] auto_embed` defaults to true since v0.9.0, so decision embeddings are written, but `semantic_search_decisions()` (`core/embedding.py`) has no caller in `src/` and `core/decision_prompt_surfacing.py` ranks without semantic similarity. Connect the signal to prompt-time ranking (the deferred 2-pass async design: background ranking feeding the next prompt, SessionStart pre-warm), or close it as won't-fix and stop the unused embedding work. Measure the retrieval hit-rate change before semantic ranking becomes a default. _(carry-forward, P3)_
+
 - [x] **Decision file rename tracking** — schema v19 persists committed Git rename lineage and a per-repository synchronization watermark; schema v20 persists explicit per-decision path suppressions. `SessionStart` scans only newly reachable commits after the first history scan, materializes destination links transitively into `decision_files`, and leaves historical links intact. A successful file unlink survives replay until an explicit relink, so exact lookup, ranking, outcomes, and stale checks retain their existing contracts without reversing user intent.
 
 ## Done Foundations
@@ -432,13 +448,13 @@ All PR #205 carry-forwards are registered under v0.16.0 above.
 
 Most items below were evaluated in the 2026-04-27 ideation session ([docs/ideation/2026-04-27-product-roadmap-ideation.md](docs/ideation/2026-04-27-product-roadmap-ideation.md)) and promoted to concrete candidates. Items marked "moved from v0.6.0" were initially proposed for the breaking track but fall outside the outcome-lifecycle scope defined in `docs/brainstorms/v0-6-0-roadmap-plan.md`. Items added after that session cite their own provenance inline.
 
-_v0.12.0 priority evaluation (2026-07-07):_ corpus=122 decisions (9% with file links), maturity=61 (intervene=5, usage-driven), experiment=plumbing only (2/5 qualifying). **Next candidate: Git Archaeology** — directly addresses the 91% file-link gap that limits PDI signal coverage.
+_v0.12.0 priority evaluation (2026-07-07, historical):_ corpus=122 decisions (9% with file links), maturity=61 (intervene=5, usage-driven), experiment=plumbing only (2/5 qualifying). **Next candidate: Git Archaeology** — directly addresses the 91% file-link gap that limits PDI signal coverage. Git Archaeology shipped in v0.13.0.
 
-- **~~Temporal Query Language (TQL)~~** — ✅ **Shipped 2026-07-12.** `--since`/`--until` filters (git refs + ISO dates) on `ec search`, `ec decision search`, `ec decision list` CLI commands and `ec_search`, `ec_decision_search`, `ec_decision_list`, `ec_decision_related` MCP tools. `core/tql.py` provides `resolve_temporal_ref` (git ref → UTC) and `apply_temporal_filters` (datetime()-normalized WHERE injection). Decisions filter on `created_at` (point-in-time existence semantics).
+- **~~Temporal Query Language (TQL)~~** — ✅ **Merged 2026-07-13 (PR #193); released in v0.16.0 (2026-08-20).** `--since`/`--until` filters (git refs + ISO dates) on `ec search`, `ec decision search`, `ec decision list` CLI commands and `ec_search`, `ec_decision_search`, `ec_decision_list`, `ec_decision_related` MCP tools. `core/tql.py` provides `resolve_temporal_ref` (git ref → UTC) and `apply_temporal_filters` (datetime()-normalized WHERE injection). Decisions filter on `created_at` (point-in-time existence semantics).
 
-- **`ec blame` — Decision-Annotated Git Blame** — `ec blame <file> [line]` traverses `decision_commits` → `decision_checkpoints` → decision records to answer "why does this code exist?" with rationale and rejected alternatives. `blame_cmds` module already in CLI architecture. _(Confidence 85%, Medium complexity)_ Plan reference: `docs/brainstorms/ec-blame-decision-annotated.md`. _Priority: Low — requires decision_commits links (currently sparse with 9% file-linked corpus)._
+- ~~**`ec blame` — Decision-Annotated Git Blame**~~ — ✅ **Shipped in v0.15.0 (released with v0.16.0, 2026-08-20).** `ec blame <file> [line]` traverses `decision_commits` → `decision_checkpoints` → decision records to answer "why does this code exist?" with rationale and rejected alternatives. Plan reference: `docs/brainstorms/ec-blame-decision-annotated.md`.
 
-- **Retroactive Git Archaeology (`ec archaeologize`)** — `git log --patch` + merged PR bodies through the existing extraction pipeline; generates a `source:inferred` bootstrapped decision corpus. Eliminates cold-start — the largest adoption barrier. _(Confidence 80%, Medium-High complexity)_ Plan reference: `docs/brainstorms/retroactive-git-archaeology.md`. _Priority: **HIGH — next candidate.** C8 diagnosis (91% file-linkless decisions) confirms cold-start and file-link gap as the largest retrieval bottleneck. Addresses both adoption barrier and PDI signal coverage._
+- ~~**Retroactive Git Archaeology (`ec archaeologize`)**~~ — ✅ **Shipped in v0.13.0 (2026-07-12)**; self-archaeology of this repository followed in v0.15.0. `git log --patch` + merged PR bodies run through the existing extraction pipeline to bootstrap a `source:archaeology` decision corpus. Plan reference: `docs/brainstorms/retroactive-git-archaeology.md`.
 
 - **Alive Session Memory (Rolling WAL Capture)** — `PostToolUse` writes turn content to append-only JSONL shard immediately; `core/async_worker.py` background thread consolidates on a 30-second rolling window. Makes EC crash-safe for long-running CI and agentic tasks. _(Confidence 83%, Medium complexity)_ Plan reference: `docs/brainstorms/alive-session-memory.md`. _Priority: Medium — valuable for capture dimension but doesn't address file-link or intervene bottlenecks._
 
