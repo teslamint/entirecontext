@@ -1,6 +1,6 @@
 # EntireContext Roadmap
 
-_Updated 2026-11-04._
+_Updated 2026-11-05._
 
 ## Product Thesis
 
@@ -35,7 +35,7 @@ That foundation is useful, but it is broader than the product wedge. The next ph
 
 With v0.4.0 the loop now feeds itself — outcomes flow into ranking and extraction, and UserPromptSubmit opens a new signal channel. v0.5.0 hardened the loop by closing 3x-deferred correctness debt before adding new feature surface. v0.6.0 widened the outcome vocabulary (`refined`/`replaced`) and v0.6.1 normalized the rejected-alternative data shape. v0.7.0 made retrieval default behavior — Proactive Decision Injection now surfaces decisions at the top of every conversation turn without explicit search, raising `retrieval_assisted_session_rate` from 0.049 to 0.125. v0.7.1 hardened PDI with per-session capture_disabled gating, tiktoken-accurate token counting, and Signal A (diff file-path extraction). v0.8.0 broke the three-sprint distill=0 streak with auto-assess on checkpoint create, added Signal B (working-file inference from recent commits), and laid Signal C embedding foundation — raising maturity from 32 to 61. v0.8.1 corrected measurement infrastructure (codex session auto-close, rate normalization, verdict accuracy baseline). v0.9.0 automates the weakest dimension (intervene=5) with SessionEnd auto-apply inference, backfill tooling, and Signal C activation. v0.10.0 adds dual-channel lesson surfacing (SessionStart + PDI) to activate `lesson_reuse_rate`, and Layer 2 git-evidence outcome inference (refined/replaced) to close the v1.0 autonomous-loop gate. v0.11.0 adds hypothesis validation infrastructure — ranking snapshots for retrieval auditing and experiment block config for ON/OFF crossover experiments.
 
-v0.13.0–v0.14.0 added git archaeology for the decision corpus. v0.16.0 (2026-08-20) shipped the never-tagged v0.15.0 scope (self-archaeology, decision-annotated blame, TQL) together with hook installation correctness and the MCP SDK 2.0 migration. Maturity has stayed at 71 since v0.14.0. The one remaining Closed Loop score gate is tracked under v0.13.0 **applied_context_rate ≥ 10%**.
+v0.13.0–v0.14.0 added git archaeology for the decision corpus. v0.16.0 (2026-08-20) shipped the never-tagged v0.15.0 scope (self-archaeology, decision-annotated blame, TQL) together with hook installation correctness and the MCP SDK 2.0 migration. v0.17.0 (2026-11-04) made linked Git worktrees share one logical project (schema v21) and added omp session capture. Maturity has stayed at 71 since v0.14.0. The one remaining Closed Loop score gate is tracked under v0.13.0 **applied_context_rate ≥ 10%**.
 
 ## v0.2.0 (Shipped 2026-04-15)
 
@@ -299,7 +299,7 @@ Carry-forward to v0.13.0:
 Theme: close the 91% file-link gap via retroactive git archaeology, push intervene past the 10% applied_context_rate threshold, and analyze experiment data.
 
 ### Intervene graduation
-- [ ] **applied_context_rate ≥ 10%** — current 0.5% (8/1,728 ended sessions with a retrieval selection; measured 2026-11-04 with `get_dashboard_stats`). Closure needs genuine applications in 165 already-counted selection-bearing sessions if the denominator stays fixed, or 184 new selection-bearing sessions when each new session increases both numerator and denominator. No code change or synthetic historical backfill — dogfooding discipline only. This is the single tracked row for the Maturity 75 gate.
+- [ ] **applied_context_rate ≥ 10%** — current 0.4% (8/1,817 ended sessions with a retrieval selection; measured 2026-11-05 with `get_dashboard_stats`). Closure needs genuine applications in 174 already-counted selection-bearing sessions if the denominator stays fixed, or 193 new selection-bearing sessions when each new session increases both numerator and denominator. No code change or synthetic historical backfill — dogfooding discipline only. This is the single tracked row for the Maturity 75 gate.
 - [x] **lesson_reuse_rate progress** — reached 21% (21/102 context applications) after recording past lessons that materially guided current work, up from the v0.13.0 baseline of 2% (1/40). The stated steady-upward-trend target is met; the 20% intervene threshold is also crossed.
 
 ### Experiment analysis
@@ -353,7 +353,7 @@ Theme: bootstrap the repository's own decision history, promote archaeology cand
 
 Carry-forward after v0.15.0:
 - [x] **Bound abbreviated-SHA blame lookup complexity** — exact SHA queries are batched, abbreviated candidates are scanned once per width and filtered before Git resolution, and the 1,200-SHA regression passes. _(completed by `5a24ebf`, PR #199)_
-- [ ] **Post-squash archaeology convergence** — with explicit repository-content export authorization, process squash commit `11fb9ad`; measure completion by intersecting reachable non-merge SHAs with `archaeology_processed` rather than comparing raw counts. _(process/measurement, P3)_
+- [ ] **Post-squash archaeology convergence** — squash commit `11fb9ad` is now in `archaeology_processed` (`processed_at` 2026-08-10), but reachable-history convergence is not complete: on 2026-11-05, 333 of 456 reachable non-merge commits are processed, and the unprocessed commits are dated 2026-08-11 or later. Close this row when `ec archaeologize --dry-run` shows 0 pending reachable commits, or when a new retro replaces that criterion. _(process/measurement, P3)_
 - [x] **TQL `--until` for semantic search** — upper bound enforced in local semantic path. _(feature gap, P3; completed by commits `7b74b84..1bdfe5c`)_
 - [x] **TQL `--until` for global search** — upper bound propagated through cross-repo search. _(feature gap, P3; completed by commits `a5ad64d..1bdfe5c`)_
 - Carried forward: **Maturity 75 dogfooding** → tracked once under v0.13.0 **applied_context_rate ≥ 10%**.
