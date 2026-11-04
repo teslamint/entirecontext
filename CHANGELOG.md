@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Semantic search drops matching results** — filters now run before the result limit, so matching records outside the first candidate window are returned. The requested target is kept in CLI, MCP, and cross-repository searches. (#252)
 - **Hook lifecycle errors** — resumed sessions reopen, and a failed optional summary lookup no longer stops the hook. (#252)
 - **Guidance setup overwrote user configuration** — guidance install and removal keep user-owned and foreign same-named hooks, reject non-object settings and hook entries, and keep managed guidance across upgrades. A Codex-only setup no longer writes Claude settings. (#249)
-- **Sync export filtering damaged records** — secret filtering applies only to descriptive metadata such as session titles and summaries. Snapshot paths and identifiers stay intact, and colliding redacted metadata keys are retained. (#252, #249)
+- **Sync export filtering damaged records** — secret filtering now also covers session titles and summaries, checkpoint `diff_summary`, and values inside checkpoint JSON fields, in addition to turn messages. Dictionary keys are filtered only in `metadata`, so snapshot paths and identifiers stay intact, and colliding redacted metadata keys are retained. (#252, #249)
 - **SessionStart lessons ignored the experiment block** — SessionStart lesson surfacing now honors `experiment_block`, and injected lessons count in the `user_prompt` telemetry item count. (#232)
 
 ### Documented
