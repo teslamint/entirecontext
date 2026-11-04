@@ -663,7 +663,7 @@ class TestDoctorBuildProvenance:
         output = " ".join(result.output.lower().split())
         assert "installed build 0000000" in output
         assert f"checkout {head[:7]}" in output
-        assert "uv tool install --force ." in output
+        assert "uv tool install --force '.[mcp]'" in output
 
     @patch("entirecontext.core.project.find_git_root")
     def test_doctor_warns_for_dirty_build(self, mock_git_root, ec_repo, monkeypatch):
@@ -684,7 +684,8 @@ class TestDoctorBuildProvenance:
 
         assert "build provenance is dirty" in output
         assert "commit or restore tracked changes" in output
-        assert "uv tool install --force ." in output
+        assert "uv tool install --force '.[mcp]'" in output
+        assert "Add any other extras you use" in " ".join(result.output.split())
 
     @patch("entirecontext.core.project.find_git_root")
     def test_doctor_warns_for_unavailable_build_sha(self, mock_git_root, ec_repo, monkeypatch):
@@ -697,7 +698,7 @@ class TestDoctorBuildProvenance:
         output = " ".join(result.output.lower().split())
 
         assert "build provenance unavailable" in output
-        assert "uv tool install --force ." in output
+        assert "uv tool install --force '.[mcp]'" in output
 
     @patch("entirecontext.core.project.find_git_root")
     def test_doctor_warns_for_unavailable_checkout_head(self, mock_git_root, ec_repo, monkeypatch):
@@ -712,7 +713,7 @@ class TestDoctorBuildProvenance:
 
         assert "could not resolve checkout head" in output
         assert "create or check out a commit" in output
-        assert "uv tool install --force ." not in output
+        assert "uv tool install" not in output
 
     @patch("entirecontext.core.project.find_git_root")
     def test_doctor_accepts_checkout_source_execution(self, mock_git_root, ec_repo, monkeypatch):
@@ -769,7 +770,22 @@ class TestDoctorPythonInterpreterDrift:
         assert "configured 3.13" in output
         assert "active 3.14" in output
         assert "uv tool uninstall entirecontext" in output
-        assert "uv tool install --managed-python --python 3.13 entirecontext" in output
+        assert "uv tool install --managed-python --python 3.13 'entirecontext[mcp]'" in output
+
+    @patch("entirecontext.core.project.find_git_root")
+    def test_doctor_drift_hint_targets_checkout_with_mcp_extra(self, mock_git_root, ec_repo, monkeypatch, tmp_path):
+        mock_git_root.return_value = str(ec_repo)
+        _mark_entirecontext_checkout(ec_repo)
+        prefix = tmp_path / "venv"
+        prefix.mkdir()
+        (prefix / "pyvenv.cfg").write_text("version_info = 3.13.12\n", encoding="utf-8")
+        monkeypatch.setattr(project_cmds.sys, "prefix", str(prefix))
+        monkeypatch.setattr(project_cmds, "_active_python_version", lambda: (3, 14))
+
+        result = runner.invoke(app, ["doctor"])
+        output = " ".join(result.output.split())
+
+        assert "uv tool install --managed-python --python 3.13 '.[mcp]'" in output
 
     @patch("entirecontext.core.project.find_git_root")
     def test_doctor_skips_unavailable_virtualenv_metadata(self, mock_git_root, ec_repo, monkeypatch, tmp_path):

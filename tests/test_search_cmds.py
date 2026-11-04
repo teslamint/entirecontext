@@ -68,6 +68,7 @@ class TestSearch:
             result = runner.invoke(app, ["search", "test", "--semantic"])
             assert result.exit_code == 1
             assert "sentence-transformers" in result.output
+            assert "pip install 'entirecontext[semantic]'" in " ".join(result.output.split())
 
     def test_global_search(self):
         results = [

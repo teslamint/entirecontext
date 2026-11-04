@@ -206,7 +206,7 @@ A wheel rebuilt from an unpacked source distribution preserves the source distri
 
 When `ec doctor` runs from an installed distribution inside the EntireContext source checkout, it compares the stamped SHA with the checkout's current `HEAD`.
 It warns if provenance is unavailable, if the build came from a dirty tracked tree, or if the SHA differs.
-Missing or mismatched installed stamps direct the operator to run `uv tool install --force .`.
+Missing or mismatched installed stamps direct the operator to run `uv tool install --force '.[mcp]'` and to add any other extras in use.
 Dirty stamps first require the operator to commit or restore tracked changes.
 If checkout `HEAD` is unresolved, the operator must create or check out a commit before rebuilding.
 Direct checkout/editable execution and unrelated consumer repositories do not receive this warning.

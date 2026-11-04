@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import typer
 from rich.console import Console
+from rich.markup import escape
+
+from ..install_hints import MCP_INSTALL_HINT
 
 # stderr: `ec mcp serve` speaks JSON-RPC over stdout, so diagnostics must not
 # touch stdout even on the failure paths.
@@ -17,8 +20,8 @@ def mcp_serve():
     try:
         from ..mcp.server import run_server
     except ImportError as exc:
-        console.print(f"[red]MCP server module import failed: {exc}[/red]")
-        console.print("[yellow]Install the extra: uv tool install --force 'entirecontext[mcp] @ <repo path>'[/yellow]")
+        console.print(f"[red]MCP server module import failed: {escape(str(exc))}[/red]")
+        console.print(f"[yellow]{escape(MCP_INSTALL_HINT)}[/yellow]")
         raise typer.Exit(1) from exc
 
     # Deliberately outside the try: exceptions raised inside run_server keep

@@ -54,9 +54,13 @@ class TestIndexCommand:
             patch("entirecontext.core.search.rebuild_fts_indexes", return_value=counts),
             patch(
                 "entirecontext.core.embedding.generate_embeddings",
-                side_effect=ImportError("sentence-transformers is required"),
+                side_effect=ImportError(
+                    "sentence-transformers is required for semantic search. "
+                    "Install with: pip install 'entirecontext[semantic]'"
+                ),
             ),
         ):
             result = runner.invoke(app, ["index", "--semantic"])
             assert result.exit_code == 1
             assert "sentence-transformers" in result.output
+            assert "pip install 'entirecontext[semantic]'" in " ".join(result.output.split())

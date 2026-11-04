@@ -20,6 +20,9 @@ class TestMcpServe:
         assert result.exit_code == 1
         assert result.stdout == ""
         assert "MCP server module import failed" in result.stderr
+        stderr = " ".join(result.stderr.split())
+        assert "uv tool install --force 'entirecontext[mcp]'" in stderr
+        assert "uv tool install --force '.[mcp]'" in stderr
 
     def test_run_server_import_error_propagates(self):
         """Regression: run_server() raising ImportError must not be swallowed."""
@@ -48,4 +51,7 @@ class TestMcpServe:
                 server_module.run_server()
             msg = str(excinfo.value)
             assert "Install the extra" in msg
+            assert "uv tool install --force 'entirecontext[mcp]'" in msg
+            assert "uv tool install --force '.[mcp]'" in msg
+            assert "<repo path>" not in msg
             assert "MCP not available" not in msg
