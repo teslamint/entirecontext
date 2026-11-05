@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Background enrichment no longer lets several workers send the same assessment to the LLM backend. Worker launches take a lock, `ec futures enrich-backlog` claims each row and re-checks it before the call, and failed rows wait for an increasing backoff before the next attempt. (#288)
+- The plain `uv run pytest -q` gate passes on macOS again: two CLI tests no longer fail when Rich wraps the long default temporary path. (#290)
 
 ## [0.17.0] - 2026-11-04
 
