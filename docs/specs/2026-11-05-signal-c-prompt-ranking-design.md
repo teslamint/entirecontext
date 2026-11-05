@@ -1,6 +1,6 @@
 ---
 title: Signal C Prompt-Time Ranking
-status: draft
+status: approved
 date: 2026-11-05
 schema: spec/v1
 mode: auto
