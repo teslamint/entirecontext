@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documented
 
-- `ROADMAP.md` states why five items stay open after the 2026-11-05 roadmap pass, with remeasured `applied_context_rate` and archaeology counts. (#TBD)
+- `ROADMAP.md` states why five items stay open after the 2026-11-05 roadmap pass, with remeasured `applied_context_rate` and archaeology counts. (#292)
 
 ## [0.17.0] - 2026-11-04
 
