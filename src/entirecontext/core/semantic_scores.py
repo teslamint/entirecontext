@@ -29,6 +29,15 @@ def _paths(repo_path: str, session_id: str) -> tuple[Path, Path, Path]:
     )
 
 
+def semantic_top_n(semantic_config: dict[str, Any]) -> int:
+    """Return the configured top_n, or 20 when it is missing or invalid (a non-positive slice drops the best scores)."""
+    try:
+        value = int(semantic_config.get("top_n", 20))
+    except (TypeError, ValueError):
+        return 20
+    return value if value > 0 else 20
+
+
 def _atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     name = path.parent / f".{path.name}.{os.getpid()}.{uuid4().hex}.tmp"

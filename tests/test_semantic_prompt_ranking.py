@@ -424,3 +424,21 @@ def test_invalid_semantic_settings_fall_back_when_enabled(ec_repo, ec_db, capsys
     output = capsys.readouterr().out
     assert "matching keyword" in output
     assert "unrelated words" not in output
+
+
+@pytest.mark.parametrize("value", ['"bad"', "-3"])
+def test_invalid_top_n_uses_default(ec_repo, ec_db, value):
+    from entirecontext.core.semantic_scores import read_fresh_scores, write_pending_prompt
+    from entirecontext.core.semantic_worker import run_semantic_worker
+
+    _session(ec_db)
+    (ec_repo / ".entirecontext" / "config.toml").write_text(f"[decisions.semantic]\nenabled = true\ntop_n = {value}\n")
+    ec_db.execute(
+        "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) VALUES ('e', 'decision', 'd', 'all-MiniLM-L6-v2', ?, 2, 'h')",
+        (_vector(1, 0),),
+    )
+    ec_db.commit()
+    write_pending_prompt(str(ec_repo), "session-1", "semantic lookup", {})
+    run_semantic_worker(str(ec_repo), embedder_factory=lambda _: lambda __: _vector(1, 0))
+    assert read_fresh_scores(str(ec_repo), "session-1", model="all-MiniLM-L6-v2", max_age_seconds=900) == {"d": 1.0}
+    assert not list((ec_repo / ".entirecontext/state").glob("semantic-prompt-*"))

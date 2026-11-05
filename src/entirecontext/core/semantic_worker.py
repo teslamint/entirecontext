@@ -9,7 +9,7 @@ from typing import Any, Callable
 from .async_worker import file_lock, is_worker_running
 from .config import load_config
 from .embedding import cosine_similarity
-from .semantic_scores import invalidate_scores, publish_scores_if_current, take_pending_prompts
+from .semantic_scores import invalidate_scores, publish_scores_if_current, semantic_top_n, take_pending_prompts
 
 
 def _default_embedder(model: str) -> Callable[[str], bytes]:
@@ -25,7 +25,7 @@ def run_semantic_worker(
 
     config = load_config(repo_path).get("decisions", {}).get("semantic", {})
     model = str(config.get("model", "all-MiniLM-L6-v2"))
-    top_n = int(config.get("top_n", 20))
+    top_n = semantic_top_n(config)
     try:
         embedder = (embedder_factory or _default_embedder)(model)
     except Exception as exc:
