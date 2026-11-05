@@ -16,7 +16,36 @@ from __future__ import annotations
 import errno
 import os
 import subprocess
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
+
+
+@contextmanager
+def file_lock(path: Path) -> Iterator[None]:
+    """Hold an exclusive cross-process lock on *path* (created if missing)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+") as handle:
+        if sys.platform == "win32":
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def _pid_file(repo_path: str, pid_name: str = "worker") -> Path:
@@ -87,6 +116,17 @@ def launch_worker(repo_path: str, cmd: list[str], pid_name: str = "worker", *, c
     )
     pid_path.write_text(f"{proc.pid}\n")
     return proc.pid
+
+
+def launch_worker_exclusive(
+    repo_path: str, cmd: list[str], pid_name: str = "worker", *, cwd: str | None = None
+) -> int | None:
+    """Launch one live worker per PID name under a cross-process lock."""
+    pid_path = _pid_file(repo_path, pid_name)
+    with file_lock(pid_path.with_suffix(".lock")):
+        if worker_status(repo_path, pid_name).get("running"):
+            return None
+        return launch_worker(repo_path, cmd, pid_name, cwd=cwd)
 
 
 def stop_worker(repo_path: str, pid_name: str = "worker") -> str:

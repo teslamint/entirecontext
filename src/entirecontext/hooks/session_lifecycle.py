@@ -623,13 +623,12 @@ def _maybe_backfill_assessments(repo_path: str, session_id: str, *, workspace_ro
         if config.get("futures", {}).get("assess_enrich", True):
             import sys
 
-            from ..core.async_worker import launch_worker, worker_status
+            from ..core.async_worker import launch_worker_exclusive
 
-            if not worker_status(repo_path, pid_name="worker-assess").get("running"):
-                cmd = [sys.executable, "-m", "entirecontext.cli", "futures", "enrich-backlog"]
-                launch_worker(
-                    repo_path, cmd, pid_name="worker-assess", **_workspace_kwargs(repo_path, workspace_root, "cwd")
-                )
+            cmd = [sys.executable, "-m", "entirecontext.cli", "futures", "enrich-backlog"]
+            launch_worker_exclusive(
+                repo_path, cmd, pid_name="worker-assess", **_workspace_kwargs(repo_path, workspace_root, "cwd")
+            )
     except Exception as exc:
         _record_hook_warning(repo_path, "backfill_assessments", exc)
 
@@ -730,11 +729,9 @@ def _maybe_trigger_auto_embed(repo_path: str, *, workspace_root: str | None = No
 
         import sys
 
-        from ..core.async_worker import launch_worker, worker_status
+        from ..core.async_worker import launch_worker_exclusive
 
-        if worker_status(repo_path).get("running"):
-            return
-        launch_worker(
+        launch_worker_exclusive(
             repo_path,
             [sys.executable, "-m", "entirecontext.cli", "index", "rebuild", "--semantic"],
             **_workspace_kwargs(repo_path, workspace_root, "cwd"),

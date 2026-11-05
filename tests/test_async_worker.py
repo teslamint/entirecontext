@@ -262,3 +262,37 @@ class TestFuturesWorkerCLI:
         ):
             result = runner.invoke(app, ["futures", "worker-launch"])
         assert "9876" in result.output
+
+
+def test_exclusive_launch_concurrent_and_stale(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from concurrent.futures import ThreadPoolExecutor
+
+    from entirecontext.core.async_worker import launch_worker_exclusive
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    state = tmp_path / ".entirecontext"
+    state.mkdir()
+    pid_file = state / "worker.pid"
+    pid_file.write_text(str(dead.pid))
+    try:
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            results = list(
+                pool.map(
+                    lambda _: launch_worker_exclusive(
+                        str(tmp_path), [sys.executable, "-c", "import time; time.sleep(30)"]
+                    ),
+                    range(16),
+                )
+            )
+        pids = [pid for pid in results if pid is not None]
+        assert len(pids) == 1
+        assert pid_file.read_text().strip() == str(pids[0])
+        assert is_worker_running(pids[0])
+        assert launch_worker_exclusive(str(tmp_path), [sys.executable, "-c", "pass"]) is None
+    finally:
+        for pid in set(pid for pid in locals().get("results", []) if pid is not None):
+            os.kill(pid, 15)

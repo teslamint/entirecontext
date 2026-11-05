@@ -118,7 +118,7 @@ def test_enrichment_worker_launched_by_default(ec_repo, ec_db):
             return_value={"futures": {"assess_backfill_window_days": 7, "assess_enrich": True}},
         ),
         patch("entirecontext.core.async_worker.worker_status", return_value={"running": False, "pid": None}),
-        patch("entirecontext.core.async_worker.launch_worker") as mock_launch,
+        patch("entirecontext.core.async_worker.launch_worker_exclusive") as mock_launch,
     ):
         _maybe_backfill_assessments(str(ec_repo), session_id)
 
@@ -159,3 +159,29 @@ def test_session_start_catches_up(ec_repo, ec_db):
     assessment = ec_db.execute("SELECT * FROM assessments WHERE checkpoint_id = ?", (cp["id"],)).fetchone()
     assert assessment is not None
     assert assessment["model_name"] == "rule-based"
+
+
+def test_concurrent_backfill_launches_once(ec_repo, ec_db, monkeypatch):
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+    from types import SimpleNamespace
+
+    from entirecontext.hooks.session_lifecycle import _maybe_backfill_assessments
+
+    session_id = _create_test_session(ec_db)
+    calls = []
+    monkeypatch.setattr("entirecontext.core.auto_assess.backfill_unassessed_checkpoints", lambda *a, **kw: 0)
+    monkeypatch.setattr("entirecontext.core.auto_assess.apply_git_evidence_feedback", lambda *a, **kw: 0)
+    monkeypatch.setattr(
+        "entirecontext.core.config.load_config",
+        lambda _: {"futures": {"assess_enrich": True}},
+    )
+
+    def fake_popen(*args, **kwargs):
+        calls.append(1)
+        return SimpleNamespace(pid=os.getpid())
+
+    monkeypatch.setattr("entirecontext.core.async_worker.subprocess.Popen", fake_popen)
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        list(pool.map(lambda _: _maybe_backfill_assessments(str(ec_repo), session_id), range(16)))
+    assert len(calls) == 1

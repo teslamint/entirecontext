@@ -134,6 +134,15 @@ def get_enrichment_candidates(
     return [dict(row) for row in conn.execute(query, params).fetchall()]
 
 
+def is_enrichable(conn: sqlite3.Connection, assessment_id: str) -> bool:
+    """Re-check eligibility after claiming; candidate lists can be stale once another worker finishes a row."""
+    row = conn.execute(
+        "SELECT 1 FROM assessments WHERE id = ? AND model_name = 'rule-based' AND feedback IS NULL",
+        (assessment_id,),
+    ).fetchone()
+    return row is not None
+
+
 def enrich_assessment(conn: sqlite3.Connection, assessment: dict, repo_path: str, config: dict) -> bool:
     try:
         import json
