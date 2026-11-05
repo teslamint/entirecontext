@@ -130,7 +130,7 @@ def benchmark(
                 continue
             prompt = redact_for_query(filter_secrets(redact_content(turn["user_message"] or "", config)), config)
             baseline = rank_related_decisions(
-                conn, file_paths=[], diff_text=prompt, commit_shas=[], until=turn["timestamp"], limit=k
+                conn, file_paths=[], diff_text=prompt, commit_shas=[], until=turn["timestamp"], limit=len(decisions)
             )
             query_vector = _bytes(embedder.encode(prompt))
             scores = {}
@@ -148,14 +148,15 @@ def benchmark(
                 diff_text=prompt,
                 commit_shas=[],
                 until=turn["timestamp"],
-                limit=k,
+                limit=len(decisions),
                 semantic_scores=scores,
                 semantic_weight=float(semantic_config.get("weight", 3.0)),
                 semantic_min_similarity=float(semantic_config.get("min_similarity", 0.3)),
             )
             item = (
-                _existing_at([d["id"] for d in baseline], created, turn["timestamp"]),
-                _existing_at([d["id"] for d in semantic], created, turn["timestamp"]),
+                # Rank everything, drop later successors, then cut to k, so a removed slot is refilled.
+                _existing_at([d["id"] for d in baseline], created, turn["timestamp"])[:k],
+                _existing_at([d["id"] for d in semantic], created, turn["timestamp"])[:k],
                 relevant,
             )
             groups["all"].append(item)

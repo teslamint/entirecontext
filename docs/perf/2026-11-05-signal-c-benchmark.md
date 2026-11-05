@@ -9,19 +9,19 @@ This report measures prompt-to-decision retrieval with and without the opt-in se
 - Both rankers see only decisions created at or before the turn. Ranker input is the redacted prompt only, with no file paths and no commits.
 - Baseline: `rank_related_decisions` as shipped. Semantic: the same call plus similarity scores from `all-MiniLM-L6-v2`, with the default `weight = 3.0` and `min_similarity = 0.3`.
 - Like the worker, the semantic ranker receives only the `top_n` (20) highest similarities.
-- Results created after the prompt are removed, because successor-chain resolution in the ranker does not apply `until`.
+- Both rankers rank every decision; results created after the prompt are removed before the list is cut to k. Successor-chain resolution in the ranker does not apply `until`, so a later successor can otherwise take a slot.
 - Metrics: hit@5 and mean reciprocal rank (MRR).
 - "No file mention" excludes items whose prompt contains the basename of a labeled file (a touched file that links to a relevant decision). This subset is the headline number, because full text can match a named file.
 
 ## Result
 
-Observed 2026-11-05T08:18:05Z on the project database (read-only) with `sentence-transformers` 6.2.0.
+Observed 2026-11-05T08:26:32Z on the project database (read-only) with `sentence-transformers` 6.2.0.
 
 | Subset | Items | Baseline hit@5 | Semantic hit@5 | Baseline MRR | Semantic MRR |
 |---|---|---|---|---|---|
-| All | 215 | 0.247 | 0.437 | 0.136 | 0.267 |
+| All | 215 | 0.247 | 0.437 | 0.137 | 0.269 |
 | Hangul | 144 | 0.111 | 0.403 | 0.068 | 0.285 |
-| No file mention | 185 | 0.184 | 0.405 | 0.091 | 0.250 |
+| No file mention | 185 | 0.184 | 0.405 | 0.089 | 0.251 |
 | Hangul, no file mention | 134 | 0.067 | 0.381 | 0.035 | 0.265 |
 
 618 turns had touched files. 403 had no eligible label and were dropped. 215 remained.

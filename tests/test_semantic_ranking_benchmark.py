@@ -142,7 +142,20 @@ def test_benchmark_applies_worker_top_n_limit(ec_repo, ec_db, tmp_path):
 
 
 def test_benchmark_drops_successors_created_after_the_prompt(ec_repo, ec_db, tmp_path):
-    """Chain collapse can return a successor created later; a historical ranking must not show it."""
-    module = _module()
-    created = {"old": "2025-01-01", "new": "2027-01-01"}
-    assert module._existing_at(["new", "old"], created, "2025-02-01") == ["old"]
+    """Chain collapse can put a later successor in the top slot through its own full-text match.
+
+    The benchmark must remove it and let the next decision that existed at the prompt take the slot.
+    """
+    _seed(ec_db)
+    ec_db.execute(
+        "INSERT INTO decisions (id, title, rationale, created_at, updated_at) VALUES "
+        "('successor', 'english matching keyword english keyword english matching', 'english keyword matching', '2027-01-01', '2027-01-01')"
+    )
+    ec_db.execute(
+        "INSERT INTO decisions (id, title, rationale, created_at, updated_at, staleness_status, superseded_by_id) VALUES "
+        "('decoy', 'english matching keyword english', 'keyword', '2025-01-01', '2020-01-01', 'superseded', 'successor')"
+    )
+    ec_db.commit()
+    report = _module().benchmark(ec_repo, k=1, embedder_factory=lambda model: FakeEmbedder())
+    # Korean item: baseline miss. English item: 'english' must win once the later successor is removed.
+    assert report["subsets"]["all"]["baseline"]["hit_at_k"] == 0.5
