@@ -424,6 +424,10 @@ Structural debt outside the "decision memory depth" wedge. The three items previ
 
 All PR #205 carry-forwards are registered under v0.16.0 above.
 
+- [ ] **Check that each retained Spec test exists** — `scripts/validate_plan.py validate` checks the Spec Test Disposition table against the Specification, but not that each `retained` or `merged` test function exists. PR #293 merged without `test_two_pass_semantic_candidate_surfaces_on_next_prompt`, which a range edit removed after review; the [Signal C retro](docs/retros/2026-11-05-signal-c-prompt-ranking-retro.md) registered this. _(process, P2)_
+
+- [ ] **Successor-chain resolution ignores `until`** — `rank_related_decisions` filters candidates by `since`/`until`, but chain collapse fetches the terminal successor without that filter, so a temporal query can return a decision created after `until`. The Signal C benchmark removes such results itself; MCP, CLI, and TQL callers still see them. _(edge-case, P3)_
+
 - [x] **Lift the `entirecontext.mcp.*` mypy overrides** — all nine MCP modules sat under `ignore_errors = true`, hiding 127 errors across 2,261 lines. Removed in three stages: annotate `runtime.py` (127 → 106), replace the `resolve_repo` tuple-plus-error-payload shape with a raising `open_repo` (106 → 48, since 60 errors traced to the unnarrowable `Connection | None`), then annotate the remaining modules (48 → 0). `mypy src/entirecontext/` now enforces the whole package in CI. ADR 0002's override list is nine entries shorter. Surfaced by review on PR #212.
 
 - [x] **Migrate MCP server to SDK 2.0** — `FastMCP` → `MCPServer` import migration completed; pin relaxed to `mcp>=2.0.0,<3`. _(dependency, P3; carry-forward from PR #228, ADR 0017 → superseded by ADR 0018)_
