@@ -445,6 +445,14 @@ max_tokens = 800
 min_confidence = 0.4
 inject_timeout_ms = 250
 
+[decisions.semantic]
+enabled = false
+weight = 3.0
+min_similarity = 0.3
+top_n = 20
+max_age_seconds = 900
+model = "all-MiniLM-L6-v2"
+
 [filtering.query_redaction]
 enabled = false
 patterns = []

@@ -672,6 +672,15 @@ def decision_extract_from_session(
         conn.close()
 
 
+@decision_app.command("semantic-worker", hidden=True)
+def decision_semantic_worker(
+    repo_path: str = typer.Option(..., "--repo-path", help="Project root"),
+):
+    from ..core.semantic_worker import run_semantic_worker
+
+    run_semantic_worker(repo_path)
+
+
 @decision_app.command("surface-prompt")
 def decision_surface_prompt(
     session_id: str = typer.Option(..., "--session", help="Session ID that originated the prompt"),

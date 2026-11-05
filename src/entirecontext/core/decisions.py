@@ -1362,6 +1362,9 @@ def rank_related_decisions(
     include_contradicted: bool = False,
     ranking: RankingWeights | None = None,
     quality: QualityWeights | None = None,
+    semantic_scores: dict[str, float] | None = None,
+    semantic_weight: float = 0.0,
+    semantic_min_similarity: float = 1.0,
     _return_stats: bool = False,
     _capture_snapshots: bool = False,
     _capture_config: dict | None = None,
@@ -1417,6 +1420,11 @@ def rank_related_decisions(
     if diff_text:
         diff_fts_scores = _fts_rank_decisions_from_diff(conn, diff_text)
         candidate_ids.update(diff_fts_scores.keys())
+
+    if semantic_scores is not None:
+        candidate_ids.update(
+            did for did, similarity in semantic_scores.items() if similarity >= semantic_min_similarity
+        )
 
     # Fallback: if too few candidates, pad with recent decisions.
     # Apply staleness predicate at the SQL level so the padding path can't smuggle in
@@ -1640,7 +1648,12 @@ def rank_related_decisions(
             linked_commits = commit_links_by_decision.get(did, set())
             git_commit = weights.git_commit_weight * len(linked_commits & commit_set)
 
-        relevance_base = file_exact + file_proximity + assessment_score + diff_relevance + git_commit
+        semantic = 0.0
+        if semantic_scores is not None:
+            similarity = semantic_scores.get(did, 0.0)
+            if similarity >= semantic_min_similarity:
+                semantic = semantic_weight * similarity
+        relevance_base = file_exact + file_proximity + assessment_score + diff_relevance + git_commit + semantic
         if relevance_base <= 0:
             continue
 
@@ -1671,27 +1684,28 @@ def rank_related_decisions(
         staleness_factor = weights.staleness_factors.get(d.get("staleness_status", "fresh"), 1.0)
         score = base_score * staleness_factor + quality_score
 
-        scored.append(
-            {
-                "id": did,
-                "title": d.get("title"),
-                "staleness_status": d.get("staleness_status"),
-                "updated_at": d.get("updated_at"),
-                "base_score": round(base_score, 3),
-                "quality_score": round(quality_score, 3),
-                "score": round(score, 3),
-                "score_breakdown": {
-                    "file_exact": round(file_exact, 3),
-                    "file_proximity": round(file_proximity, 3),
-                    "assessment": round(assessment_score, 3),
-                    "diff_relevance": round(diff_relevance, 3),
-                    "git_commit": round(git_commit, 3),
-                    "accepted_boost": round(accepted_boost, 3),
-                    "quality": round(quality_score, 3),
-                    "staleness_factor": round(staleness_factor, 3),
-                },
-            }
-        )
+        item = {
+            "id": did,
+            "title": d.get("title"),
+            "staleness_status": d.get("staleness_status"),
+            "updated_at": d.get("updated_at"),
+            "base_score": round(base_score, 3),
+            "quality_score": round(quality_score, 3),
+            "score": round(score, 3),
+            "score_breakdown": {
+                "file_exact": round(file_exact, 3),
+                "file_proximity": round(file_proximity, 3),
+                "assessment": round(assessment_score, 3),
+                "diff_relevance": round(diff_relevance, 3),
+                "git_commit": round(git_commit, 3),
+                "accepted_boost": round(accepted_boost, 3),
+                "quality": round(quality_score, 3),
+                "staleness_factor": round(staleness_factor, 3),
+            },
+        }
+        if semantic_scores is not None:
+            item["score_breakdown"]["semantic"] = round(semantic, 3)
+        scored.append(item)
 
     scored.sort(key=lambda item: (item["score"], item.get("updated_at", "")), reverse=True)
 

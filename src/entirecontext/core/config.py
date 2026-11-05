@@ -75,6 +75,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "assess_backfill_window_days": 7,
     },
     "decisions": {
+        "semantic": {
+            "enabled": False,
+            "weight": 3.0,
+            "min_similarity": 0.3,
+            "top_n": 20,
+            "max_age_seconds": 900,
+            "model": "all-MiniLM-L6-v2",
+        },
         "auto_stale_check": False,
         "auto_extract": True,
         "show_related_on_start": False,
