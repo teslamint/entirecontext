@@ -339,7 +339,8 @@ def test_absolute_content_path_outside_entirecontext_is_not_linked(merge_env, tm
     finally:
         target.close()
     result = runner.invoke(ec_app, ["project", "merge-worktree", str(linked)])
-    assert "row not merged" in result.output
+    output = " ".join(result.output.split())
+    assert "row not merged" in output
 
 
 def test_absolute_content_path_is_rewritten_relative(ec_worktree):
