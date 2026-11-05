@@ -299,7 +299,7 @@ Carry-forward to v0.13.0:
 Theme: close the 91% file-link gap via retroactive git archaeology, push intervene past the 10% applied_context_rate threshold, and analyze experiment data.
 
 ### Intervene graduation
-- [ ] **applied_context_rate ≥ 10%** — current 0.4% (8/1,817 ended sessions with a retrieval selection; measured 2026-11-05 with `get_dashboard_stats`). Closure needs genuine applications in 174 already-counted selection-bearing sessions if the denominator stays fixed, or 193 new selection-bearing sessions when each new session increases both numerator and denominator. No code change or synthetic historical backfill — dogfooding discipline only. This is the single tracked row for the Maturity 75 gate.
+- [ ] **applied_context_rate ≥ 10%** — current 0.4% (8/1,893 ended sessions with a retrieval selection; remeasured 2026-11-05 06:22 UTC with `get_dashboard_stats`). Closure needs genuine applications in 182 already-counted selection-bearing sessions if the denominator stays fixed, or 202 new selection-bearing sessions when each new session increases both numerator and denominator. No code change or synthetic historical backfill — dogfooding discipline only. This is the single tracked row for the Maturity 75 gate.
 - [x] **lesson_reuse_rate progress** — reached 21% (21/102 context applications) after recording past lessons that materially guided current work, up from the v0.13.0 baseline of 2% (1/40). The stated steady-upward-trend target is met; the 20% intervene threshold is also crossed.
 
 ### Experiment analysis
@@ -353,7 +353,7 @@ Theme: bootstrap the repository's own decision history, promote archaeology cand
 
 Carry-forward after v0.15.0:
 - [x] **Bound abbreviated-SHA blame lookup complexity** — exact SHA queries are batched, abbreviated candidates are scanned once per width and filtered before Git resolution, and the 1,200-SHA regression passes. _(completed by `5a24ebf`, PR #199)_
-- [ ] **Post-squash archaeology convergence** — squash commit `11fb9ad` is now in `archaeology_processed` (`processed_at` 2026-08-10), but reachable-history convergence is not complete: on 2026-11-05, 333 of 456 reachable non-merge commits are processed, and the unprocessed commits are dated 2026-08-11 or later. Close this row when `ec archaeologize --dry-run` shows 0 pending reachable commits, or when a new retro replaces that criterion. _(process/measurement, P3)_
+- [ ] **Post-squash archaeology convergence** — squash commit `11fb9ad` is now in `archaeology_processed` (`processed_at` 2026-08-10), but reachable-history convergence is not complete: on 2026-11-05 (remeasured 06:22 UTC), 333 of 464 reachable non-merge commits are processed (131 pending), and the unprocessed commits are dated 2026-08-11 or later. Closing it needs an `ec archaeologize` run, which makes paid LLM calls; the 2026-11-05 roadmap pass left it for an explicit cost decision. Close this row when `ec archaeologize --dry-run --until origin/main --limit N` shows 0 pending commits, where N is at least `git rev-list --no-merges --count origin/main` and the scanned count equals that number, or when a new retro replaces that criterion. The default `--limit 100` scans only the most recent commits. _(process/measurement, P3)_
 - [x] **TQL `--until` for semantic search** — upper bound enforced in local semantic path. _(feature gap, P3; completed by commits `7b74b84..1bdfe5c`)_
 - [x] **TQL `--until` for global search** — upper bound propagated through cross-repo search. _(feature gap, P3; completed by commits `a5ad64d..1bdfe5c`)_
 - Carried forward: **Maturity 75 dogfooding** → tracked once under v0.13.0 **applied_context_rate ≥ 10%**.
@@ -416,7 +416,7 @@ The last manual bottleneck is **outcome attribution**. Current automation: Sessi
 - [x] **`auto_extract` default true** — CLIBackend unwrap bug fixed (JSON array response), markdown fence stripping added, stale markers cleared, production verification confirmed candidates produced (1 candidate from 3 bundles).
 - [x] **Git-evidence-based outcome inference** — shipped in v0.10.0: Layer 1 (file-overlap → accepted) + Layer 2 (new-decision gate + diff pattern → refined/replaced). `contradicted` auto-inference deferred (semantic judgment).
 - [x] **Autonomous loop E2E wiring test** — `test_e2e_autonomous_loop.py` proves all five stages complete in-process; Stop hook fallback ensures extraction triggers on sessions without SessionEnd.
-- [ ] **Alpha → stable status** — flip README badge and pyproject classifier once production observability confirms loop completion across multiple real sessions
+- [ ] **Alpha → stable status** — flip README badge and pyproject classifier once production observability confirms loop completion across multiple real sessions. Still open after the 2026-11-05 roadmap pass: the gate is an observation, not a code change, and no session count defines "multiple real sessions" yet.
 
 ## Hardening Backlog
 
@@ -434,9 +434,9 @@ All PR #205 carry-forwards are registered under v0.16.0 above.
 
 ## Later
 
-- [ ] **Sharpen product messaging around decision memory**
+- [ ] **Sharpen product messaging around decision memory** — still open after the 2026-11-05 roadmap pass: the row has no checkable completion criterion. Define one before work starts.
 
-- [ ] **Team-scoped decisions**
+- [ ] **Team-scoped decisions** — still open after the 2026-11-05 roadmap pass: visibility scope needs a schema change and a public data contract, so it needs its own spec and ADR.
   - Same decision model as personal, with repo-wide or org-wide visibility
   - EC handles surfacing only; enforcement is out of scope (CI/linter/review bot territory)
   - Capture recurring team preferences and architectural constraints as decisions, not policies
