@@ -1920,14 +1920,19 @@ class TestGuidanceInjection:
 
 class TestLinkedWorktreeProjectCommands:
     def test_init_from_linked_joins_main_project(self, ec_worktree, monkeypatch):
+        """Init from a linked worktree joins the main project; a wide console keeps the long path whole."""
+        from rich.console import Console
+
         main, linked = ec_worktree
         monkeypatch.chdir(linked)
+        monkeypatch.setattr(project_cmds, "console", Console(width=400))
 
         result = runner.invoke(app, ["init", "--no-hooks"])
 
-        assert result.exit_code == 0, result.output
-        assert "Joined existing logical project" in result.output
-        assert str(main) in result.output
+        output = " ".join(result.output.split())
+        assert result.exit_code == 0, output
+        assert "Joined existing logical project" in output
+        assert str(main) in output
         assert not (linked / ".entirecontext" / "db").exists()
 
     def test_status_from_linked_shows_main_and_branch(self, ec_worktree, monkeypatch):

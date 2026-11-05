@@ -322,6 +322,7 @@ def test_content_path_escaping_entirecontext_is_not_copied(merge_env):
 
 
 def test_absolute_content_path_outside_entirecontext_is_not_linked(merge_env, tmp_path):
+    """A content path outside .entirecontext is refused; output is whitespace-normalized because Rich wraps it."""
     main, linked, db_path = merge_env
     outside = tmp_path / "elsewhere.jsonl"
     outside.write_text("elsewhere\n")
@@ -339,7 +340,8 @@ def test_absolute_content_path_outside_entirecontext_is_not_linked(merge_env, tm
     finally:
         target.close()
     result = runner.invoke(ec_app, ["project", "merge-worktree", str(linked)])
-    assert "row not merged" in result.output
+    output = " ".join(result.output.split())
+    assert "row not merged" in output
 
 
 def test_absolute_content_path_is_rewritten_relative(ec_worktree):

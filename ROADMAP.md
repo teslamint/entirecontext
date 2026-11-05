@@ -405,7 +405,7 @@ Retro carry-forward review (2026-08-21 retro):
 - Carried forward: **Decide whether to ship `py.typed`** → deferred by ADR 0019 until stable status (v0.16.0 row).
 
 Carry-forward after v0.17.0 ([retro](docs/retros/2026-11-05-v0170-release-retro.md)):
-- [ ] **Make Rich-output path assertions independent of wrapping** — `test_init_from_linked_joins_main_project` and `test_worktree_merge::test_absolute_content_path_outside_entirecontext_is_not_linked` fail on macOS with the default temporary directory, because Rich wraps or truncates the long `/private/var/folders/...` path in console output. They pass with `--basetemp=/tmp/...` and in Linux CI. Fix the assertions so the plain `uv run pytest -q` release gate is green on macOS. _(test reliability, P3)_
+- [x] **Make Rich-output path assertions independent of wrapping** — `test_init_from_linked_joins_main_project` and `test_worktree_merge::test_absolute_content_path_outside_entirecontext_is_not_linked` now compare whitespace-normalized output, and the init test uses a 400-column console so Rich does not clip the path. Both pass on macOS without `--basetemp`. _(test reliability, P3; completed)_
 
 ## v1.0 — Loop Completes Autonomously
 
