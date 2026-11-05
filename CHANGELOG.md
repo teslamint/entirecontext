@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Background enrichment no longer lets several workers send the same assessment to the LLM backend. Worker launches take a lock, `ec futures enrich-backlog` claims each row and re-checks it before the call, and failed rows wait for an increasing backoff before the next attempt. (#288)
 - The plain `uv run pytest -q` gate passes on macOS again: two CLI tests no longer fail when Rich wraps the long default temporary path. (#290)
 
+### Documented
+
+- `ROADMAP.md` states why five items stay open after the 2026-11-05 roadmap pass, with remeasured `applied_context_rate` and archaeology counts. (#TBD)
+
 ## [0.17.0] - 2026-11-04
 
 Git worktrees as one logical project, agent guidance injection, omp capture, full sync export, and install-hint fixes. Dogfooding maturity at release: 71/100 (`applied_context_rate` 0.5%, `lesson_reuse_rate` 21%).
