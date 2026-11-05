@@ -407,6 +407,14 @@ Retro carry-forward review (2026-08-21 retro):
 Carry-forward after v0.17.0 ([retro](docs/retros/2026-11-05-v0170-release-retro.md)):
 - [x] **Make Rich-output path assertions independent of wrapping** — `test_init_from_linked_joins_main_project` and `test_worktree_merge::test_absolute_content_path_outside_entirecontext_is_not_linked` now compare whitespace-normalized output, and the init test uses a 400-column console so Rich does not clip the path. Both pass on macOS without `--basetemp`. _(test reliability, P3; completed)_
 
+## v0.18.0 — Next Release (Planned)
+
+Target for the carry-forwards of the [Signal C retro](docs/retros/2026-11-05-signal-c-prompt-ranking-retro.md).
+
+- [ ] **Check that each retained Spec test exists** — `scripts/validate_plan.py validate` checks the Spec Test Disposition table against the Specification, but not that each `retained` or `merged` test function exists. PR #293 merged without `test_two_pass_semantic_candidate_surfaces_on_next_prompt`, which a range edit removed after review; the [Signal C retro](docs/retros/2026-11-05-signal-c-prompt-ranking-retro.md) registered this. _(process, P2)_
+
+- [ ] **Successor-chain resolution ignores `until`** — `rank_related_decisions` filters candidates by `since`/`until`, but chain collapse fetches the terminal successor without that filter, so a temporal query can return a decision created after `until`. The Signal C benchmark removes such results itself; MCP, CLI, and TQL callers still see them. _(edge-case, P3)_
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.

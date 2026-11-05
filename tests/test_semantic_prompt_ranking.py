@@ -261,6 +261,29 @@ def test_launch_conditions_gate_semantic_worker(ec_repo, ec_db, monkeypatch, gat
         assert not pending
 
 
+def test_two_pass_semantic_candidate_surfaces_on_next_prompt(ec_repo, ec_db, monkeypatch, capsys):
+    """Spec success criterion 3: prompt 1 queues the worker, prompt 2 injects a decision found only by its score."""
+    from entirecontext.core.semantic_worker import run_semantic_worker
+
+    _seed(ec_db)
+    _session(ec_db)
+    _enabled(ec_repo)
+    launches = []
+    monkeypatch.setattr("entirecontext.core.async_worker.launch_worker_exclusive", lambda *a, **k: launches.append(a))
+    _hook(ec_repo)
+    assert "unrelated words" not in capsys.readouterr().out
+    assert len(launches) == 1
+    ec_db.execute(
+        "INSERT INTO embeddings (id, source_type, source_id, model_name, vector, dimensions, text_hash) VALUES ('e', 'decision', 'semantic', 'all-MiniLM-L6-v2', ?, 2, 'h')",
+        (_vector(1, 0),),
+    )
+    ec_db.commit()
+    # Run the worker that prompt 1 would have launched, in-process with a fake embedder.
+    run_semantic_worker(str(ec_repo), embedder_factory=lambda _: lambda __: _vector(1, 0))
+    _hook(ec_repo)
+    assert "unrelated words" in capsys.readouterr().out
+
+
 def test_semantic_worker_launches_after_ranking_timeout(ec_repo, ec_db, monkeypatch, capsys):
     import time
 
