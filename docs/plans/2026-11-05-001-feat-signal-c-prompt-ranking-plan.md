@@ -2,11 +2,12 @@
 schema: plan/v1
 title: Signal C Prompt-Time Ranking
 type: feat
-status: draft
+status: approved
 date: 2026-11-05
 execution: code
 origin: docs/specs/2026-11-05-signal-c-prompt-ranking-design.md
 mode: auto
+body_seal: 7d3fa79bc6858c10843331c2babda8152e1ecb4240acd6f5b41a3b91f5d9b68c
 ---
 
 # Signal C Prompt-Time Ranking Plan
