@@ -13,7 +13,7 @@ So the hook cannot embed the prompt.
 EC decision `d3430f87` chose a two-pass design: compute semantic scores in the background and use them on a later prompt.
 
 The [spec](../specs/2026-11-05-signal-c-prompt-ranking-design.md) required a measurement before any default change.
-The [benchmark report](../perf/2026-11-05-signal-c-benchmark.md) measured hit@5 from 0.166 to 0.406 on prompts that do not name their files (175 items).
+The [benchmark report](../perf/2026-11-05-signal-c-benchmark.md) measured hit@5 from 0.178 to 0.405 on prompts that do not name their labeled files (185 items).
 
 ## Decision
 

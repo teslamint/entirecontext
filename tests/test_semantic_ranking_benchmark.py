@@ -112,3 +112,17 @@ def test_benchmark_matches_absolute_turn_paths_to_relative_decision_files(ec_rep
     )
     assert report["counts"]["items"] == 2
     assert report["counts"]["dropped_no_relevant"] == 2
+
+
+def test_no_file_mention_checks_only_labeled_files(ec_repo, ec_db, tmp_path):
+    """Naming an unrelated touched file must not move an item out of the no-file-mention subset."""
+    _seed(ec_db)
+    ec_db.execute(
+        "UPDATE turns SET files_touched = ?, user_message = '랭킹 개선 notes.md' WHERE id = '1'",
+        (json.dumps(["src/semantic.py", "docs/notes.md"]),),
+    )
+    ec_db.commit()
+    report = _module().benchmark(
+        ec_repo, k=1, output=tmp_path / "report.json", embedder_factory=lambda model: FakeEmbedder()
+    )
+    assert report["subsets"]["hangul_no_file_mention"]["count"] == 1

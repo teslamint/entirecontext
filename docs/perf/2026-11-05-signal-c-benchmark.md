@@ -9,22 +9,22 @@ This report measures prompt-to-decision retrieval with and without the opt-in se
 - Both rankers see only decisions created at or before the turn. Ranker input is the redacted prompt only, with no file paths and no commits.
 - Baseline: `rank_related_decisions` as shipped. Semantic: the same call plus similarity scores from `all-MiniLM-L6-v2`, with the default `weight = 3.0` and `min_similarity = 0.3`.
 - Metrics: hit@5 and mean reciprocal rank (MRR).
-- "No file mention" excludes items whose prompt contains the basename of a labeled file. This subset is the headline number, because full text can match a named file.
+- "No file mention" excludes items whose prompt contains the basename of a labeled file (a touched file that links to a relevant decision). This subset is the headline number, because full text can match a named file.
 
 ## Result
 
-Observed 2026-11-05T07:08:38Z on the project database (read-only) with `sentence-transformers` 6.2.0.
+Observed 2026-11-05T07:18:55Z on the project database (read-only) with `sentence-transformers` 6.2.0.
 
 | Subset | Items | Baseline hit@5 | Semantic hit@5 | Baseline MRR | Semantic MRR |
 |---|---|---|---|---|---|
-| All | 215 | 0.247 | 0.437 | 0.132 | 0.310 |
+| All | 215 | 0.242 | 0.437 | 0.135 | 0.292 |
 | Hangul | 144 | 0.111 | 0.396 | 0.068 | 0.294 |
-| No file mention | 175 | 0.166 | 0.406 | 0.075 | 0.292 |
-| Hangul, no file mention | 131 | 0.061 | 0.374 | 0.029 | 0.273 |
+| No file mention | 185 | 0.178 | 0.405 | 0.087 | 0.270 |
+| Hangul, no file mention | 134 | 0.067 | 0.373 | 0.035 | 0.274 |
 
 618 turns had touched files. 403 had no eligible label and were dropped. 215 remained.
 
-The semantic signal raised hit@5 in every subset. The largest gain was in the Hangul, no-file-mention subset (0.061 to 0.374). The spec expected little Korean benefit, because the model gives no cross-lingual signal for whole Korean sentences. A likely cause of the observed gain is that Korean prompts in this project often contain English identifiers. This cause is an inference; the benchmark does not test it.
+The semantic signal raised hit@5 in every subset. The largest gain was in the Hangul, no-file-mention subset (0.067 to 0.373). The spec expected little Korean benefit, because the model gives no cross-lingual signal for whole Korean sentences. A likely cause of the observed gain is that Korean prompts in this project often contain English identifiers. This cause is an inference; the benchmark does not test it.
 
 ## Limits
 
@@ -32,6 +32,7 @@ The semantic signal raised hit@5 in every subset. The largest gain was in the Ha
 - Suffix matching can link a common file name such as `pyproject.toml` from another checkout.
 - The ranker reads current decision text and links. Decisions edited or relinked after a prompt can change that prompt's result.
 - Production ranking also uses the uncommitted diff, recent commits, and file paths. This benchmark measures prompt-only recall.
+- The database is live. Decisions updated between runs can reorder tied results, so a rerun can differ in the third decimal place.
 - One database, one model, one `k`. The numbers do not by themselves justify a default change.
 
 ## Command

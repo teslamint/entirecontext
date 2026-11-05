@@ -110,13 +110,15 @@ def benchmark(
                 continue
             # Hooks record absolute paths, possibly from a linked worktree; decision links are repo-relative.
             # A link matches when it equals the touched path or is its suffix at a "/" boundary.
-            relevant = {
-                did
-                for did, rel in decision_files
-                if did in created
-                and created[did] <= turn["timestamp"]
-                and any(path == rel or path.endswith("/" + rel) for path in paths)
-            }
+            relevant: set[str] = set()
+            labeled_paths: set[str] = set()
+            for did, rel in decision_files:
+                if did not in created or created[did] > turn["timestamp"]:
+                    continue
+                for path in paths:
+                    if path == rel or path.endswith("/" + rel):
+                        relevant.add(did)
+                        labeled_paths.add(path)
             if not relevant:
                 dropped += 1
                 continue
@@ -146,7 +148,8 @@ def benchmark(
             item = ([d["id"] for d in baseline], [d["id"] for d in semantic], relevant)
             groups["all"].append(item)
             hangul = bool(re.search("[가-힣]", prompt))
-            no_mention = not any(Path(path).name.lower() in prompt.lower() for path in paths)
+            # Spec: exclude only prompts that name a labeled file; other touched files do not leak the label.
+            no_mention = not any(Path(path).name.lower() in prompt.lower() for path in labeled_paths)
             if hangul:
                 groups["hangul"].append(item)
             if no_mention:
