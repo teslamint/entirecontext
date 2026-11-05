@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Enrichment workers use a launch lock. Assessment claims limit concurrent attempts and delay retries after failures.
+
 ## [0.17.0] - 2026-11-04
 
 Git worktrees as one logical project, agent guidance injection, omp capture, full sync export, and install-hint fixes. Dogfooding maturity at release: 71/100 (`applied_context_rate` 0.5%, `lesson_reuse_rate` 21%).

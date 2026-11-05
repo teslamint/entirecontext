@@ -1235,7 +1235,7 @@ class TestMaybeExtractDecisions:
         session = self._setup_session_with_summaries(ec_db, ["just a normal conversation"])
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda *a, **kw: launched.append(1) or 0,
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
@@ -1251,11 +1251,11 @@ class TestMaybeExtractDecisions:
         session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda *a, **kw: launched.append(kw) or 0,
         )
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.worker_status",
+            "entirecontext.core.async_worker.worker_status",
             lambda *a, **kw: {"running": False, "pid": None},
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
@@ -1269,19 +1269,18 @@ class TestMaybeExtractDecisions:
             lambda _: {"auto_extract": True, "extract_keywords": ["decided"], "noise_gate_min_turns_with_files": 0},
         )
         session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
-        launched = []
+        import os
+
+        pid_path = ec_repo / ".entirecontext" / "worker-decision.pid"
+        pid_path.write_text(str(os.getpid()))
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
-            lambda *a, **kw: launched.append(1) or 0,
-        )
-        monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.worker_status",
+            "entirecontext.core.async_worker.worker_status",
             lambda *a, **kw: {"running": True, "pid": 999},
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
 
         maybe_extract_decisions(str(ec_repo), session["id"])
-        assert len(launched) == 0
+        assert pid_path.read_text() == str(os.getpid())
 
     def test_idempotency_marker_skips(self, ec_repo, ec_db, monkeypatch):
         monkeypatch.setattr(
@@ -1296,7 +1295,7 @@ class TestMaybeExtractDecisions:
         ec_db.commit()
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda *a, **kw: launched.append(1) or 0,
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
@@ -1331,7 +1330,7 @@ class TestMaybeExtractDecisions:
         ec_db.commit()
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda *a, **kw: launched.append(1) or 0,
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
@@ -1359,7 +1358,7 @@ class TestMaybeExtractDecisions:
         session = self._setup_session_with_summaries(ec_db, ["We decided to use Redis"])
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda *a, **kw: launched.append(1) or 0,
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
@@ -1420,7 +1419,7 @@ class TestNoiseGate:
         ec_db.commit()
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda *a, **kw: launched.append(1) or 0,
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
@@ -2341,11 +2340,11 @@ class TestExtractionRetryCap:
 
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda repo, cmd, pid_name=None: launched.append(cmd),
         )
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.worker_status",
+            "entirecontext.core.async_worker.worker_status",
             lambda repo, pid_name=None: {"running": False},
         )
 
@@ -2368,11 +2367,11 @@ class TestExtractionRetryCap:
 
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda repo, cmd, pid_name=None: launched.append(cmd),
         )
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.worker_status",
+            "entirecontext.core.async_worker.worker_status",
             lambda repo, pid_name=None: {"running": False},
         )
 
@@ -2382,17 +2381,39 @@ class TestExtractionRetryCap:
 
         assert len(launched) == 1, "SessionEnd should bypass cap"
 
+    def test_stop_does_not_count_attempt_when_worker_running(self, ec_repo, ec_db, monkeypatch):
+        """A live extraction worker makes Stop skip without burning an attempt."""
+        import os
+
+        session = self._setup_extractable_session(ec_repo, ec_db)
+        (ec_repo / ".entirecontext" / "worker-decision.pid").write_text(f"{os.getpid()}\n")
+        launched = []
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
+            lambda *a, **kw: launched.append(1),
+        )
+
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"], source="stop")
+
+        meta = ec_db.execute(
+            "SELECT json_extract(metadata, '$.extraction_attempts') AS n FROM sessions WHERE id = ?", (session["id"],)
+        ).fetchone()
+        assert launched == []
+        assert meta["n"] is None
+
     def test_stop_increments_counter_on_launch(self, ec_repo, ec_db, monkeypatch):
         """Each Stop launch increments extraction_attempts in session metadata."""
         session = self._setup_extractable_session(ec_repo, ec_db)
 
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda repo, cmd, pid_name=None: launched.append(cmd),
         )
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.worker_status",
+            "entirecontext.core.async_worker.worker_status",
             lambda repo, pid_name=None: {"running": False},
         )
 
@@ -2421,11 +2442,11 @@ class TestExtractionRetryCap:
 
         launched = []
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.launch_worker",
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
             lambda repo, cmd, pid_name=None: launched.append(cmd),
         )
         monkeypatch.setattr(
-            "entirecontext.hooks.decision_hooks.worker_status",
+            "entirecontext.core.async_worker.worker_status",
             lambda repo, pid_name=None: {"running": False},
         )
 

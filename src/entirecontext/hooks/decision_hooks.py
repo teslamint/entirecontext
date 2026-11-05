@@ -7,7 +7,7 @@ import sqlite3
 import subprocess
 from typing import Any
 
-from ..core.async_worker import launch_worker, worker_status
+from ..core.async_worker import launch_worker_exclusive, worker_status
 from ..core.git_utils import get_recent_commit_shas as _get_recent_commit_shas
 from ..core.git_utils import get_uncommitted_diff as _get_uncommitted_diff
 from ..core.repo_roots import RepoRoots, resolve_repo_roots_fs, roots_for_workspace
@@ -1003,6 +1003,8 @@ def maybe_extract_decisions(
             if not (session_signal or checkpoint_signal or assessment_signal):
                 return
 
+            # Fast path: skip before counting an attempt. launch_worker_exclusive
+            # re-checks under its lock, so a lost race still cannot start a second worker.
             if worker_status(repo_path, pid_name="worker-decision").get("running"):
                 return
 
@@ -1018,7 +1020,7 @@ def maybe_extract_decisions(
 
             import sys
 
-            launch_worker(
+            launch_worker_exclusive(
                 repo_path,
                 [
                     sys.executable,

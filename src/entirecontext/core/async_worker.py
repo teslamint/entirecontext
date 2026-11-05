@@ -14,6 +14,7 @@ No external dependencies — pure standard library (subprocess, os, pathlib).
 from __future__ import annotations
 
 import errno
+import fcntl
 import os
 import subprocess
 from pathlib import Path
@@ -87,6 +88,22 @@ def launch_worker(repo_path: str, cmd: list[str], pid_name: str = "worker", *, c
     )
     pid_path.write_text(f"{proc.pid}\n")
     return proc.pid
+
+
+def launch_worker_exclusive(
+    repo_path: str, cmd: list[str], pid_name: str = "worker", *, cwd: str | None = None
+) -> int | None:
+    """Launch one live worker per PID name under a cross-process lock."""
+    pid_path = _pid_file(repo_path, pid_name)
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    with pid_path.with_suffix(".lock").open("a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            if worker_status(repo_path, pid_name).get("running"):
+                return None
+            return launch_worker(repo_path, cmd, pid_name, cwd=cwd)
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def stop_worker(repo_path: str, pid_name: str = "worker") -> str:

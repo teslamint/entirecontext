@@ -269,7 +269,8 @@ def futures_lessons(
 @futures_app.command("enrich-backlog")
 def futures_enrich_backlog():
     """Enrich rule-based assessments with LLM analysis. Fallback: git-evidence feedback."""
-    from ..core.auto_assess import enrich_assessment, get_enrichment_candidates
+    from ..core.auto_assess import enrich_assessment, get_enrichment_candidates, is_enrichable
+    from ..core.enrichment_claims import claim_candidates, record_failure, record_success, release_claim
     from ..core.config import load_config
     from ..core.project import get_repo_roots
     from ..db import get_db
@@ -285,18 +286,36 @@ def futures_enrich_backlog():
 
     conn = get_db(repo_path)
     try:
-        candidates = get_enrichment_candidates(conn, window_days=window_days)
+        candidates = get_enrichment_candidates(conn, window_days=window_days, limit=50)
         if not candidates:
             console.print("[dim]No assessments to enrich.[/dim]")
             return
 
+        claimed = claim_candidates(repo_path, candidates, max_claims=10)
+        if not claimed:
+            console.print("[dim]No assessments ready to enrich.[/dim]")
+            return
+
         enriched = 0
         failed_ids = []
-        for candidate in candidates:
+        consecutive_failures = 0
+        for index, candidate in enumerate(claimed):
+            if not is_enrichable(conn, candidate["id"]):
+                # Another worker finished this row after our candidate snapshot; drop the claim without a backend call.
+                record_success(repo_path, candidate["id"])
+                continue
             if enrich_assessment(conn, candidate, repo_path, config):
+                record_success(repo_path, candidate["id"])
                 enriched += 1
+                consecutive_failures = 0
             else:
+                record_failure(repo_path, candidate["id"])
                 failed_ids.append(candidate["id"])
+                consecutive_failures += 1
+                if consecutive_failures >= 2:
+                    for remaining in claimed[index + 1 :]:
+                        release_claim(repo_path, remaining["id"])
+                    break
 
         fallback = 0
         if failed_ids:
