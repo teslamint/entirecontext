@@ -1920,6 +1920,7 @@ class TestGuidanceInjection:
 
 class TestLinkedWorktreeProjectCommands:
     def test_init_from_linked_joins_main_project(self, ec_worktree, monkeypatch):
+        """Init from a linked worktree joins the main project; a wide console keeps the long path whole."""
         from rich.console import Console
 
         main, linked = ec_worktree
