@@ -32,7 +32,15 @@ class ArchaeologyResult:
     warnings: list[str] = field(default_factory=list)
 
 
-def _decode_git_quoted_path(path: str) -> str:
+def _decode_git_quoted_path(path: str) -> str | None:
+    """Decode a Git C-style quoted path. Return None when the bytes are not UTF-8.
+
+    A non-UTF-8 path cannot be stored as the real file name, and a Latin-1 guess
+    would link a different file, so callers drop it.
+    """
+    if any("\udc80" <= char <= "\udcff" for char in path):
+        # Raw output (core.quotePath=false) read with errors="surrogateescape".
+        return None
     if "\\" not in path:
         return path
 
@@ -77,7 +85,7 @@ def _decode_git_quoted_path(path: str) -> str:
     try:
         return decoded.decode("utf-8")
     except UnicodeDecodeError:
-        return decoded.decode("latin-1")
+        return None
 
 
 def _is_github_remote(url: str) -> bool:
