@@ -1252,10 +1252,10 @@ class TestMaybeExtractDecisions:
         launched = []
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
-            lambda *a, **kw: launched.append(kw) or 0,
+            lambda *a, **kw: launched.append(kw) or 4242,
         )
         monkeypatch.setattr(
-            "entirecontext.core.async_worker.worker_status",
+            "entirecontext.hooks.decision_hooks.worker_status",
             lambda *a, **kw: {"running": False, "pid": None},
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
@@ -1274,7 +1274,7 @@ class TestMaybeExtractDecisions:
         pid_path = ec_repo / ".entirecontext" / "worker-decision.pid"
         pid_path.write_text(str(os.getpid()))
         monkeypatch.setattr(
-            "entirecontext.core.async_worker.worker_status",
+            "entirecontext.hooks.decision_hooks.worker_status",
             lambda *a, **kw: {"running": True, "pid": 999},
         )
         from entirecontext.hooks.decision_hooks import maybe_extract_decisions
@@ -2344,7 +2344,7 @@ class TestExtractionRetryCap:
             lambda repo, cmd, pid_name=None: launched.append(cmd),
         )
         monkeypatch.setattr(
-            "entirecontext.core.async_worker.worker_status",
+            "entirecontext.hooks.decision_hooks.worker_status",
             lambda repo, pid_name=None: {"running": False},
         )
 
@@ -2368,10 +2368,10 @@ class TestExtractionRetryCap:
         launched = []
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
-            lambda repo, cmd, pid_name=None: launched.append(cmd),
+            lambda repo, cmd, pid_name=None: launched.append(cmd) or 4242,
         )
         monkeypatch.setattr(
-            "entirecontext.core.async_worker.worker_status",
+            "entirecontext.hooks.decision_hooks.worker_status",
             lambda repo, pid_name=None: {"running": False},
         )
 
@@ -2403,6 +2403,27 @@ class TestExtractionRetryCap:
         assert launched == []
         assert meta["n"] is None
 
+    def test_stop_does_not_count_attempt_when_launch_loses_race(self, ec_repo, ec_db, monkeypatch):
+        """Fast path saw no worker, but another hook won the launch lock: no attempt is spent."""
+        session = self._setup_extractable_session(ec_repo, ec_db)
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.worker_status",
+            lambda repo, pid_name=None: {"running": False},
+        )
+        monkeypatch.setattr(
+            "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
+            lambda *a, **kw: None,
+        )
+
+        from entirecontext.hooks.decision_hooks import maybe_extract_decisions
+
+        maybe_extract_decisions(str(ec_repo), session["id"], source="stop")
+
+        meta = ec_db.execute(
+            "SELECT json_extract(metadata, '$.extraction_attempts') AS n FROM sessions WHERE id = ?", (session["id"],)
+        ).fetchone()
+        assert meta["n"] is None
+
     def test_stop_increments_counter_on_launch(self, ec_repo, ec_db, monkeypatch):
         """Each Stop launch increments extraction_attempts in session metadata."""
         session = self._setup_extractable_session(ec_repo, ec_db)
@@ -2410,10 +2431,10 @@ class TestExtractionRetryCap:
         launched = []
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
-            lambda repo, cmd, pid_name=None: launched.append(cmd),
+            lambda repo, cmd, pid_name=None: launched.append(cmd) or 4242,
         )
         monkeypatch.setattr(
-            "entirecontext.core.async_worker.worker_status",
+            "entirecontext.hooks.decision_hooks.worker_status",
             lambda repo, pid_name=None: {"running": False},
         )
 
@@ -2443,10 +2464,10 @@ class TestExtractionRetryCap:
         launched = []
         monkeypatch.setattr(
             "entirecontext.hooks.decision_hooks.launch_worker_exclusive",
-            lambda repo, cmd, pid_name=None: launched.append(cmd),
+            lambda repo, cmd, pid_name=None: launched.append(cmd) or 4242,
         )
         monkeypatch.setattr(
-            "entirecontext.core.async_worker.worker_status",
+            "entirecontext.hooks.decision_hooks.worker_status",
             lambda repo, pid_name=None: {"running": False},
         )
 

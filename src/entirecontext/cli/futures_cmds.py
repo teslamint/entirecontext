@@ -270,7 +270,7 @@ def futures_lessons(
 def futures_enrich_backlog():
     """Enrich rule-based assessments with LLM analysis. Fallback: git-evidence feedback."""
     from ..core.auto_assess import enrich_assessment, get_enrichment_candidates, is_enrichable
-    from ..core.enrichment_claims import claim_candidates, record_failure, record_success, release_claim
+    from ..core.enrichment_claims import claim_candidates, record_failure, record_success
     from ..core.config import load_config
     from ..core.project import get_repo_roots
     from ..db import get_db
@@ -291,19 +291,22 @@ def futures_enrich_backlog():
             console.print("[dim]No assessments to enrich.[/dim]")
             return
 
-        claimed = claim_candidates(repo_path, candidates, max_claims=10)
-        if not claimed:
-            console.print("[dim]No assessments ready to enrich.[/dim]")
-            return
-
+        # Claim each row just before its backend call. A batch-wide lease could expire on rows still
+        # waiting behind a slow call, and a second run would then send the same row again.
+        attempted = 0
         enriched = 0
         failed_ids = []
         consecutive_failures = 0
-        for index, candidate in enumerate(claimed):
+        for candidate in candidates:
+            if attempted >= 10 or consecutive_failures >= 2:
+                break
+            if not claim_candidates(repo_path, [candidate], max_claims=1):
+                continue
             if not is_enrichable(conn, candidate["id"]):
                 # Another worker finished this row after our candidate snapshot; drop the claim without a backend call.
                 record_success(repo_path, candidate["id"])
                 continue
+            attempted += 1
             if enrich_assessment(conn, candidate, repo_path, config):
                 record_success(repo_path, candidate["id"])
                 enriched += 1
@@ -312,10 +315,10 @@ def futures_enrich_backlog():
                 record_failure(repo_path, candidate["id"])
                 failed_ids.append(candidate["id"])
                 consecutive_failures += 1
-                if consecutive_failures >= 2:
-                    for remaining in claimed[index + 1 :]:
-                        release_claim(repo_path, remaining["id"])
-                    break
+
+        if attempted == 0:
+            console.print("[dim]No assessments ready to enrich.[/dim]")
+            return
 
         fallback = 0
         if failed_ids:

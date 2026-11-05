@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Enrichment workers use a launch lock. Assessment claims limit concurrent attempts and delay retries after failures.
+- Background enrichment no longer lets several workers send the same assessment to the LLM backend. Worker launches take a lock, `ec futures enrich-backlog` claims each row and re-checks it before the call, and failed rows wait for an increasing backoff before the next attempt. (#288)
 
 ## [0.17.0] - 2026-11-04
 

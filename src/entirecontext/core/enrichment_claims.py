@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import tempfile
@@ -10,6 +9,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
+
+from .async_worker import file_lock
 
 
 def _path(repo_path: str) -> Path:
@@ -20,38 +21,34 @@ def _path(repo_path: str) -> Path:
 def _store(repo_path: str, now: float) -> Iterator[dict[str, Any]]:
     path = _path(repo_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with (path.parent / "enrich-claims.lock").open("a+") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with file_lock(path.parent / "enrich-claims.lock"):
         try:
-            try:
-                data = json.loads(path.read_text())
-                if not isinstance(data, dict):
-                    data = {}
-                data = {
-                    key: value
-                    for key, value in data.items()
-                    if isinstance(value, dict)
-                    and isinstance(value.get("attempts"), int)
-                    and isinstance(value.get("lease_until"), (int, float))
-                }
-            except (OSError, ValueError, TypeError):
+            data = json.loads(path.read_text())
+            if not isinstance(data, dict):
                 data = {}
-            yield data
             data = {
                 key: value
                 for key, value in data.items()
-                if isinstance(value, dict) and value.get("lease_until", float("-inf")) >= now - 7 * 86400
+                if isinstance(value, dict)
+                and isinstance(value.get("attempts"), int)
+                and isinstance(value.get("lease_until"), (int, float))
             }
-            fd, name = tempfile.mkstemp(dir=path.parent, prefix=".enrich-claims-")
-            try:
-                with os.fdopen(fd, "w") as out:
-                    json.dump(data, out)
-                os.replace(name, path)
-            finally:
-                if os.path.exists(name):
-                    os.unlink(name)
+        except (OSError, ValueError, TypeError):
+            data = {}
+        yield data
+        data = {
+            key: value
+            for key, value in data.items()
+            if isinstance(value, dict) and value.get("lease_until", float("-inf")) >= now - 7 * 86400
+        }
+        fd, name = tempfile.mkstemp(dir=path.parent, prefix=".enrich-claims-")
+        try:
+            with os.fdopen(fd, "w") as out:
+                json.dump(data, out)
+            os.replace(name, path)
         finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
+            if os.path.exists(name):
+                os.unlink(name)
 
 
 def claim_candidates(
@@ -96,12 +93,3 @@ def record_failure(
 def record_success(repo_path: str, assessment_id: str) -> None:
     with _store(repo_path, time.time()) as data:
         data.pop(str(assessment_id), None)
-
-
-def release_claim(repo_path: str, assessment_id: str, *, now: float | None = None) -> None:
-    current = time.time() if now is None else now
-    with _store(repo_path, current) as data:
-        entry = data.get(str(assessment_id))
-        if entry:
-            entry["attempts"] = max(0, entry["attempts"] - 1)
-            entry["lease_until"] = current

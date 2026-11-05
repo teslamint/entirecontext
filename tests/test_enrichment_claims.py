@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing import get_context
 
-from entirecontext.core.enrichment_claims import claim_candidates, record_failure, record_success, release_claim
+from entirecontext.core.enrichment_claims import claim_candidates, record_failure, record_success
 
 
 def _claim_in_process(args):
@@ -24,7 +24,7 @@ def test_concurrent_claims(tmp_path):
     assert len(ids) == len(set(ids)) == 20
 
 
-def test_expiry_backoff_attempts_and_release(tmp_path):
+def test_expiry_backoff_attempts_and_success(tmp_path):
     repo = str(tmp_path)
     rows = [{"id": "a"}, {"id": "b"}]
     assert claim_candidates(repo, rows, max_claims=1, lease_seconds=600, now=0) == rows[:1]
@@ -35,8 +35,6 @@ def test_expiry_backoff_attempts_and_release(tmp_path):
     assert claim_candidates(repo, rows[:1], now=620) == rows[:1]
     record_failure(repo, "a", now=620, base_seconds=10, cap_seconds=25)
     assert claim_candidates(repo, rows[:1], now=644) == []
-    assert claim_candidates(repo, rows[:1], now=645) == rows[:1]
-    release_claim(repo, "a", now=645)
     assert claim_candidates(repo, rows[:1], now=645) == rows[:1]
     record_success(repo, "a")
     assert claim_candidates(repo, rows[:1], now=645) == rows[:1]

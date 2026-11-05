@@ -1003,24 +1003,12 @@ def maybe_extract_decisions(
             if not (session_signal or checkpoint_signal or assessment_signal):
                 return
 
-            # Fast path: skip before counting an attempt. launch_worker_exclusive
-            # re-checks under its lock, so a lost race still cannot start a second worker.
             if worker_status(repo_path, pid_name="worker-decision").get("running"):
                 return
 
-            if source == "stop":
-                from ..core.context import transaction
-
-                with transaction(conn):
-                    _write_session_metadata_patch(
-                        conn,
-                        session_id,
-                        {"$.extraction_attempts": attempts + 1},
-                    )
-
             import sys
 
-            launch_worker_exclusive(
+            pid = launch_worker_exclusive(
                 repo_path,
                 [
                     sys.executable,
@@ -1034,6 +1022,16 @@ def maybe_extract_decisions(
                 pid_name="worker-decision",
                 **_workspace_kwargs(repo_path, workspace_root, "cwd"),
             )
+            # Count only launches that happened: losing the launch lock to another hook is not an attempt.
+            if pid is not None and source == "stop":
+                from ..core.context import transaction
+
+                with transaction(conn):
+                    _write_session_metadata_patch(
+                        conn,
+                        session_id,
+                        {"$.extraction_attempts": attempts + 1},
+                    )
         finally:
             conn.close()
     except Exception as exc:

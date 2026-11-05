@@ -67,17 +67,78 @@ def test_success_once_and_overlap(ec_repo, ec_db, monkeypatch):
             return '{"verdict": "neutral", "impact_summary": "ok"}'
 
     monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: Backend())
+    roots = get_repo_roots(str(ec_repo))
+    monkeypatch.setattr("entirecontext.core.project.get_repo_roots", lambda *a, **kw: roots)
+
+    def run():
+        # Direct call: CliRunner swaps process-global state and is not thread-safe.
+        barrier.wait(timeout=10)
+        futures_enrich_backlog()
+
     with ThreadPoolExecutor(max_workers=2) as pool:
-
-        def run():
-            barrier.wait()
-            return _invoke(ec_repo)
-
-        results = list(pool.map(lambda _: run(), range(2)))
-    assert all(result.exit_code == 0 for result in results), [result.output for result in results]
+        for future in [pool.submit(run) for _ in range(2)]:
+            future.result(timeout=60)
     assert len(calls) == 2
     assert _invoke(ec_repo).exit_code == 0
     assert len(calls) == 2
+
+
+def test_two_consecutive_failures_stop_without_touching_later_rows(ec_repo, ec_db, monkeypatch):
+    _rows(ec_repo, ec_db, 3)
+    calls = []
+
+    class Backend:
+        def complete(self, *_):
+            calls.append(1)
+            raise RuntimeError("auth")
+
+    monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: Backend())
+    monkeypatch.setattr("entirecontext.core.enrichment_claims.time.time", lambda: 1000)
+    assert _invoke(ec_repo).exit_code == 0
+    assert len(calls) == 2
+    # The third row was never attempted, so it is the only one ready right away.
+    assert _invoke(ec_repo).exit_code == 0
+    assert len(calls) == 3
+    third = _invoke(ec_repo)
+    assert len(calls) == 3
+    assert "No assessments ready to enrich" in third.output
+
+
+def test_lease_cannot_expire_on_rows_waiting_in_a_slow_batch(ec_repo, ec_db, monkeypatch):
+    """Each call fits its lease, but the batch outlasts one; a second run must not take the row in flight."""
+    _rows(ec_repo, ec_db, 3)
+    clock = [1000.0]
+    calls = []
+    roots = get_repo_roots(str(ec_repo))
+    monkeypatch.setattr("entirecontext.core.project.get_repo_roots", lambda *a, **kw: roots)
+    monkeypatch.setattr("entirecontext.core.enrichment_claims.time.time", lambda: clock[0])
+
+    class Backend:
+        def complete(self, *_):
+            calls.append(1)
+            clock[0] += 1000  # well under the 1800 s lease per call; 3000 s for the batch
+            if len(calls) == 3:
+                # A second run starts while the first is still waiting on its third row.
+                futures_enrich_backlog()
+            return '{"verdict": "neutral", "impact_summary": "ok"}'
+
+    monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: Backend())
+    futures_enrich_backlog()
+    assert len(calls) == 3
+
+
+def test_one_run_makes_at_most_ten_backend_calls(ec_repo, ec_db, monkeypatch):
+    _rows(ec_repo, ec_db, 12)
+    calls = []
+
+    class Backend:
+        def complete(self, *_):
+            calls.append(1)
+            return '{"verdict": "neutral", "impact_summary": "ok"}'
+
+    monkeypatch.setattr("entirecontext.core.llm.get_backend", lambda *a, **kw: Backend())
+    assert _invoke(ec_repo).exit_code == 0
+    assert len(calls) == 10
 
 
 def test_stale_candidate_snapshot_is_revalidated_after_claim(ec_repo, ec_db, monkeypatch):
