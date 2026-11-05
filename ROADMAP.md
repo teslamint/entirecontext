@@ -337,7 +337,7 @@ Theme: close every concrete v0.13.1 archaeology carry-forward and lock productio
 Carry-forward after v0.14.0:
 - [x] **Maturity 75 dogfooding carry-forward** — remeasured at maturity 71, `applied_context_rate=1%` (8/1,159), and `lesson_reuse_rate=21%` (21/102). Lesson reuse crossed its threshold; the still-open applied-context work is tracked once under v0.13.0 **applied_context_rate ≥ 10%**. _(measurement carry-forward registered)_
 - [x] **Consolidate PR enrichment state transitions** — centralized into `_ProcessingState.action()` and `resolve_pr_completion()` methods with `_CommitAction` dataclass. _(architecture, P3; completed by PR #204)_
-- [ ] **General Git C-style path escapes** — extend exact patch path decoding beyond octal-quoted UTF-8 to escaped quotes, backslashes, and control characters if real repositories surface them. _(edge case, P4)_
+- [x] **General Git C-style path escapes** — exact patch paths now decode escaped quotes, backslashes, control characters, and octal UTF-8 bytes. _(edge case, P4; covered by decoder and Git-backed regression tests)_
 
 ## v0.15.0 — Self-Archaeology + Decision-Annotated Blame (Feature merged 2026-07-20; shipped in v0.16.0, 2026-08-20)
 
