@@ -21,6 +21,8 @@ def _module():
 
 class FakeEmbedder:
     def encode(self, text):
+        if "filler" in text:
+            return struct.pack("2f", 0.0, 0.0)  # similarity 0 with every query: fillers never take a top_n slot
         if "랭킹" in text or "semantic target" in text:
             return struct.pack("2f", 1.0, 0.0)
         return struct.pack("2f", 0.0, 1.0)
@@ -116,3 +118,31 @@ def test_no_file_mention_checks_only_labeled_files(ec_repo, ec_db, tmp_path):
     ec_db.commit()
     report = _module().benchmark(ec_repo, k=1, embedder_factory=lambda model: FakeEmbedder())
     assert report["subsets"]["hangul_no_file_mention"]["count"] == 1
+
+
+def test_benchmark_applies_worker_top_n_limit(ec_repo, ec_db, tmp_path):
+    """Production keeps only the top_n similarities; a labeled decision below the cutoff gets no boost."""
+    _seed(ec_db)
+    ec_db.execute(
+        "INSERT INTO decisions (id, title, rationale, created_at, updated_at) VALUES ('decoy', 'decoy target', 'none', '2025-01-01', '2020-01-01')"
+    )
+    ec_db.commit()
+    (ec_repo / ".entirecontext" / "config.toml").write_text("[decisions.semantic]\ntop_n = 1\n")
+
+    class Ranked:
+        def encode(self, text):
+            if "decoy target" in text or "랭킹" in text:
+                return struct.pack("2f", 1.0, 0.0)
+            if "semantic target" in text:
+                return struct.pack("2f", 0.8, 0.6)
+            return struct.pack("2f", 0.0, 1.0)
+
+    report = _module().benchmark(ec_repo, k=5, embedder_factory=lambda model: Ranked())
+    assert report["subsets"]["hangul"]["semantic"]["hit_at_k"] == 0
+
+
+def test_benchmark_drops_successors_created_after_the_prompt(ec_repo, ec_db, tmp_path):
+    """Chain collapse can return a successor created later; a historical ranking must not show it."""
+    module = _module()
+    created = {"old": "2025-01-01", "new": "2027-01-01"}
+    assert module._existing_at(["new", "old"], created, "2025-02-01") == ["old"]

@@ -16,6 +16,7 @@ from entirecontext.core.content_filter import redact_content, redact_for_query
 from entirecontext.core.decisions import rank_related_decisions
 from entirecontext.core.embedding import _build_decision_embed_text, cosine_similarity
 from entirecontext.core.security import filter_secrets
+from entirecontext.core.semantic_scores import semantic_top_n
 
 
 DEFAULT_MODEL = "all-MiniLM-L6-v2"
@@ -36,6 +37,11 @@ def _default_embedder_factory(model: str) -> Any:
 
 def _bytes(vector: Any) -> bytes:
     return vector if isinstance(vector, bytes) else vector.tobytes()
+
+
+def _existing_at(ranked_ids: list[str], created: dict[str, str], timestamp: str) -> list[str]:
+    """Drop results created after the prompt; chain collapse can return a later successor despite ``until``."""
+    return [did for did in ranked_ids if created.get(did, "") <= timestamp]
 
 
 def _metrics(items: list[tuple[list[str], list[str], set[str]]]) -> dict[str, float]:
@@ -62,6 +68,7 @@ def benchmark(
     repo = Path(repo)
     config = load_config(repo)
     semantic_config = config.get("decisions", {}).get("semantic", {})
+    top_n = semantic_top_n(semantic_config)
     conn = open_database(repo)
     try:
         turns = conn.execute(
@@ -133,6 +140,8 @@ def benchmark(
                         scores[d["id"]] = cosine_similarity(query_vector, vectors[d["id"]])
                     except ValueError:
                         continue
+            # The worker publishes only the top_n similarities, so production never sees the rest.
+            scores = dict(sorted(scores.items(), key=lambda entry: entry[1], reverse=True)[:top_n])
             semantic = rank_related_decisions(
                 conn,
                 file_paths=[],
@@ -144,7 +153,11 @@ def benchmark(
                 semantic_weight=float(semantic_config.get("weight", 3.0)),
                 semantic_min_similarity=float(semantic_config.get("min_similarity", 0.3)),
             )
-            item = ([d["id"] for d in baseline], [d["id"] for d in semantic], relevant)
+            item = (
+                _existing_at([d["id"] for d in baseline], created, turn["timestamp"]),
+                _existing_at([d["id"] for d in semantic], created, turn["timestamp"]),
+                relevant,
+            )
             groups["all"].append(item)
             hangul = bool(re.search("[가-힣]", prompt))
             # Spec: exclude only prompts that name a labeled file; other touched files do not leak the label.
