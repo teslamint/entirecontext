@@ -1,0 +1,16 @@
+{
+  "actual_status": 0,
+  "check_id": "semantic-search-unwired",
+  "command": "set -euo pipefail\ntest \"$(git grep -l 'semantic_search_decisions(' -- src/entirecontext | wc -l | tr -d ' ')\" = 1\n",
+  "command_sha256": "6b7f0ffb48ee538eb1bd780a6c5b031c2275e7eeba2dc13838dace2014d14267",
+  "expected_status": 0,
+  "output": "",
+  "output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "plan": "docs/plans/2026-11-05-001-feat-signal-c-prompt-ranking-plan.md",
+  "plan_sha256": "f5871cf5fda791299fe407965b6817fe58ec49420f85dd0a803324a9e7de595a",
+  "record_sha256": "7d2642f0c42848c5d1de329e242c830c000acbff995cc52c96de5daa7b6044f3",
+  "recorded_at": "2026-11-05T06:21:21.727053+00:00",
+  "schema": "plan-check/v1",
+  "spec": "docs/specs/2026-11-05-signal-c-prompt-ranking-design.md",
+  "spec_sha256": "da573a8bdaf037e06639d71f14d22779de9d67d123f55f29d8630768dfbfc58b"
+}
