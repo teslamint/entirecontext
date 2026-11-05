@@ -92,3 +92,23 @@ def test_benchmark_opens_database_read_only(ec_repo, ec_db):
     _seed(ec_db)
     with _module().open_database(ec_repo) as conn, pytest.raises(sqlite3.OperationalError, match="readonly"):
         conn.execute("INSERT INTO decisions (id, title) VALUES ('write', 'forbidden')")
+
+
+def test_benchmark_matches_absolute_turn_paths_to_relative_decision_files(ec_repo, ec_db, tmp_path):
+    """Hooks record absolute paths (also from linked worktrees); decision links are repo-relative."""
+    _seed(ec_db)
+    ec_db.execute(
+        "UPDATE turns SET files_touched = ? WHERE id = '1'",
+        (json.dumps(["/home/user/other-worktree/src/semantic.py"]),),
+    )
+    ec_db.execute("UPDATE turns SET files_touched = ? WHERE id = '2'", (json.dumps([str(ec_repo / "src/english.py")]),))
+    ec_db.execute(
+        "INSERT INTO turns (id, session_id, turn_number, user_message, files_touched, content_hash, timestamp) VALUES ('4', 'bench', 4, 'x', ?, 'hash', '2025-02-01')",
+        (json.dumps(["/elsewhere/notsrc/semantic.pyc"]),),
+    )
+    ec_db.commit()
+    report = _module().benchmark(
+        ec_repo, k=1, output=tmp_path / "report.json", embedder_factory=lambda model: FakeEmbedder()
+    )
+    assert report["counts"]["items"] == 2
+    assert report["counts"]["dropped_no_relevant"] == 2

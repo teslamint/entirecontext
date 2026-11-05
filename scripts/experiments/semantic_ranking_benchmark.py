@@ -92,6 +92,11 @@ def benchmark(
             "no_file_mention": [],
             "hangul_no_file_mention": [],
         }
+        created = {d["id"]: d["created_at"] for d in decisions}
+        decision_files = [
+            (row["decision_id"], row["file_path"])
+            for row in conn.execute("SELECT DISTINCT decision_id, file_path FROM decision_files")
+        ]
         dropped = 0
         for turn in turns:
             try:
@@ -103,13 +108,14 @@ def benchmark(
             paths = [path for path in paths if isinstance(path, str)]
             if not paths:
                 continue
-            placeholders = ",".join("?" for _ in paths)
+            # Hooks record absolute paths, possibly from a linked worktree; decision links are repo-relative.
+            # A link matches when it equals the touched path or is its suffix at a "/" boundary.
             relevant = {
-                row["decision_id"]
-                for row in conn.execute(
-                    f"SELECT DISTINCT df.decision_id FROM decision_files df JOIN decisions d ON d.id = df.decision_id WHERE df.file_path IN ({placeholders}) AND d.created_at <= ?",  # noqa: S608
-                    [*paths, turn["timestamp"]],
-                )
+                did
+                for did, rel in decision_files
+                if did in created
+                and created[did] <= turn["timestamp"]
+                and any(path == rel or path.endswith("/" + rel) for path in paths)
             }
             if not relevant:
                 dropped += 1
