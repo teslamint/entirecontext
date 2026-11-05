@@ -34,6 +34,8 @@ Measured fresh on 2026-11-05 between 08:33:13Z and 08:36:33Z against merged `mai
 | 6 | Benchmark numbers committed and reproducible | rubric: rerun the recorded command on the same database and compare | verified: rerun 08:36:33Z gives identical item counts and hit@5; MRR differs by at most 0.003 (live database, documented in the report) | Met |
 | 7 | Full repository gate | `uv run pytest -q`, `ruff check`, `ruff format --check`, `mypy src/entirecontext/` | verified: 2240 passed, 3 skipped; ruff, format, mypy clean (this branch, with the restored test) | Met |
 
+All test commands above ran with `UV_NO_BUILD_ISOLATION=1` in the environment. This development machine needs it for the tests that build wheels offline; CI runs plain `uv run`.
+
 ## Carry-forward from previous retro
 
 | Item | Status | Evidence |
@@ -70,8 +72,8 @@ Measured fresh on 2026-11-05 between 08:33:13Z and 08:36:33Z against merged `mai
 
 | Item | Type | Priority | Tracked at |
 |---|---|---|---|
-| Check that each retained Spec test exists as a test function | process | P2 | ROADMAP Hardening Backlog |
-| Successor-chain resolution ignores `until` | edge-case | P3 | ROADMAP Hardening Backlog |
+| Check that each retained Spec test exists as a test function | process | P2 | ROADMAP v0.18.0 |
+| Successor-chain resolution ignores `until` | edge-case | P3 | ROADMAP v0.18.0 |
 
 ## Lessons
 

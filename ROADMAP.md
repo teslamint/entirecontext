@@ -407,6 +407,14 @@ Retro carry-forward review (2026-08-21 retro):
 Carry-forward after v0.17.0 ([retro](docs/retros/2026-11-05-v0170-release-retro.md)):
 - [x] **Make Rich-output path assertions independent of wrapping** — `test_init_from_linked_joins_main_project` and `test_worktree_merge::test_absolute_content_path_outside_entirecontext_is_not_linked` now compare whitespace-normalized output, and the init test uses a 400-column console so Rich does not clip the path. Both pass on macOS without `--basetemp`. _(test reliability, P3; completed)_
 
+## v0.18.0 — Next Release (Planned)
+
+Target for the carry-forwards of the [Signal C retro](docs/retros/2026-11-05-signal-c-prompt-ranking-retro.md).
+
+- [ ] **Check that each retained Spec test exists** — `scripts/validate_plan.py validate` checks the Spec Test Disposition table against the Specification, but not that each `retained` or `merged` test function exists. PR #293 merged without `test_two_pass_semantic_candidate_surfaces_on_next_prompt`, which a range edit removed after review; the [Signal C retro](docs/retros/2026-11-05-signal-c-prompt-ranking-retro.md) registered this. _(process, P2)_
+
+- [ ] **Successor-chain resolution ignores `until`** — `rank_related_decisions` filters candidates by `since`/`until`, but chain collapse fetches the terminal successor without that filter, so a temporal query can return a decision created after `until`. The Signal C benchmark removes such results itself; MCP, CLI, and TQL callers still see them. _(edge-case, P3)_
+
 ## v1.0 — Loop Completes Autonomously
 
 Qualitative gate: the `capture→distill→retrieve→intervene→outcome` loop completes without human intervention and is repeatably observable across sessions.
@@ -423,10 +431,6 @@ The last manual bottleneck is **outcome attribution**. Current automation: Sessi
 Structural debt outside the "decision memory depth" wedge. The three items previously listed here (`confirm_candidate` atomicity, `LEGACY_TRANSACTION_CONTROL`, review-bot noise) have been absorbed into v0.5.0 — see S1, S2, S4 above. New items go here as they are surfaced.
 
 All PR #205 carry-forwards are registered under v0.16.0 above.
-
-- [ ] **Check that each retained Spec test exists** — `scripts/validate_plan.py validate` checks the Spec Test Disposition table against the Specification, but not that each `retained` or `merged` test function exists. PR #293 merged without `test_two_pass_semantic_candidate_surfaces_on_next_prompt`, which a range edit removed after review; the [Signal C retro](docs/retros/2026-11-05-signal-c-prompt-ranking-retro.md) registered this. _(process, P2)_
-
-- [ ] **Successor-chain resolution ignores `until`** — `rank_related_decisions` filters candidates by `since`/`until`, but chain collapse fetches the terminal successor without that filter, so a temporal query can return a decision created after `until`. The Signal C benchmark removes such results itself; MCP, CLI, and TQL callers still see them. _(edge-case, P3)_
 
 - [x] **Lift the `entirecontext.mcp.*` mypy overrides** — all nine MCP modules sat under `ignore_errors = true`, hiding 127 errors across 2,261 lines. Removed in three stages: annotate `runtime.py` (127 → 106), replace the `resolve_repo` tuple-plus-error-payload shape with a raising `open_repo` (106 → 48, since 60 errors traced to the unnarrowable `Connection | None`), then annotate the remaining modules (48 → 0). `mypy src/entirecontext/` now enforces the whole package in CI. ADR 0002's override list is nine entries shorter. Surfaced by review on PR #212.
 
