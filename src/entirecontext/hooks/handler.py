@@ -235,6 +235,45 @@ def _surface_lessons_on_start(data: dict[str, Any]) -> None:
         conn.close()
 
 
+def _maybe_launch_semantic_worker(
+    data: dict[str, Any], config: dict[str, Any], repo_path: str, workspace_root: str
+) -> None:
+    from ..core.async_worker import launch_worker_exclusive
+    from ..core.config import is_experiment_off
+    from ..core.content_filter import should_skip_turn
+    from ..core.semantic_scores import write_pending_prompt
+    from ..db import get_db
+
+    session_id = data.get("session_id")
+    prompt = data.get("prompt", "")
+    decisions = config.get("decisions", {})
+    if not session_id or not workspace_root:
+        return
+    if not config.get("capture", {}).get("auto_capture", True) or is_experiment_off(decisions):
+        return
+    if not decisions.get("injection", {}).get("inject_on_user_prompt", True):
+        return
+    if not decisions.get("semantic", {}).get("enabled", False) or should_skip_turn(prompt, config):
+        return
+    conn = get_db(repo_path)
+    try:
+        row = conn.execute("SELECT metadata FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if row and row[0]:
+            try:
+                if json.loads(row[0]).get("capture_disabled"):
+                    return
+            except (ValueError, TypeError, AttributeError):
+                pass  # same tolerance as the ranking thread's capture_disabled check
+    finally:
+        conn.close()
+    write_pending_prompt(repo_path, session_id, prompt, config)
+    launch_worker_exclusive(
+        repo_path,
+        [sys.executable, "-m", "entirecontext.cli", "decision", "semantic-worker", "--repo-path", repo_path],
+        pid_name="worker-semantic",
+    )
+
+
 def _handle_user_prompt(data: dict[str, Any]) -> int:
     import threading
 
@@ -255,6 +294,7 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
 
     prompt_text = data.get("prompt", "")
 
+    config: dict[str, Any] = {}
     try:
         from ..core.config import is_experiment_off, load_config
 
@@ -295,12 +335,24 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                             return None, None
                     except (ValueError, TypeError):
                         pass
+                semantic_scores = None
+                if config.get("decisions", {}).get("semantic", {}).get("enabled", False):
+                    from ..core.semantic_scores import read_fresh_scores
+
+                    semantic_cfg = config["decisions"]["semantic"]
+                    semantic_scores = read_fresh_scores(
+                        repo_path,
+                        session_id,
+                        model=str(semantic_cfg.get("model", "all-MiniLM-L6-v2")),
+                        max_age_seconds=int(semantic_cfg.get("max_age_seconds", 900)),
+                    )
                 surfaced, _, snap_id = rank_decisions_for_prompt(
                     conn,
                     repo_path=workspace_root,
                     prompt_text=prompt_text,
                     config=config,
                     capture_snapshots=capture_snapshots,
+                    semantic_scores=semantic_scores,
                 )
                 trimmed = optimize_for_context_budget(
                     surfaced, top_k=top_k, max_tokens=max_tokens, min_confidence=min_confidence
@@ -450,6 +502,13 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     pass
     except Exception as e:
         print(f"EntireContext PDI error: {e}", file=sys.stderr)
+    finally:
+        try:
+            _maybe_launch_semantic_worker(data, config, repo_path, workspace_root)
+        except Exception as exc:
+            from .session_lifecycle import _record_hook_warning
+
+            _record_hook_warning(repo_path, "semantic_worker_launch", RuntimeError(type(exc).__name__))
 
     return 0
 
