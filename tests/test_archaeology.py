@@ -391,11 +391,69 @@ class TestDecodeGitQuotedPath:
     def test_no_escapes(self):
         assert _decode_git_quoted_path("src/foo.py") == "src/foo.py"
 
-    def test_korean_octal(self):
-        assert _decode_git_quoted_path("\\355\\225\\234.py") == "한.py"
+    def test_c_style_escapes(self):
+        assert (
+            _decode_git_quoted_path(
+                r"quote\" slash\\ alert\a backspace\b tab\t newline\n "
+                r"vertical\v formfeed\f return\r"
+            )
+            == 'quote" slash\\ alert\a backspace\b tab\t newline\n vertical\v formfeed\f return\r'
+        )
+
+    def test_octal_bytes_decode_as_utf8_together(self):
+        assert _decode_git_quoted_path(r"\355\225\234.py") == "한.py"
+
+    def test_unknown_escape_is_preserved(self):
+        assert _decode_git_quoted_path(r"unknown\q trailing\\") == r"unknown\q trailing" + "\\"
 
     def test_mixed_ascii_and_octal(self):
         assert _decode_git_quoted_path("src/\\355\\225\\234/bar.py") == "src/한/bar.py"
+
+    def test_octal_above_byte_range_is_preserved(self):
+        assert _decode_git_quoted_path(r"bad\777.txt") == r"bad\777.txt"
+
+    def test_invalid_utf8_octal_path_is_rejected(self):
+        """A Latin-1 guess would link the wrong file (\\377 -> 'ÿ'), so the path is dropped."""
+        assert _decode_git_quoted_path(r"bad\377.txt") is None
+
+    def test_surrogate_escaped_raw_path_is_rejected(self):
+        """With core.quotePath=false Git emits raw bytes; surrogateescape turns invalid ones into surrogates."""
+        assert _decode_git_quoted_path("bad\udcff.txt") is None
+
+    def test_patch_drops_only_the_undecodable_path(self):
+        patch = (
+            'diff --git "a/bad\\377.txt" "b/bad\\377.txt"\n--- "a/bad\\377.txt"\n+++ "b/bad\\377.txt"\n'
+            "diff --git a/good.txt b/good.txt\n--- a/good.txt\n+++ b/good.txt\n"
+        )
+        assert _extract_files_from_patch(patch) == ["good.txt"]
+
+
+def test_streamed_commit_paths_decode_git_quoted_names(git_repo):
+    names = ['quote".txt', "back\\slash.txt", "tab\there.txt", "line\nbreak.txt", "한글.txt"]
+    created = []
+    for name in names:
+        try:
+            (git_repo / name).write_text("content")
+        except (OSError, ValueError):
+            continue
+        created.append(name)
+
+    if len(created) != len(names):
+        pytest.skip(f"filesystem rejects one or more test path names: {set(names) - set(created)}")
+
+    subprocess.run(["git", "add", "--", *created], cwd=git_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "quoted path names"],
+        cwd=git_repo,
+        check=True,
+        env=git_commit_env(),
+        capture_output=True,
+    )
+
+    commit = next(_stream_commits(str(git_repo), None, None, 1))
+    bundle = _build_signal_bundle(commit[0], commit[1], commit[2], None)
+    assert len(bundle.files) == len(created)
+    assert set(bundle.files) == set(created)
 
 
 class TestArchaeologize:
@@ -876,3 +934,24 @@ class TestResolvePrCompletion:
     def test_none(self):
         state = _ProcessingState()
         assert state.resolve_pr_completion(None, True) is False
+
+
+@pytest.mark.parametrize("quote_path", ["true", "false"])
+def test_streamed_commit_drops_non_utf8_path_in_both_quote_modes(git_repo, quote_path):
+    import os
+
+    try:
+        fd = os.open(os.path.join(os.fsencode(git_repo), b"bad\xff.txt"), os.O_WRONLY | os.O_CREAT, 0o644)
+    except OSError:
+        pytest.skip("filesystem rejects non-UTF-8 file names")
+    os.close(fd)
+    (git_repo / "good.txt").write_text("content")
+    subprocess.run(["git", "config", "core.quotePath", quote_path], cwd=git_repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=git_repo, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "non-utf8 name"], cwd=git_repo, check=True, env=git_commit_env(), capture_output=True
+    )
+
+    commit = next(_stream_commits(str(git_repo), None, None, 1))
+    bundle = _build_signal_bundle(commit[0], commit[1], commit[2], None)
+    assert bundle.files == ["good.txt"]
