@@ -288,6 +288,13 @@ The hook path is timeout-aware.
 If injection cannot complete within the configured budget, the agent should continue.
 The agent can optionally use explicit MCP retrieval.
 
+The `[decisions.semantic]` keys add an optional semantic signal. It is off by default (`enabled = false`).
+When it is on, the hook stores the redacted prompt and starts one background worker.
+The worker needs the `semantic` extra. It writes decision similarity scores for that session.
+The next prompt in the session uses those scores to add and boost decisions.
+If the extra, the model, or the embeddings are missing, injection uses the normal ranking.
+See ADR 0022 and `docs/perf/2026-11-05-signal-c-benchmark.md`.
+
 ### 4.4 Mid-session surfacing
 
 When configured, `PostToolUse` can surface decisions linked to just-edited files.
@@ -499,6 +506,7 @@ defaults <- global config <- repo-local config
 | `[decisions.quality]` | Decision quality scoring parameters. |
 | `[decisions.extraction]` | Outcome-feedback influence on candidate extraction. |
 | `[decisions.injection]` | Proactive decision injection limits and timeout. |
+| `[decisions.semantic]` | Opt-in two-pass semantic signal for prompt-time injection (off by default). |
 
 ### 7.3 Safe config examples
 

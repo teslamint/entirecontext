@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in semantic signal for prompt-time decision injection (`[decisions.semantic] enabled = false` by default). When enabled, a background worker scores decisions against each prompt, and the next prompt in the session uses those scores to add and boost decisions. Requires the `semantic` extra; any failure falls back to the existing ranking. An offline benchmark script (`scripts/experiments/semantic_ranking_benchmark.py`) measures the effect. (#293)
+
 ### Fixed
 
 - Background enrichment no longer lets several workers send the same assessment to the LLM backend. Worker launches take a lock, `ec futures enrich-backlog` claims each row and re-checks it before the call, and failed rows wait for an increasing backoff before the next attempt. (#288)
