@@ -406,6 +406,12 @@ class TestDecodeGitQuotedPath:
     def test_unknown_escape_is_preserved(self):
         assert _decode_git_quoted_path(r"unknown\q trailing\\") == r"unknown\q trailing" + "\\"
 
+    def test_mixed_ascii_and_octal(self):
+        assert _decode_git_quoted_path("src/\\355\\225\\234/bar.py") == "src/한/bar.py"
+
+    def test_octal_above_byte_range_is_preserved(self):
+        assert _decode_git_quoted_path(r"bad\777.txt") == r"bad\777.txt"
+
 
 def test_streamed_commit_paths_decode_git_quoted_names(git_repo):
     names = ['quote".txt', "back\\slash.txt", "tab\there.txt", "line\nbreak.txt", "한글.txt"]

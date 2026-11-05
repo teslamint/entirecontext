@@ -64,7 +64,7 @@ def _decode_git_quoted_path(path: str) -> str:
             decoded.extend(escapes[escape])
             index += 2
         elif (
-            escape in "01234567"
+            escape in "0123"  # Git emits \000-\377; higher values are not one byte
             and index + 3 < len(path)
             and all(char in "01234567" for char in path[index + 1 : index + 4])
         ):
