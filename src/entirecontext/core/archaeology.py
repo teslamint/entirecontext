@@ -32,17 +32,52 @@ class ArchaeologyResult:
     warnings: list[str] = field(default_factory=list)
 
 
-_GIT_OCTAL_RE = re.compile(r"\\([0-7]{3})")
-
-
 def _decode_git_quoted_path(path: str) -> str:
     if "\\" not in path:
         return path
-    decoded = _GIT_OCTAL_RE.sub(lambda m: chr(int(m.group(1), 8)), path)
+
+    escapes = {
+        '"': b'"',
+        "\\": b"\\",
+        "a": b"\a",
+        "b": b"\b",
+        "t": b"\t",
+        "n": b"\n",
+        "v": b"\v",
+        "f": b"\f",
+        "r": b"\r",
+    }
+    decoded = bytearray()
+    index = 0
+    while index < len(path):
+        if path[index] != "\\":
+            decoded.extend(path[index].encode("utf-8"))
+            index += 1
+            continue
+
+        if index + 1 == len(path):
+            decoded.append(ord("\\"))
+            break
+
+        escape = path[index + 1]
+        if escape in escapes:
+            decoded.extend(escapes[escape])
+            index += 2
+        elif (
+            escape in "01234567"
+            and index + 3 < len(path)
+            and all(char in "01234567" for char in path[index + 1 : index + 4])
+        ):
+            decoded.append(int(path[index + 1 : index + 4], 8))
+            index += 4
+        else:
+            decoded.extend(("\\" + escape).encode("utf-8"))
+            index += 2
+
     try:
-        return decoded.encode("latin-1").decode("utf-8")
-    except (UnicodeDecodeError, UnicodeEncodeError):
-        return decoded
+        return decoded.decode("utf-8")
+    except UnicodeDecodeError:
+        return decoded.decode("latin-1")
 
 
 def _is_github_remote(url: str) -> bool:
