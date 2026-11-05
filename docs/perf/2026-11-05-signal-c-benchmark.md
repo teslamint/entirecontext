@@ -42,5 +42,5 @@ Run from the feature checkout. The installed `entirecontext` uv-tool interpreter
 ```bash
 PYTHONPATH=$PWD/src:$PWD ~/.local/share/uv/tools/entirecontext/bin/python \
   scripts/experiments/semantic_ranking_benchmark.py \
-  --repo /path/to/project --k 5 --output /tmp/signal-c-benchmark.json
+  --repo /path/to/project --k 5 --json > /tmp/signal-c-benchmark.json
 ```

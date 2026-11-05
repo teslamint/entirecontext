@@ -61,9 +61,7 @@ def _seed(conn):
 
 def test_benchmark_reports_semantic_gain_on_fixture(ec_repo, ec_db, tmp_path):
     _seed(ec_db)
-    output = tmp_path / "report.json"
-    report = _module().benchmark(ec_repo, k=1, output=output, embedder_factory=lambda model: FakeEmbedder())
-    assert output.exists()
+    report = _module().benchmark(ec_repo, k=1, embedder_factory=lambda model: FakeEmbedder())
     assert report["counts"]["items"] == 2
     assert report["subsets"]["hangul"]["baseline"]["hit_at_k"] == 0
     assert report["subsets"]["hangul"]["semantic"]["hit_at_k"] == 1
@@ -73,17 +71,13 @@ def test_benchmark_reports_semantic_gain_on_fixture(ec_repo, ec_db, tmp_path):
 
 def test_benchmark_excludes_decisions_created_after_prompt(ec_repo, ec_db, tmp_path):
     _seed(ec_db)
-    report = _module().benchmark(
-        ec_repo, k=1, output=tmp_path / "report.json", embedder_factory=lambda model: FakeEmbedder()
-    )
+    report = _module().benchmark(ec_repo, k=1, embedder_factory=lambda model: FakeEmbedder())
     assert report["counts"]["dropped_no_relevant"] == 1
 
 
 def test_benchmark_reports_no_file_mention_subset(ec_repo, ec_db, tmp_path):
     _seed(ec_db)
-    report = _module().benchmark(
-        ec_repo, k=1, output=tmp_path / "report.json", embedder_factory=lambda model: FakeEmbedder()
-    )
+    report = _module().benchmark(ec_repo, k=1, embedder_factory=lambda model: FakeEmbedder())
     assert report["subsets"]["no_file_mention"]["count"] == 1
     assert report["subsets"]["hangul_no_file_mention"]["count"] == 1
 
@@ -107,9 +101,7 @@ def test_benchmark_matches_absolute_turn_paths_to_relative_decision_files(ec_rep
         (json.dumps(["/elsewhere/notsrc/semantic.pyc"]),),
     )
     ec_db.commit()
-    report = _module().benchmark(
-        ec_repo, k=1, output=tmp_path / "report.json", embedder_factory=lambda model: FakeEmbedder()
-    )
+    report = _module().benchmark(ec_repo, k=1, embedder_factory=lambda model: FakeEmbedder())
     assert report["counts"]["items"] == 2
     assert report["counts"]["dropped_no_relevant"] == 2
 
@@ -122,7 +114,5 @@ def test_no_file_mention_checks_only_labeled_files(ec_repo, ec_db, tmp_path):
         (json.dumps(["src/semantic.py", "docs/notes.md"]),),
     )
     ec_db.commit()
-    report = _module().benchmark(
-        ec_repo, k=1, output=tmp_path / "report.json", embedder_factory=lambda model: FakeEmbedder()
-    )
+    report = _module().benchmark(ec_repo, k=1, embedder_factory=lambda model: FakeEmbedder())
     assert report["subsets"]["hangul_no_file_mention"]["count"] == 1

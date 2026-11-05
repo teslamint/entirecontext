@@ -55,7 +55,6 @@ def benchmark(
     *,
     k: int = 5,
     model: str = DEFAULT_MODEL,
-    output: str | Path | None = None,
     embedder_factory: Callable[[str], Any] = _default_embedder_factory,
 ) -> dict[str, Any]:
     if k < 1:
@@ -173,8 +172,6 @@ def benchmark(
         }
     finally:
         conn.close()
-    if output is not None:
-        Path(output).write_text(json.dumps(report, indent=2) + "\n")
     return report
 
 
@@ -183,9 +180,12 @@ def main() -> None:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--model", default=DEFAULT_MODEL)
-    parser.add_argument("--output", type=Path)
+    parser.add_argument("--json", action="store_true", help="Print the full report as JSON (redirect to save it)")
     args = parser.parse_args()
-    report = benchmark(args.repo, k=args.k, model=args.model, output=args.output)
+    report = benchmark(args.repo, k=args.k, model=args.model)
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return
     print("subset                 count  baseline hit  semantic hit  baseline MRR  semantic MRR")
     for name, data in report["subsets"].items():
         print(
