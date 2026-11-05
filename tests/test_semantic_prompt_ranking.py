@@ -402,3 +402,25 @@ def test_worker_discards_prompts_claimed_by_dead_worker(ec_repo, ec_db):
     run_semantic_worker(str(ec_repo), embedder_factory=lambda _: lambda __: _vector(1, 0))
     assert not orphan.exists()
     assert live.exists()
+
+
+def test_invalid_semantic_settings_do_not_break_injection_when_disabled(ec_repo, ec_db, capsys):
+    _seed(ec_db)
+    _session(ec_db)
+    (ec_repo / ".entirecontext" / "config.toml").write_text('[decisions.semantic]\nenabled = false\nweight = "bad"\n')
+    _hook(ec_repo, prompt="matching keyword")
+    assert "matching keyword" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("setting", ['weight = "bad"', 'max_age_seconds = "bad"'])
+def test_invalid_semantic_settings_fall_back_when_enabled(ec_repo, ec_db, capsys, setting):
+    from entirecontext.core.semantic_scores import write_scores
+
+    _seed(ec_db)
+    _session(ec_db)
+    (ec_repo / ".entirecontext" / "config.toml").write_text(f"[decisions.semantic]\nenabled = true\n{setting}\n")
+    write_scores(str(ec_repo), "session-1", {"semantic": 0.9}, model="all-MiniLM-L6-v2", top_n=20)
+    _hook(ec_repo, prompt="matching keyword")
+    output = capsys.readouterr().out
+    assert "matching keyword" in output
+    assert "unrelated words" not in output

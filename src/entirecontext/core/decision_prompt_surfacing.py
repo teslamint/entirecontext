@@ -288,7 +288,14 @@ def rank_decisions_for_prompt(
         limit = int(inject_cfg.get("top_k", 5))
     ranking_weights = _load_ranking_weights(config)
     quality_weights = _load_quality_weights(config)
-    semantic_config = config.get("decisions", {}).get("semantic", {})
+    semantic_weight, semantic_min_similarity = 0.0, 1.0
+    if semantic_scores is not None:
+        semantic_config = config.get("decisions", {}).get("semantic", {})
+        try:
+            semantic_weight = float(semantic_config.get("weight", 3.0))
+            semantic_min_similarity = float(semantic_config.get("min_similarity", 0.3))
+        except (TypeError, ValueError):
+            semantic_scores = None  # invalid settings: fall back to the baseline ranking
 
     decisions_cfg = config.get("decisions", {})
     capture = (
@@ -306,8 +313,8 @@ def rank_decisions_for_prompt(
         ranking=ranking_weights,
         quality=quality_weights,
         semantic_scores=semantic_scores,
-        semantic_weight=float(semantic_config.get("weight", 3.0)),
-        semantic_min_similarity=float(semantic_config.get("min_similarity", 0.3)),
+        semantic_weight=semantic_weight,
+        semantic_min_similarity=semantic_min_similarity,
         _return_stats=True,
         _capture_snapshots=capture,
         _capture_config=config,

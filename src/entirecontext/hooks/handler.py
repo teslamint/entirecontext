@@ -340,12 +340,15 @@ def _handle_user_prompt(data: dict[str, Any]) -> int:
                     from ..core.semantic_scores import read_fresh_scores
 
                     semantic_cfg = config["decisions"]["semantic"]
-                    semantic_scores = read_fresh_scores(
-                        repo_path,
-                        session_id,
-                        model=str(semantic_cfg.get("model", "all-MiniLM-L6-v2")),
-                        max_age_seconds=int(semantic_cfg.get("max_age_seconds", 900)),
-                    )
+                    try:
+                        semantic_scores = read_fresh_scores(
+                            repo_path,
+                            session_id,
+                            model=str(semantic_cfg.get("model", "all-MiniLM-L6-v2")),
+                            max_age_seconds=int(semantic_cfg.get("max_age_seconds", 900)),
+                        )
+                    except (TypeError, ValueError):
+                        semantic_scores = None  # invalid settings must not block baseline injection
                 surfaced, _, snap_id = rank_decisions_for_prompt(
                     conn,
                     repo_path=workspace_root,
